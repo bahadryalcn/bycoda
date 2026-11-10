@@ -267,6 +267,8 @@ function ConversationHostTools({
       list: () => request("list"),
       boot: (deviceId) => request("boot", { deviceId }),
       capture: (deviceId) => request("capture", { deviceId }),
+      stream: (deviceId, cursor) =>
+        request("stream", cursor === undefined ? { deviceId } : { deviceId, cursor }),
       controlStatus: (deviceId) => request("control.status", { deviceId }),
       claimControl: (deviceId, requestId) => request("control.claim", { deviceId, requestId }),
       releaseControl: (deviceId, leaseId) => request("control.release", { deviceId, leaseId }),

@@ -5779,7 +5779,7 @@
   "Pane: Arrange Main Left": "Pane: Arrange Main Left",
   "Pane: Arrange Main Top": "Pane: Arrange Main Top",
   "Pane: Equalize Sizes": "Pane: Equalize Sizes",
-  "Viewing never enables control. Live view refreshes once per second while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub 0.12.0 and optional control tools into the host cache, and Stop ends the owned tool processes.": "Viewing never enables control. Live view refreshes once per second while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub 0.12.0 and optional control tools into the host cache, and Stop ends the owned tool processes.",
+  "Viewing never enables control. Live view follows the screen while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub 0.12.0 and optional control tools into the host cache, and Stop ends the owned tool processes.": "Viewing never enables control. Live view follows the screen while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub 0.12.0 and optional control tools into the host cache, and Stop ends the owned tool processes.",
   "Message for {p0}": "Message for {p0}",
   "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.": "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
   "Request added to the main conversation. Delivery is not yet confirmed.": "Request added to the main conversation. Delivery is not yet confirmed.",
@@ -13120,8 +13120,6 @@
   "Manage pools": "Manage pools",
   "Write code": "Write code",
   "Limit Host tools to a list": "Limit Host tools to a list",
-  "Write code and use every Host tool": "Write code and use every Host tool",
-  "Write code, Host tools limited to a list": "Write code, Host tools limited to a list",
   "About member tools": "About member tools",
   "Nothing selected means read-only: Host tools that write or start things are blocked. Choices combine and only narrow what the run's access mode allows.": "Nothing selected means read-only: Host tools that write or start things are blocked. Choices combine and only narrow what the run's access mode allows.",
   "Without Write code, Claude and Codex lose file edits and shell; other providers cannot run the member.": "Without Write code, Claude and Codex lose file edits and shell; other providers cannot run the member.",
@@ -13132,5 +13130,8 @@
   "Library: {p0}": "Library: {p0}",
   "Library: {p0} · customized": "Library: {p0} · customized",
   "About the library profile": "About the library profile",
-  "Apply as": "Apply as"
+  "Apply as": "Apply as",
+  "Write code includes Image generation and Browser.": "Write code includes Image generation and Browser.",
+  "customized": "customized",
+  "Automatic: {p0}": "Automatic: {p0}"
 }

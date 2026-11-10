@@ -2,6 +2,7 @@
 export { REMOTE_PROVIDERS, isRemoteProvider } from "../model/protocol";
 export type {
   HostCommand,
+  HostModelCatalog,
   HostDirectory,
   HostProject,
   RemoteMachine,

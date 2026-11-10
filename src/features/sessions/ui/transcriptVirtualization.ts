@@ -1,4 +1,5 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
+import { firstTurnBelow } from "./transcriptScroll";
 
 /** Presentation only; no source bytes, provider effects or approval decisions. */
 export class TranscriptVirtualization {
@@ -189,7 +190,21 @@ function firstVisibleRow(
   const top = scroll.getBoundingClientRect().top;
   const bottom = top + scroll.clientHeight;
   let candidate: HTMLElement | null = null;
-  for (const node of scroll.querySelectorAll<HTMLElement>("[data-transcript-virtual-block-id]")) {
+  const rows = scroll.querySelectorAll<HTMLElement>("[data-transcript-virtual-block-id]");
+  // This runs on every scroll event. Turns stack in document order, so the rows of
+  // the turns above the viewport are skipped by position instead of being measured.
+  const turn = scroll.classList.contains("agent-transcript")
+    ? firstTurnBelow(scroll.querySelectorAll<HTMLElement>("[data-transcript-turn]"), top)
+    : undefined;
+  let index = 0;
+  for (let end = turn ? rows.length : 0; index < end;) {
+    const middle = (index + end) >> 1;
+    if (turn!.compareDocumentPosition(rows[middle]) & Node.DOCUMENT_POSITION_PRECEDING)
+      index = middle + 1;
+    else end = middle;
+  }
+  for (; index < rows.length; index++) {
+    const node = rows[index];
     if (ownerOf(node) !== scroll) continue;
     const rect = node.getBoundingClientRect();
     if (rect.bottom <= top || rect.top >= bottom) continue;

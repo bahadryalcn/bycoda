@@ -148,6 +148,7 @@ const HOST_SCOPED_TOOL_METHODS = new Set([
   "devices.list",
   "devices.boot",
   "devices.capture",
+  "devices.stream",
   "devices.control.status",
   "devices.control.claim",
   "devices.control.release",

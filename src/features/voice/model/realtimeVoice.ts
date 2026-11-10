@@ -12,6 +12,7 @@ import {
   type VoiceFailure,
   type VoiceRecentTurn,
 } from "./voiceReconnect";
+import { refusedVoiceCancel } from "./realtimeVoiceErrors";
 import { voiceSeedItems } from "./voiceOpenWork";
 import { openMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
@@ -852,16 +853,10 @@ export class RealtimeVoice {
         break;
       }
       case "error": {
-        const error = event.error as
-          | { code?: string; event_id?: string; message?: string }
-          | undefined;
-        const cancelId = error?.event_id;
-        const benignCancel =
-          typeof cancelId === "string" &&
-          this.cancelEvents.has(cancelId) &&
-          error?.code === "response_cancel_not_active";
-        if (typeof cancelId === "string") this.cancelEvents.delete(cancelId);
-        const code = (event.error as { code?: string } | undefined)?.code ?? "";
+        const error = event.error as { code?: string; event_id?: string } | undefined;
+        const benignCancel = refusedVoiceCancel(error, this.cancelEvents);
+        if (typeof error?.event_id === "string") this.cancelEvents.delete(error.event_id);
+        const code = typeof error?.code === "string" ? error.code : "";
         // A rejected commit (e.g. too little audio) is a rejected candidate.
         if (
           /input_audio_buffer|commit/i.test(code) &&
@@ -1348,7 +1343,7 @@ export class RealtimeVoice {
     this.inputEpoch++;
     this.vad?.reset();
     this.speaking = false;
-    this.pendingTurn = false;
+    // An accepted turn is already in the conversation; only unconfirmed input is dropped.
     this.candidates = [];
     this.activateCandidate = undefined;
     this.stream?.getAudioTracks().forEach((track) => {

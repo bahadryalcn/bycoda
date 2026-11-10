@@ -11,6 +11,7 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { X } from "../../../shared/ui/icons";
 import type { CrewAgent, CrewRole, SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
+import { useCrewModelPools } from "../model/crewModelPools";
 import { libraryGroups } from "../model/crewRoster";
 import { CrewMemberIdentity, CrewMemberMeta, visibleLibraryMembers } from "./CrewLibraryMemberMeta";
 import { hiddenSelection } from "./CrewLibrarySearch";
@@ -59,6 +60,8 @@ export function CrewMemberPicker({
   useLocale();
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState("");
+  const hostPools = useCrewModelPools(data.machine.id, data.modelPoolsSupported === true);
+  const poolNames = new Map(hostPools.pools.map((pool) => [pool.id, pool.name]));
   const groups = useMemo(() => libraryGroups(data.agents), [data.agents]);
   // Search matches what each row shows plus its instructions (CR-E06).
   const matches = visibleLibraryMembers(data.agents, data.catalog, query, group);
@@ -207,7 +210,12 @@ export function CrewMemberPicker({
                               <span className="block text-ui-body font-medium">
                                 <CrewMemberIdentity agent={agent} />
                               </span>
-                              <CrewMemberMeta agent={agent} catalog={data.catalog} shortScope />
+                              <CrewMemberMeta
+                                agent={agent}
+                                catalog={data.catalog}
+                                shortScope
+                                poolName={agent.pool && poolNames.get(agent.pool.id)}
+                              />
                             </span>
                             {agent.groups?.length ? (
                               <span className="min-w-0 max-w-48">

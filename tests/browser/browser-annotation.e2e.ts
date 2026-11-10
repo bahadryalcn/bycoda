@@ -781,7 +781,11 @@ for (const delay of [0, 80, 150]) {
         }, letter);
         inputTimes.push(elapsed);
       }
-      expect(await f.target.locator("textarea").inputValue()).toContain("abcdefghijklmnopqrst");
+      // Live frames arrive on their own (a blinking caret repaints), so a new picture
+      // does not prove the last letter landed yet.
+      await expect
+        .poll(async () => await f.target.locator("textarea").inputValue(), { timeout: 15000 })
+        .toContain("abcdefghijklmnopqrst");
       expect(await page.evaluate(() => (window as any).__fixtureBlankFrames)).toBe(0);
       const sent = f.calls
         .filter((call) => call.method === "browser.input" && call.params.kind === "text")
@@ -1003,9 +1007,12 @@ test("preview pointer drag selects real target text and preserves ordered pointe
     const pointerCalls = f.calls.filter(
       (call) => call.method === "browser.input" && call.params.kind === "pointer",
     );
-    expect(pointerCalls[0]?.params.action).toBe("down");
-    expect(pointerCalls.at(-1)?.params.action).toBe("up");
-    expect(pointerCalls.some((call) => call.params.action === "move")).toBe(true);
+    // Hovering sends moves before the press; the drag itself stays down, moves, up.
+    const actions = pointerCalls.map((call) => call.params.action);
+    const down = actions.indexOf("down");
+    expect(down).toBeGreaterThanOrEqual(0);
+    expect(actions.indexOf("up")).toBe(actions.length - 1);
+    expect(actions.slice(down + 1, -1)).toContain("move");
   } finally {
     await f.close();
   }

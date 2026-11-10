@@ -28,7 +28,7 @@ import { useVoiceSessionProgress } from "../model/voiceSessionProgress";
 import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceToolActivity";
 import { VoiceCompanionView } from "./companion/VoiceCompanionView";
 import { VoiceLauncher, VoiceReturnButton } from "./companion/VoiceLauncher";
-import { useVoiceChatTurns } from "./companion/useVoiceChatTurns";
+import { useVoiceChatTurns, useVoiceTranscript } from "./companion/useVoiceChatTurns";
 import { voiceJobsNeedReview } from "./companion/voiceJobAutoStart";
 import { useVoicePushToTalk } from "./useVoicePushToTalk";
 import {
@@ -59,6 +59,7 @@ import {
   warmVoiceReply,
   immediateVoiceDecision,
 } from "../model/voiceConversation";
+import { useVoicePanelDrag } from "./companion/useVoicePanelDrag";
 import { clampVoicePosition, voiceContext, voiceTarget } from "../model/voiceSession";
 import styles from "./VoiceCompanion.module.css";
 import {
@@ -75,7 +76,7 @@ import { converseWithAssistant } from "../model/voiceAssistant";
 import { voiceTools } from "../model/realtimeVoice";
 import { installVoiceApprovalPort } from "./companion/voiceApprovalPort";
 import { voiceJobReceipt, voiceJobsAcceptedSpeech } from "../model/voiceJobReceipt";
-import type { VoiceWorkspaceProject } from "../model/voiceWorkspaceActions";
+import { voiceTurnProjectPaths, type VoiceWorkspaceProject } from "../model/voiceWorkspaceActions";
 import type { useVoiceWorkspaceActions } from "../../../app/workspace/bridges/useVoiceWorkspaceActions";
 import { voiceVisualState } from "../model/voiceVisualState";
 import { voiceWorkText } from "../model/voiceWork";
@@ -83,7 +84,6 @@ import {
   closeVoiceOverlay,
   hasNativeWindows,
   openVoiceOverlay,
-  pointerOutsideWindow,
   voiceSummaryLine,
   VOICE_OVERLAY_COMPACT_SIZE,
   VOICE_OVERLAY_EXPANDED_WIDTH,
@@ -147,8 +147,8 @@ import { VoiceChoiceCard } from "./VoiceChoiceCard";
 import { VoiceJobReview } from "./VoiceJobReview";
 import {
   VoiceJobBatch,
-  VoiceJobDraftsSchema,
-  voiceJobDrafts,
+  draftVoiceJobs,
+  voiceJobProjects,
   changeVoiceJobRows,
   spokenJobReviewDecision,
   type VoiceJobDraft,
@@ -280,7 +280,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     return () => clearInterval(timer);
   }, [status, muted]);
   const [message, setMessage] = useState("");
-  const [transcript, setTranscript] = useState("");
+  const [transcript, setTranscript, transcriptTurn] = useVoiceTranscript();
   const [error, setError] = useState("");
   const ownerSpeech = useRef("");
   const spokenLanguage = useRef<VoiceSpokenLanguageWrites | null>(null);
@@ -1216,12 +1216,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     text: string;
     result: Promise<{ accepted: boolean }>;
   } | null>(null);
-  const drag = useRef<{
-    pointerId: number;
-    x: number;
-    y: number;
-    position?: { x: number; y: number };
-  } | null>(null);
   const shellTarget = voiceTarget(props.activeId, pinned, props.sessions);
   const target = useSession(open ? shellTarget?.id : undefined) ?? shellTarget;
   const findSession = (id: string | undefined) =>
@@ -2097,7 +2091,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     if (name === "give_jobs") {
       if (pendingJobs.current)
         return { status: "awaiting_review", reviewId: pendingJobs.current.review.id };
-      const input = VoiceJobDraftsSchema.parse(args.jobs);
       const capturedHistory = activeHistoryBinding.current;
       const capturedOwner = transcriptStore.current
         ?.ownerReceipt()
@@ -2115,31 +2108,30 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         },
       ];
       const allowed = turnCaptured.current ? turnAllowedProjectPaths.current : [];
-      const projects = (result.projects ?? []).filter(
-        (project) =>
-          allowed.some((path) => pathKey(path) === pathKey(project.path)) &&
-          !isProjectLocked(project.path) &&
-          visible.some((item) => pathKey(item.path) === pathKey(project.path)) &&
-          ((turnGlobalScope.current && scopeRef.current) ||
-            pathKey(project.path) === pathKey(turnProjectPath.current)),
-      );
+      const projects = voiceJobProjects(result.projects ?? [], {
+        allowed,
+        visible,
+        locked: isProjectLocked,
+        global: turnGlobalScope.current && scopeRef.current,
+        projectPath: turnProjectPath.current,
+      });
       const defaultPath =
         turnProjectPath.current || latest.current.projectPath || currentTarget()?.cwd;
       const capabilities = (
         await assistantRequest({ op: "snapshot", limit: 100 }, owner.environmentId)
       ).snapshot?.capabilities;
       if (generation.current !== epoch || !isActive()) return { status: "cancelled" };
-      if (
-        input.some((item) => item.kind === "quick" && item.quickAction.kind === "note") &&
-        capabilities?.quickNotes !== true
-      )
-        throw new Error("Quick note jobs are unavailable on this Host.");
-      if (
-        input.some((item) => item.kind === "quick" && item.quickAction.kind === "automation") &&
-        capabilities?.quickAutomations !== true
-      )
-        throw new Error("Quick automation jobs are unavailable for this project.");
-      const jobs = voiceJobDrafts(input, projects, allowed, defaultPath ?? "", newRequestId);
+      // A refused proposal saved nothing; returning it keeps the result definite for the model.
+      const drafted = draftVoiceJobs(
+        args.jobs,
+        projects,
+        allowed,
+        defaultPath ?? "",
+        newRequestId,
+        capabilities,
+      );
+      if (!("jobs" in drafted)) return drafted;
+      const { jobs } = drafted;
       const review: VoiceJobReviewState = {
         id: crypto.randomUUID(),
         jobs,
@@ -2306,8 +2298,15 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         "composer_context",
         "composer_attachment",
       ].includes(name)
-    )
-      return thisController().execute(name, args, () => generation.current === epoch && isActive());
+    ) {
+      const live = () => generation.current === epoch && isActive();
+      const result = await thisController().execute(name, args, live);
+      // A project this turn created joins its frozen scope; every use still checks visibility.
+      const scope = turnAllowedProjectPaths;
+      if (turnRevision.current === revision)
+        scope.current = voiceTurnProjectPaths(scope.current, args, result);
+      return result;
+    }
     const session = findSession(turnCaptured.current ? turnSessionId.current : currentTarget()?.id);
     if (!session) return { error: "No session is selected." };
     if (name === "session_context")
@@ -2932,7 +2931,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const shownTranscript = bodyVisible ? transcript : "",
     shownMessage = bodyVisible ? message : "",
     shownError = bodyVisible ? error : "";
-  const chatTurns = useVoiceChatTurns(shownTranscript, shownMessage, bodyVisible);
+  const chatTurns = useVoiceChatTurns(shownTranscript, shownMessage, bodyVisible, transcriptTurn);
   const scopeTitle =
     props.workspace && globalScope
       ? t("Global")
@@ -3012,6 +3011,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         ? t("Sound detected")
         : statusText,
   });
+  const panelDrag = useVoicePanelDrag({
+    panel,
+    canDetach,
+    onDetaching: setDetaching,
+    onPosition: setPosition,
+    onPopOut: (placement) => void popOut(placement),
+  });
   const moveLabel = t(
     canDetach
       ? "Move voice window. Drag outside the app to float it. Use arrow keys to reposition."
@@ -3056,101 +3062,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       onDoubleClick={() => {
         if (compact) setCompact(false);
       }}
-      onPointerDown={(event) => {
-        if (event.button !== 0) return;
-        const rect = panel.current!.getBoundingClientRect();
-        drag.current = {
-          pointerId: event.pointerId,
-          x: event.clientX - rect.x,
-          y: event.clientY - rect.y,
-        };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }}
-      onPointerMove={(event) => {
-        if (!drag.current || drag.current.pointerId !== event.pointerId) return;
-        setDetaching(
-          canDetach &&
-            pointerOutsideWindow(
-              event.clientX,
-              event.clientY,
-              window.innerWidth,
-              window.innerHeight,
-            ),
-        );
-        const rect = panel.current!.getBoundingClientRect();
-        const next = clampVoicePosition(
-          event.clientX - drag.current.x,
-          event.clientY - drag.current.y,
-          rect.width,
-          rect.height,
-          window.innerWidth,
-          window.innerHeight,
-        );
-        drag.current.position = next;
-        // Pointer movement owns presentation until release. Keep audio,
-        // transcript and tool controls out of the per-event render path.
-        Object.assign(panel.current!.style, {
-          left: `${next.x}px`,
-          top: `${next.y}px`,
-          right: "auto",
-          bottom: "auto",
-        });
-      }}
-      onPointerUp={(event) => {
-        const grab = drag.current;
-        if (!grab || grab.pointerId !== event.pointerId) return;
-        drag.current = null;
-        setDetaching(false);
-        if (grab.position) setPosition(grab.position);
-        // Released beyond the app: continue as a native floating window
-        // under the pointer, keeping the same grab point.
-        if (
-          grab &&
-          canDetach &&
-          pointerOutsideWindow(event.clientX, event.clientY, window.innerWidth, window.innerHeight)
-        ) {
-          void popOut({ fromCursor: true, x: grab.x, y: grab.y });
-          return;
-        }
-        if (grab.position)
-          try {
-            localStorage.setItem("bycoda:voice-position", JSON.stringify(grab.position));
-          } catch {
-            /* Optional. */
-          }
-      }}
-      onPointerCancel={(event) => {
-        if (drag.current?.pointerId !== event.pointerId) return;
-        if (drag.current.position) setPosition(drag.current.position);
-        drag.current = null;
-        setDetaching(false);
-      }}
-      onKeyDown={(event) => {
-        const moves: Record<string, [number, number]> = {
-          ArrowLeft: [-16, 0],
-          ArrowRight: [16, 0],
-          ArrowUp: [0, -16],
-          ArrowDown: [0, 16],
-        };
-        const move = moves[event.key];
-        if (!move) return;
-        event.preventDefault();
-        const rect = panel.current!.getBoundingClientRect();
-        const next = clampVoicePosition(
-          rect.x + move[0],
-          rect.y + move[1],
-          rect.width,
-          rect.height,
-          window.innerWidth,
-          window.innerHeight,
-        );
-        setPosition(next);
-        try {
-          localStorage.setItem("bycoda:voice-position", JSON.stringify(next));
-        } catch {
-          /* Optional. */
-        }
-      }}
+      data-drag-handle=""
+      onKeyDown={panelDrag.onHandleKeyDown}
     >
       {compact ? (
         <VoiceVisualizer
@@ -3182,6 +3095,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         compact={compact}
         status={status}
         handle={handle}
+        headerDrag={panelDrag.header}
         resize={<VoicePanelResize panel={panel} position={position} onPosition={setPosition} />}
         panel={panel}
         sideKey={choice?.id ?? jobReview?.id}

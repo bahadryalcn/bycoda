@@ -86,8 +86,9 @@ A failed save keeps its own error and unsaved edits; a format warning alone is
 not proof that the file was saved. Editing again clears the saved claim.
 Manual **Format document** changes the buffer without saving it.
 Formatting uses whichever formatter the project installs (Oxfmt, Biome or
-Prettier); bycoda does not bundle one. Projects without one, and files the
-formatter reports unsupported, skip formatting; Save still writes the file.
+Prettier); bycoda does not bundle one. Projects without one, projects that
+configure a formatter but have not installed it, and files the formatter
+reports unsupported, skip formatting; Save still writes the file.
 Actual syntax and execution failures still appear as format errors.
 
 Editors open on the same file, such as its own tab and its Working Tree review tab,

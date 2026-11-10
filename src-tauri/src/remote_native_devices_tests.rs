@@ -151,6 +151,7 @@ fn paired_factory_is_finite_and_does_not_grant_setup_stop_or_other_private_scope
         "devices.start",
         "devices.boot",
         "devices.capture",
+        "devices.stream",
         "devices.control.status",
         "devices.control.claim",
         "devices.control.renew",

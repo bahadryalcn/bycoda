@@ -32,6 +32,19 @@ export const DeviceFrameSchema = z.strictObject({
   base64: z.string(),
   capturedAt: z.string(),
 });
+/**
+ * Raw byte cap of one `devices.stream` response. A response of exactly this many
+ * bytes was cut by the cap and may end inside a frame.
+ */
+export const DEVICE_STREAM_MAX_CHUNK_BYTES = 1024 * 1024;
+/** H.264 Annex-B bytes; `width`/`height` are the device display, not the video size. */
+export const DeviceStreamChunkSchema = z.strictObject({
+  cursor: SafeCounterSchema,
+  reset: z.boolean(),
+  base64: z.string(),
+  width: SafeCounterSchema,
+  height: SafeCounterSchema,
+});
 const coordinate = SafeCounterSchema.max(20000);
 export const DeviceActionSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("openApp"), app: z.string() }),
@@ -82,6 +95,7 @@ export type DevicePlatform = z.infer<typeof DevicePlatformSchema>;
 export type DeviceSummary = z.infer<typeof DeviceSummarySchema>;
 export type DeviceHostStatus = z.infer<typeof DeviceHostStatusSchema>;
 export type DeviceFrame = z.infer<typeof DeviceFrameSchema>;
+export type DeviceStreamChunk = z.infer<typeof DeviceStreamChunkSchema>;
 export type DeviceAction = z.infer<typeof DeviceActionSchema>;
 export type DevicePreviewInput = z.infer<typeof DevicePreviewInputSchema>;
 export type DevicePreviewStage = z.infer<typeof DevicePreviewStageSchema>;
@@ -133,6 +147,10 @@ export const NATIVE_DEVICES_RPC_SCHEMAS = {
   "devices.capture": {
     params: z.strictObject({ ...base, deviceId: z.string() }),
     result: DeviceFrameSchema,
+  },
+  "devices.stream": {
+    params: z.strictObject({ ...base, deviceId: z.string(), cursor: SafeCounterSchema.optional() }),
+    result: DeviceStreamChunkSchema,
   },
   "devices.control.status": {
     params: z.strictObject({ ...base, deviceId: z.string() }),

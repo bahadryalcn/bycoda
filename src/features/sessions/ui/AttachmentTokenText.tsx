@@ -11,7 +11,7 @@ import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { useAttachmentPreview } from "./useAttachmentPreview";
 import { SkillTokenText } from "./SkillTokenText";
 import { AttachmentIdentity } from "./AttachmentIdentity";
-import { formatAttachmentSize } from "../model/attachmentPresentation";
+import { attachmentPresentation, formatAttachmentSize } from "../model/attachmentPresentation";
 import styles from "./AttachmentTokenText.module.css";
 import {
   AttachmentFilePreview,
@@ -44,13 +44,17 @@ function TokenPill({ token, label, attachment }: PillProps) {
   } = useAttachmentPreview(attachment);
   const size = formatAttachmentSize(attachment.size);
   const body = (
-    <span className={styles.token} title={attachment.name}>
+    <span
+      className={styles.token}
+      title={attachment.name}
+      data-attachment-kind={attachmentPresentation(attachment).kind}
+    >
       <span className={styles.icon} aria-hidden="true">
         <AttachmentIdentity attachment={attachment} size="pill" />
       </span>
-      <span className="sr-only">[</span>
-      {label}
-      <span className="sr-only">]</span>
+      {/* Copying gives back `[image1]`; the file name is drawn from an attribute. */}
+      <span className="sr-only">[{label}]</span>
+      <span className={styles.name} aria-hidden="true" data-name={attachment.name} />
       {size ? (
         // Drawn from an attribute so copying the pill still gives back `[image1]`.
         <span className={styles.size} aria-hidden="true" data-size={size} />

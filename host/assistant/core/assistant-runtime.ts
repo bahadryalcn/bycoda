@@ -105,6 +105,8 @@ export async function readManualSessionUsage(
   return { turns, incomplete };
 }
 
+export type SessionWriteOrder = <T>(sessionId: string, write: () => Promise<T>) => Promise<T>;
+
 /** Compose existing execution owners; the assistant never gains merge authority. */
 export function assistantExecutionPorts(
   store: HostStore,
@@ -113,6 +115,8 @@ export function assistantExecutionPorts(
   notes?: () => AsyncHostNotes,
   automations?: () => HostAutomations,
   models?: AssistantModelSelector,
+  /** The engine's session write order; a stamp written beside a live turn breaks it. */
+  orderSessionWrite: SessionWriteOrder = (_id, write) => write(),
 ): AssistantPorts {
   const replyText = assistantText(dirname(store.attachmentDir), "reply", models);
   const chiefText = assistantText(dirname(store.attachmentDir), "chief", models);
@@ -154,7 +158,7 @@ export function assistantExecutionPorts(
     markManagedSessions: async (job) => {
       for (const id of job.sessionIds)
         if (job.kind !== "quick" && !job.detachedSessionIds?.includes(id))
-          await store.markAssistantManagedSession(id, job.id);
+          await orderSessionWrite(id, () => store.markAssistantManagedSession(id, job.id));
     },
     reply: async (input) => {
       const prompt =

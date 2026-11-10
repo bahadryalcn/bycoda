@@ -80,7 +80,7 @@ export function CrewBulkModelBar({
             value={mode}
             options={[
               { value: "model", label: t("Fixed model") },
-              { value: "pool", label: t("Model pool") },
+              { value: "pool", label: t("Automatic") },
             ]}
             onValueChange={(value) => {
               setMode(value === "pool" ? "pool" : "model");
@@ -91,6 +91,7 @@ export function CrewBulkModelBar({
         {poolMode ? (
           <div className="min-w-44 max-w-96 flex-1">
             <ModelPoolSelect
+              hideLabel
               pools={pools}
               value={poolId}
               onChange={(next) => {

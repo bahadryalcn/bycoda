@@ -145,7 +145,7 @@ test("device preview uses the dock height with compact controls", async ({ page 
     await expect(page.locator(".device-panel-setup")).toHaveCount(0);
     await page.getByRole("button", { name: "Cihaz seçenekleri", exact: true }).click();
     await page.getByRole("button", { name: "Kurulum ve erişim", exact: true }).click();
-    await expect(page.locator(".device-panel-setup > summary")).toBeInViewport();
+    await expect(page.locator(".device-panel-setup-summary")).toBeInViewport();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("switch", { name: "Cihaz kontrolüne izin ver" })).not.toBeChecked();
     expect(

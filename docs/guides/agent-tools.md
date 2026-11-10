@@ -2,7 +2,7 @@
 
 ## Capability status
 
-Computer use, voice, devices, providers and MCP keep three observations
+Computer use, voice, providers and MCP keep three observations
 separate: owner permission, verified readiness and current activity. Enabled does
 not imply ready or running. Unknown means that the current read cannot prove the
 fact, including after a failed refresh. Inventory, installation and saved sign-in
@@ -20,10 +20,18 @@ An installed Device Host starts only after **Connect devices**. Opening the pane
 reads its status. Failed status or discovery refreshes invalidate the previous
 readiness and activity observation; retained device drafts and frames stay intact.
 
-The device bar shows the selected device, its state and the three observations.
-The screen fills the panel with its controls on a vertical rail beside it; **Device
-options** at the end of the rail holds the accessibility snapshot, coordinate
-controls, setup and zoom. Without a selected device, the panel lists devices to open.
+The device bar holds the device picker and refresh. Each device carries its platform
+icon (Android or iOS), green while the device is running; its version, kind and state
+are in the picker list and tooltip. The screen fills the panel with its controls on a
+vertical rail beside it; **Device options** at the end of the rail holds the
+accessibility snapshot, coordinate controls, setup and zoom. **Setup and access**
+shows the device host state, what each platform's SDK check found, and the setup and
+start or stop actions. Without a selected device, the panel lists devices to open.
+
+Live view follows an Android device as video when the Host is on Windows or macOS,
+so the screen moves as it does on the phone and input shows its result at once.
+iOS simulators, older Hosts and any stream failure use still captures instead,
+about one per second. Pausing keeps the picture that was on screen.
 
 Devices opens in view-only mode. Claim control explicitly before sending input;
 release it when finished. Another controller's claim, an expired lease or an older

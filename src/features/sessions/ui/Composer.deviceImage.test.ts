@@ -62,8 +62,8 @@ it("preserves the current draft and adds an image, its comment and device contex
     const text = container.querySelector("textarea")!.value;
     expect(text).toMatch(/^Please adjust this\n\n\[image1\]/);
     expect(text).toContain(image.comment);
-    expect(text).toContain('"name":"iPhone"');
-    expect(text).toContain('"machineId":"mac"');
+    expect(text).toContain("iPhone · iOS 27 simulator");
+    expect(text).toContain("on MacBook (machine mac)");
     expect(getComposerAttachments("device-image-session")).toEqual([
       expect.objectContaining({
         name: "device-screen.png",

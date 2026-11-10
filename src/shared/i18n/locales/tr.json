@@ -5535,7 +5535,7 @@
   "Pane: Arrange Main Left": "Bölme: Ana bölme solda",
   "Pane: Arrange Main Top": "Bölme: Ana bölme üstte",
   "Pane: Equalize Sizes": "Bölme: Boyutları eşitle",
-  "Viewing never enables control. Live view refreshes once per second while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub 0.12.0 and optional control tools into the host cache, and Stop ends the owned tool processes.": "Görüntüleme hiçbir zaman kontrolü etkinleştirmez. Canlı görünüm bu panel görünürken saniyede bir yenilenir; paneli kapatmak görüntülemeyi duraklatır. Kurulum, sabitlenmiş expo-device-hub 0.12.0 ve isteğe bağlı kontrol araçlarını ana makine önbelleğine indirir; Durdur, sahip olunan araç süreçlerini sonlandırır.",
+  "Viewing never enables control. Live view follows the screen while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub 0.12.0 and optional control tools into the host cache, and Stop ends the owned tool processes.": "Görüntüleme hiçbir zaman kontrolü etkinleştirmez. Canlı görünüm bu panel görünürken ekranı izler; paneli kapatmak görüntülemeyi duraklatır. Kurulum, sabitlenmiş expo-device-hub 0.12.0 ve isteğe bağlı kontrol araçlarını ana makine önbelleğine indirir; Durdur, sahip olunan araç süreçlerini sonlandırır.",
   "Message for {p0}": "{p0} için mesaj",
   "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.": "Ana ajan üzerinden iletilir. Teslim, sağlayıcı desteğine bağlıdır; yanıtlar ana konuşmada görünür.",
   "Request added to the main conversation. Delivery is not yet confirmed.": "İstek ana konuşmaya eklendi. Teslim henüz doğrulanmadı.",
@@ -13120,8 +13120,6 @@
   "Manage pools": "Havuzları yönet",
   "Write code": "Kod yaz",
   "Limit Host tools to a list": "Host araçlarını bir listeyle sınırla",
-  "Write code and use every Host tool": "Kod yaz ve tüm Host araçlarını kullan",
-  "Write code, Host tools limited to a list": "Kod yaz, Host araçları listeyle sınırlı",
   "About member tools": "Üye araçları hakkında",
   "Nothing selected means read-only: Host tools that write or start things are blocked. Choices combine and only narrow what the run's access mode allows.": "Hiçbir şey seçilmezse üye salt okunurdur: yazan veya bir şey başlatan Host araçları engellenir. Seçimler birleşir ve yalnızca çalıştırmanın erişim modunun izin verdiğini daraltır.",
   "Without Write code, Claude and Codex lose file edits and shell; other providers cannot run the member.": "Kod yaz seçilmezse Claude ve Codex dosya düzenleme ve kabuğu kaybeder; diğer sağlayıcılar üyeyi çalıştıramaz.",
@@ -13132,5 +13130,8 @@
   "Library: {p0}": "Kitaplık: {p0}",
   "Library: {p0} · customized": "Kitaplık: {p0} · özelleştirilmiş",
   "About the library profile": "Kitaplık profili hakkında",
-  "Apply as": "Şu olarak uygula"
+  "Apply as": "Şu olarak uygula",
+  "Write code includes Image generation and Browser.": "Kod yazma, görsel üretimi ve tarayıcıyı içerir.",
+  "customized": "özelleştirildi",
+  "Automatic: {p0}": "Otomatik: {p0}"
 }

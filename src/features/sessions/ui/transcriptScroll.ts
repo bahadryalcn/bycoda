@@ -35,8 +35,15 @@ export function syncTranscriptViewport(el: HTMLElement | null, refreshPadding = 
     }
   }
   const next = `${Math.max(0, el.clientHeight - pad)}px`;
-  if (el.style.getPropertyValue("--transcript-viewport") === next) return;
-  el.style.setProperty("--transcript-viewport", next);
+  // Written on the anchored turn, never on the scroller: there the property is
+  // inherited by every element of the transcript, so each frame of a panel drag
+  // restyled all of it.
+  const anchors = el.getElementsByClassName("transcript-turn-anchor");
+  for (let index = 0; index < anchors.length; index++) {
+    const style = (anchors[index] as HTMLElement).style;
+    if (style.getPropertyValue("--transcript-viewport") !== next)
+      style.setProperty("--transcript-viewport", next);
+  }
 }
 
 /**
@@ -67,4 +74,24 @@ export function isStaleFollowReplay(input: {
     input.now - latest.at < READER_INPUT_MS &&
     input.followedTops.some((entry) => entry.top <= input.top + 1)
   );
+}
+
+/**
+ * First turn whose bottom edge is below `top`. Turns are laid out in document
+ * order, so their bottoms never decrease and a binary search reads O(log n)
+ * rects where a linear scan read every turn above the viewport.
+ * shortcut: assumes turns do not nest or overlap; upgrade if nested turns appear.
+ */
+export function firstTurnBelow(
+  nodes: ArrayLike<HTMLElement>,
+  top: number,
+): HTMLElement | undefined {
+  let lo = 0;
+  let hi = nodes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (nodes[mid].getBoundingClientRect().bottom > top) hi = mid;
+    else lo = mid + 1;
+  }
+  return nodes[lo];
 }

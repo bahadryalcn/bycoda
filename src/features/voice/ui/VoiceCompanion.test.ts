@@ -2459,7 +2459,7 @@ it("rejects multi-project proposals outside the accepted project-only directory"
     mock.realtime.tool("give_jobs", {
       jobs: [{ title: "Too broad", request: "Both", projectPaths: ["/a", "/b"] }],
     }),
-  ).rejects.toThrow("could not be verified");
+  ).resolves.toMatchObject({ status: "rejected", error: expect.stringContaining('"/b" is not') });
   expect(assistantHost.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(
     false,
   );

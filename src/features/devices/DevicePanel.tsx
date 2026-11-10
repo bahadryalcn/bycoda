@@ -1,8 +1,11 @@
 import { NumberField } from "../../shared/ui/NumberField";
-import { DeviceCapabilityStatus } from "./ui/DeviceCapabilityStatus";
+import { DeviceBar } from "./ui/DeviceBar";
+import { DeviceSetupPanel } from "./ui/DeviceSetupPanel";
 import { DeviceConnectState, DeviceWaitingState } from "./ui/DeviceStageStates";
 import { DeviceOptionsMenu } from "./ui/DeviceOptionsMenu";
 import { useDeviceStatus } from "./hooks/useDeviceStatus";
+import { useDeviceLiveStream } from "./hooks/useDeviceLiveStream";
+import { kindLabel, platformVersionLabel, stateLabel } from "./model/deviceLabels";
 import {
   peekToolsDraftPart,
   subscribeToolsDraftTransfer,
@@ -14,14 +17,12 @@ import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as technicalI18n from "../../shared/i18n/technical";
-import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { Alert } from "../../shared/ui/Alert";
 import { LoadingText } from "../../shared/ui/LoadingText";
 import { Button } from "../../shared/ui/Button";
 import { Disclosure } from "../../shared/ui/Disclosure";
 import { Progress } from "../../shared/ui/Progress";
 import { Popover } from "../../shared/ui/Popover";
-import { Tooltip } from "../../shared/ui/Tooltip";
 import { MediaToolbarButton } from "../../shared/ui/MediaToolbar";
 import {
   ImageAnnotationCanvas,
@@ -43,7 +44,6 @@ import {
   Pause,
   Pencil,
   Play,
-  RefreshCw,
   RotateCcw,
   Trash2,
   X,
@@ -570,8 +570,22 @@ function DevicePanelSurface({
       active = false;
     };
   }, [api, status?.running, applyDevices, visible]);
+  // Video when the Host can stream this device; the still captures below are the fallback.
+  const liveStream = useDeviceLiveStream({
+    stream: api.stream,
+    deviceId: selected,
+    enabled: visible && live && !!selected && !!status?.running,
+    onFrame: useCallback((value: DeviceFrame, deviceId: string) => {
+      if (selectedRef.current !== deviceId) return;
+      setFrame(value);
+      setFrameStale(false);
+      setActionCompleted(false);
+      if (errorOperationRef.current === "capture") setError(undefined);
+    }, []),
+  });
+  const streaming = liveStream.active;
   useEffect(() => {
-    if (!visible || !live || !selected || !status?.running) return;
+    if (!visible || !live || !selected || !status?.running || streaming) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
@@ -614,7 +628,7 @@ function DevicePanelSurface({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [live, selected, capture, status?.running, visible]);
+  }, [live, selected, capture, status?.running, visible, streaming]);
   const action = (command: DeviceAction) =>
     void execute(
       command.type,
@@ -628,7 +642,8 @@ function DevicePanelSurface({
         setInspection(undefined);
         setSelectedNode("");
         const output = await api.action(selected, command, controlLease.leaseId);
-        if (!isCurrent()) return { output, frame: undefined, error: undefined };
+        // The video stream already shows the result; a still capture would only delay input.
+        if (!isCurrent() || streaming) return { output, frame: undefined, error: undefined };
         try {
           return { output, frame: await capture(selected), error: undefined };
         } catch (cause) {
@@ -800,17 +815,6 @@ function DevicePanelSurface({
       : undefined;
   const coordinatesValid =
     Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000;
-  const platformLabel = (platform: DeviceSummary["platform"]) =>
-    platform === "ios" ? t("iOS") : t("Android");
-  const platformVersionLabel = (item: DeviceSummary) => {
-    const platform = platformLabel(item.platform);
-    const version = typeof item.version === "string" ? item.version.trim() : "";
-    return !version || version.toLowerCase() === platform.toLowerCase()
-      ? platform
-      : `${platform} ${version}`;
-  };
-  const kindLabel = (item: DeviceSummary) =>
-    item.physical ? t("Physical device") : item.platform === "ios" ? t("Simulator") : t("Emulator");
   const sdkAvailable = !!status?.platforms.some((item) => item.available);
   const refreshDevices = () => void execute("refresh", api.list, applyDevices);
   const discoveryError = errorOperation === "status" || errorOperation === "refresh";
@@ -828,6 +832,8 @@ function DevicePanelSurface({
     }));
   const beginAnnotation = () => {
     if (!frame || busy) return;
+    const current = liveStream.snapshot() ?? frame;
+    setFrame(current);
     setLive(false);
     setAnnotations((values) =>
       values[selected]
@@ -835,7 +841,7 @@ function DevicePanelSurface({
         : {
             ...values,
             [selected]: {
-              frame,
+              frame: current,
               document: { marks: [] },
               undo: [],
               redo: [],
@@ -992,14 +998,6 @@ function DevicePanelSurface({
     });
   };
   const captureFailed = !!error && errorOperation === "capture";
-  const stateLabel = (item: DeviceSummary) =>
-    item.physical
-      ? item.booted
-        ? t("Connected")
-        : t("Not ready")
-      : item.booted
-        ? t("Running")
-        : t("Stopped");
   const bootDevice = () =>
     void execute(
       "boot",
@@ -1026,6 +1024,7 @@ function DevicePanelSurface({
   const liveFrameDelayed =
     !!frame &&
     live &&
+    !streaming &&
     Number.isFinite(Date.parse(frame.capturedAt)) &&
     now - Date.parse(frame.capturedAt) >= 3000;
   const frameStateVisible =
@@ -1056,18 +1055,6 @@ function DevicePanelSurface({
   const toolbarReason = connectionUnavailable
     ? t("The device connection is unavailable. Refresh devices to reconnect.")
     : undefined;
-  // Permission, readiness and activity stay visible; with a running host they share the device bar.
-  const capability = (
-    <div className="device-panel-capability">
-      <DeviceCapabilityStatus
-        status={status}
-        checking={operation === "status" || (!status && busy)}
-        unavailable={connectionUnavailable || discoveryUnavailable}
-        viewing={live && !!selected}
-        operating={!!operation && !["status", "refresh", "capture"].includes(operation)}
-      />
-    </div>
-  );
   // In the device bar before a device is chosen, then at the end of the screen's control rail.
   const optionsButton = (side: "bottom" | "left") => (
     <Button
@@ -1088,7 +1075,6 @@ function DevicePanelSurface({
       aria-label={t("Devices")}
       aria-busy={busy || loadingDevices}
     >
-      {!status?.running && capability}
       {error && (
         <Disclosure
           className="device-panel-error"
@@ -1143,68 +1129,19 @@ function DevicePanelSurface({
       )}
       {status?.running && (
         <>
-          <div className="device-panel-bar">
-            {devices.length ? (
-              <Tooltip
-                label={
-                  device
-                    ? `${hostLabel ?? ""} · ${kindLabel(device)} · ${platformVersionLabel(device)} · ${device.id}`
-                    : undefined
-                }
-              >
-                <div className="device-panel-choice">
-                  <SearchableSelect
-                    hideLabel
-                    label={t("Selected device")}
-                    value={selected}
-                    disabled={busy || loadingDevices}
-                    placeholder={t("Select a device")}
-                    searchPlaceholder={t("Search devices by name or ID")}
-                    emptyLabel={t("No matching devices")}
-                    onChange={(id) => {
-                      if (id !== selected)
-                        selectDevice(id, !!devices.find((item) => item.id === id)?.booted);
-                    }}
-                    options={devices.map((item) => ({
-                      value: item.id,
-                      label: item.name,
-                      description: `${platformVersionLabel(item)} · ${stateLabel(item)} · ${kindLabel(item)}`,
-                      keywords: `${item.id} ${kindLabel(item)} ${item.version}`,
-                    }))}
-                  />
-                </div>
-              </Tooltip>
-            ) : (
-              <p className="host-tool-muted device-panel-bar-text" role="status">
-                {loadingDevices
-                  ? t("Loading devices…")
-                  : t(
-                      "No devices found. Connect an Android phone with USB debugging enabled, or create an emulator or simulator, then refresh.",
-                    )}
-              </p>
-            )}
-            {device ? (
-              // The device's own state sits with its identity; the computer it runs on
-              // is the tool's context row above, so it is not repeated here.
-              <span className="device-panel-summary" data-booted={device.booted}>
-                <strong>{stateLabel(device)}</strong>
-                <span>{platformVersionLabel(device)}</span>
-                <span>{kindLabel(device)}</span>
-              </span>
-            ) : null}
-            {capability}
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Refresh devices")}
-              loading={operation === "refresh" || loadingDevices}
-              disabled={unavailable("refresh", !loadingDevices)}
-              onClick={refreshDevices}
-            >
-              <RefreshCw className="icon-sm" aria-hidden />
-            </Button>
+          <DeviceBar
+            devices={devices}
+            selected={selected}
+            hostLabel={hostLabel}
+            disabled={busy || loadingDevices}
+            loading={loadingDevices}
+            refreshing={operation === "refresh" || loadingDevices}
+            refreshDisabled={unavailable("refresh", !loadingDevices)}
+            onSelect={selectDevice}
+            onRefresh={refreshDevices}
+          >
             {!device && optionsButton("bottom")}
-          </div>
+          </DeviceBar>
           {actionCompleted && (
             <Alert
               inline
@@ -1460,6 +1397,13 @@ function DevicePanelSurface({
                           );
                       }}
                     />
+                    {streaming && !inspection && (
+                      <canvas
+                        ref={liveStream.canvasRef}
+                        className="device-panel-live"
+                        aria-hidden
+                      />
+                    )}
                   </Button>
                 ) : (
                   <DeviceWaitingState
@@ -1683,6 +1627,9 @@ function DevicePanelSurface({
                     aria-checked={live}
                     disabled={!canView}
                     onClick={() => {
+                      // Pausing keeps the picture that was on screen, not an older still.
+                      const still = liveStream.snapshot();
+                      if (still) setFrame(still);
                       setAnnotating(false);
                       setLive(!live);
                     }}
@@ -1835,21 +1782,6 @@ function DevicePanelSurface({
               zoom={zoom}
               onZoom={setZoom}
               onSetup={() => setSurface("setup")}
-              facts={
-                device &&
-                `${hostLabel ? `${hostLabel} · ` : ""}${platformVersionLabel(device)} · ${kindLabel(device)}`
-              }
-              help={
-                device?.platform === "ios"
-                  ? t(
-                      "iOS: open the target app before interacting with it, or use logical point coordinates from the accessibility snapshot.",
-                    )
-                  : windowsAndroid
-                    ? t(
-                        "For Android, enter Settings or an app package ID. Android text input supports printable ASCII characters.",
-                      )
-                    : undefined
-              }
             />
           )}
           {surface === "app" && (
@@ -2195,84 +2127,43 @@ function DevicePanelSurface({
           )}
           {surface === "output" && <pre className="device-panel-output">{output}</pre>}
           {surface === "setup" && status && (
-            <Disclosure
-              defaultOpen
-              className="host-tool-help device-panel-setup"
-              summary={
-                <>
-                  {t("Setup and access")}
-                  <span className="host-tool-muted device-panel-setup-summary">
-                    {hostLabel ? `${hostLabel} · ` : ""}
-                    {connectionUnavailable || discoveryUnavailable
-                      ? t("Unknown")
-                      : status.running
-                        ? t("Device host running")
-                        : t("Device host stopped")}
-                    {" · "}
-                    {t("{p0} devices found", { p0: devices.length })}
-                  </span>
-                </>
-              }
-            >
-              <div className="device-panel-setup-body">
-                <p className="host-tool-muted">
-                  {status.platforms
-                    .map(
-                      (item) =>
-                        `${item.platform === "ios" ? t("iOS") : t("Android")}: ${item.available ? t("SDK detected") : item.reason}`,
-                    )
-                    .join(" · ")}
-                </p>
-                {status.lastError && !error ? (
-                  <pre className="device-panel-output">{status.lastError}</pre>
-                ) : null}
-                <div className="host-tool-actions">
-                  <Button
-                    disabled={unavailable("status", !loadingDevices)}
-                    loading={operation === "status"}
-                    onClick={() => void execute("status", api.status, setStatus)}
-                  >
-                    {t("Status")}
-                  </Button>
-                  <Button
-                    disabled={unavailable("setup", sdkAvailable)}
-                    loading={operation === "setup"}
-                    onClick={() => void execute("setup", () => api.setup(control), setStatus)}
-                  >
-                    {status.installed ? t("Update setup") : t("Set up device tools")}
-                  </Button>
-                  <Button
-                    disabled={unavailable("start", status.installed && !status.running)}
-                    loading={operation === "start"}
-                    onClick={() => void execute("start", api.start, setStatus)}
-                  >
-                    {t("Start device host")}
-                  </Button>
-                  <Button
-                    disabled={unavailable("stop", status.running)}
-                    loading={operation === "stop"}
-                    onClick={() => {
-                      setLive(false);
-                      void execute("stop", api.stop, (value) => {
-                        setStatus(value);
-                        setFrame(undefined);
-                        setSelected("");
-                        setApp("");
-                        setDevices([]);
-                        setOutput("");
-                      });
-                    }}
-                  >
-                    {t("Stop device host")}
-                  </Button>
-                </div>
-                <p className="host-tool-muted">
-                  {t(
-                    "Viewing never enables control. Live view refreshes once per second while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub 0.12.0 and optional control tools into the host cache, and Stop ends the owned tool processes.",
-                  )}
-                </p>
-              </div>
-            </Disclosure>
+            <DeviceSetupPanel
+              status={status}
+              hostLabel={hostLabel}
+              unknown={connectionUnavailable || discoveryUnavailable}
+              deviceCount={devices.length}
+              showLastError={!error}
+              refresh={{
+                loading: operation === "status",
+                disabled: unavailable("status", !loadingDevices),
+                onClick: () => void execute("status", api.status, setStatus),
+              }}
+              setup={{
+                loading: operation === "setup",
+                disabled: unavailable("setup", sdkAvailable),
+                onClick: () => void execute("setup", () => api.setup(control), setStatus),
+              }}
+              start={{
+                loading: operation === "start",
+                disabled: unavailable("start", status.installed && !status.running),
+                onClick: () => void execute("start", api.start, setStatus),
+              }}
+              stop={{
+                loading: operation === "stop",
+                disabled: unavailable("stop", status.running),
+                onClick: () => {
+                  setLive(false);
+                  void execute("stop", api.stop, (value) => {
+                    setStatus(value);
+                    setFrame(undefined);
+                    setSelected("");
+                    setApp("");
+                    setDevices([]);
+                    setOutput("");
+                  });
+                },
+              }}
+            />
           )}
         </Popover>
       )}

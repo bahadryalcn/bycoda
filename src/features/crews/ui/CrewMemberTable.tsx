@@ -272,13 +272,15 @@ export function CrewMemberTable({
                           className="min-w-0"
                           aria-expanded={open}
                           startIcon={
-                            <MemberAvatar
-                              traits={looks.get(agent.id)!}
-                              size={24}
-                              className="shrink-0"
-                            />
+                            <span className="flex shrink-0 items-center gap-1.5">
+                              {open ? <ChevronDown aria-hidden /> : <ChevronRight aria-hidden />}
+                              <MemberAvatar
+                                traits={looks.get(agent.id)!}
+                                size={24}
+                                className="shrink-0"
+                              />
+                            </span>
                           }
-                          endIcon={open ? <ChevronDown /> : <ChevronRight />}
                           tooltip={open ? t("Collapse") : t("Expand")}
                           onClick={() => onExpandedChange(open ? null : agent.id)}
                         >
@@ -286,13 +288,13 @@ export function CrewMemberTable({
                             <span className="min-w-0 truncate text-ui-body font-medium">
                               {name}
                             </span>
+                            {data.identitySupported ? (
+                              <MemberLinkMark link={memberLink(agent, data.agents)?.state} />
+                            ) : null}
                             {agent.handle ? (
                               <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
                                 @{agent.handle}
                               </span>
-                            ) : null}
-                            {data.identitySupported ? (
-                              <MemberLinkMark link={memberLink(agent, data.agents)?.state} />
                             ) : null}
                             {problem ? (
                               <span className="shrink-0 text-ui-caption text-danger">
@@ -325,6 +327,7 @@ export function CrewMemberTable({
                               variant="ghost"
                               size="sm"
                               className="min-w-0 justify-start"
+                              endIcon={<ChevronDown aria-hidden />}
                               onClick={() => onExpandedChange(agent.id)}
                             >
                               <span className="truncate">

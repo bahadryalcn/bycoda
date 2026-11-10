@@ -7,10 +7,11 @@
   max-width: 100%;
   flex-shrink: 0;
   padding: 6px;
-  border: 1px solid var(--ui-tone-accent-border);
+  --chip-ink: var(--ui-attachment-ink, var(--ui-tone-accent-fg));
+  border: 1px solid color-mix(in srgb, var(--chip-ink) 40%, var(--color-stroke));
   border-radius: var(--ui-radius-card);
-  background: var(--ui-tone-accent-subtle);
-  color: var(--ui-tone-accent-fg);
+  background: color-mix(in srgb, var(--chip-ink) 8%, var(--ui-surface));
+  color: var(--chip-ink);
 }
 /* Thumbnail only: the message text carries the reference and size. */
 .image {
@@ -64,7 +65,7 @@
   font-size: var(--text-ui-caption);
   font-weight: 500;
   line-height: 1rem;
-  color: var(--ui-tone-accent-fg);
+  color: var(--chip-ink);
 }
 .metadata {
   display: block;

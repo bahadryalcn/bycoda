@@ -37,7 +37,12 @@ export function ComposerAttachmentHighlight({
     if (!("token" in part)) return <Fragment key={index}>{renderPlain(part.text)}</Fragment>;
     const presentation = attachmentPresentation(part.attachment);
     return (
-      <span key={index} className={styles.token} data-composer-attachment-kind={presentation.kind}>
+      <span
+        key={index}
+        className={styles.token}
+        data-composer-attachment-kind={presentation.kind}
+        data-attachment-kind={presentation.kind}
+      >
         <span className={styles.bracket}>{"["}</span>
         {part.label}
         <span className={styles.bracket}>{"]"}</span>

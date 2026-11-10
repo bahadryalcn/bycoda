@@ -2,9 +2,10 @@
    a gap without any change in advance width: the textarea underneath keeps every
    character where it is. The hidden brackets are the chip's inline padding. */
 .token {
+  --token-ink: var(--ui-attachment-ink, var(--ui-tone-accent-fg));
   position: relative;
   z-index: 0;
-  color: var(--ui-tone-accent-fg);
+  color: var(--token-ink);
 }
 .token::before {
   content: "";
@@ -12,8 +13,8 @@
   z-index: -1;
   inset: -1px 1px;
   border-radius: var(--ui-radius-control);
-  background: var(--ui-tone-accent-subtle);
-  box-shadow: inset 0 0 0 1px var(--ui-tone-accent-border);
+  background: color-mix(in srgb, var(--token-ink) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--token-ink) 45%, transparent);
 }
 
 .bracket {

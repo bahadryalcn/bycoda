@@ -1,19 +1,19 @@
-import type { ReactNode } from "react";
+import { formatNumber } from "../../../shared/i18n";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Minus, Plus } from "../../../shared/ui/icons";
+import {
+  Accessibility,
+  Crosshair,
+  MessageSquarePlus,
+  Minus,
+  Plus,
+  Settings,
+  Terminal,
+} from "../../../shared/ui/icons";
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="device-panel-menu-section">
-      <h3 className="device-panel-menu-title">{title}</h3>
-      {children}
-    </section>
-  );
-}
+type Action = { loading?: boolean; disabled?: boolean; onClick: () => void };
 
-/** The device rail's overflow: inspection, conversation and setup actions, then zoom. */
+/** The device rail's overflow: icon-led inspection, conversation and setup actions, then zoom. */
 export function DeviceOptionsMenu({
   inspect,
   coordinates,
@@ -22,89 +22,83 @@ export function DeviceOptionsMenu({
   zoom,
   onZoom,
   onSetup,
-  facts,
-  help,
 }: {
-  inspect: { loading: boolean; disabled: boolean; onClick: () => void };
-  coordinates: { disabled: boolean; onClick: () => void };
-  addDevice?: { loading: boolean; disabled: boolean; onClick: () => void };
+  inspect: Action;
+  coordinates: Action;
+  addDevice?: Action;
   output?: () => void;
   zoom: number;
   onZoom: (zoom: number) => void;
   onSetup: () => void;
-  facts?: string;
-  help?: string;
 }) {
   return (
     <>
-      <Section title={t("Tools")}>
-        <div className="device-panel-menu-actions">
+      <div className="device-panel-menu-actions">
+        <Button
+          variant="item"
+          disabled={inspect.disabled}
+          loading={inspect.loading}
+          onClick={inspect.onClick}
+        >
+          <Accessibility className="icon-sm" aria-hidden />
+          {t("Accessibility snapshot")}
+        </Button>
+        <Button variant="item" disabled={coordinates.disabled} onClick={coordinates.onClick}>
+          <Crosshair className="icon-sm" aria-hidden />
+          {t("Coordinate controls")}
+        </Button>
+        {addDevice && (
           <Button
             variant="item"
-            disabled={inspect.disabled}
-            loading={inspect.loading}
-            onClick={inspect.onClick}
+            loading={addDevice.loading}
+            disabled={addDevice.disabled}
+            onClick={addDevice.onClick}
           >
-            {t("Accessibility snapshot")}
+            <MessageSquarePlus className="icon-sm" aria-hidden />
+            {t("Add device to conversation")}
           </Button>
-          <Button variant="item" disabled={coordinates.disabled} onClick={coordinates.onClick}>
-            {t("Coordinate controls")}
+        )}
+        {output && (
+          <Button variant="item" onClick={output}>
+            <Terminal className="icon-sm" aria-hidden />
+            {t("Device action result")}
           </Button>
-          {addDevice && (
-            <Button
-              variant="item"
-              loading={addDevice.loading}
-              disabled={addDevice.disabled}
-              onClick={addDevice.onClick}
-            >
-              {t("Add device to conversation")}
-            </Button>
-          )}
-          {output && (
-            <Button variant="item" onClick={output}>
-              {t("Device action result")}
-            </Button>
-          )}
-          <Button variant="item" onClick={onSetup}>
-            {t("Setup and access")}
-          </Button>
-        </div>
-      </Section>
-      <Section title={t("Zoom")}>
-        <div className="device-panel-zoom">
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Zoom out")}
-            disabled={zoom <= 1}
-            onClick={() => onZoom(Math.max(1, zoom - 0.25))}
-          >
-            <Minus className="icon-sm" aria-hidden />
-          </Button>
-          <Button variant="ghost" onClick={() => onZoom(1)}>
-            {t("Fit to panel")}
-          </Button>
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Zoom in")}
-            disabled={zoom >= 3}
-            onClick={() => onZoom(Math.min(3, zoom + 0.25))}
-          >
-            <Plus className="icon-sm" aria-hidden />
-          </Button>
-        </div>
-      </Section>
-      {facts || help ? (
-        <p className="device-panel-menu-facts host-tool-muted">
-          <span>{facts}</span>
-          {help ? (
-            <InfoPopover>
-              <p>{help}</p>
-            </InfoPopover>
-          ) : null}
-        </p>
-      ) : null}
+        )}
+        <Button variant="item" onClick={onSetup}>
+          <Settings className="icon-sm" aria-hidden />
+          {t("Setup and access")}
+        </Button>
+      </div>
+      <div className="device-panel-zoom" role="group" aria-label={t("Zoom")}>
+        <span className="device-panel-zoom-label">{t("Zoom")}</span>
+        <Button
+          variant="ghost"
+          iconOnly
+          label={t("Zoom out")}
+          disabled={zoom <= 1}
+          onClick={() => onZoom(Math.max(1, zoom - 0.25))}
+        >
+          <Minus className="icon-sm" aria-hidden />
+        </Button>
+        <Button
+          variant="ghost"
+          className="device-panel-zoom-value"
+          tooltip={t("Fit to panel")}
+          disabled={zoom === 1}
+          onClick={() => onZoom(1)}
+        >
+          {formatNumber(zoom, { style: "percent" })}
+        </Button>
+        <Button
+          variant="ghost"
+          iconOnly
+          label={t("Zoom in")}
+          disabled={zoom >= 3}
+          onClick={() => onZoom(Math.min(3, zoom + 0.25))}
+        >
+          <Plus className="icon-sm" aria-hidden />
+        </Button>
+      </div>
     </>
   );
 }

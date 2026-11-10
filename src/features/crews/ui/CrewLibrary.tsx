@@ -20,6 +20,7 @@ import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import { memberOf } from "../model/crewMembership";
 import { parseCrewAgent, type CrewAgent, type SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
+import { useCrewModelPools } from "../model/crewModelPools";
 import { catalogCandidate, catalogModels, libraryGroups, newCrewMember } from "../model/crewRoster";
 import { CrewMemberIdentity, CrewMemberMeta, visibleLibraryMembers } from "./CrewLibraryMemberMeta";
 import { CrewLibraryBulkBar } from "./CrewLibraryBulk";
@@ -58,6 +59,8 @@ export function CrewLibrary({
   const assignment = useCrewAssignment(state, data);
   const teamIds = memberOf(data.definitions);
   const teamsOf = (id: string) => data.definitions.filter((d) => teamIds.get(id)?.includes(d.id));
+  const hostPools = useCrewModelPools(data.machine.id, data.modelPoolsSupported === true);
+  const poolNames = new Map(hostPools.pools.map((pool) => [pool.id, pool.name]));
   const groups = libraryGroups(data.agents);
   const activeGroup = groups.includes(group) ? group : "";
   // Search matches what each row shows plus its instructions (CR-E06).
@@ -66,9 +69,6 @@ export function CrewLibrary({
     <>
       <Group
         title={t("Member library")}
-        description={t(
-          "Save a member once and add it to crews here or in other projects on this host.",
-        )}
         action={
           <Button
             variant="ghost"
@@ -181,7 +181,11 @@ export function CrewLibrary({
                         </div>
                       ) : null}
                     </div>
-                    <CrewMemberMeta agent={agent} catalog={data.catalog} />
+                    <CrewMemberMeta
+                      agent={agent}
+                      catalog={data.catalog}
+                      poolName={agent.pool && poolNames.get(agent.pool.id)}
+                    />
                     <CrewMemberTeams teams={teamsOf(agent.id)} />
                     <CrewMemberTeamError assignment={assignment} id={agent.id} />
                   </div>

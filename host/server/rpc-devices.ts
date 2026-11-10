@@ -58,6 +58,7 @@ export async function handleDevicesRpc(
     case "devices.list":
     case "devices.boot":
     case "devices.capture":
+    case "devices.stream":
     case "devices.control.status":
     case "devices.control.claim":
     case "devices.control.release":

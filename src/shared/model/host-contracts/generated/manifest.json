@@ -25895,6 +25895,41 @@
       "retry": "never",
       "scope": "device"
     },
+    "devices.stream": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "deviceId": { "type": "string" },
+          "projectId": { "type": "string" }
+        },
+        "required": ["deviceId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.devices.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "base64": { "type": "string" },
+          "cursor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "height": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "reset": { "type": "boolean" },
+          "width": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+        },
+        "required": ["cursor", "reset", "base64", "width", "height"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "diagnostics.logs.read": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
@@ -56612,6 +56647,29 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "devices.stream", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "deviceId": { "type": "string" },
+                "projectId": { "type": "string" }
+              },
+              "required": ["deviceId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "devices.control.status", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -70619,5 +70677,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "eed14a45993be2373e6032f935600b06c8ae77feca8cc414ef7837512b112bf5"
+  "schemaHash": "3790cae35d8e298f5aff6cf5962e5eb689478c91c4ed7bb541ddccba5fcc953f"
 }

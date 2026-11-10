@@ -92,6 +92,34 @@ if (params.has("longRoster")) {
     })),
   );
 }
+const poolCandidate = (harness: "codex" | "claude", model: string) => ({
+  id: `${harness}/${model}`,
+  harness,
+  model,
+  modelSettings: {},
+  capabilities: {},
+});
+let modelPools = [
+  {
+    id: "pool-fast",
+    name: "Fast and cheap",
+    candidates: [
+      poolCandidate("codex", "gpt-6-mini"),
+      poolCandidate("claude", "claude-haiku-5"),
+      poolCandidate("codex", "codex:fixture"),
+    ],
+    updatedAt: 1,
+  },
+  {
+    id: "pool-deep",
+    name: "Deep reasoning",
+    candidates: [
+      poolCandidate("codex", "gpt-6-high-reasoning-extended"),
+      poolCandidate("claude", "claude-opus-5"),
+    ],
+    updatedAt: 1,
+  },
+];
 let definitions = [definition];
 let agents: SavedCrewAgent[] =
   params.get("library") === "empty"
@@ -156,6 +184,8 @@ if (params.has("rich")) {
     handle: "lead",
   });
   Object.assign(definition.agents[1]!, {
+    pool: { id: "pool-deep" },
+    candidates: modelPools[1]!.candidates,
     avatar: look("vest", 3, "beret"),
     handle: "ui",
     source: { id: "lib-ui", updatedAt: 1 },
@@ -194,6 +224,19 @@ if (params.has("rich")) {
           avatar: { outfit: "cardigan", palette: 2, headwear: "takke" },
         },
   );
+  agents.push({
+    id: "lib-pooled",
+    name: "Triage engineer",
+    role: "specialist",
+    selection: "automatic",
+    pool: { id: "pool-fast" },
+    instructions: "Sorts incoming issues and picks the cheapest capable model",
+    candidates: modelPools[0]!.candidates,
+    groups: ["Backend"],
+    updatedAt: 1,
+    handle: "triage",
+    avatar: { outfit: "vest", palette: 6 },
+  } as SavedCrewAgent);
   agents.push({
     id: "lib-research",
     name: "Researcher",
@@ -464,7 +507,7 @@ mockIPC(async (command, args) => {
             "crews.delete.v1",
             ...(params.has("noAccess") ? [] : ["crews.access.v1"]),
             ...(params.has("noTools") ? [] : ["crews.tools.v1"]),
-            ...(params.has("rich") ? ["crews.active.v1"] : []),
+            ...(params.has("rich") ? ["crews.active.v1", "crews.model-pools.v1"] : []),
             ...(params.has("noIdentity") ? [] : ["crews.identity.v1"]),
             ...(params.get("legacy") ? [] : ["crews.agent-groups.v1", "crews.run-delete.v1"]),
           ],
@@ -533,10 +576,23 @@ mockIPC(async (command, args) => {
                 name: "Codex fixture",
                 settings: [],
               },
+              { id: "gpt-6-mini", harness: "codex", name: "GPT-6 mini", settings: [] },
+              {
+                id: "gpt-6-high-reasoning-extended",
+                harness: "codex",
+                name: "GPT-6 high reasoning extended",
+                settings: [],
+              },
+            ],
+            claude: [
+              { id: "claude-haiku-5", harness: "claude", name: "Claude Haiku 5", settings: [] },
+              { id: "claude-opus-5", harness: "claude", name: "Claude Opus 5", settings: [] },
             ],
           },
           errors: {},
         };
+      case "crews.pools.list":
+        return { pools: modelPools };
       case "crews.list":
         return { definitions, runs, agents };
       case "crews.save": {

@@ -19,6 +19,8 @@ export interface DevicePanelApi {
   list: () => Promise<{ devices: DeviceSummary[]; errors: string[] }>;
   boot: (deviceId: string) => Promise<DeviceSummary>;
   capture: (deviceId: string) => Promise<DeviceFrame>;
+  /** Long-poll read of the device's H.264 video; absent or failing means still captures only. */
+  stream?: (deviceId: string, cursor?: number) => Promise<DeviceStreamChunk>;
   action: (deviceId: string, action: DeviceAction, leaseId?: string) => Promise<string>;
   controlStatus?: (deviceId: string) => Promise<DeviceControlStatus>;
   claimControl?: (deviceId: string, requestId: string) => Promise<DeviceControlLease>;
@@ -27,6 +29,17 @@ export interface DevicePanelApi {
   inspect?: (deviceId: string, leaseId: string) => Promise<DeviceInspection>;
 }
 
+export interface DeviceStreamChunk {
+  /** Byte offset after this chunk; pass it to the next read. */
+  cursor: number;
+  /** The bytes start at a key picture instead of continuing from the caller's cursor. */
+  reset: boolean;
+  /** H.264 Annex-B bytes; empty while the screen is still. */
+  base64: string;
+  /** The device's display size in pixels, not the encoded video size. */
+  width: number;
+  height: number;
+}
 export interface DeviceControlStatus {
   deviceId: string;
   busy: boolean;

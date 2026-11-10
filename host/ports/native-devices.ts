@@ -172,6 +172,7 @@ export function bindNativeDevicesOwner(
           if (
             method === "devices.boot" ||
             method === "devices.capture" ||
+            method === "devices.stream" ||
             method === "devices.control.status" ||
             method === "devices.control.claim" ||
             method === "devices.control.release" ||
@@ -208,6 +209,14 @@ export function bindNativeDevicesOwner(
             result = await host.boot(String(params.deviceId ?? ""), effect);
           else if (method === "devices.capture")
             result = await host.capture(String(params.deviceId ?? ""), effect);
+          else if (method === "devices.stream")
+            // Viewing only: a failed read has no unknown outcome, so it is never
+            // marked admitted and its DEVICE_STREAM_UNSUPPORTED text reaches the caller.
+            result = await host.streams.read(
+              String(params.deviceId ?? ""),
+              params.cursor as number | undefined,
+              effect,
+            );
           else if (method === "devices.control.status")
             result = await host.control.status(String(params.deviceId));
           else if (method === "devices.inspect") {

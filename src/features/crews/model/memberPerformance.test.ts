@@ -37,10 +37,7 @@ describe("memberPerformance", () => {
   });
 
   it("merges candidates that share a harness and model and keeps fractions unrounded", () => {
-    const result = memberPerformance([
-      candidate("same", 1, 1, 0),
-      candidate("same", 2, 0, 1),
-    ]);
+    const result = memberPerformance([candidate("same", 1, 1, 0), candidate("same", 2, 0, 1)]);
     expect(result.perModel).toEqual([
       { model: "same", harness: "codex", count: 3, firstPassRate: 1 / 3 },
     ]);

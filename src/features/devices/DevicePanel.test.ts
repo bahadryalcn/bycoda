@@ -105,9 +105,8 @@ const openOptions = async () => {
 const openSetup = async () => {
   await openOptions();
   await clickButton("Setup and access");
-  const summary = document.querySelector<HTMLElement>(".device-panel-setup > summary")!;
-  await act(async () => summary.click());
 };
+const setupSummary = () => document.querySelector(".device-panel-setup-summary")?.textContent;
 const appInput = () =>
   (
     [...document.querySelectorAll("label")].find(
@@ -146,17 +145,20 @@ it("requires a booted device for capture and prevents booting a physical device"
   expect(api.capture).not.toHaveBeenCalled();
 });
 
-it("shows a persistent target summary and boots a stopped emulator only from its named Start action", async () => {
+it("shows a stopped emulator's facts and boots it only from its named Start action", async () => {
   const api = makeApi();
   vi.mocked(api.list).mockResolvedValue({
     devices: [{ ...device, booted: false }],
     errors: [],
   });
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  const summary = container.querySelector(".device-panel-summary")!;
-  expect(summary.textContent).toContain("Android 16");
-  expect(summary.textContent).toContain("Emulator");
-  expect(summary.textContent).toContain("Stopped");
+  const facts = container.querySelector(".device-panel-device-facts")!;
+  expect(facts.textContent).toBe("Android 16 · Emulator · Stopped");
+  // The picker marks platform and state; no facts are repeated as text beside it.
+  expect(devicePicker().querySelector("svg[aria-label]")?.getAttribute("aria-label")).toBe(
+    "Android · Stopped",
+  );
+  expect(container.querySelector(".device-panel-bar")?.textContent).not.toContain("Emulator");
   expect(api.boot).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Start this emulator");
   await act(async () => button("Start emulator").click());
@@ -179,20 +181,6 @@ it("shows a readable capture time beside a paused frame", async () => {
   expect(chip.textContent).toContain("Captured");
 });
 
-it("does not repeat a generic platform returned as its version", async () => {
-  const api = makeApi();
-  vi.mocked(api.list).mockResolvedValue({
-    devices: [{ ...device, version: " aNdRoId " }],
-    errors: [],
-  });
-  await act(async () => root.render(createElement(DevicePanel, { api })));
-  const summary = container.querySelector(".device-panel-summary")!;
-  expect(summary.textContent?.match(/Android/g)).toHaveLength(1);
-  expect(summary.textContent).not.toContain("aNdRoId");
-  await openOptions();
-  expect(document.body.textContent).not.toContain("Android Android");
-});
-
 it.each([undefined, null, 16])(
   "keeps viewing when older device metadata has an invalid version %s",
   async (version) => {
@@ -202,7 +190,6 @@ it.each([undefined, null, 16])(
       errors: [],
     });
     await act(async () => root.render(createElement(DevicePanel, { api })));
-    expect(container.querySelector(".device-panel-summary")?.textContent).toContain("Android");
     expect(container.querySelector("img")?.src).toContain("frame");
     expect(container.querySelector(".device-panel-error")).toBeNull();
   },
@@ -537,22 +524,18 @@ it("keeps discovery retry available when the running host finds no devices", asy
   expect(devicePicker().textContent).toContain(device.name);
 });
 
-it("invalidates discovery readiness and activity until discovery itself succeeds", async () => {
+it("reports the host state as unknown until discovery itself succeeds", async () => {
   const api = makeApi();
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  const state = (axis: string) =>
-    container.querySelector(`[data-capability-axis="${axis}"]`)?.getAttribute("data-state");
-  expect(state("readiness")).toBe("ready");
-  expect(state("permission")).toBe("unknown");
+  await openSetup();
+  expect(setupSummary()).toContain("Device host running");
   vi.mocked(api.list).mockRejectedValueOnce(new Error("Discovery refresh failed"));
   await clickButton("Refresh devices");
-  expect(state("readiness")).toBe("unknown");
-  expect(state("activity")).toBe("unknown");
+  expect(setupSummary()).toContain("Unknown");
   await clickButton("Capture");
-  expect(state("readiness")).toBe("unknown");
-  expect(state("activity")).toBe("unknown");
+  expect(setupSummary()).toContain("Unknown");
   await clickButton("Refresh devices");
-  expect(state("readiness")).toBe("ready");
+  expect(setupSummary()).toContain("Device host running");
 });
 
 it("clears the last running runtime observation when a status refresh fails", async () => {
@@ -561,12 +544,6 @@ it("clears the last running runtime observation when a status refresh fails", as
   await openSetup();
   vi.mocked(api.status).mockRejectedValueOnce(new Error("Status refresh failed"));
   await clickButton("Status");
-  expect(
-    container.querySelector('[data-capability-axis="readiness"]')?.getAttribute("data-state"),
-  ).toBe("unknown");
-  expect(
-    container.querySelector('[data-capability-axis="activity"]')?.getAttribute("data-state"),
-  ).toBe("unknown");
   expect(document.body.textContent).not.toContain("Device host running");
   expect(api.start).not.toHaveBeenCalled();
 });
@@ -809,11 +786,8 @@ it("opens only an explicitly chosen iOS app and captures its screen after the ac
   await act(async () => root.render(createElement(DevicePanel, { api })));
   expect(button("Open app")).toBeUndefined();
   await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
-  await openOptions();
-  await act(async () => button("Help").click());
-  expect(document.body.textContent).toContain("open the target app before interacting");
-  await act(async () => button("Help").click());
   await clickButton("Choose app to open");
+  expect(document.body.textContent).toContain("Open the app before interacting with it.");
   expect(button("Open app").disabled).toBe(true);
   expect(api.action).not.toHaveBeenCalled();
   vi.mocked(api.capture).mockClear();
@@ -901,13 +875,15 @@ it("keeps platform-specific control help available without filling the device pa
   expect(container.textContent).not.toContain("Android text input supports");
   await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
   expect(container.textContent).not.toContain("Android text input supports");
+  // Each hint sits in the popover of the control it explains, not in the options menu.
   await openOptions();
-  await act(async () => button("Help").click());
-  expect(document.body.textContent).toContain("For Android, enter Settings or an app package ID");
+  expect(button("Help")).toBeUndefined();
+  await clickButton("Device text input");
   expect(document.body.textContent).toContain(
-    "Android text input supports printable ASCII characters.",
+    "Android text input from Windows supports printable ASCII characters only.",
   );
   await clickButton("Choose app to open");
+  expect(document.body.textContent).toContain("Android: enter Settings or an app package ID.");
   expect(button("Open app").disabled).toBe(true);
   expect(api.action).not.toHaveBeenCalled();
   for (const [hostPlatform, devicePlatform] of [

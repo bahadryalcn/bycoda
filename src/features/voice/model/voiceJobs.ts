@@ -7,6 +7,7 @@ import {
 } from "../../assistant/model/assistantJobs";
 import { normalizeAssistantQuickNoteAction } from "../../../shared/model/assistantQuick";
 import { pathKey } from "../../../shared/lib/paths";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { selectAssistantJobProjects } from "../../assistant/model/assistantJobs";
 const project = z.strictObject({
   kind: z.literal("project").optional(),
@@ -197,6 +198,76 @@ export function changeVoiceJobRows(
   }
   return result;
 }
+/** The accepted turn's live project scope for job proposals. */
+export type VoiceJobScope = {
+  /** Paths frozen for the accepted turn, plus projects that turn created. */
+  allowed: readonly string[];
+  /** Projects this window shows now. */
+  visible: readonly { path: string }[];
+  locked(path: string): boolean;
+  /** Global turn scope; otherwise only `projectPath` qualifies. */
+  global: boolean;
+  projectPath: string;
+};
+/** Host projects a turn may hand work to: its frozen paths, narrowed by live visibility and locks. */
+export function voiceJobProjects<T extends { path: string }>(
+  host: readonly T[],
+  scope: VoiceJobScope,
+): T[] {
+  const has = (paths: readonly string[], path: string) =>
+    paths.some((item) => pathKey(item) === pathKey(path));
+  const visible = scope.visible.map((item) => item.path);
+  return host.filter(
+    (project) =>
+      has(scope.allowed, project.path) &&
+      !scope.locked(project.path) &&
+      has(visible, project.path) &&
+      (scope.global || pathKey(project.path) === pathKey(scope.projectPath)),
+  );
+}
+/**
+ * The result of a give_jobs call refused before anything was saved. It is definite, unlike a
+ * thrown error, which the realtime route reports as uncertain and sends the model to read a state
+ * that does not exist.
+ */
+function voiceJobsRejected(cause: unknown) {
+  const error =
+    cause instanceof z.ZodError
+      ? z.prettifyError(cause)
+      : cause instanceof Error
+        ? cause.message
+        : String(cause);
+  return {
+    status: "rejected" as const,
+    created: 0,
+    error: truncateGraphemes(error, 600),
+    next: "Nothing was saved, so there is no job status to read. Correct the named field or project and call give_jobs again.",
+  };
+}
+/** Parse and resolve one give_jobs call. A refusal is returned, never thrown. */
+export function draftVoiceJobs(
+  proposal: unknown,
+  projects: readonly { id: string; path: string }[],
+  allowedPaths: readonly string[],
+  defaultPath: string,
+  newKey: () => string,
+  capabilities?: { quickNotes?: boolean; quickAutomations?: boolean },
+): { jobs: VoiceJobDraft[] } | ReturnType<typeof voiceJobsRejected> {
+  try {
+    const input = VoiceJobDraftsSchema.parse(proposal);
+    const quick = (kind: "note" | "automation") =>
+      input.some((item) => item.kind === "quick" && item.quickAction.kind === kind);
+    if (quick("note") && capabilities?.quickNotes !== true)
+      throw new Error("Quick note jobs are unavailable on this Host.");
+    if (quick("automation") && capabilities?.quickAutomations !== true)
+      throw new Error("Quick automation jobs are unavailable for this project.");
+    return { jobs: voiceJobDrafts(input, projects, allowedPaths, defaultPath, newKey) };
+  } catch (cause) {
+    return voiceJobsRejected(cause);
+  }
+}
+const unverified = (detail: string) =>
+  new Error(`The project could not be verified for job review. ${detail}`);
 export function resolveVoiceJobProjects(
   input: { projectPath?: string; projectPaths?: readonly string[] },
   projects: readonly { id: string; path: string }[],
@@ -208,18 +279,25 @@ export function resolveVoiceJobProjects(
   const lead =
     input.projectPath ??
     (paths.some((path) => pathKey(path) === pathKey(defaultPath)) ? defaultPath : paths[0]);
+  if (!lead) throw unverified("No project is selected; pass an exact projectPath.");
   if (
     !paths.length ||
     paths.length > 20 ||
     new Set(paths.map(pathKey)).size !== paths.length ||
-    !lead ||
     !paths.some((path) => pathKey(path) === pathKey(lead))
   )
-    throw new Error("The project could not be verified for job review.");
+    throw unverified("projectPaths must be unique, at most twenty and include projectPath.");
   const selected = paths.map((path) => {
+    const name = JSON.stringify(truncateGraphemes(path, 200));
+    if (!allowed.has(pathKey(path)))
+      throw unverified(
+        `${name} is not one of this spoken turn's projects. Use an exact path from workspace.projects.list.`,
+      );
     const project = projects.find((project) => pathKey(project.path) === pathKey(path));
-    if (!project || !allowed.has(pathKey(project.path)))
-      throw new Error("The project could not be verified for job review.");
+    if (!project)
+      throw unverified(
+        `${name} is locked, hidden, outside the selected voice scope or not registered on the Host yet.`,
+      );
     return project;
   });
   const primary = selected.find((project) => pathKey(project.path) === pathKey(lead))!;

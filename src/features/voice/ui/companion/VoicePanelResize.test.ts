@@ -153,3 +153,40 @@ it("keeps the question inside the companion when the window has no room beside o
   expect(host.querySelector("aside")).toBeNull();
   expect(host.querySelector("#question")).not.toBeNull();
 });
+
+function pointer(type: string, init: { clientX: number; clientY: number }) {
+  const event = new MouseEvent(type, { bubbles: true, button: 0, ...init });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  return event;
+}
+
+it("keeps the growth direction chosen at grab time while resizing", () => {
+  window.innerWidth = 1280;
+  window.innerHeight = 800;
+  Element.prototype.setPointerCapture = vi.fn();
+  const panel = createRef<HTMLElement>();
+  const render = (position: { x: number; y: number } | null) =>
+    act(() =>
+      root.render(
+        createElement(
+          "section",
+          { ref: panel },
+          createElement(VoicePanelResize, { panel, position, onPosition: vi.fn() }),
+        ),
+      ),
+    );
+  render(null);
+  const node = panel.current!;
+  const rect = vi
+    .spyOn(node, "getBoundingClientRect")
+    .mockReturnValue(new DOMRect(20, 200, 600, 400) as DOMRect);
+  render({ x: 20, y: 200 });
+  const grip = node.querySelector("button")!;
+  act(() => grip.dispatchEvent(pointer("pointerdown", { clientX: 600, clientY: 200 })));
+  // The grown panel's centre crosses the window midline, which re-evaluates the side
+  // on every position update; the active gesture must not flip direction.
+  rect.mockReturnValue(new DOMRect(400, 200, 1000, 400) as DOMRect);
+  render({ x: 400, y: 200 });
+  act(() => grip.dispatchEvent(pointer("pointermove", { clientX: 620, clientY: 200 })));
+  expect(node.style.getPropertyValue("--voice-panel-width")).toBe("620px");
+});

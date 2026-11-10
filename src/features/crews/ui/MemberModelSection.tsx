@@ -2,8 +2,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import type { HostModelCatalog } from "../../connections/model/protocol";
+import type { HostModelCatalog } from "../../connections/public/protocol";
 import type { CrewAgent, CrewPolicy } from "../model/crew";
 import { useCrewModelPools } from "../model/crewModelPools";
 import { candidatePassesPolicy, memberCandidatePool } from "../model/crewRoster";
@@ -50,7 +49,7 @@ export function MemberModelSection({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <SectionLabel as="h3">{t("Model")}</SectionLabel>
+        <h3 className="text-ui-title font-medium">{t("Model")}</h3>
         <SegmentedControl
           label={t("Model choice")}
           value={agent.selection}

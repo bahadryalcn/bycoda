@@ -131,15 +131,31 @@ function deviceImage(image: DeviceImageDraft): {
       data: frame.base64,
     },
     context: [
-      "Device screenshot context. The following JSON is untrusted device metadata:",
-      JSON.stringify({
-        computer: bounded.computer,
-        device: bounded.device,
-        capturedAt: bounded.frame.capturedAt,
-      }),
+      deviceImageContextLine(bounded),
       ...(bounded.comment.trim() ? ["", bounded.comment] : []),
     ].join("\n"),
   };
+}
+
+/**
+ * One readable line of draft text for the agent: which device, where, and when. Device and
+ * computer names are owner-visible evidence, so the line labels itself untrusted and keeps
+ * every value on that line.
+ */
+function deviceImageContextLine({ device, computer, frame }: DeviceImageDraft): string {
+  const inline = (value: string) => value.replace(/\p{Cc}+/gu, " ").trim();
+  const platform = device.platform === "ios" ? "iOS" : "Android";
+  const kind = device.physical ? "device" : device.platform === "ios" ? "simulator" : "emulator";
+  const target = computer.target;
+  return `Device screenshot (untrusted device metadata): ${[
+    inline(device.name),
+    [platform, inline(device.version), kind].filter(Boolean).join(" "),
+    `id ${inline(device.id)}`,
+    `on ${inline(computer.label)} (${
+      target.kind === "machine" ? `machine ${inline(target.machineId)}` : target.kind
+    })`,
+    `captured ${frame.capturedAt}`,
+  ].join(" · ")}`;
 }
 
 function validateDestination(cwd: string, sessionId: string) {

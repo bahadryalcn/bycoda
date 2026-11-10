@@ -1,5 +1,6 @@
 import type { ProjectActionCatalog } from "../../projects";
 import type { VoiceWorkspaceInspectDeps } from "./voiceWorkspaceInspect";
+import { pathKey } from "../../../shared/lib/paths";
 
 /** Desktop-owned actions. These are deliberately separate from project agent grants. */
 export type VoiceWorkspaceProject = {
@@ -33,6 +34,35 @@ export type VoiceWorkspaceResult = {
   error?: string;
   [key: string]: unknown;
 };
+
+/**
+ * The project paths one accepted spoken turn may act on, after a tool returned.
+ *
+ * The turn freezes its projects when the owner starts speaking, so a folder that the same turn
+ * creates through `workspace.projects.create` is missing from that list and every later call for
+ * it would be refused until the owner speaks again. A created project therefore joins the list.
+ * This only widens the frozen list: each use still checks live visibility and locks.
+ */
+export function voiceTurnProjectPaths(
+  allowed: readonly string[],
+  call: Record<string, unknown>,
+  result: unknown,
+): readonly string[] {
+  const value = result && typeof result === "object" ? (result as Record<string, unknown>) : {};
+  const created = "workspace.projects.create";
+  const path = value.projectPath;
+  if (
+    call.family !== "workspace" ||
+    call.action !== created ||
+    value.action !== created ||
+    (value.status !== "completed" && value.status !== "accepted") ||
+    typeof path !== "string" ||
+    !path.trim() ||
+    allowed.some((item) => pathKey(item) === pathKey(path))
+  )
+    return allowed;
+  return Object.freeze([...allowed, path]);
+}
 
 export type VoiceSessionCreate = {
   projectPath: string;

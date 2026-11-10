@@ -71,10 +71,13 @@ export function CrewMemberMeta({
   agent,
   catalog,
   shortScope = false,
+  poolName,
 }: {
   agent: SavedCrewAgent;
   catalog: HostModelCatalog;
   shortScope?: boolean;
+  /** The name of the model pool the member follows, when known. */
+  poolName?: string;
 }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5 text-ui-caption font-normal text-(--ui-text-secondary)">
@@ -85,7 +88,9 @@ export function CrewMemberMeta({
       <span aria-hidden="true">·</span>
       <span className="min-w-0 truncate">
         {[
-          memberModelSummary(catalog, agent),
+          poolName && agent.pool
+            ? t("Automatic: {p0}", { p0: poolName })
+            : memberModelSummary(catalog, agent),
           memberScopeLabel(agent, shortScope),
           ...(agent.tools ? [crewToolPresetLabel(agent.tools.preset)] : []),
         ].join(" · ")}

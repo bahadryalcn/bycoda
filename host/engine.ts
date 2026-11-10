@@ -152,6 +152,7 @@ import {
 } from "../src/features/sessions/model/shellRun";
 import { newRequestId } from "../src/shared/lib/id/requestId";
 import { secondOpinionMeta } from "./sessions/second-opinion-meta";
+import { utilityCompletionProof } from "./sessions/utility-completion-proof";
 
 // Streamed output is written in batches. Anything a user may need to act on
 // (approvals, questions, errors, completion) is written immediately.
@@ -197,37 +198,6 @@ function contextualInput(v: Record<string, unknown>): ContextualSessionInput {
     harness: v.harness,
     model: text(v.model, "model", 200),
     modelSettings: modelSettings(v.modelSettings),
-  };
-}
-
-/** Evidence belongs to each actual utility invocation under the original context. */
-function utilityCompletionProof() {
-  const pending = new Set<object>();
-  const seen = new Set<object>();
-  let completed = 0;
-  let failed = false;
-  return {
-    get completed() {
-      return completed > 0 && pending.size === 0 && !failed;
-    },
-    observe(isOwned: () => boolean) {
-      return {
-        onUtilityStarted(utility: object) {
-          if (!isOwned()) return;
-          if (seen.has(utility)) failed = true;
-          seen.add(utility);
-          pending.add(utility);
-        },
-        onUtilityCompleted(utility: object) {
-          if (!isOwned()) return;
-          if (!pending.delete(utility)) failed = true;
-          else completed++;
-        },
-        onUtilityFailed(_utility: object) {
-          if (isOwned()) failed = true;
-        },
-      };
-    },
   };
 }
 
@@ -2020,6 +1990,22 @@ export class HostEngine {
     );
   }
 
+  /** Orders a store-owned session write (assistant attribution) with this session's
+   * turn and rebases the live turn on it. Written directly, the live turn stays one
+   * revision behind and every later event of the running turn fails to persist. */
+  async sessionStoreWrite<T>(id: string, write: () => Promise<T>): Promise<T> {
+    await this.ready;
+    return this.store.db.scope(() =>
+      this.operations.run(id, async () => {
+        await this.flush(id);
+        const result = await write();
+        const live = this.live.get(id);
+        if (live) live.value = await this.store.session(id);
+        return result;
+      }),
+    );
+  }
+
   /** Internal task continuation. Transcript identity and execution ownership stay
    * fixed; the ordinary handoff dispatcher retires and resets provider history. */
   async continueSessionHistory(input: {
@@ -2240,6 +2226,10 @@ export class HostEngine {
             await this.store.db.scope(() =>
               this.operations.run(id, async () => {
                 if (this.running.get(id) !== original) return;
+                const live = this.live.get(id);
+                // A batch built on a superseded revision can never be written: settle
+                // the persisted head instead of retrying the same conflict forever.
+                if (live && before.revision > live.value.revision) live.events = [];
                 await this.flush(id);
                 const latest = await this.store.session(id);
                 if (latest.runId !== original.runId) return;

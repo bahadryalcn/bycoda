@@ -232,9 +232,6 @@ export function StartCrewDialog({
           disabled={pending}
           onChange={(e) => setPrompt(e.target.value)}
         />
-        <p className="text-ui-caption text-(--ui-text-secondary)">
-          {t("The first line becomes the work title. The coordinator plans and assigns the rest.")}
-        </p>
         {error ? (
           // Beside the footer action that failed. A receipt or request ID is kept, so retrying is safe.
           <Alert tone="danger">

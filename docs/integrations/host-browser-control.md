@@ -66,8 +66,13 @@ local update first. Do not manually modify a frozen host package.
 From Windows, select the MacBook's remote project and open its conversation tools.
 The remote project determines the host for setup, navigation and frames; localhost
 addresses refer to that Mac. Claim control, enter the Mac project's URL, and open
-it. **Live view** requests one frame per second while the panel is visible and
-idle, and pauses during element selection. Device tools in the same conversation
+it. **Live view** follows the page while the panel is visible and pauses during
+element selection: each `browser.frame` read carries the last frame sequence
+(`after`, optional `waitMs` up to 2 s) and the Host answers as soon as the page
+repaints, from Chromium's screencast. These reads wait outside the one-operation
+gate, so input is not held behind them, and the cast stops a few seconds after the
+last read. A Host without live frames answers at once with a screenshot and no
+`frameSequence`; the panel then reads one frame per second while idle. Device tools in the same conversation
 can list and boot an iOS simulator, capture it, and provide opt-in live viewing and
 control through the Mac host. They require full Xcode and an installed simulator
 runtime; see [device setup](devices.md).
@@ -75,11 +80,18 @@ runtime; see [device setup](devices.md).
 The host starts one headless ephemeral Chromium context at 1280×720. It does not
 load the user's browser profile and disables downloads. Any authenticated device
 may request a JPEG frame; a 30-second lease controls navigation, click, text,
-supported keys, scroll and closing. It has one in-flight operation and a 2 MiB
-frame budget. Control can be released or reclaimed after expiry. Idle Chromium
+keys, scroll and closing. Keys are the named editing, navigation and function keys
+plus single letter or digit shortcuts with Control, Alt, Shift or Meta; printable
+text and paste travel as text, so the Host clipboard is never typed into a page.
+Pointer moves are sent while hovering the preview, and each pointer action reports
+the page's CSS cursor keyword at that point (never a page-supplied image), which the
+panel shows. The controlling panel renews its lease while it is visible; a hidden or closed
+panel stops renewing and its control expires. It has one in-flight operation and a
+2 MiB frame budget. Control can be released or reclaimed after expiry. Idle Chromium
 closes after five minutes; host shutdown also closes it. It is a shared browser,
-so pages opened in it are visible to other authorized devices. This is not a video
-stream or an automatic agent browser automation protocol.
+so pages opened in it are visible to other authorized devices. Live frames are
+JPEG pictures over the existing authenticated RPC, not a video stream or an
+automatic agent browser automation protocol.
 
 ## Select an element for a conversation
 

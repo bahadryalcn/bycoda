@@ -377,3 +377,40 @@ it("restores the original approval event after one real persistence failure and 
   expect(f.releases[0]).toHaveBeenCalledOnce();
   await f.engine.close();
 });
+
+/** Any Host writer that appends a session revision while a turn streams (assistant attribution). */
+const stamp = async (f: Awaited<ReturnType<typeof fixture>>) => {
+  const head = await f.store.session(f.id);
+  return f.store.save({ ...head, revision: head.revision + 1 }, { type: "fixture.stamp" });
+};
+
+it("keeps a running turn writable when a store-owned session write is ordered through the engine", async () => {
+  const f = await fixture();
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const receipt = await f.send();
+  const stamped = await f.engine.sessionStoreWrite(f.id, () => stamp(f));
+  f.starts[0].input.onEvent({ type: "message.delta", text: "The plan follows." });
+  f.starts[0].finished.resolve();
+  await f.engine.waitForRun(f.id, receipt.runId);
+  const settled = await f.store.session(f.id);
+  expect(settled.revision).toBeGreaterThan(stamped.revision);
+  expect(settled.status).toBe("idle");
+  expect(JSON.stringify(settled.session.blocks)).toContain("The plan follows.");
+  expect(errors).not.toHaveBeenCalled();
+});
+
+it("settles a turn as interrupted when its pending events were built on a superseded revision", async () => {
+  const f = await fixture();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const receipt = await f.send();
+  const settled = deferred<{ interrupted?: boolean; reason?: string }>();
+  f.engine.onSettled = (_id, outcome) => settled.resolve(outcome);
+  // A direct store write leaves the live turn one revision behind the persisted head.
+  await stamp(f);
+  f.starts[0].input.onEvent({ type: "approval.requested", requestId: 7, title: "Unwritable" });
+  expect(await settled.promise).toMatchObject({ interrupted: true });
+  await f.engine.waitForRun(f.id, receipt.runId).catch(() => {});
+  expect((await f.store.session(f.id)).status).toBe("interrupted");
+  expect(f.engine.hasActiveRun(f.id)).toBe(false);
+  expect(f.provider.stop).toHaveBeenCalled();
+});

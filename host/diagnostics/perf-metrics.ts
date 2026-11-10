@@ -348,6 +348,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "devices.preflight",
   "devices.preview",
   "devices.preview.status",
+  "devices.stream",
   "devices.revokeSelf",
   "devices.setup",
   "devices.start",

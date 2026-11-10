@@ -632,3 +632,68 @@ it("isolates paired-owner presentation namespaces from native session browsers",
     await registry.close();
   }
 });
+
+it("streams live frames beside a pending operation and falls back to screenshots without CDP", async () => {
+  let paint: ((frame: { data: string; sessionId: number }) => void) | undefined;
+  const session = {
+    send: vi.fn(async () => undefined),
+    on: (_event: string, listener: typeof paint) => {
+      paint = listener;
+    },
+    detach: vi.fn(async () => {}),
+  };
+  let releaseClick: (() => void) | undefined;
+  const page = {
+    goto: vi.fn(),
+    url: () => "http://localhost:3000/",
+    screenshot: vi.fn(async () => Buffer.from("still")),
+    context: () => ({ newCDPSession: async () => session }),
+    mouse: {
+      click: vi.fn(() => new Promise<void>((resolve) => (releaseClick = resolve))),
+      wheel: vi.fn(),
+    },
+    keyboard: { type: vi.fn(), press: vi.fn() },
+  };
+  const loader = (async () => ({
+    chromium: {
+      launch: async () => ({
+        newContext: async () => ({ newPage: async () => page }),
+        close: vi.fn(),
+      }),
+    },
+  })) as unknown as BrowserLoader;
+  const browser = new SharedBrowser(loader);
+  try {
+    const claim = await browser.dispatch("browser.claim", {}, "owner");
+    const params = { leaseId: claim.leaseId };
+    await browser.dispatch("browser.open", { ...params, url: page.url() }, "owner");
+    const click = browser.dispatch(
+      "browser.input",
+      { ...params, kind: "click", x: 1, y: 1 },
+      "owner",
+    );
+    // A viewer without the lease reads while the click still holds the operation gate.
+    const read = browser.dispatch("browser.frame", { after: 0, waitMs: 2000 }, "viewer");
+    await vi.waitFor(() => expect(paint).toBeDefined());
+    paint!({ data: "AAAA", sessionId: 1 });
+    const frame = (await read) as { data?: string; frameSequence?: number; controlling: boolean };
+    expect(frame).toMatchObject({ data: "AAAA", width: 1280, height: 720, controlling: false });
+    expect(page.screenshot).not.toHaveBeenCalled();
+    releaseClick!();
+    await click;
+    // No repaint: the read returns the caller's cursor so it knows the Host streams.
+    expect(
+      await browser.dispatch("browser.frame", { after: frame.frameSequence, waitMs: 0 }, "viewer"),
+    ).toMatchObject({ frameSequence: frame.frameSequence, open: true });
+    await expect(browser.dispatch("browser.frame", { after: -1 }, "viewer")).rejects.toThrow(
+      "Invalid browser frame cursor",
+    );
+    // The plain read keeps its screenshot path.
+    expect(await browser.dispatch("browser.frame", {}, "viewer")).toMatchObject({
+      data: Buffer.from("still").toString("base64"),
+    });
+  } finally {
+    await browser.close();
+  }
+  expect(session.detach).toHaveBeenCalled();
+});

@@ -44,6 +44,8 @@ import { BrowserControlToggle, BrowserControlsPopover } from "./ui/BrowserContro
 import { BrowserStartPage } from "./ui/BrowserStartPage";
 import { rememberBrowserUrl } from "./model/browserRecents";
 import { browserStatusPresentation } from "./model/browserStatus";
+import { browserKeyInput } from "./model/browserKeys";
+import { useBrowserLeaseKeepAlive, useBrowserLiveFrames } from "./hooks/useBrowserLiveFrames";
 import { Disclosure } from "../../shared/ui/Disclosure";
 import "./BrowserPanel.css";
 
@@ -60,6 +62,8 @@ type BrowserState = {
   viewport?: { width: number; height: number };
   navigationId?: string;
   documentId?: string;
+  frameSequence?: number;
+  cursor?: string;
   annotationId?: string;
   selection?: BrowserAnnotationCapture;
   hover?: BrowserElementTarget;
@@ -130,6 +134,7 @@ function ProjectBrowserPanel({
   const [url, setUrl] = useState(initialUrl ?? "http://localhost:3000");
   const [text, setText] = useState("");
   const [frame, setFrame] = useState<Frame>();
+  const [cursor, setCursor] = useState<string>();
   // Mounting always starts with a status read; controls wait for it instead of
   // accepting a submit that the pending read would drop.
   const [busy, setBusy] = useState(true);
@@ -265,159 +270,158 @@ function ProjectBrowserPanel({
   const request = (
     method: string,
     params: Record<string, unknown> = {},
+    beside = false,
   ): Promise<BrowserState | undefined> => {
     const version = generation.current;
     const annotation = mode.current;
-    const call = serial.current
-      .catch(() => {})
-      .then(async () => {
-        if (
-          !alive.current ||
-          version !== generation.current ||
-          (!activeRef.current &&
-            method !== "browser.annotation.cancel" &&
-            !(method === "browser.input" && params.kind === "pointer" && params.action === "up"))
-        )
-          return;
-        const annotationMethod = method.startsWith("browser.annotation.");
-        if (annotationMethod && !annotationsAllowed)
-          throw new Error(
-            t("Browser selections can be attached only on this conversation's project host."),
-          );
-        const capability = annotationMethod
-          ? "browser.annotation"
-          : method === "browser.setup"
-            ? "browser.shared.setup"
-            : sessionId && hostTarget.kind !== "project" && !annotationsAllowed
-              ? "browser.ownerPresentationScopes.v1"
-              : sessionId
-                ? "browser.sessionScopes.v1"
-                : "browser.shared";
-        if (
-          sessionId &&
-          hostTarget.kind !== "project" &&
-          !annotationsAllowed &&
-          !scopePromise.current
-        ) {
-          scopePromise.current = crypto.subtle
-            .digest("SHA-256", new TextEncoder().encode(toolsSessionKey({ cwd, sessionId })))
-            .then((bytes) =>
-              Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join(
-                "",
-              ),
-            );
-        }
-        const ownerPresentationScope = scopePromise.current
-          ? await scopePromise.current
-          : undefined;
-        const parameters = {
-          ...(annotationMethod
-            ? { sessionId, annotationId: annotation?.id, navigationId: annotation?.navigationId }
+    // A live read runs beside the serialized requests instead of holding input behind it.
+    const call = (beside ? Promise.resolve() : serial.current.catch(() => {})).then(async () => {
+      if (
+        !alive.current ||
+        version !== generation.current ||
+        (!activeRef.current &&
+          method !== "browser.annotation.cancel" &&
+          !(method === "browser.input" && params.kind === "pointer" && params.action === "up"))
+      )
+        return;
+      const annotationMethod = method.startsWith("browser.annotation.");
+      if (annotationMethod && !annotationsAllowed)
+        throw new Error(
+          t("Browser selections can be attached only on this conversation's project host."),
+        );
+      const capability = annotationMethod
+        ? "browser.annotation"
+        : method === "browser.setup"
+          ? "browser.shared.setup"
+          : sessionId && hostTarget.kind !== "project" && !annotationsAllowed
+            ? "browser.ownerPresentationScopes.v1"
             : sessionId
-              ? { sessionId }
-              : {}),
-          ...params,
-          ...(method === "browser.annotation.select" && selection
-            ? { replaceCaptureId: selection.id }
+              ? "browser.sessionScopes.v1"
+              : "browser.shared";
+      if (
+        sessionId &&
+        hostTarget.kind !== "project" &&
+        !annotationsAllowed &&
+        !scopePromise.current
+      ) {
+        scopePromise.current = crypto.subtle
+          .digest("SHA-256", new TextEncoder().encode(toolsSessionKey({ cwd, sessionId })))
+          .then((bytes) =>
+            Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join(
+              "",
+            ),
+          );
+      }
+      const ownerPresentationScope = scopePromise.current ? await scopePromise.current : undefined;
+      const parameters = {
+        ...(annotationMethod
+          ? { sessionId, annotationId: annotation?.id, navigationId: annotation?.navigationId }
+          : sessionId
+            ? { sessionId }
             : {}),
-          ...(ownerPresentationScope ? { ownerPresentationScope } : {}),
-          leaseId:
-            method === "browser.input"
-              ? (params.leaseId ?? latest.current?.leaseId)
-              : latest.current?.leaseId,
+        ...params,
+        ...(method === "browser.annotation.select" && selection
+          ? { replaceCaptureId: selection.id }
+          : {}),
+        ...(ownerPresentationScope ? { ownerPresentationScope } : {}),
+        leaseId:
+          method === "browser.input"
+            ? (params.leaseId ?? latest.current?.leaseId)
+            : latest.current?.leaseId,
+      };
+      if (
+        method === "browser.input" &&
+        params.leaseId &&
+        (latest.current?.leaseId !== params.leaseId ||
+          !latest.current.controlling ||
+          (params.documentId && latest.current.documentId !== params.documentId))
+      )
+        throw new Error(t("Browser input was not sent because the page or control changed."));
+      if (roomSubject && !roomSubject.valid())
+        throw new Error("Room browser source is unavailable.");
+      const result = roomSubject
+        ? await invoke<BrowserState>("control_room_browser_panel_request", {
+            environmentId: roomSubject.environmentId,
+            projectId: roomSubject.projectId,
+            threadId: roomSubject.threadId,
+            projectCwd: roomSubject.cwd,
+            action: method,
+            input: parameters,
+          })
+        : annotationMethod || hostTarget.kind === "project"
+          ? await hostFeatureRequest<BrowserState>(cwd, capability, method, parameters)
+          : await hostToolRequest<BrowserState>(cwd, capability, method, parameters, hostTarget);
+      if (roomSubject && !roomSubject.valid()) throw new Error("Room browser source changed.");
+      if (!alive.current || version !== generation.current) {
+        if (method === "browser.annotation.start" && result.annotationId)
+          void hostFeatureRequest(cwd, "browser.annotation", "browser.annotation.cancel", {
+            sessionId,
+            annotationId: result.annotationId,
+          }).catch(() => {});
+        return;
+      }
+      if (
+        result.controlling &&
+        result.leaseExpiresAt != null &&
+        result.leaseExpiresAt <= Date.now()
+      ) {
+        result.controlling = false;
+        result.leaseId = undefined;
+        result.annotationId = undefined;
+      }
+      if (
+        mode.current &&
+        (!result.controlling ||
+          result.annotationId !== mode.current.id ||
+          result.navigationId !== mode.current.navigationId)
+      ) {
+        resetPick();
+        setNotice(t("Selection expired. Refresh the frame and select the element again."));
+      }
+      if (result.viewport)
+        pointer.current = {
+          x: Math.min(pointer.current.x, result.viewport.width - 1),
+          y: Math.min(pointer.current.y, result.viewport.height - 1),
         };
+      result.runtime ??= latest.current?.runtime;
+      if (result.cursor && /^[a-z-]+$/.test(result.cursor)) setCursor(result.cursor);
+      latest.current = result;
+      setState(result);
+      if (method === "browser.annotation.select")
+        setLimitation(result.limitation ? t(result.limitation) : "");
+      if (result.selection) {
         if (
-          method === "browser.input" &&
-          params.leaseId &&
-          (latest.current?.leaseId !== params.leaseId ||
-            !latest.current.controlling ||
-            (params.documentId && latest.current.documentId !== params.documentId))
+          result.selection.sessionId !== sessionId ||
+          result.selection.navigationId !== result.navigationId ||
+          !mode.current
         )
-          throw new Error(t("Browser input was not sent because the page or control changed."));
-        if (roomSubject && !roomSubject.valid())
-          throw new Error("Room browser source is unavailable.");
-        const result = roomSubject
-          ? await invoke<BrowserState>("control_room_browser_panel_request", {
-              environmentId: roomSubject.environmentId,
-              projectId: roomSubject.projectId,
-              threadId: roomSubject.threadId,
-              projectCwd: roomSubject.cwd,
-              action: method,
-              input: parameters,
-            })
-          : annotationMethod || hostTarget.kind === "project"
-            ? await hostFeatureRequest<BrowserState>(cwd, capability, method, parameters)
-            : await hostToolRequest<BrowserState>(cwd, capability, method, parameters, hostTarget);
-        if (roomSubject && !roomSubject.valid()) throw new Error("Room browser source changed.");
-        if (!alive.current || version !== generation.current) {
-          if (method === "browser.annotation.start" && result.annotationId)
-            void hostFeatureRequest(cwd, "browser.annotation", "browser.annotation.cancel", {
-              sessionId,
-              annotationId: result.annotationId,
-            }).catch(() => {});
-          return;
-        }
-        if (
-          result.controlling &&
-          result.leaseExpiresAt != null &&
-          result.leaseExpiresAt <= Date.now()
-        ) {
-          result.controlling = false;
-          result.leaseId = undefined;
-          result.annotationId = undefined;
-        }
-        if (
-          mode.current &&
-          (!result.controlling ||
-            result.annotationId !== mode.current.id ||
-            result.navigationId !== mode.current.navigationId)
-        ) {
-          resetPick();
-          setNotice(t("Selection expired. Refresh the frame and select the element again."));
-        }
-        if (result.viewport)
-          pointer.current = {
-            x: Math.min(pointer.current.x, result.viewport.width - 1),
-            y: Math.min(pointer.current.y, result.viewport.height - 1),
-          };
-        result.runtime ??= latest.current?.runtime;
-        latest.current = result;
-        setState(result);
-        if (method === "browser.annotation.select")
-          setLimitation(result.limitation ? t(result.limitation) : "");
-        if (result.selection) {
-          if (
-            result.selection.sessionId !== sessionId ||
-            result.selection.navigationId !== result.navigationId ||
-            !mode.current
-          )
-            throw new Error(t("Browser selection belongs to another conversation"));
-          if (method !== "browser.annotation.read") {
-            setSelection(result.selection);
-            setSelectionOpen(true);
-            setHover(undefined);
-            setLimitation("");
-            await displayFrame({
-              src: `data:${result.selection.screenshot.mimeType};base64,${result.selection.screenshot.data}`,
-              width: result.selection.screenshot.width,
-              height: result.selection.screenshot.height,
-              navigationId: result.navigationId,
-              documentId: result.documentId,
-            });
-          }
-        }
-        if (result.data)
+          throw new Error(t("Browser selection belongs to another conversation"));
+        if (method !== "browser.annotation.read") {
+          setSelection(result.selection);
+          setSelectionOpen(true);
+          setHover(undefined);
+          setLimitation("");
           await displayFrame({
-            src: `data:${result.mimeType};base64,${result.data}`,
-            width: result.width ?? result.viewport?.width ?? 1280,
-            height: result.height ?? result.viewport?.height ?? 720,
+            src: `data:${result.selection.screenshot.mimeType};base64,${result.selection.screenshot.data}`,
+            width: result.selection.screenshot.width,
+            height: result.selection.screenshot.height,
             navigationId: result.navigationId,
             documentId: result.documentId,
           });
-        else if (!result.open) setFrame(undefined);
-        return result;
-      });
-    serial.current = call;
+        }
+      }
+      if (result.data)
+        await displayFrame({
+          src: `data:${result.mimeType};base64,${result.data}`,
+          width: result.width ?? result.viewport?.width ?? 1280,
+          height: result.height ?? result.viewport?.height ?? 720,
+          navigationId: result.navigationId,
+          documentId: result.documentId,
+        });
+      else if (!result.open) setFrame(undefined);
+      return result;
+    });
+    if (!beside) serial.current = call;
     return call;
   };
   const cancelSelection = () => {
@@ -574,44 +578,22 @@ function ProjectBrowserPanel({
     // This scope is keyed by project and both conversation identities.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, selecting]);
-  useEffect(() => {
-    if (!active || !live || !state?.open || selecting) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const poll = async () => {
-      if (cancelled) return;
-      if (
-        !document.hidden &&
-        !pending.current &&
-        queuedInputs.current === 0 &&
-        !hoverReading.current &&
-        !liveReading.current &&
-        !mode.current
-      ) {
-        liveReading.current = true;
-        try {
-          await request("browser.frame");
-        } catch (cause) {
-          if (!cancelled && alive.current) {
-            inputBlockedRef.current = true;
-            setInputBlocked(true);
-            setError(cause instanceof Error ? cause.message : String(cause));
-            setLive(false);
-          }
-        } finally {
-          liveReading.current = false;
-        }
-      }
-      if (!cancelled) timer = setTimeout(() => void poll(), 1000);
-    };
-    timer = setTimeout(() => void poll().catch(() => {}), 1000);
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-    // This component is keyed by the complete project and conversation scope.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, live, state?.open, selecting]);
+  const streaming = useBrowserLiveFrames({
+    enabled: active && live && !!state?.open && !selecting,
+    read: (after, beside) => request("browser.frame", { after, waitMs: 1000 }, beside),
+    idle: () =>
+      !pending.current && queuedInputs.current === 0 && !hoverReading.current && !mode.current,
+    onError: (cause) => {
+      if (!alive.current) return;
+      inputBlockedRef.current = true;
+      setInputBlocked(true);
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setLive(false);
+    },
+  });
+  useBrowserLeaseKeepAlive(active && !!state?.controlling, state?.leaseExpiresAt, () => {
+    void request("browser.claim").catch(() => {});
+  });
 
   const input = async (params: Record<string, unknown>, onSuccess?: () => void) => {
     if (!latest.current?.open || !latest.current.controlling) return;
@@ -634,7 +616,8 @@ function ProjectBrowserPanel({
     }
   };
   const scheduleInputFrame = () => {
-    if (inputFrameTimer.current) return;
+    // The live stream already delivers the picture after each action.
+    if (inputFrameTimer.current || streaming.current) return;
     inputFrameTimer.current = setTimeout(() => {
       inputFrameTimer.current = undefined;
       if (!alive.current || !activeRef.current) return;
@@ -1094,6 +1077,7 @@ function ProjectBrowserPanel({
                   className={
                     canInput ? "host-browser-frame host-frame-interactive" : "host-browser-frame"
                   }
+                  style={canPageInput && cursor ? { cursor } : undefined}
                   draggable={false}
                   tabIndex={canInput ? 0 : -1}
                   role={selecting ? "button" : undefined}
@@ -1103,24 +1087,10 @@ function ProjectBrowserPanel({
                   onKeyDown={(event) => {
                     if (!canInput) return;
                     if (!selecting) {
-                      if (
-                        [
-                          "Enter",
-                          "Tab",
-                          "Escape",
-                          "Backspace",
-                          "ArrowUp",
-                          "ArrowDown",
-                          "ArrowLeft",
-                          "ArrowRight",
-                        ].includes(event.key) &&
-                        !event.ctrlKey &&
-                        !event.altKey &&
-                        !event.metaKey &&
-                        !event.shiftKey
-                      ) {
+                      const key = browserKeyInput(event);
+                      if (key) {
                         event.preventDefault();
-                        queueInput({ kind: "key", key: event.key });
+                        queueInput(key);
                       } else if (
                         event.key.length === 1 &&
                         !event.ctrlKey &&
@@ -1189,13 +1159,7 @@ function ProjectBrowserPanel({
                     queueInput({ kind: "pointer", action: "down", x, y, button });
                   }}
                   onPointerMove={(event) => {
-                    if (
-                      !selecting &&
-                      canPageInput &&
-                      (pressedPointer.current ||
-                        document.activeElement === event.currentTarget ||
-                        document.activeElement === inputReceiver.current)
-                    ) {
+                    if (canPageInput) {
                       const box = event.currentTarget.getBoundingClientRect();
                       if (!box.width || !box.height) return;
                       const x = Math.max(
@@ -1327,39 +1291,10 @@ function ProjectBrowserPanel({
                   tabIndex={-1}
                   onKeyDown={(event) => {
                     if (!canPageInput || event.nativeEvent.isComposing) return;
-                    const modifierKey =
-                      (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a";
-                    if (
-                      ([
-                        "Enter",
-                        "Tab",
-                        "Escape",
-                        "Backspace",
-                        "ArrowUp",
-                        "ArrowDown",
-                        "ArrowLeft",
-                        "ArrowRight",
-                        "Delete",
-                        "Home",
-                        "End",
-                        "PageUp",
-                        "PageDown",
-                      ].includes(event.key) &&
-                        !event.altKey) ||
-                      modifierKey
-                    ) {
-                      event.preventDefault();
-                      queueInput({
-                        kind: "key",
-                        key: modifierKey ? event.key.toUpperCase() : event.key,
-                        modifiers: [
-                          event.ctrlKey ? "Control" : "",
-                          event.altKey ? "Alt" : "",
-                          event.shiftKey ? "Shift" : "",
-                          event.metaKey ? "Meta" : "",
-                        ].filter(Boolean),
-                      });
-                    }
+                    const key = browserKeyInput(event);
+                    if (!key) return;
+                    event.preventDefault();
+                    queueInput(key);
                   }}
                   onInput={(event) => {
                     const target = event.currentTarget;

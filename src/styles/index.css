@@ -2249,6 +2249,12 @@ html.has-user-accent .user-message-bubble[data-draft="true"] {
  * at the top. Switching tabs keeps this. Closing the tab drops it, so opening
  * that conversation again uses the true bottom (latest reply on the composer).
  */
+/* Not inherited: resizing the transcript restyles the anchored turn only, not its rows. */
+@property --transcript-viewport {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
 .transcript-turn-anchor {
   min-height: var(--transcript-viewport, 0px);
 }
@@ -2761,8 +2767,8 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 }
 
 html.is-grabbing {
-  cursor: var(--workspace-drag-cursor, grabbing) !important;
-  --interaction-cursor: var(--workspace-drag-cursor, grabbing);
+  cursor: grabbing !important;
+  --interaction-cursor: grabbing;
 }
 
 /* Drop-target roles. One vocabulary for every surface that moves, reorders, groups or splits:
@@ -5091,4 +5097,25 @@ html:is(.is-reordering, .is-resizing)
 @utility icon-lg {
   width: var(--ui-icon-lg);
   height: var(--ui-icon-lg);
+}
+
+/* Attachment kind ink: a chip or pill tells an image from a document at a glance. Links
+   keep the info tone, so no kind uses it. */
+[data-attachment-kind] {
+  --ui-attachment-ink: var(--ui-tone-accent-fg);
+}
+[data-attachment-kind="image"] {
+  --ui-attachment-ink: var(--ui-tone-success-fg);
+}
+[data-attachment-kind="audio"],
+[data-attachment-kind="video"] {
+  --ui-attachment-ink: var(--ui-tone-warning-fg);
+}
+[data-attachment-kind="pdf"] {
+  --ui-attachment-ink: var(--ui-tone-danger-fg);
+}
+[data-attachment-kind="folder"],
+[data-attachment-kind="archive"],
+[data-attachment-kind="file"] {
+  --ui-attachment-ink: var(--ui-text-secondary);
 }

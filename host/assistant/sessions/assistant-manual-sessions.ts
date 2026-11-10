@@ -17,6 +17,8 @@ export interface ManualSupervisionPorts {
   name(): Promise<string>;
   visibleProject(projectId: string): Promise<boolean>;
   now?(): number;
+  /** The engine's write order for the enrolled session. */
+  orderSessionWrite?<T>(sessionId: string, write: () => Promise<T>): Promise<T>;
 }
 const bounded = (value: unknown, max: number): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= max;
@@ -273,68 +275,71 @@ export class HostAssistantManualSessions {
         throw new Error(
           "Enable manual supervision and Chief autonomy before enrolling a conversation.",
         );
-      return this.store.transaction(async () => {
-        const current = await this.store.session(input.sessionId);
-        if (!(await this.ports.visibleProject(current.projectId)))
-          throw new Error("The owner cannot enroll this project.");
-        const candidate = await this.candidate(current);
-        if (!candidate.eligible) throw new Error(candidate.reason);
-        if (candidate.sourceToken !== input.sourceToken)
-          throw new Error(
-            "The selected conversation changed; refresh its backend source token before enrolling.",
-          );
-        const old = await this.read(input.sessionId);
-        if ((old?.version ?? 0) !== input.expectedVersion)
-          throw new Error("Manual supervision changed; reload before enrolling.");
-        if (!old?.active) {
-          const count = await this.store.db
-            .prepare(
-              "SELECT count(*) AS n FROM assistant_manual_supervision WHERE json_extract(value,'$.active')=1",
-            )
-            .get();
-          if (Number(count?.n ?? 0) >= 100)
-            throw new Error("The assistant already has 100 active manual supervision grants.");
-        }
-        const grant: ManualSupervisionGrant = {
-          id: randomUUID(),
-          sessionId: input.sessionId,
-          title: current.session.title.slice(0, 300),
-          version: input.expectedVersion + 1,
-          active: true,
-          source: source(current),
-          sourceToken: digest(source(current)),
-          enrolledAt: this.now(),
-          updatedAt: this.now(),
-        };
-        if (!(await this.ports.enabled()))
-          throw new Error("Manual supervision was disabled before enrollment.");
-        if (old)
+      const write = () =>
+        this.store.transaction(async () => {
+          const current = await this.store.session(input.sessionId);
+          if (!(await this.ports.visibleProject(current.projectId)))
+            throw new Error("The owner cannot enroll this project.");
+          const candidate = await this.candidate(current);
+          if (!candidate.eligible) throw new Error(candidate.reason);
+          if (candidate.sourceToken !== input.sourceToken)
+            throw new Error(
+              "The selected conversation changed; refresh its backend source token before enrolling.",
+            );
+          const old = await this.read(input.sessionId);
+          if ((old?.version ?? 0) !== input.expectedVersion)
+            throw new Error("Manual supervision changed; reload before enrolling.");
+          if (!old?.active) {
+            const count = await this.store.db
+              .prepare(
+                "SELECT count(*) AS n FROM assistant_manual_supervision WHERE json_extract(value,'$.active')=1",
+              )
+              .get();
+            if (Number(count?.n ?? 0) >= 100)
+              throw new Error("The assistant already has 100 active manual supervision grants.");
+          }
+          const grant: ManualSupervisionGrant = {
+            id: randomUUID(),
+            sessionId: input.sessionId,
+            title: current.session.title.slice(0, 300),
+            version: input.expectedVersion + 1,
+            active: true,
+            source: source(current),
+            sourceToken: digest(source(current)),
+            enrolledAt: this.now(),
+            updatedAt: this.now(),
+          };
+          if (!(await this.ports.enabled()))
+            throw new Error("Manual supervision was disabled before enrollment.");
+          if (old)
+            await this.store.db
+              .prepare(
+                "INSERT OR REPLACE INTO assistant_manual_supervision_history(id,value) VALUES(?,?)",
+              )
+              .run(
+                old.id,
+                JSON.stringify(
+                  old.active
+                    ? {
+                        ...old,
+                        active: false,
+                        version: old.version + 1,
+                        updatedAt: this.now(),
+                        revokedAt: this.now(),
+                      }
+                    : old,
+                ),
+              );
           await this.store.db
             .prepare(
-              "INSERT OR REPLACE INTO assistant_manual_supervision_history(id,value) VALUES(?,?)",
+              "INSERT INTO assistant_manual_supervision(session_id,id,value) VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET id=excluded.id,value=excluded.value",
             )
-            .run(
-              old.id,
-              JSON.stringify(
-                old.active
-                  ? {
-                      ...old,
-                      active: false,
-                      version: old.version + 1,
-                      updatedAt: this.now(),
-                      revokedAt: this.now(),
-                    }
-                  : old,
-              ),
-            );
-        await this.store.db
-          .prepare(
-            "INSERT INTO assistant_manual_supervision(session_id,id,value) VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET id=excluded.id,value=excluded.value",
-          )
-          .run(input.sessionId, grant.id, JSON.stringify(grant));
-        await this.store.markAssistantManualSession(input.sessionId, grant.id);
-        return grant;
-      }, "critical");
+            .run(input.sessionId, grant.id, JSON.stringify(grant));
+          await this.store.markAssistantManualSession(input.sessionId, grant.id);
+          return grant;
+        }, "critical");
+      // The stamp adds a session revision; the engine orders it with a live turn.
+      return this.ports.orderSessionWrite?.(input.sessionId, write) ?? write();
     });
   }
   async revoke(

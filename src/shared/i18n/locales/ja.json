@@ -5185,7 +5185,7 @@
   "Pane: Arrange Main Left": "ペイン: メインを左に配置",
   "Pane: Arrange Main Top": "ペイン: メインを上に配置",
   "Pane: Equalize Sizes": "ペイン: サイズを均等にする",
-  "Viewing never enables control. Live view refreshes once per second while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub 0.12.0 and optional control tools into the host cache, and Stop ends the owned tool processes.": "表示だけでは制御は有効になりません。ライブビューはこのパネルが表示されている間、1秒ごとに更新され、パネルを閉じると表示は一時停止します。セットアップは固定版の expo-device-hub 0.12.0 と任意の制御ツールをホストのキャッシュにダウンロードし、停止は所有するツールプロセスを終了します。",
+  "Viewing never enables control. Live view follows the screen while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub 0.12.0 and optional control tools into the host cache, and Stop ends the owned tool processes.": "表示だけでは制御は有効になりません。ライブビューはこのパネルが表示されている間、画面に追従し、パネルを閉じると表示は一時停止します。セットアップは固定版の expo-device-hub 0.12.0 と任意の制御ツールをホストのキャッシュにダウンロードし、停止は所有するツールプロセスを終了します。",
   "Message for {p0}": "{p0}へのメッセージ",
   "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.": "メインエージェント経由です。配信はプロバイダーの対応状況によります。返信はメインの会話に表示されます。",
   "Request added to the main conversation. Delivery is not yet confirmed.": "メインの会話にリクエストを追加しました。配信はまだ確認されていません。",
@@ -13120,8 +13120,6 @@
   "Manage pools": "プールを管理",
   "Write code": "コードを書く",
   "Limit Host tools to a list": "ホストツールをリストに限定",
-  "Write code and use every Host tool": "コードを書き、すべてのホストツールを使用",
-  "Write code, Host tools limited to a list": "コードを書く、ホストツールはリストに限定",
   "About member tools": "メンバーのツールについて",
   "Nothing selected means read-only: Host tools that write or start things are blocked. Choices combine and only narrow what the run's access mode allows.": "何も選択しない場合は読み取り専用です。書き込みや起動を行うホストツールはブロックされます。選択は組み合わせ可能で、実行のアクセスモードが許可する範囲を狭めるだけです。",
   "Without Write code, Claude and Codex lose file edits and shell; other providers cannot run the member.": "コードを書くを選ばない場合、Claude と Codex はファイル編集とシェルを使えず、他のプロバイダーはこのメンバーを実行できません。",
@@ -13132,5 +13130,8 @@
   "Library: {p0}": "ライブラリ: {p0}",
   "Library: {p0} · customized": "ライブラリ: {p0} · カスタマイズ済み",
   "About the library profile": "ライブラリプロフィールについて",
-  "Apply as": "適用方法"
+  "Apply as": "適用方法",
+  "Write code includes Image generation and Browser.": "コード作成には画像生成とブラウザーが含まれます。",
+  "customized": "カスタマイズ済み",
+  "Automatic: {p0}": "自動: {p0}"
 }

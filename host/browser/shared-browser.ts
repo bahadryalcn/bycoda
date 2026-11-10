@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { inspectBrowserElement, type ElementInspection } from "./browser-annotation";
 import type { BrowserAnnotationCapture } from "../../src/shared/lib/browserAnnotation";
+import { applyBrowserInput } from "./browser-input";
 import { BrowserRefs } from "./browser-read";
+import { BrowserScreencast, browserFrameCursor } from "./browser-screencast";
 import { browserShadowMasks, type BrowserDomNode } from "./browser-shadow-masks";
 import type {
   RuntimeLogSource,
@@ -182,6 +184,10 @@ export class SharedBrowser {
     { payload: string; result: ReturnType<SharedBrowser["status"]> }
   >();
   private lastUse = 0;
+  private readonly screencast = new BrowserScreencast(() => ({
+    stamp: this.documentId,
+    ...this.viewport,
+  }));
   private idleTimer?: ReturnType<typeof setInterval>;
   private navigationId = randomUUID();
   private documentId = randomUUID();
@@ -301,6 +307,13 @@ export class SharedBrowser {
         return receipt.result;
       }
     }
+    // Live viewing waits outside the operation gate so input is never held behind it.
+    if (
+      method === "browser.frame" &&
+      params.after !== undefined &&
+      this.screencast.available(this.page)
+    )
+      return this.liveFrame(params, receiptOwner);
     if (this.busy) throw new Error("Shared browser is busy; retry after the current request");
     this.busy = true;
     try {
@@ -427,83 +440,11 @@ export class SharedBrowser {
           throw new Error("Browser document changed. Refresh before interacting.");
         if (params.navigationId !== undefined && params.navigationId !== this.navigationId)
           throw new Error("Browser view changed. Refresh before interacting.");
+        let cursor: string | undefined;
         if (params.ref !== undefined) await this.refs.act(this.page, this.pageKey, params);
-        else if (params.kind === "click") {
-          const { x, y } = this.position(params, "Invalid click position");
-          await this.page.mouse.click(x, y);
-        } else if (params.kind === "pointer") {
-          const { x, y } = this.position(params, "Invalid pointer position");
-          const button = params.button ?? "left";
-          if (button !== "left" && button !== "middle" && button !== "right")
-            throw new Error("Invalid pointer button");
-          if (!["move", "down", "up"].includes(String(params.action)))
-            throw new Error("Unsupported pointer action");
-          if (
-            !this.page.mouse.move ||
-            (params.action === "down" && !this.page.mouse.down) ||
-            (params.action === "up" && !this.page.mouse.up)
-          )
-            throw new Error("Pointer input is unavailable on this host browser");
-          await this.page.mouse.move(x, y);
-          if (params.action === "down" && this.page.mouse.down)
-            await this.page.mouse.down({ button });
-          else if (params.action === "up" && this.page.mouse.up)
-            await this.page.mouse.up({ button });
-          else if (params.action !== "move") throw new Error("Unsupported pointer action");
-        } else if (params.kind === "scroll") {
-          const y = Number(params.y);
-          const x = params.x === undefined ? 0 : Number(params.x);
-          if (
-            !Number.isFinite(x) ||
-            Math.abs(x) > 2000 ||
-            !Number.isFinite(y) ||
-            Math.abs(y) > 2000
-          )
-            throw new Error("Invalid scroll distance");
-          await this.page.mouse.wheel(x, y);
-        } else if (params.kind === "text") {
-          if (
-            typeof params.text !== "string" ||
-            params.text.length > 4096 ||
-            params.text.includes("\0")
-          )
-            throw new Error("Invalid browser text");
-          if (this.page.keyboard.insertText) await this.page.keyboard.insertText(params.text);
-          else await this.page.keyboard.type(params.text);
-        } else if (params.kind === "key") {
-          if (
-            ![
-              "Enter",
-              "Tab",
-              "Escape",
-              "Backspace",
-              "ArrowUp",
-              "ArrowDown",
-              "ArrowLeft",
-              "ArrowRight",
-              "Delete",
-              "Home",
-              "End",
-              "PageUp",
-              "PageDown",
-              "A",
-              "C",
-              "X",
-            ].includes(String(params.key))
-          )
-            throw new Error("Unsupported browser key");
-          const modifiers = params.modifiers ?? [];
-          if (
-            !Array.isArray(modifiers) ||
-            modifiers.length > 4 ||
-            new Set(modifiers).size !== modifiers.length ||
-            modifiers.some((value) => !["Control", "Alt", "Shift", "Meta"].includes(value))
-          )
-            throw new Error("Unsupported browser key modifiers");
-          await this.page.keyboard.press([...modifiers, String(params.key)].join("+"));
-        } else throw new Error("Unsupported browser input");
+        else cursor = await applyBrowserInput(this.page, params, this.viewport);
         this.invalidateSelection();
-        const result = this.status(owner);
+        const result = { ...this.status(owner), ...(cursor ? { cursor } : {}) };
         if (receiptKey && receiptPayload) {
           this.inputReceipts.set(receiptKey, { payload: receiptPayload, result });
           if (this.inputReceipts.size > 256)
@@ -518,12 +459,19 @@ export class SharedBrowser {
       this.busy = false;
     }
   }
-  private position(params: Record<string, unknown>, message: string) {
-    const x = Number(params.x),
-      y = Number(params.y);
-    if (!(x >= 0 && x < this.viewport.width && y >= 0 && y < this.viewport.height))
-      throw new Error(message);
-    return { x, y };
+  private async liveFrame(params: Record<string, unknown>, owner: string) {
+    const { after, waitMs } = browserFrameCursor(params.after, params.waitMs);
+    this.lastUse = this.now();
+    const frame = await this.screencast.next(this.page!, after, waitMs);
+    if (!frame || !this.page) return { ...this.status(owner), frameSequence: after };
+    return {
+      ...this.status(owner),
+      mimeType: "image/jpeg",
+      data: frame.data,
+      width: frame.width,
+      height: frame.height,
+      frameSequence: frame.sequence,
+    };
   }
   private pageKey = () => `${this.documentId}|${this.page?.url()}`;
   private status(owner: string) {
@@ -1247,6 +1195,7 @@ export class SharedBrowser {
     } catch {
       /* page already closed */
     }
+    await this.screencast.stop();
     this.stopCapture("The browser has closed. Retained logs remain available.");
     this.detachPageListeners?.();
     this.detachPageListeners = undefined;

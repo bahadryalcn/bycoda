@@ -2,6 +2,7 @@ import type { TranscriptVirtualization } from "./transcriptVirtualization";
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { innerScrollerTakes, useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import {
+  firstTurnBelow,
   isNearBottom,
   NEAR_BOTTOM_PX,
   pinToBottom,
@@ -448,25 +449,7 @@ export function useTranscriptFollow({
   };
 }
 
-/**
- * First turn whose bottom edge is below `top`. Turns are laid out in document
- * order, so their bottoms never decrease and a binary search reads O(log n)
- * rects where a linear scan read every turn above the viewport.
- * shortcut: assumes turns do not nest or overlap; upgrade if nested turns appear.
- */
-export function firstTurnBelow(
-  nodes: ArrayLike<HTMLElement>,
-  top: number,
-): HTMLElement | undefined {
-  let lo = 0;
-  let hi = nodes.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (nodes[mid].getBoundingClientRect().bottom > top) hi = mid;
-    else lo = mid + 1;
-  }
-  return nodes[lo];
-}
+export { firstTurnBelow };
 
 /**
  * Re-applies the retained scroll position once the rows exist. Declared after

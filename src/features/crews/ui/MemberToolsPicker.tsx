@@ -21,19 +21,6 @@ export const crewToolPresetLabel = (preset: CrewToolPreset) =>
     custom: t("Custom"),
   })[preset];
 
-const extraLabel = (extra: CrewToolExtra) =>
-  extra === "design" ? t("Image generation") : t("Browser");
-
-/** One line naming everything the profile allows, for the picker and library rows. */
-export function crewToolsSummary(profile: CrewToolProfile | undefined): string {
-  if (!profile || (profile.preset === "code" && !profile.conversationTools))
-    return t("Write code and use every Host tool");
-  if (profile.preset === "code" || profile.preset === "custom")
-    return t("Write code, Host tools limited to a list");
-  const extras = crewToolExtras(profile).map(extraLabel);
-  return [t("Read-only"), ...extras].join(" + ");
-}
-
 /**
  * The member's tool profile as combinable capabilities. It only narrows what the member's
  * sessions may use; the run's access mode and owner approvals still apply. Nothing selected is
@@ -93,7 +80,7 @@ export function MemberToolsPicker({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex items-center gap-1">
-        <span className="text-ui-body font-medium">{t("Tools")}</span>
+        <h3 className="text-ui-title font-medium">{t("Tools")}</h3>
         <InfoPopover label={t("About member tools")}>
           <div className="flex flex-col gap-2 text-ui-caption">
             <p>
@@ -106,6 +93,7 @@ export function MemberToolsPicker({
                 "Without Write code, Claude and Codex lose file edits and shell; other providers cannot run the member.",
               )}
             </p>
+            <p>{t("Write code includes Image generation and Browser.")}</p>
             <p>
               {t(
                 "MCP servers and skills: leave empty for no restriction. Listed servers are the only ones loaded (Claude, Codex, OpenCode); other skills are disabled for the member.",
@@ -116,6 +104,7 @@ export function MemberToolsPicker({
       </div>
       <div className="flex flex-col gap-1.5">
         <Checkbox
+          className="text-ui-body"
           label={t("Write code")}
           checked={code}
           onChange={(event) =>
@@ -127,20 +116,25 @@ export function MemberToolsPicker({
             })
           }
         />
-        <Checkbox
-          label={t("Image generation")}
-          checked={code || extras.includes("design")}
-          disabled={code}
-          onChange={(event) => toggleExtra("design", event.target.checked)}
-        />
-        <Checkbox
-          label={t("Browser")}
-          checked={code || extras.includes("browser")}
-          disabled={code}
-          onChange={(event) => toggleExtra("browser", event.target.checked)}
-        />
+        {code ? null : (
+          <>
+            <Checkbox
+              className="text-ui-body"
+              label={t("Image generation")}
+              checked={extras.includes("design")}
+              onChange={(event) => toggleExtra("design", event.target.checked)}
+            />
+            <Checkbox
+              className="text-ui-body"
+              label={t("Browser")}
+              checked={extras.includes("browser")}
+              onChange={(event) => toggleExtra("browser", event.target.checked)}
+            />
+          </>
+        )}
         {code ? (
           <Checkbox
+            className="text-ui-body"
             label={t("Limit Host tools to a list")}
             checked={limited}
             onChange={(event) =>
@@ -153,7 +147,6 @@ export function MemberToolsPicker({
           />
         ) : null}
       </div>
-      <p className="text-ui-caption text-(--ui-text-secondary)">{crewToolsSummary(value)}</p>
       {limited ? (
         <TagInput
           label={t("Host tools")}

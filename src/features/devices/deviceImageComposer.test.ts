@@ -89,9 +89,10 @@ it("accepts a standard image and its context together only for the originating d
   });
   expect(file.browserAnnotation).toBeUndefined();
   expect(context).toContain(image.comment);
-  expect(context).toContain('"machineId":"mac"');
-  expect(context).toContain('"capturedAt":"2026-10-26T10:00:00Z"');
-  expect(context).toContain("untrusted device metadata");
+  // One readable line, then the owner's note: no raw JSON in the draft.
+  expect(context.split("\n")[0]).toBe(
+    "Device screenshot (untrusted device metadata): iPhone · iOS 27 simulator · id simulator · on MacBook (machine mac) · captured 2026-10-26T10:00:00Z",
+  );
 });
 
 it("refuses invalid images, metadata and oversized payloads before touching the receiver", () => {

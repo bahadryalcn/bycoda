@@ -16,7 +16,7 @@ export interface CapabilityStatusProps {
  * Three independent observations as labelled Badges: permission (enabled/disabled), readiness (verified ready/unavailable/checking) and activity (running/idle). Unknown is a valid value for each. Callers must invalidate runtime facts after failed reads.
  * @group feedback
  * @use Device, voice or integration capability panels that show permission, readiness and activity together.
- * @avoid A single status: StatusBadge or Badge. Feature-specific copy: wrap it (DeviceCapabilityStatus) instead of forking.
+ * @avoid A single status: StatusBadge or Badge. Feature-specific copy: wrap it instead of forking.
  */
 export function CapabilityStatus({
   permission,

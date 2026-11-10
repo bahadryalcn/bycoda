@@ -601,6 +601,9 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         "models.list" => std::time::Duration::from_secs(60),
         // Model calls, offline discovery and device start can exceed ordinary RPC reads.
         m if m.starts_with("appearance.") => std::time::Duration::from_secs(100),
+        // Must outlast the Host contract deadlines (interview 100 s, avatar 240 s).
+        "assistant.builder.interview" => std::time::Duration::from_secs(110),
+        "assistant.builder.avatarGenerate" => std::time::Duration::from_secs(250),
         "voice.local.inspect" | "devices.start" => std::time::Duration::from_secs(60),
         "voice.local.start" => std::time::Duration::from_secs(180),
         "voice.local.transcribe" | "voice.cloud.transcribe" => std::time::Duration::from_secs(40),
@@ -4436,6 +4439,8 @@ mod tests {
         assert!(!supported_remote_method("voice.local.exec"));
         assert!(!supported_remote_method("voice.tools.exec"));
         assert!(rpc_timeout("voice.tools.call", &json!({})) >= Duration::from_secs(250));
+        assert!(rpc_timeout("assistant.builder.avatarGenerate", &json!({})) > Duration::from_secs(240));
+        assert!(rpc_timeout("assistant.builder.interview", &json!({})) > Duration::from_secs(100));
         assert!(rpc_timeout("voice.local.start", &json!({})) >= Duration::from_secs(180));
         assert!(rpc_timeout("voice.local.inspect", &json!({})) >= Duration::from_secs(60));
         assert!(rpc_timeout("voice.local.transcribe", &json!({})) >= Duration::from_secs(40));

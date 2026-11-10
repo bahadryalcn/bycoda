@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TagInput } from "../../../shared/ui/TagInput";
 import { TextField } from "../../../shared/ui/TextField";
@@ -108,7 +107,7 @@ export function CrewMemberForm({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <section aria-label={t("Identity")} className="flex min-w-0 flex-col gap-2">
-        <SectionLabel as="h3">{t("Identity")}</SectionLabel>
+        <h3 className="text-ui-title font-medium">{t("Identity")}</h3>
         <div className="flex min-w-0 flex-wrap items-start gap-3">
           {identity ? (
             <div className="flex shrink-0 flex-col items-center gap-1">
@@ -168,16 +167,19 @@ export function CrewMemberForm({
         ) : null}
       </section>
       <section aria-label={t("Work")} className="flex min-w-0 flex-col gap-3">
-        <SectionLabel as="h3">{t("Work")}</SectionLabel>
+        <h3 className="text-ui-title font-medium">{t("Work")}</h3>
         {compact ? null : (
-          <SegmentedControl
-            label={t("Responsibility in the crew")}
-            value={agent.role}
-            options={(["coordinator", "specialist", "reviewer", "advisor"] as const).map(
-              (role) => ({ value: role, label: roleLabel(role) }),
-            )}
-            onValueChange={(role) => onChange({ role: role as CrewRole })}
-          />
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <span className="text-ui-body font-medium">{t("Responsibility in the crew")}</span>
+            <SegmentedControl
+              label={t("Responsibility in the crew")}
+              value={agent.role}
+              options={(["coordinator", "specialist", "reviewer", "advisor"] as const).map(
+                (role) => ({ value: role, label: roleLabel(role) }),
+              )}
+              onValueChange={(role) => onChange({ role: role as CrewRole })}
+            />
+          </div>
         )}
         <TextareaField
           label={t("Instructions")}

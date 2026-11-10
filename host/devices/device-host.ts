@@ -6,6 +6,12 @@ import { homedir } from "node:os";
 import { createServer } from "node:net";
 import { randomUUID } from "node:crypto";
 import { deviceBinaryCommand, deviceCommand, stopDeviceChild } from "./device-process";
+import {
+  assertDeviceAuthority,
+  DeviceAuthorityRevokedError,
+  type DeviceEffectContext,
+} from "./device-authority";
+import { DeviceStreams } from "./device-stream";
 import { androidDeviceControl, quoteAndroidShell } from "./android-device-control";
 import { DeviceControlLeases } from "./device-control-leases";
 import { inspectionFingerprint, inspectionNodes, type InspectionNode } from "./device-inspection";
@@ -17,31 +23,9 @@ import type {
   DeviceSummary,
 } from "../../src/shared/model/host-contracts/native-devices";
 
+export * from "./device-authority";
 export const DEVICE_HUB_VERSION = "0.12.0";
 export const AGENT_DEVICE_VERSION = "0.21.23";
-/** Captured by the request owner, never from a device/action DTO or socket life. */
-export interface DeviceEffectContext {
-  authorized(): boolean | Promise<boolean>;
-  track?<T>(work: Promise<T>): Promise<T>;
-}
-export class DeviceAuthorityRevokedError extends Error {
-  readonly code = "DEVICE_AUTHORITY_REVOKED";
-  constructor() {
-    super(
-      "DEVICE_AUTHORITY_REVOKED: Device access changed. Already admitted input may have taken effect; inspect the device before repeating it.",
-    );
-    this.name = "DeviceAuthorityRevokedError";
-  }
-}
-export async function assertDeviceAuthority(effect?: DeviceEffectContext): Promise<void> {
-  if (!effect) return;
-  try {
-    if (await effect.authorized()) return;
-  } catch {
-    // No storage/auth diagnostics are returned through the device surface.
-  }
-  throw new DeviceAuthorityRevokedError();
-}
 /** Use native screen points, not the CLI's cropped alert viewport scaling. */
 export function elementPressArgs(nodes: unknown, label: string): string[] {
   if (!Array.isArray(nodes))
@@ -208,6 +192,14 @@ export class DeviceHost {
   private readonly stateDir: string;
   private iosSupport?: { checkedAt: number; result: Promise<boolean> };
   private discovery?: DeviceDiscovery;
+  /** Live H.264 view; long-poll reads stay outside the per-device lane. */
+  readonly streams = new DeviceStreams({
+    device: (id) => this.device(id),
+    platform: () => this.platform,
+    adb: () => this.androidBinary("adb"),
+    env: () => this.env,
+    closed: () => this.closing || this.disposed,
+  });
   constructor(
     private readonly baseDir: string,
     private readonly options: {
@@ -1475,6 +1467,7 @@ export class DeviceHost {
     const child = this.child;
     this.origin = undefined;
     this.lastCapture = undefined;
+    await this.streams.stopAll();
     if (child) await stopDeviceChild(child);
     this.child = undefined;
   }

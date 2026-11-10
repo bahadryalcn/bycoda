@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from "react";
+import type { HTMLAttributes, ReactNode, RefObject } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { OverflowTooltip, Tooltip } from "../../../../shared/ui/Tooltip";
@@ -24,6 +24,8 @@ export type VoiceCompanionViewProps = {
   status: Status;
   /** The drag handle: the orb in compact mode, the grip when expanded. */
   handle: ReactNode;
+  /** Pointer handlers that let the whole header, not only the handle, move the panel. */
+  headerDrag?: HTMLAttributes<HTMLElement>;
   visual: Parameters<typeof VoiceVisualizer>[0]["visual"];
   visualState: Parameters<typeof VoiceVisualizer>[0]["state"];
   working: boolean;
@@ -93,7 +95,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   const toggleLabel = t(p.compact ? "Expand voice companion" : "Compact voice companion");
   return (
     <>
-      <header className={styles.header}>
+      <header className={styles.header} {...p.headerDrag}>
         {p.handle}
         {p.error ? <VoiceErrorNotice error={p.error} onDismiss={p.onDismissError} /> : null}
         {p.compact ? (

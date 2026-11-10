@@ -1,6 +1,9 @@
 import { dirname } from "node:path";
 import { HostAssistantKeepAwake } from "../assistant/core/assistant-keep-awake";
-import { assistantExecutionPorts } from "../assistant/core/assistant-runtime";
+import {
+  assistantExecutionPorts,
+  type SessionWriteOrder,
+} from "../assistant/core/assistant-runtime";
 import { AssistantTurnPolicyDeferredError } from "../assistant/core/assistant-turn-policy";
 import {
   RoomAttestationSigner,
@@ -76,6 +79,8 @@ export async function createAssistantRuntime(
   });
   // The catalog cache is created after the assistant, so it is read lazily at validation time.
   setAssistantModelPoolPorts({ catalog: () => dependencies.models() });
+  const orderSessionWrite: SessionWriteOrder = (id, write) =>
+    dependencies.engine.sessionStoreWrite(id, write);
   const assistantPorts = assistantExecutionPorts(
     dependencies.engine.store,
     dependencies.goals,
@@ -86,6 +91,7 @@ export async function createAssistantRuntime(
       repository: new AssistantRepository(dependencies.engine.store),
       quota,
     }),
+    orderSessionWrite,
   );
   const namedProjects = async () => {
     const registered = await dependencies.engine.store.projects();
@@ -137,6 +143,7 @@ export async function createAssistantRuntime(
     enabled: () => assistant.manualSupervisionAllowed(),
     name: () => assistant.identityName(),
     visibleProject: (id) => assistant.manualProjectAllowed(id),
+    orderSessionWrite,
   });
   await manualAssistantSessions.ready;
   assistantPorts.manual = manualAssistantSessions;
@@ -154,7 +161,9 @@ export async function createAssistantRuntime(
       input.sessionId,
       input.expectedVersion,
     );
-    await dependencies.engine.store.markAssistantManagedSession(input.sessionId, input.jobId);
+    await orderSessionWrite(input.sessionId, () =>
+      dependencies.engine.store.markAssistantManagedSession(input.sessionId, input.jobId),
+    );
     return result;
   };
   assistantPorts.manageSession = async (input) => {

@@ -81,17 +81,17 @@ export function CrewMemberDetail({
     <Surface variant="outline" padding="md" className="mt-1 mb-3 flex min-w-0 flex-col gap-4">
       <section
         aria-label={t("Member library")}
-        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5"
+        className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2"
       >
         <span className="flex min-w-0 flex-1 basis-56 flex-wrap items-center gap-x-2 text-ui-caption text-(--ui-text-secondary)">
-          <span className="inline-flex items-center gap-1">
-            {link
-              ? link.state === "customized"
-                ? t("Library: {p0} · customized", { p0: link.profile.name })
-                : t("Library: {p0}", { p0: link.profile.name })
-              : source
-                ? t("From library: {p0}", { p0: source.name })
-                : t("Member library")}
+          <span className="inline-flex min-w-0 items-center gap-1">
+            <span className="min-w-0 truncate">
+              {link
+                ? t("Library: {p0}", { p0: link.profile.name })
+                : source
+                  ? t("From library: {p0}", { p0: source.name })
+                  : t("Member library")}
+            </span>
             {link?.state === "linked" ? (
               <InfoPopover label={t("About the library profile")}>
                 <p>
@@ -102,9 +102,12 @@ export function CrewMemberDetail({
               </InfoPopover>
             ) : null}
           </span>
+          {link?.state === "customized" ? <span>{t("customized")}</span> : null}
+        </span>
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
           {link?.state === "customized" ? (
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               onClick={() => onChange(libraryVersionPatch(link.profile))}
             >
@@ -112,28 +115,31 @@ export function CrewMemberDetail({
             </Button>
           ) : null}
           {link ? (
-            <Button variant="ghost" size="sm" onClick={() => setEditingProfile(true)}>
+            <Button variant="secondary" size="sm" onClick={() => setEditingProfile(true)}>
               {t("Edit library profile")}
             </Button>
           ) : null}
-        </span>
-        <SegmentedControl
-          label={t("Library availability")}
-          value={scope}
-          options={[
-            { value: "project", label: t("This project") },
-            { value: "global", label: t("All projects") },
-          ]}
-          onValueChange={(value) => onScopeChange(value === "global" ? "global" : "project")}
-        />
-        <Button
-          variant="secondary"
-          loading={pendingAction === "library"}
-          disabled={pending || !agent.candidates.length || !agent.name.trim()}
-          onClick={onSaveToLibrary}
-        >
-          {updatesProfile ? t("Update library profile") : t("Save to library")}
-        </Button>
+          {updatesProfile ? null : (
+            <SegmentedControl
+              label={t("Library availability")}
+              value={scope}
+              options={[
+                { value: "project", label: t("This project") },
+                { value: "global", label: t("All projects") },
+              ]}
+              onValueChange={(value) => onScopeChange(value === "global" ? "global" : "project")}
+            />
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={pendingAction === "library"}
+            disabled={pending || !agent.candidates.length || !agent.name.trim()}
+            onClick={onSaveToLibrary}
+          >
+            {updatesProfile ? t("Update library profile") : t("Save to library")}
+          </Button>
+        </div>
       </section>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="text-ui-body font-medium">{t("Responsibility in the crew")}</span>

@@ -405,6 +405,9 @@ export async function hostFeatureRequest<T>(
       if (fixtureControl.deviceCaptureFailure) throw new Error("Fixture capture unavailable");
       result = frame();
       break;
+    case "devices.stream":
+      // The fixture has no H.264 source; the panel falls back to screenshots.
+      throw new Error("DEVICE_STREAM_UNSUPPORTED: Fixture devices have no live stream.");
     case "devices.control.status":
       result = { deviceId: params.deviceId, busy: fixtureControl.deviceControlBusy };
       break;

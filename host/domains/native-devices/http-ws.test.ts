@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import { DeviceHost } from "../../devices/device-host";
+import { DeviceStreams } from "../../devices/device-stream";
 import { RPC_ERROR_CODES, WS_LIMITS } from "../../../src/shared/model/host-contracts";
 import { fixture, sha } from "../../devices/native-devices.test-support";
 
@@ -334,4 +335,29 @@ it("cancels only the capture waiter, retains accepted IO until settlement, and r
   await completed;
   await ws.call("devices.list");
   expect(f.binary).toHaveBeenCalledOnce();
+});
+
+it("routes live stream reads to the recorder and keeps its refusal text", async () => {
+  const f = await fixture("2026-11-10-device-stream-test"),
+    ws = await f.connect();
+  const deviceId = "emulator-5554";
+  const chunk = { cursor: 12, reset: true, base64: "AAAAAWc=", width: 1280, height: 2856 };
+  const read = vi.spyOn(DeviceStreams.prototype, "read").mockResolvedValue(chunk);
+  expect(await ws.call("devices.stream", { deviceId })).toEqual(chunk);
+  expect(await f.callHttp("devices.stream", { deviceId, cursor: 12 })).toEqual(chunk);
+  expect(read.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+    [deviceId, undefined],
+    [deviceId, 12],
+  ]);
+  expect((await ws.request("devices.stream", { deviceId, cursor: -1 })).error).toBeTruthy();
+  expect((await ws.request("devices.stream", { deviceId, leaseId: "forged" })).error).toBeTruthy();
+  expect((await ws.request("devices.stream", { cursor: 1 })).error).toBeTruthy();
+  expect(read).toHaveBeenCalledTimes(2);
+  read.mockRejectedValue(new Error("DEVICE_STREAM_UNSUPPORTED: fixture"));
+  const failed = await ws.request("devices.stream", { deviceId });
+  expect(failed.error.message).toContain("DEVICE_STREAM_UNSUPPORTED: fixture");
+  expect(failed.error.data).toMatchObject({ delivery: "not-sent" });
+  expect((await f.http("devices.stream", { deviceId })).error).toContain(
+    "DEVICE_STREAM_UNSUPPORTED: fixture",
+  );
 });

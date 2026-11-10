@@ -658,6 +658,7 @@ project rail and shows it; it never reuses an existing folder. The folder goes i
 the folder most of your projects already share, otherwise `Projects` in your home
 folder. Creating the folder outside an approved location asks for file access
 first. The assistant can then start a session, task or crew for the new project.
+It can hand work to the new project in the same request; you do not need to ask again.
 
 To run a project locally ("start localhost", "ayağa kaldır"), the assistant reads
 the project's saved top-bar actions and the scripts in its `package.json` or

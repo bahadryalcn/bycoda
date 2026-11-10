@@ -85,8 +85,10 @@ for (let dir = dirname(path);; dir = dirname(dir)) {
   if (relative(root, dir) === '' || dirname(dir) === dir) break;
 }
 tool ||= ['prettier', 'biome', 'oxfmt'].find(name => tools[name]);
-if (!tool) { process.stdout.write('null'); }
-else if (!tools[tool]) { throw new Error('Install the project formatter: ' + tool); }
+// A configured formatter the project has not installed (no node_modules yet)
+// means nothing can format here: skip like a project without one, so Save
+// does not warn on every file.
+if (!tool || !tools[tool]) { process.stdout.write('null'); }
 else if (tool === 'prettier') {
   const imported = await import(pathToFileURL(tools.prettier).href);
   const prettier = imported.default || imported;

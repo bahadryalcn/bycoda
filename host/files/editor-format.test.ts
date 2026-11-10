@@ -82,6 +82,15 @@ it("uses the project's installed Prettier when its format script names it", asyn
   });
   expect(await readFile(path, "utf8")).toBe("disk content");
 });
+it("skips formatting when the configured project formatter is not installed", async () => {
+  const { root, path } = await project();
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({ scripts: { format: "prettier --write ." } }),
+  );
+  expect(await formatWorkspaceText(root, path, "const a=1;", 0)).toBeNull();
+  expect(await formatWorkspaceText(root, join(root, ".gitignore"), "x", 0)).toBeNull();
+});
 it("selects Oxfmt when the project format script specifies it", async () => {
   const { root, path } = await project();
   await writeFile(

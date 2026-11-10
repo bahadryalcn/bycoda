@@ -145,7 +145,7 @@ export function SubagentRow({
     openIfAsked();
     window.addEventListener(OPEN_SUBAGENT_EVENT, openIfAsked);
     return () => window.removeEventListener(OPEN_SUBAGENT_EVENT, openIfAsked);
-  }, [block.id]);
+  }, [block.id, setOverride]);
   return (
     <SubagentPanel
       block={block}
@@ -191,7 +191,8 @@ function SubagentPanel({
   const model = useSubagentModelName(block);
   const state = toolCallState(block);
   const active = live && state === "pending";
-  const steps = block.agentRun?.steps ?? [];
+  const runSteps = block.agentRun?.steps;
+  const steps = useMemo(() => runSteps ?? [], [runSteps]);
   // The run's trail as transcript blocks, so the panel groups it the way the
   // main transcript groups the agent's own work: what it said, then the calls
   // that line introduced, folding behind it once it moves on.

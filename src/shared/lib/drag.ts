@@ -61,7 +61,6 @@ function releaseBackstopsWhenIdle() {
 
 function setDragCursor(cursor: string) {
   document.body.style.cursor = cursor;
-  document.body.style.setProperty("--workspace-drag-cursor", cursor || "auto");
 }
 
 /**
@@ -145,10 +144,7 @@ export function clearDropFeedback() {
   dropHintKey = "";
   clearDropIndicator();
   if (grabbing) setDragCursor("grabbing");
-  else {
-    document.body.style.cursor = "";
-    document.body.style.removeProperty("--workspace-drag-cursor");
-  }
+  else document.body.style.cursor = "";
 }
 
 function ensureAnnouncer() {
@@ -194,7 +190,6 @@ export function setGrabbing(on: boolean) {
   else document.documentElement.classList.remove("is-grabbing");
   if (!on) {
     clearDropFeedback();
-    document.body.style.removeProperty("--workspace-drag-cursor");
   }
 }
 

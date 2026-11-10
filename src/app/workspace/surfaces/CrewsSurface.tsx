@@ -2,7 +2,6 @@ import { useContext } from "react";
 import type { BackgroundSessionTarget } from "../../../features/tasks/model/backgroundSession";
 import { CrewsPage } from "../../../features/crews/ui/page/CrewsPage";
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { OverlayNav } from "../../shell/TitleBar";
 import { ToolNavigation, ToolNavigationContext } from "../../shell/ToolNavigation";
 import { WindowControls } from "../../shell/WindowControls";
@@ -29,16 +28,15 @@ export function CrewsSurface({
     <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
   );
   const trailing = IS_MAC ? null : <WindowControls />;
-  // With the grouped tool navigation the window chrome carries the tool tabs, as in the other
-  // tools; the page keeps its own title bar below them.
-  if (useContext(ToolNavigationContext)?.active)
-    return (
-      <>
-        <PaneHeader dragRegion chromeInset={chromeInset} leading={leading} trailing={trailing}>
-          <ToolNavigation />
-        </PaneHeader>
-        <CrewsPage {...page} chromeInset={false} />
-      </>
-    );
-  return <CrewsPage {...page} chromeInset={chromeInset} leading={leading} trailing={trailing} />;
+  // With the grouped tool navigation the tool tabs take the page title's place, as in other tools.
+  const grouped = !!useContext(ToolNavigationContext)?.active;
+  return (
+    <CrewsPage
+      {...page}
+      chromeInset={chromeInset}
+      leading={leading}
+      trailing={trailing}
+      navigation={grouped ? <ToolNavigation /> : undefined}
+    />
+  );
 }

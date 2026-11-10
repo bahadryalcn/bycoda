@@ -9,8 +9,8 @@
   overflow: hidden;
   container-type: inline-size;
 }
-/* One slim header (device, state, capability facts, refresh); the screen owns the rest of the
-   pane and its controls float on a vertical rail beside it. */
+/* One slim header (device picker, refresh); the screen owns the rest of the pane and its
+   controls float on a vertical rail beside it. */
 .device-panel-bar {
   display: flex;
   flex-wrap: wrap;
@@ -37,19 +37,19 @@
   margin: 0;
   font-size: var(--ui-font-caption);
 }
-.device-panel-capability {
+.device-panel-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: auto;
+}
+/* Platform glyph: muted while the device is off, success tone while it runs. */
+.device-platform-icon {
   flex: none;
-  min-inline-size: 0;
+  color: var(--ui-text-secondary);
 }
-.device-panel > .device-panel-capability {
-  padding: 8px 12px;
-  border-block-end: 1px solid var(--ui-pane-border);
-}
-@container (max-width: 40rem) {
-  .device-panel-bar > .device-panel-capability {
-    order: 10;
-    flex-basis: 100%;
-  }
+.device-platform-icon[data-active] {
+  color: var(--ui-tone-success-fg);
 }
 .device-panel-stage {
   position: relative;
@@ -83,8 +83,10 @@
   block-size: 100%;
 }
 /* The screen reads as a device: rounded display corners, a hairline edge and a soft lift.
-   Box shadows keep the image box (and coordinate mapping) unchanged. */
-.device-panel-preview-control img {
+   Box shadows keep the image box (and coordinate mapping) unchanged. The live video canvas
+   takes the same box over the still frame and leaves pointer input to the image. */
+.device-panel-preview-control img,
+.device-panel-live {
   --device-screen-inline: min(100cqw, calc(100cqh * var(--device-aspect, 0.46)));
   position: absolute;
   inset: 0;
@@ -99,6 +101,9 @@
   box-shadow:
     0 0 0 1px var(--ui-pane-border),
     var(--ui-elevation-floating);
+}
+.device-panel-live {
+  pointer-events: none;
 }
 .device-panel-preview-control img.host-frame-interactive {
   touch-action: none;
@@ -194,33 +199,10 @@
   font-size: var(--ui-font-caption);
   margin-block: 8px 0;
 }
-/* Options popover: titled sections like a compact settings sheet. */
-.device-panel-menu-section {
-  display: grid;
-  gap: 6px;
-}
-.device-panel-menu-section + .device-panel-menu-section {
-  margin-block-start: 10px;
-  padding-block-start: 10px;
-  border-block-start: 1px solid var(--ui-pane-border);
-}
-.device-panel-menu-title {
-  margin: 0;
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-  color: var(--ui-text-secondary);
-}
-.device-panel-popover .device-panel-menu-facts {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-block-start: 10px;
-  padding-block-start: 10px;
-  border-block-start: 1px solid var(--ui-pane-border);
-}
+/* Options popover: icon-led action rows, then one zoom row under a hairline. */
 .device-panel-menu-actions,
 .device-panel-command,
-.device-panel-setup-body {
+.device-panel-setup {
   display: grid;
   gap: 8px;
 }
@@ -234,17 +216,81 @@
 .device-panel-zoom {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
+  gap: 2px;
+  margin-block-start: 8px;
+  padding-block-start: 8px;
+  border-block-start: 1px solid var(--ui-pane-border);
 }
-.device-panel-setup-summary {
-  display: block;
+.device-panel-zoom-label {
+  flex: 1;
+  padding-inline-start: 8px;
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
 }
-.device-panel-setup-body > p {
+.device-panel-zoom-value {
+  min-inline-size: 3.5rem;
+  font-variant-numeric: tabular-nums;
+}
+/* Setup sheet: state line, one row per platform, then the actions. */
+.device-panel-setup {
+  gap: 10px;
+}
+.device-panel-setup-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.device-panel-setup-head > :first-child {
+  margin-block-start: 0.45em;
+}
+.device-panel-setup-summary {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+  color: var(--color-content);
+}
+.device-panel-popover .device-panel-setup-summary > .host-tool-muted {
+  display: block;
   margin: 0;
+  font-weight: 400;
+}
+.device-panel-setup-platforms {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+}
+.device-panel-setup-platforms > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
   font-size: var(--ui-font-caption);
+}
+.device-panel-setup-platforms > li + li {
+  border-block-start: 1px solid var(--ui-pane-border);
+}
+.device-panel-setup-platform {
+  flex: none;
+  min-inline-size: 4rem;
+  font-weight: 500;
+  color: var(--color-content);
+}
+.device-panel-setup-fact {
+  flex: 1;
+  min-inline-size: 0;
+  color: var(--ui-text-secondary);
+  overflow-wrap: anywhere;
+}
+.device-panel-setup-mark {
+  flex: none;
+  color: var(--ui-tone-warning-fg);
+}
+[data-available="true"] > .device-panel-setup-mark {
+  color: var(--ui-tone-success-fg);
 }
 /* Empty, connect and waiting states: centered, icon-led, one clear action row. */
 .device-panel-state {
@@ -407,36 +453,6 @@
   .device-panel-mark-tools > [data-media-toolbar] {
     flex-wrap: wrap;
     justify-content: center;
-  }
-}
-.device-panel-summary {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: baseline;
-  gap: 8px;
-  min-inline-size: 0;
-  max-inline-size: 45%;
-  margin-inline-end: auto;
-  overflow: hidden;
-  white-space: nowrap;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
-}
-.device-panel-summary > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.device-panel-summary strong {
-  flex-shrink: 0;
-  font-weight: 500;
-  color: var(--color-content);
-}
-.device-panel-summary[data-booted="false"] strong {
-  color: var(--ui-text-secondary);
-}
-@container (max-width: 32rem) {
-  .device-panel-summary > span {
-    display: none;
   }
 }
 .device-panel-reason {

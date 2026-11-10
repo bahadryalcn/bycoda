@@ -69,9 +69,7 @@ export function MemberPerformance({
           <ul className="flex flex-col gap-1">
             <li>{t("Reviewed assignments: {p0}", { p0: formatNumber(performance.reviewed) })}</li>
             {performance.firstPassRate !== undefined ? (
-              <li>
-                {t("First-pass review: {p0}", { p0: percent(performance.firstPassRate) })}
-              </li>
+              <li>{t("First-pass review: {p0}", { p0: percent(performance.firstPassRate) })}</li>
             ) : null}
             {performance.acceptedRate !== undefined ? (
               <li>{t("Accepted: {p0}", { p0: percent(performance.acceptedRate) })}</li>

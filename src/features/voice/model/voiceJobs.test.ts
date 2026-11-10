@@ -5,7 +5,11 @@ import {
   resolveVoiceJobProjects,
   resolveVoiceJobDraft,
   changeVoiceJobRows,
+  voiceJobDrafts,
+  voiceJobProjects,
+  draftVoiceJobs,
 } from "./voiceJobs";
+import { voiceTurnProjectPaths } from "./voiceWorkspaceActions";
 import type {
   AssistantJob,
   AssistantRequest,
@@ -188,4 +192,96 @@ it("reads a spoken approval or cancellation of an open job review", async () => 
     expect(spokenJobReviewDecision(text), text).toBe("cancel");
   for (const text of ["başlatma", "neden başlat dedin", "kaç iş var"])
     expect(spokenJobReviewDecision(text), text).toBeUndefined();
+});
+it("hands a job to the project the same spoken turn just created and names what failed otherwise", () => {
+  const host = [
+    { id: "a", path: "/a" },
+    { id: "new", path: "/new" },
+    { id: "locked", path: "/locked" },
+  ];
+  const visible = [{ path: "/a" }, { path: "/new" }, { path: "/locked" }];
+  const scope = (allowed: readonly string[], locked = (path: string) => path === "/locked") => ({
+    allowed,
+    visible,
+    locked,
+    global: true,
+    projectPath: "/a",
+  });
+  const input = VoiceJobDraftsSchema.parse([
+    { title: "Pac-Man", request: "Build it", projectPath: "/new" },
+  ]);
+  // The turn was frozen before workspace.projects.create ran: the new folder is refused by name.
+  const frozen = ["/a", "/locked"];
+  expect(() =>
+    voiceJobDrafts(input, voiceJobProjects(host, scope(frozen)), frozen, "/a", () => "key"),
+  ).toThrow(
+    /could not be verified for job review\. "\/new" is not one of this spoken turn's projects/,
+  );
+  const widened = voiceTurnProjectPaths(
+    frozen,
+    { family: "workspace", action: "workspace.projects.create" },
+    { action: "workspace.projects.create", status: "accepted", projectPath: "/new" },
+  );
+  expect(widened).toEqual(["/a", "/locked", "/new"]);
+  const jobs = voiceJobDrafts(
+    input,
+    voiceJobProjects(host, scope(widened)),
+    widened,
+    "/a",
+    () => "key",
+  );
+  expect(jobs[0]).toMatchObject({ projectId: "new", projectIds: ["new"], idempotencyKey: "key" });
+  // A lock, a hidden folder or a project-only turn still removes the created project.
+  expect(
+    voiceJobProjects(
+      host,
+      scope(widened, () => true),
+    ),
+  ).toEqual([]);
+  expect(voiceJobProjects(host, { ...scope(widened), visible: [{ path: "/a" }] })).toEqual([
+    host[0],
+  ]);
+  expect(voiceJobProjects(host, { ...scope(widened), global: false })).toEqual([host[0]]);
+  const locked = VoiceJobDraftsSchema.parse([{ title: "x", request: "y", projectPath: "/locked" }]);
+  expect(() =>
+    voiceJobDrafts(locked, voiceJobProjects(host, scope(widened)), widened, "/a", () => "key"),
+  ).toThrow(/"\/locked" is locked, hidden, outside the selected voice scope or not registered/);
+});
+it("admits only a project this turn really created", () => {
+  const call = { family: "workspace", action: "workspace.projects.create" };
+  const done = { action: "workspace.projects.create", status: "completed", projectPath: "/new" };
+  expect(voiceTurnProjectPaths(["/a"], call, { ...done, status: "rejected" })).toEqual(["/a"]);
+  expect(voiceTurnProjectPaths(["/a"], call, { ...done, projectPath: "" })).toEqual(["/a"]);
+  expect(voiceTurnProjectPaths(["/a"], call, { status: "uncertain" })).toEqual(["/a"]);
+  expect(voiceTurnProjectPaths(["/a"], { ...call, family: "conversation" }, done)).toEqual(["/a"]);
+  expect(
+    voiceTurnProjectPaths(
+      ["/a"],
+      { ...call, action: "workspace.projects.select" },
+      { ...done, action: "workspace.projects.select" },
+    ),
+  ).toEqual(["/a"]);
+  expect(voiceTurnProjectPaths(["/a", "/new"], call, done)).toEqual(["/a", "/new"]);
+});
+it("reports a refused proposal as definite so no operation state is read for it", () => {
+  const host = [{ id: "a", path: "/a" }];
+  const draft = (jobs: unknown, capabilities = {}) =>
+    draftVoiceJobs(jobs, host, ["/a"], "/a", () => "key", capabilities);
+  const refused = draft([{ title: "x", request: "y", requestId: "r2" }]);
+  expect(refused).toMatchObject({ status: "rejected", created: 0 });
+  expect("error" in refused && refused.error).toContain("requestId");
+  expect("next" in refused && refused.next).toContain("no job status to read");
+  expect(draft([{ title: "x", request: "y", projectPath: "/new" }])).toMatchObject({
+    status: "rejected",
+    error: expect.stringContaining('"/new" is not one of this spoken turn'),
+  });
+  const note = {
+    kind: "quick",
+    title: "n",
+    request: "r",
+    quickAction: { kind: "note", title: "n", body: "" },
+  };
+  expect(draft([note])).toMatchObject({ error: "Quick note jobs are unavailable on this Host." });
+  expect(draft([note], { quickNotes: true })).toMatchObject({ jobs: [{ kind: "quick" }] });
+  expect(draft([{ title: "x", request: "y" }])).toMatchObject({ jobs: [{ projectId: "a" }] });
 });

@@ -515,7 +515,7 @@ test("adds a new member when the library is empty and shows role problems in pla
     .click();
   await expect(
     dialog.getByText("Plans the work and hands out assignments. A crew has one."),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await dialog
     .getByRole("group", { name: "Suggested roles" })
     .getByRole("button", { name: "Project lead" })
@@ -1155,7 +1155,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.goto(`/tests/browser/crews.html?rich&theme=${theme}`);
       const shot = (name: string) =>
         page.screenshot({
-          path: `${evidence}/${name}-${theme}-${width}-${testInfo.project.name}.png`,
+          path: `${evidence}/r2-${name}-${theme}-${width}-${testInfo.project.name}.png`,
           animations: "disabled",
         });
       const noOverflow = async () =>
@@ -1168,7 +1168,7 @@ for (const theme of ["light", "dark"] as const) {
         .locator("aside")
         .first()
         .screenshot({
-          path: `${evidence}/rail-${theme}-${width}-${testInfo.project.name}.png`,
+          path: `${evidence}/r2-rail-${theme}-${width}-${testInfo.project.name}.png`,
           animations: "disabled",
         });
       const content = await openCrewsTab(page, "Active");
@@ -1207,17 +1207,69 @@ for (const theme of ["light", "dark"] as const) {
         name: "Website Crew",
         exact: true,
       });
-      await expect(dialog.getByText("Library", { exact: true }).first()).toBeVisible();
-      await expect(dialog.getByText("Customized", { exact: true }).first()).toBeVisible();
+      // A member that no longer follows its library profile shows a quiet icon, not a badge.
+      await expect(
+        dialog.getByRole("img", { name: "Not following library profile" }).first(),
+      ).toBeVisible();
+      await expect(dialog.getByText("Customized", { exact: true })).toHaveCount(0);
       await shot("crew-editor");
+      await shot("edit-crew-members");
       await dialog.getByRole("button", { name: /^UI/ }).first().click();
       await expect(dialog.getByRole("textbox", { name: /^Handle/ })).toBeVisible();
       await dialog
         .getByRole("textbox", { name: "Instructions", exact: true })
         .scrollIntoViewIfNeeded();
       await shot("member-form");
+      await shot("member-detail");
       await dialog.getByRole("textbox", { name: /^Handle/ }).scrollIntoViewIfNeeded();
       await shot("member-form-identity");
+      await noOverflow();
+      await page.keyboard.press("Escape");
+      // Members tab: the whole list is one page scroll, not an inner scroll box.
+      await openCrewsTab(page, "Members");
+      await expect(content.getByText("Researcher", { exact: true })).toBeVisible();
+      await content.getByRole("tabpanel").evaluate((node) => {
+        let current: Element | null = node;
+        while (current) {
+          current.scrollTop = current.scrollHeight;
+          current = current.parentElement;
+        }
+      });
+      await shot("members-bottom");
+      // Library profile dialog: member form with a model pool.
+      await content
+        .locator(".settings-collection-row")
+        .filter({ hasText: "Triage engineer" })
+        .getByRole("button", { name: /^Edit / })
+        .click();
+      const profile = page.getByRole("dialog", { name: "Triage engineer", exact: true });
+      await expect(profile).toBeVisible();
+      await shot("profile-top");
+      await expect(profile.getByRole("radio", { name: "Automatic" })).toBeChecked();
+      await profile.getByRole("heading", { name: "Model", exact: true }).scrollIntoViewIfNeeded();
+      await profile.getByText("Available in", { exact: true }).scrollIntoViewIfNeeded();
+      await shot("profile-model-pool");
+      await profile.getByText("Tools", { exact: true }).first().scrollIntoViewIfNeeded();
+      await expect(profile.getByRole("checkbox", { name: "Write code" })).toBeVisible();
+      await expect(profile.getByRole("checkbox", { name: "Image generation" })).toBeHidden();
+      await shot("profile-tools");
+      await page.keyboard.press("Escape");
+      // Models tab: Host model pools.
+      await content.getByRole("tab", { name: "Models", exact: true }).click();
+      await expect(content.getByText("Fast and cheap", { exact: true })).toBeVisible();
+      await expect(content.getByText("Deep reasoning", { exact: true })).toBeVisible();
+      await shot("models-tab");
+      await noOverflow();
+      // New work dialog: role chips wrap and the project select pins "New project…".
+      const start = await openStart(page);
+      await expect(start).toBeVisible();
+      await shot("new-work");
+      await start
+        .getByRole("button", { name: /crew-project/ })
+        .first()
+        .click();
+      await expect(page.getByRole("button", { name: "New project…" })).toBeVisible();
+      await shot("new-work-project-select");
       await noOverflow();
     });
   }

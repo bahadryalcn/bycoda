@@ -2345,6 +2345,34 @@
     }
   },
   {
+    "name": "devices-stream-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.stream",
+      "params": {
+        "deviceId": "emulator-5554",
+        "cursor": 4096
+      }
+    }
+  },
+  {
+    "name": "devices-stream-reject-negative-cursor",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.stream",
+      "params": {
+        "deviceId": "emulator-5554",
+        "cursor": -1
+      }
+    }
+  },
+  {
     "name": "devices-action-valid",
     "schema": "request",
     "valid": true,

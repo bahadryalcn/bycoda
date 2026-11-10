@@ -327,12 +327,10 @@ const nativeServiceUploadOperation = (
 });
 
 const nativeDeviceOperation = (method: NativeDeviceMethod): HostRpcMethodDefinition => ({
-  ...(nativeDeviceReadOnly(method)
-    ? read(NATIVE_DEVICES_RPC_SCHEMAS[method].params, NATIVE_DEVICES_RPC_SCHEMAS[method].result)
-    : control(
-        NATIVE_DEVICES_RPC_SCHEMAS[method].params,
-        NATIVE_DEVICES_RPC_SCHEMAS[method].result,
-      )),
+  ...(nativeDeviceReadOnly(method) ? read : control)(
+    NATIVE_DEVICES_RPC_SCHEMAS[method].params,
+    NATIVE_DEVICES_RPC_SCHEMAS[method].result,
+  ),
   cost: "read",
   requiredCapability: "transport.ws.devices.v1",
   responseTimeoutMs:
@@ -432,6 +430,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "devices.start": nativeDeviceOperation("devices.start"),
   "devices.boot": nativeDeviceOperation("devices.boot"),
   "devices.capture": nativeDeviceOperation("devices.capture"),
+  "devices.stream": nativeDeviceOperation("devices.stream"),
   "devices.control.status": nativeDeviceOperation("devices.control.status"),
   "devices.control.claim": nativeDeviceOperation("devices.control.claim"),
   "devices.control.release": nativeDeviceOperation("devices.control.release"),

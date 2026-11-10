@@ -175,7 +175,6 @@ export function ConflictLayout({
   const [layout, setLayout] = useState(loadLayout);
   const [sizes, setSizes] = useState(loadPaneSizes);
   const sizesRef = useRef(sizes);
-  sizesRef.current = sizes;
   const panes = useRef<HTMLDivElement>(null);
   const [sync] = useState(() => new ConflictScrollSync());
   const [syncScroll, setSyncScroll] = useState(loadScrollSync);
@@ -188,13 +187,16 @@ export function ConflictLayout({
   useEffect(() => {
     controls?.measure?.();
   }, [layout]);
-  const resize = (patch: Partial<PaneSizes>) =>
-    setSizes((current) => {
-      const next = clampSizes({ ...current, ...patch });
-      sizesRef.current = next;
-      return next;
-    });
-  const commitSizes = () => savePaneSizes(sizesRef.current);
+  // A drag paints the grid directly; React state follows once, on release.
+  const resize = (patch: Partial<PaneSizes>) => {
+    const next = (sizesRef.current = clampSizes({ ...sizesRef.current, ...patch }));
+    for (const key of ["x", "y", "c1", "c3"] as const)
+      panes.current?.style.setProperty(`--conflict-${key}`, percent(next[key]));
+  };
+  const commitSizes = () => {
+    setSizes(sizesRef.current);
+    savePaneSizes(sizesRef.current);
+  };
   const resetSizes = (key: keyof PaneSizes) => {
     const next = clampSizes({ ...sizesRef.current, [key]: DEFAULT_PANE_SIZES[key] });
     sizesRef.current = next;
@@ -223,18 +225,7 @@ export function ConflictLayout({
     />
   );
   return (
-    <div
-      className="conflict-workspace"
-      data-layout={layout}
-      style={
-        {
-          "--conflict-x": percent(sizes.x),
-          "--conflict-y": percent(sizes.y),
-          "--conflict-c1": percent(sizes.c1),
-          "--conflict-c3": percent(sizes.c3),
-        } as CSSProperties
-      }
-    >
+    <div className="conflict-workspace" data-layout={layout}>
       <PaneHeader
         className="conflict-toolbar"
         leading={
@@ -361,7 +352,18 @@ export function ConflictLayout({
           </Tooltip>
         ) : null}
       </PaneHeader>
-      <div className="conflict-layout-panes" ref={panes}>
+      <div
+        className="conflict-layout-panes"
+        ref={panes}
+        style={
+          {
+            "--conflict-x": percent(sizes.x),
+            "--conflict-y": percent(sizes.y),
+            "--conflict-c1": percent(sizes.c1),
+            "--conflict-c3": percent(sizes.c3),
+          } as CSSProperties
+        }
+      >
         <section className="conflict-pane conflict-pane-result" aria-label={t("Resolved output")}>
           <PaneHeader
             as="header"
@@ -396,12 +398,12 @@ export function ConflictLayout({
         {layout === "stacked"
           ? [
               sash("x", "x", "Resize source panes", {
-                insetInlineStart: percent(sizes.x),
+                insetInlineStart: "var(--conflict-x)",
                 insetBlockStart: 0,
-                blockSize: percent(sizes.y),
+                blockSize: "var(--conflict-y)",
               }),
               sash("y", "y", "Resize sources and result", {
-                insetBlockStart: percent(sizes.y),
+                insetBlockStart: "var(--conflict-y)",
                 insetInlineStart: 0,
                 inlineSize: "100%",
               }),
@@ -409,7 +411,7 @@ export function ConflictLayout({
           : layout === "columns"
             ? [
                 sash("c1", "x", "Resize current pane", {
-                  insetInlineStart: percent(sizes.c1),
+                  insetInlineStart: "var(--conflict-c1)",
                   insetBlockStart: 0,
                   blockSize: "100%",
                 }),
@@ -418,7 +420,7 @@ export function ConflictLayout({
                   "x",
                   "Resize incoming pane",
                   {
-                    insetInlineStart: percent(1 - sizes.c3),
+                    insetInlineStart: "calc(100% - var(--conflict-c3))",
                     insetBlockStart: 0,
                     blockSize: "100%",
                   },

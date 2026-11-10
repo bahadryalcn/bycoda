@@ -2,6 +2,8 @@
 import { forwardRef, useId, type ReactNode } from "react";
 import {
   AlertCircle as LucideAlertCircle,
+  Accessibility as LucideAccessibility,
+  Apple as LucideApple,
   AppWindow as LucideAppWindow,
   Archive as LucideArchive,
   ArrowDown as LucideArrowDown,
@@ -149,6 +151,8 @@ import {
   WandSparkles as LucideWandSparkles,
   WholeWord as LucideWholeWord,
   WrapText as LucideWrapText,
+  Crosshair as LucideCrosshair,
+  Download as LucideDownload,
   Wrench as LucideWrench,
   X as LucideX,
   Zap as LucideZap,
@@ -243,6 +247,11 @@ function custom(name: string, glyph: ReactNode) {
 
 /** Three usage bars; the settings and workspace navigation use it for Usage. */
 export const UsageIcon = custom("UsageIcon", <path d="M5 20V12M12 20V4M19 20V8" />);
+/** Android robot head; the Devices panel marks Android phones and emulators with it. */
+export const AndroidIcon = custom(
+  "AndroidIcon",
+  <path d="M4 18a8 8 0 0 1 16 0v1H4zM7 5.5l2 3.6M17 5.5l-2 3.6M9 14.5h.01M15 14.5h.01" />,
+);
 
 export const AlertCircle = wrap(LucideAlertCircle, "AlertCircle");
 export const AppWindow = wrap(LucideAppWindow, "AppWindow");
@@ -399,6 +408,10 @@ export const Ungroup = wrap(LucideUngroup, "Ungroup");
 export const WandSparkles = wrap(LucideWandSparkles, "WandSparkles");
 export const WholeWord = wrap(LucideWholeWord, "WholeWord");
 export const WrapText = wrap(LucideWrapText, "WrapText");
+export const Accessibility = wrap(LucideAccessibility, "Accessibility");
+export const Apple = wrap(LucideApple, "Apple");
+export const Crosshair = wrap(LucideCrosshair, "Crosshair");
+export const Download = wrap(LucideDownload, "Download");
 export const Wrench = wrap(LucideWrench, "Wrench");
 export const X = wrap(LucideX, "X");
 export const Zap = wrap(LucideZap, "Zap");

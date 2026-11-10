@@ -108,6 +108,9 @@
   gap: 4px;
   padding: 6px;
   border-bottom: 1px solid var(--ui-tone-neutral-border);
+  /* The header is a drag surface (useVoicePanelDrag). */
+  touch-action: none;
+  cursor: grab;
 }
 .title {
   flex: 1;

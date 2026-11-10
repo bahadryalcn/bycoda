@@ -124,6 +124,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "devices.list"
             | "devices.boot"
             | "devices.capture"
+            | "devices.stream"
             | "devices.control.status"
             | "devices.control.claim"
             | "devices.control.release"

@@ -78,6 +78,9 @@ export function VoicePanelResize({
     return () => applySize(node, undefined);
   }, [panel]);
   useEffect(() => {
+    // A gesture keeps the side it started on: the growing panel crosses the window midline,
+    // and flipping then would invert the drag and make the width jump between sizes.
+    if (grab.current) return;
     const rect = panel.current?.getBoundingClientRect();
     if (!rect) return;
     sideRef.current = rect.x + rect.width / 2 > window.innerWidth / 2 ? "left" : "right";

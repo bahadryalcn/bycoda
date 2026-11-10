@@ -44,7 +44,14 @@ export type CrewsPageProps = {
 };
 
 /** Full-page Crews: saved teams, the member library and ongoing work for the current project. */
-export function CrewsPage({ cwd, chromeInset, leading, trailing, onOpenSession }: CrewsPageProps) {
+export function CrewsPage({
+  cwd,
+  chromeInset,
+  leading,
+  trailing,
+  navigation,
+  onOpenSession,
+}: CrewsPageProps) {
   useLocale();
   const state = useProjectCrews(cwd);
   const supported = useActiveCrewSupported();
@@ -99,9 +106,9 @@ export function CrewsPage({ cwd, chromeInset, leading, trailing, onOpenSession }
           chromeInset={chromeInset}
           className="select-none"
           leading={leading}
-          icon={<Bot className="icon-sm" />}
-          title={t("Crews")}
-          meta={t("Teams, members and work for this project")}
+          icon={navigation ? undefined : <Bot className="icon-sm" />}
+          title={navigation ? undefined : t("Crews")}
+          meta={navigation ? undefined : t("Teams, members and work for this project")}
           actions={
             <Button
               variant="primary"
@@ -113,7 +120,9 @@ export function CrewsPage({ cwd, chromeInset, leading, trailing, onOpenSession }
             </Button>
           }
           trailing={trailing}
-        />
+        >
+          {navigation}
+        </PaneHeader>
         <div className="border-b border-stroke px-3 py-1.5">
           <TabList
             label={t("Crews sections")}

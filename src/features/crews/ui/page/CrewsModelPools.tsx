@@ -165,35 +165,35 @@ export function CrewsModelPools({ data }: { data: ProjectCrews }) {
         ) : !pools.length ? (
           <EmptyState size="inline" kind="empty" description={t("No model pools yet.")} />
         ) : (
-          <div className="settings-collection-list max-h-none! overflow-visible!" role="list">
-            {pools.map((pool) => (
-              <div key={pool.id} role="listitem" className="settings-collection-row">
-                <div className="settings-collection-main">
-                  <span className="settings-collection-title min-w-0 truncate">{pool.name}</span>
-                  <span className="text-ui-caption text-(--ui-text-secondary)">
-                    {poolMeta(pool, data)}
-                  </span>
+          <div className="settings-collection">
+            <div className="settings-collection-list max-h-none! overflow-visible!" role="list">
+              {pools.map((pool) => (
+                <div key={pool.id} role="listitem" className="settings-collection-row">
+                  <div className="settings-collection-main">
+                    <div className="settings-collection-title min-w-0">{pool.name}</div>
+                    <div className="settings-collection-meta">{poolMeta(pool, data)}</div>
+                  </div>
+                  <div className="settings-collection-actions shrink-0">
+                    <Button
+                      variant="ghost"
+                      aria-label={t("Edit {p0}", { p0: pool.name })}
+                      onClick={() => setEditing(structuredClone(pool))}
+                    >
+                      {t("Edit")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      iconOnly
+                      label={t("Delete {p0}", { p0: pool.name })}
+                      loading={remove.isPending && remove.variables?.id === pool.id}
+                      onClick={() => void askDelete(pool)}
+                    >
+                      <Trash2 className="icon-sm" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="settings-collection-actions shrink-0">
-                  <Button
-                    variant="ghost"
-                    aria-label={t("Edit {p0}", { p0: pool.name })}
-                    onClick={() => setEditing(structuredClone(pool))}
-                  >
-                    {t("Edit")}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    iconOnly
-                    label={t("Delete {p0}", { p0: pool.name })}
-                    loading={remove.isPending && remove.variables?.id === pool.id}
-                    onClick={() => void askDelete(pool)}
-                  >
-                    <Trash2 className="icon-sm" />
-                  </Button>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </Group>
