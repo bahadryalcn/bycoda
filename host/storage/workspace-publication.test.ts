@@ -1,13 +1,81 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import * as childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { publishWorkspaceFile, windowsOperationError } from "./workspace-publication";
+import {
+  publishWorkspaceFile,
+  windowsFileOperation,
+  windowsOperationError,
+} from "./workspace-publication";
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawn: vi.fn(actual.spawn) };
+});
 
 const roots: string[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
+});
+
+function windowsChild() {
+  const child = Object.assign(new EventEmitter(), {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(() => {
+      child.emit("close", null);
+      return true;
+    }),
+  });
+  vi.mocked(childProcess.spawn).mockReturnValueOnce(
+    child as unknown as ReturnType<typeof childProcess.spawn>,
+  );
+  return child;
+}
+
+it("allows a cold Windows helper to become ready after twelve seconds before sending paths", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const child = windowsChild();
+  const input: string[] = [];
+  child.stdin.on("data", (data: Buffer) => input.push(data.toString()));
+  child.stdin.on("finish", () => child.emit("close", 0));
+  const operation = windowsFileOperation("staged", "target", true, "backup");
+  void operation.catch(() => undefined);
+  await vi.advanceTimersByTimeAsync(12_000);
+  expect(child.kill).not.toHaveBeenCalled();
+  expect(input).toEqual([]);
+  child.stdout.write("READY\n");
+  await operation;
+  expect(JSON.parse(input.join(""))).toEqual({
+    staged: "staged",
+    target: "target",
+    protect: true,
+    backup: "backup",
+  });
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("terminates a Windows helper that never becomes ready after thirty seconds", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const child = windowsChild();
+  const operation = windowsFileOperation("staged", "target", true, "backup");
+  const rejected = expect(operation).rejects.toThrow(
+    "Windows staging permissions failed (timeout): exit code unknown",
+  );
+  await vi.advanceTimersByTimeAsync(29_999);
+  expect(child.kill).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  await rejected;
+  expect(child.kill).toHaveBeenCalledOnce();
+  expect(child.stdin.readableLength).toBe(0);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 async function fixture() {

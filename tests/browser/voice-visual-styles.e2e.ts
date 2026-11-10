@@ -282,9 +282,10 @@ test("keyboard move, drag, compact double click, viewport clamp, Escape and redu
   // Wait for the changed grip geometry before sending raw pointer coordinates.
   await grip.click({ trial: true });
   const pos = (await grip.boundingBox())!;
-  await page.mouse.move(pos.x + 10, pos.y + 10);
+  await page.mouse.move(pos.x + pos.width / 2, pos.y + pos.height / 2);
   await page.mouse.down();
-  await page.mouse.move(500, 100);
+  // Cross the drag threshold inside the header before travelling outside it.
+  await page.mouse.move(500, 100, { steps: 40 });
   await page.mouse.up();
   expect((await panel.boundingBox())!.y).toBeLessThan(150);
   await grip.dblclick();

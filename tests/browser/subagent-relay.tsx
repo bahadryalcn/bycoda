@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { SubagentSheet, useSubagentSheet } from "../../src/features/sessions/ui/SubagentSheet";
 import { useSubagentRelay } from "../../src/features/sessions/ui/useSubagentRelay";
 import { ActivityDock } from "../../src/features/sessions/ui/ActivityDock";
-import { SubagentStack } from "../../src/features/sessions/ui/AgentTranscriptActivity";
+import { SubagentStack } from "../../src/features/sessions/ui/SubagentCards";
 import { SubagentStateLine } from "../../src/features/sessions/ui/SubagentAnatomy";
 import { Button } from "../../src/shared/ui/Button";
 import type { Block } from "../../src/features/sessions/model/session";

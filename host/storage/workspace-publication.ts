@@ -85,7 +85,7 @@ export function windowsOperationError(
   );
 }
 
-async function windowsFileOperation(
+export async function windowsFileOperation(
   staged: string,
   target: string,
   protect: boolean,
@@ -127,10 +127,12 @@ async function windowsFileOperation(
     child.stderr.on("data", (data: Buffer) => {
       diagnostic = (diagnostic + data.toString()).slice(-2000);
     });
+    // Cold Windows PowerShell startup can exceed ten seconds on busy hosts.
+    // Keep the same bounded allowance as the other Windows filesystem helpers.
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
-    }, 10_000);
+    }, 30_000);
     child.once("error", (error) => {
       clearTimeout(timer);
       reject(error);

@@ -3,7 +3,9 @@ import { mkdir } from "node:fs/promises";
 
 const captures = "temp/verification/2026-11-04-chat-thumbnails";
 
-test("attachment cards and inline references follow the selected accent", async ({ page }) => {
+test("attachment cards and inline references retain kind tones and the selected accent", async ({
+  page,
+}) => {
   const evidence = "temp/verification/2026-11-07-attachment-accent";
   await mkdir(evidence, { recursive: true });
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -14,21 +16,10 @@ test("attachment cards and inline references follow the selected accent", async 
     });
     const composer = page.getByRole("region", { name: "Composer", exact: true });
     await expect(composer.locator("[data-attachment-chip]")).toHaveCount(10);
-    const accentStyles = await page.evaluate(() => {
+    const tones = await page.evaluate(() => {
       document.documentElement.style.setProperty("--user-accent-color", "#7c3aed");
-      const probe = document.createElement("span");
-      probe.style.cssText =
-        "color:var(--ui-tone-accent-fg);background:var(--ui-tone-accent-subtle);border:1px solid var(--ui-tone-accent-border)";
-      document.body.append(probe);
-      const expected = getComputedStyle(probe);
-      const colors = {
-        color: expected.color,
-        background: expected.backgroundColor,
-        border: expected.borderTopColor,
-      };
-      probe.remove();
-      const read = (element: Element) => {
-        const style = getComputedStyle(element);
+      const read = (element: Element, pseudo?: string) => {
+        const style = getComputedStyle(element, pseudo);
         return {
           color: style.color,
           background: style.backgroundColor,
@@ -36,32 +27,55 @@ test("attachment cards and inline references follow the selected accent", async 
           shadow: style.boxShadow,
         };
       };
-      const select = (selector: string) => read(document.querySelector(selector)!);
-      const name = [...document.querySelectorAll('[aria-label="Composer"] span')].find(
-        (element) =>
-          element.childElementCount === 0 &&
-          element.textContent === "customer-interview-final-recording.m4a",
-      )!;
-      return {
-        expected: colors,
-        image: select('[aria-label="Composer"] [data-attachment-chip="image"]'),
-        file: select('[aria-label="Composer"] [data-attachment-chip="file"]'),
-        name: read(name),
-        composer: select('[data-composer-attachment-kind="image"]'),
-        transcript: select(
-          '[aria-label="Message"] span[title="mountain-reference-for-the-new-project.png"]',
-        ),
-      };
+      return [
+        ["image", "--ui-tone-success-fg"],
+        ["audio", "--ui-tone-warning-fg"],
+        ["markdown", "--ui-tone-accent-fg"],
+      ].map(([kind, role]) => {
+        const card = document.querySelector(
+          `[aria-label="Composer"] [data-attachment-chip][data-attachment-kind="${kind}"]`,
+        )!;
+        const probe = document.createElement("span");
+        probe.style.cssText = `color:var(${role});background:color-mix(in srgb,var(${role}) 8%,var(--ui-surface));border:1px solid color-mix(in srgb,var(${role}) 40%,var(--color-stroke))`;
+        card.parentElement!.append(probe);
+        const expectedCard = read(probe);
+        probe.style.background = `color-mix(in srgb,var(${role}) 10%,transparent)`;
+        probe.style.boxShadow = `inset 0 0 0 1px color-mix(in srgb,var(${role}) 45%,transparent)`;
+        const expectedHighlight = read(probe);
+        probe.remove();
+        const composerToken = document.querySelector(
+          `[aria-label="Composer"] [data-composer-attachment-kind="${kind}"]`,
+        )!;
+        const transcriptToken = document.querySelector(
+          `[aria-label="Message"] span[title][data-attachment-kind="${kind}"]`,
+        )!;
+        const name = [...card.querySelectorAll("span")].find(
+          (element) =>
+            element.childElementCount === 0 && element.textContent === card.getAttribute("title"),
+        );
+        return {
+          kind,
+          expectedCard,
+          expectedHighlight,
+          card: read(card),
+          composer: read(composerToken),
+          highlight: read(composerToken, "::before"),
+          transcript: read(transcriptToken),
+          ...(name ? { name: read(name) } : {}),
+        };
+      });
     });
-    for (const card of [accentStyles.image, accentStyles.file]) {
-      expect(card.background).toBe(accentStyles.expected.background);
-      expect(card.border).toBe(accentStyles.expected.border);
-    }
-    expect(accentStyles.name.color).toBe(accentStyles.expected.color);
-    for (const token of [accentStyles.composer, accentStyles.transcript]) {
-      expect(token.color).toBe(accentStyles.expected.color);
-      expect(token.background).toBe(accentStyles.expected.background);
-      expect(token.shadow).toContain(accentStyles.expected.border);
+    for (const tone of tones) {
+      expect(tone.card.color, tone.kind).toBe(tone.expectedCard.color);
+      expect(tone.card.background, tone.kind).toBe(tone.expectedCard.background);
+      expect(tone.card.border, tone.kind).toBe(tone.expectedCard.border);
+      if (tone.kind !== "image") expect(tone.name?.color, tone.kind).toBe(tone.expectedCard.color);
+      expect(tone.composer.color, tone.kind).toBe(tone.expectedCard.color);
+      expect(tone.highlight.background, tone.kind).toBe(tone.expectedHighlight.background);
+      expect(tone.highlight.shadow, tone.kind).toBe(tone.expectedHighlight.shadow);
+      expect(tone.transcript.color, tone.kind).toBe(tone.expectedCard.color);
+      expect(tone.transcript.background, tone.kind).toBe("rgba(0, 0, 0, 0)");
+      expect(tone.transcript.shadow, tone.kind).toBe("none");
     }
     await page.screenshot({ path: `${evidence}/${theme}-1280.png`, fullPage: true });
   }
@@ -186,7 +200,7 @@ test("attachment card themes and widths", async ({ page }) => {
       await expect(
         page
           .getByRole("region", { name: "Composer", exact: true })
-          .locator("[data-attachment-kind]"),
+          .locator("[data-attachment-chip]"),
       ).toHaveCount(10);
       const persistedThumbnail = page
         .getByRole("region", { name: "Message", exact: true })
@@ -293,7 +307,7 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
       await expect(message).toHaveValue(
         "Review references and retain this existing draft. [image1] [file1]",
       );
-      const remainingImage = page.locator('[data-attachment-kind="image"]');
+      const remainingImage = page.locator('[data-attachment-chip="image"]');
       await expect(remainingImage).toHaveCount(1);
       const preview = remainingImage.getByRole("button", {
         name: "Open second-reference.png full screen",

@@ -215,7 +215,7 @@ test("compact navigation keeps tabs reachable and recovery count above its icon"
   await page.setViewportSize({ width: 900, height: 760 });
   await page.getByRole("button", { name: "Expand projects", exact: true }).click();
   const row = page.locator(".recovery-rail-row");
-  const search = page.locator(".bycoda-rail-brand:visible");
+  const search = page.locator('[data-rail-brand="column"]');
   await expect(row.getByRole("button", { name: "Clear list", exact: true })).toBeVisible();
   const searchBounds = await search.boundingBox();
   const rowBounds = await row.boundingBox();

@@ -87,12 +87,10 @@ test("settings expose advanced controls without opening a menu", async ({ page }
   ]) {
     await page.goto(`/tests/browser/settings.html?section=${section}&theme=dark&lang=en`);
     const form = page.locator(".bycoda-settings-form");
-    // Optional provenance, recovery help and manual connection setup are intentionally disclosed.
+    // Optional build provenance is intentionally disclosed.
     // Keep this inventory exact so ordinary settings cannot silently move behind disclosures.
     const optionalDisclosures: Record<string, string[]> = {
       general: ["Build details"],
-      // Reconnection help moved from a disclosure into the group's information control.
-      connections: ["Connect to an existing host by URL"],
     };
     await expect
       .poll(async () =>
@@ -116,6 +114,16 @@ test("settings expose advanced controls without opening a menu", async ({ page }
         }),
       ).toBeVisible();
       await page.keyboard.press("Escape");
+      // Manual URL setup shares the inline Add machine form instead of a separate disclosure.
+      await form.getByRole("button", { name: "Add machine", exact: true }).click();
+      const machineForm = form.getByRole("form", { name: "Add a new machine", exact: true });
+      await machineForm.getByRole("radio", { name: "Host URL", exact: true }).click();
+      await expect(
+        machineForm.getByRole("textbox", { name: "Host URL", exact: true }),
+      ).toBeVisible();
+      await expect(machineForm.getByLabel("Device token", { exact: true })).toBeVisible();
+      await machineForm.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(machineForm).toHaveCount(0);
     }
     if (section === "general") {
       const buildDetails = form.getByTestId("build-identity-details");

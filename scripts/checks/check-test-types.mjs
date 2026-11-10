@@ -76,21 +76,21 @@ export function topFolder(file) {
   return parts.length > 2 ? parts.slice(0, parts[0] === "src" ? 3 : 2).join("/") : parts[0];
 }
 
-function runProject(project) {
-  const bin = path.join(
-    root,
-    "node_modules/.bin",
-    process.platform === "win32" ? "tsc-rs.cmd" : "tsc-rs",
-  );
+export function runProject(project, platform = process.platform, execute = spawnSync) {
+  const bin = path.join(root, "node_modules/.bin", platform === "win32" ? "tsc-rs.cmd" : "tsc-rs");
   // One command string: passing args with shell:true is deprecated, and the .cmd shim needs a shell.
-  const result = spawnSync(`"${bin}" --noEmit --pretty false -p ${project}`, {
+  const options = {
     cwd: root,
     encoding: "utf8",
     windowsHide: true,
     timeout: typeCheckTimeoutMs,
     maxBuffer: 256 * 1024 * 1024,
-    shell: process.platform === "win32",
-  });
+  };
+  const args = ["--noEmit", "--pretty", "false", "-p", project];
+  const result =
+    platform === "win32"
+      ? execute(`"${bin}" ${args.join(" ")}`, { ...options, shell: true })
+      : execute(bin, args, options);
   if (result.error) throw new Error(`tsc-rs failed for ${project}: ${result.error.message}`);
   const diagnostics = parseDiagnostics(`${result.stdout}\n${result.stderr}`);
   // A failing exit with diagnostics is the normal "errors found" case; without any it is a crash.

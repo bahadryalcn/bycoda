@@ -4951,11 +4951,15 @@ describe("remote host API", () => {
       sessionId: id,
       text: "Work without this client",
     };
-    await s.call("commands.dispatch", command);
-    await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
+    const dispatched = await s.call("commands.dispatch", command);
+    expect(dispatched.value.error).toBeUndefined();
+    // Acceptance precedes provider admission; wait for its actual start, not a one-second poll.
+    await s.started;
+    expect(s.send).toHaveBeenCalledTimes(1);
     s.turn().onEvent({ type: "message.delta", text: "Finished on the host" });
     s.finish();
-    await vi.waitFor(async () => expect((await s.store.session(id)).status).toBe("idle"));
+    await s.engine.waitForRun(id, dispatched.value.result.runId);
+    expect((await s.store.session(id)).status).toBe("idle");
     const recovered = await s.call("sessions.get", { sessionId: id }, s.second.token);
     expect(recovered.value.result.session.blocks.at(-1).text).toBe("Finished on the host");
     await s.call("commands.dispatch", command, s.second.token);

@@ -80,6 +80,8 @@ export class LocalVoice {
 }
 export const sessionsRef = { current: [] };
 export const getSessions = () => sessionsRef.current;
+export const useSessionsSelector = <T>(select: (sessions: typeof sessionsRef.current) => T): T =>
+  select(sessionsRef.current);
 export const subscribeSessionCommits = () => () => {};
 export const useSession = () => undefined;
 export const converseWithSession = () =>
