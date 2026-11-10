@@ -34,7 +34,10 @@ it("reports a waiting update with both versions and the mapped reason", () => {
       { text: "It continues when the host can be restarted safely." },
     ],
   });
-  const unknown = localHostNotice(deferred(null, "0.5.54", "Another host update is being installed."), "ok");
+  const unknown = localHostNotice(
+    deferred(null, "0.5.54", "Another host update is being installed."),
+    "ok",
+  );
   expect(unknown?.title).toBe("A host update is waiting.");
   expect(unknown?.details).toEqual([{ text: "Another host update is being installed." }]);
 });

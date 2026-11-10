@@ -18,7 +18,13 @@ export function startModelEnabledHostSync(): () => void {
     running = (async () => {
       const machine = await invoke<RemoteMachine | null>("local_host_connect");
       if (!machine) return;
-      await remoteRequest(machine.id, "host.settings.save", { disabledModels: disabled }, false, true);
+      await remoteRequest(
+        machine.id,
+        "host.settings.save",
+        { disabledModels: disabled },
+        false,
+        true,
+      );
       sent = body;
     })()
       .catch((error) => console.warn("Publishing enabled models failed", error))

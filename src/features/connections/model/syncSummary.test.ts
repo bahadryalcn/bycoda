@@ -57,7 +57,7 @@ it("appends pending changes to every state", () => {
   expect(summarizeSync({ state: "syncing", pendingOps: 3 }, now).text).toBe(
     "Syncing… · 3 pending changes",
   );
-  expect(summarizeSync({ state: "error", lastError: UNREACHABLE, pendingOps: 2 }, now).text).toMatch(
-    / · 2 pending changes$/,
-  );
+  expect(
+    summarizeSync({ state: "error", lastError: UNREACHABLE, pendingOps: 2 }, now).text,
+  ).toMatch(/ · 2 pending changes$/);
 });
