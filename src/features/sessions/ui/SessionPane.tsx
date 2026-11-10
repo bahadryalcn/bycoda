@@ -114,6 +114,7 @@ import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortc
 import { Button } from "../../../shared/ui/Button";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { TranscriptFind } from "./TranscriptFind";
+import { syncPaneBackground } from "../../../shared/lib/paneBackground";
 import {
   clearTranscriptJump,
   peekTranscriptJump,
@@ -856,6 +857,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // One panel, docked beside the focused pane, so a split never shows two.
   const showNotesPanel = notesEnabled && notesPanelOpen && visible && focused;
   const paneRef = useRef<HTMLDivElement>(null);
+  const setPane = useCallback((node: HTMLDivElement | null) => {
+    paneRef.current = node;
+    // The layer can mount after its layout leaf was last rendered.
+    syncPaneBackground(node?.closest<HTMLElement>("[data-pane-leaf]"), node);
+  }, []);
   const notesPanelWasShown = useRef(false);
   useEffect(() => {
     // Closing the panel from the keyboard hands focus back to the composer.
@@ -1436,7 +1442,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
 
   const pane = (
     <div
-      ref={paneRef}
+      ref={setPane}
       data-session-drop={session.id}
       data-session-visible={visible}
       data-session-empty={isEmpty}

@@ -1336,6 +1336,16 @@ html.has-native-glass:not(.theme-light) .chat-pane-background {
   background-color: transparent;
 }
 
+/* Where the shared artwork sits inside a split pane, written on this layer by
+   syncPaneBackground. Custom properties inherit, so without this reset a divider
+   drag restyled the whole transcript on every frame; only the artwork reads them. */
+.chat-pane-background > :not(.gradient-blur-background) {
+  --chat-background-left: initial;
+  --chat-background-top: initial;
+  --chat-background-width: initial;
+  --chat-background-height: initial;
+}
+
 .chat-pane-background::before {
   content: "";
   position: absolute;

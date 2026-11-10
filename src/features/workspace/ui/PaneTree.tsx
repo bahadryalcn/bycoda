@@ -6,10 +6,10 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useReducer,
   useRef,
   useState,
-  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
@@ -72,6 +72,7 @@ import {
 import { FilePane } from "../../files/ui/FilePane";
 import { MediaVisibilityContext } from "../../files/model/mediaVisibility";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
+import { paneBackgroundPlacement, syncPaneBackgrounds } from "../../../shared/lib/paneBackground";
 import { useShellSessionsSelector } from "../../sessions/model/sessionsStore";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { TranscriptPool } from "../../sessions/ui/TranscriptPool";
@@ -315,6 +316,8 @@ function PaneTreeComponent({
   layoutRef.current = layout;
   // A sash preview belongs to the layout it was made from; a new layout drops it.
   const [draft, setDraft] = useState<{ base: LayoutNode; node: LayoutNode } | null>(null);
+  // After every render: a sash preview moves the leaves on each frame.
+  useLayoutEffect(() => syncPaneBackgrounds(treeRef.current));
   const [paneDrag, setPaneDragState] = useState<PaneDrag | null>(null);
   const setPaneDrag = useCallback((next: PaneDrag | null) => {
     setPaneDragState((current) => (samePaneDrop(current, next) ? current : next));
@@ -633,15 +636,11 @@ function PaneTreeComponent({
           const hidden = leaf.hidden || Boolean(maximum && groupSelected?.id !== maximum.id);
           const rect = maximum ? { x: 0, y: 0, w: 1, h: 1 } : leaf.rect;
           const onPaneDragStart = paneDragStartFor(leaf.id);
-          const backgroundStyle = {
-            "--chat-background-left": `${(-rect.x / rect.w) * 100}%`,
-            "--chat-background-top": `${(-rect.y / rect.h) * 100}%`,
-            "--chat-background-width": `${100 / rect.w}%`,
-            "--chat-background-height": `${100 / rect.h}%`,
-          } as CSSProperties;
           return (
             <div
               key={leaf.id}
+              data-pane-leaf=""
+              data-pane-background={paneBackgroundPlacement(rect)}
               data-pane-id={hidden ? undefined : leaf.id}
               data-pane-active={focusedId === leaf.id ? "true" : undefined}
               // User interaction keeps a browsing tab; automatic composer focus does not.
@@ -676,7 +675,6 @@ function PaneTreeComponent({
                 top: `${rect.y * 100}%`,
                 width: `${rect.w * 100}%`,
                 height: `${rect.h * 100}%`,
-                ...backgroundStyle,
               }}
             >
               {leaf.tabIds && leaf.tabIds.length > 1 ? (
