@@ -4426,7 +4426,9 @@ mod tests {
         assert!(!supported_remote_method("voice.local.exec"));
         assert!(!supported_remote_method("voice.tools.exec"));
         assert!(rpc_timeout("voice.tools.call", &json!({})) >= Duration::from_secs(250));
-        assert!(rpc_timeout("assistant.builder.avatarGenerate", &json!({})) > Duration::from_secs(240));
+        assert!(
+            rpc_timeout("assistant.builder.avatarGenerate", &json!({})) > Duration::from_secs(240)
+        );
         assert!(rpc_timeout("assistant.builder.interview", &json!({})) > Duration::from_secs(100));
         assert!(rpc_timeout("voice.local.start", &json!({})) >= Duration::from_secs(180));
         assert!(rpc_timeout("voice.local.inspect", &json!({})) >= Duration::from_secs(60));

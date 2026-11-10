@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { applyDisabledModels, parseDisabledModels } from "./disabled-models";
+import { applyDisabledModels } from "../domains/models/disabled-models";
+import { parseDisabledModels } from "./disabled-models";
 
 const catalog = {
   models: {

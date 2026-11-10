@@ -3704,7 +3704,14 @@ fn git_commit_files_for(root: &Path, sha: &str) -> Result<Vec<GitChangedFile>, S
         None => vec!["--root", sha.as_str()],
     };
     let diff = |mode: &str| {
-        let mut args = vec!["diff-tree", "--no-commit-id", "-r", "--no-renames", mode, "-z"];
+        let mut args = vec![
+            "diff-tree",
+            "--no-commit-id",
+            "-r",
+            "--no-renames",
+            mode,
+            "-z",
+        ];
         args.extend(&range);
         git_run(root, &args)
     };

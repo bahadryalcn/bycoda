@@ -1,5 +1,5 @@
 import { ModelsListParamsSchema } from "../../../src/shared/model/host-contracts/models";
-import { applyDisabledModels } from "../../providers/disabled-models";
+import { applyDisabledModels } from "./disabled-models";
 import { assertDomainAuthority, type HostDomainContext } from "../context";
 
 export interface ModelsPorts {

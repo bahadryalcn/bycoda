@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.8]
+
+### Improved
+
+- Stream live Host browser and Android device views.
+- Add crew model pools, member tool extras and seeded member avatars.
+- Add assistant model pool editing, wake/sleep phrases and approval persistence.
+- Stabilize assistant settings and voice effects for React 19.
+- Improve shared pane backgrounds, translations and package artifact uploads.
+
 ## [0.7.7]
 
 ### Account (optional)

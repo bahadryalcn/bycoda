@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 import { formatResetDuration } from "../../../shared/i18n/format";
 export { formatResetDuration } from "../../../shared/i18n/format";
 import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
