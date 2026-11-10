@@ -309,13 +309,30 @@ twelve hours is recorded as skipped, as for other automations.
 **Reminders** are personal and start no work. The assistant keeps them separately
 from jobs; each one fires once at its time as an assistant notification, with
 the usual quiet-hours, do-not-disturb and presence rules, and reaches a paired
-phone through assistant push. Older phone builds do not receive reminder
-notifications. Ask the voice assistant to list or cancel pending reminders.
+phone through assistant push. When the desktop voice is connected and you are
+present, a fired reminder is also spoken ("Reminder: ..."), once, even if "Speak
+job updates" is off; it stays silent in quiet hours, while the speaker is muted or
+announcements are held, and when proactive speech is set to never. A reminder that
+was not spoken stays a notification. Ask the voice assistant to list or cancel
+pending reminders.
 
 A project job can **wait for another job**: it stays queued until that job is
 done. If the earlier job fails or is cancelled, the later one stays queued with
 the hold reason "dependency" and you get one notification saying which job it is
 waiting for. Stop it in the Room if you no longer want it.
+
+### Pull request watches
+
+Ask the assistant in a project Room or by voice to "watch PR 12". The Host
+remembers the watch (up to 30, for 14 days) and checks the pull request about every
+three minutes using the GitHub sign-in the Git panel already uses, so it keeps
+working with the desktop window closed. You get a notification, with a push to a
+paired phone, when the PR is merged or closed (the watch then ends), when its checks
+fail or pass, or when a review requests changes or approves. If GitHub cannot be
+reached or you are not signed in, you get one "Cannot watch PR" notice and the
+watch pauses. The watcher only reads: it never comments, merges or pushes. Ask the
+assistant to list or stop your watches. Session watches inside a coding session
+are separate.
 
 ## Rules, conversations and notes
 

@@ -9,6 +9,7 @@ import type {
 import { DEFAULT_SPEAKERS, SPEAKER_IDS, type SpeakerEngine } from "./voiceSpeakers";
 import { CLOUD_DICTATION_PROVIDERS, DICTATION_MODELS } from "./dictationModels";
 import { SPOKEN_LANGUAGES } from "./voiceSpokenLanguage";
+import { WAKE_PHRASE_LIMITS } from "./voiceWakePhrase";
 
 export type VoiceVisual = "mark" | "wave" | "dots" | "orb";
 /** Who runs the conversation: local recognition + the session's provider, or a
@@ -36,6 +37,11 @@ export type VoiceSettings = {
   returnCall?: boolean;
   /** Seconds the microphone stays open after the return greeting; 5 to 120, default 20. */
   returnCallSeconds?: number;
+  /** Opt-in: a local listener opens Talk after the wake phrase; the sleep phrase closes it. */
+  wakeEnabled?: boolean;
+  /** Owner-typed phrases only (2 to 40 characters); missing means the language default. */
+  wakePhrase?: string;
+  sleepPhrase?: string;
   visual: VoiceVisual;
   compact: boolean;
   enabled: boolean;
@@ -81,6 +87,12 @@ const defaults: VoiceSettings = {
   whisperPath: "",
   ttsPath: "",
 };
+function wakePhraseField(key: "wakePhrase" | "sleepPhrase", raw: unknown) {
+  const text = typeof raw === "string" ? raw.trim() : "";
+  return text.length >= WAKE_PHRASE_LIMITS.min && text.length <= WAKE_PHRASE_LIMITS.max
+    ? { [key]: text }
+    : {};
+}
 const preference = createStoredSetting<VoiceSettings>({
   key: "bycoda.voice",
   fallback: defaults,
@@ -134,6 +146,9 @@ const preference = createStoredSetting<VoiceSettings>({
         : {}),
       ...(typeof value?.allowBargeIn === "boolean" ? { allowBargeIn: value.allowBargeIn } : {}),
       ...(value?.returnCall === true ? { returnCall: true } : {}),
+      ...(value?.wakeEnabled === true ? { wakeEnabled: true } : {}),
+      ...wakePhraseField("wakePhrase", value?.wakePhrase),
+      ...wakePhraseField("sleepPhrase", value?.sleepPhrase),
       ...(Number.isInteger(value?.returnCallSeconds) &&
       value.returnCallSeconds >= 5 &&
       value.returnCallSeconds <= 120

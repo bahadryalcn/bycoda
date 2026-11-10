@@ -40,7 +40,16 @@ backlogs end voice. Unvoiced noise cannot indefinitely extend capture. Acknowled
 manual mode bypasses silence/Smart Turn: only Finish commits; audio caps never auto-answer.
 Conscious owner changes override pending acknowledgements. Default-off OpenAI semantic
 turn experiment discloses continuous audio, requires automatic mode and reconnect,
-and preserves local-onset/provider-item matching. Wake word is separate.
+and preserves local-onset/provider-item matching.
+
+Opt-in wake phrase (`useVoiceWake`, `WakeListener`): only while no conversation is live, the
+desktop is unlocked, presence is not Away/DND and local recognition exists. Capture + VAD cut
+bursts of at most 4 s, the recognition-only local lease (`voice.local.transcribe`, never cloud)
+transcribes one at a time (300 ms gap; over 20 bursts a minute for 3 minutes pauses it for
+5 minutes), and a whole-utterance match releases capture and recognizer before dispatching the
+Talk start. Audio and text of non-matching bursts stay in memory only. The sleep phrase is
+checked in `interceptSpeech` before any model route and closes capture to Ready; both share
+the `wakeEnabled` switch.
 
 ## Conversation policy and delivery
 

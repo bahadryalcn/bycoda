@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 export type NarrationEvent = {
   eventId: string;
-  kind: "progress" | "completed" | "question";
+  kind: "progress" | "completed" | "question" | "reminder";
   text: string;
   createdAt: number;
   projectIds: string[];

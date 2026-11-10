@@ -51,7 +51,6 @@ function runRefresh(showLoading: boolean): Promise<void> {
           {
             op: "snapshot",
             limit: 100,
-            features: ["jobHolds", "jobStalled", "reminders", "onceSchedule"],
           },
           { kind: "local" },
           owner.environmentId,

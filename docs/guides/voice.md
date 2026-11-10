@@ -614,6 +614,14 @@ and cancel one. When you give several jobs, say "start the second after the firs
 finishes" and the later job stays queued until the earlier one is done; if the
 earlier one fails, you are notified and the later one keeps waiting.
 
+### Watching pull requests by voice
+
+In a project Room say "tell me when PR 12 is merged or its checks fail". The Host
+watches the pull request without any coding session and notifies you about merges,
+closures, CI results and reviews even when the desktop is closed. It only reads
+GitHub; ask the assistant to list or stop watches. See
+[Pull request watches](assistant.md#pull-request-watches).
+
 ## Global voice management
 
 Project discovery uses the name shown in the project rail and keeps the original
@@ -658,6 +666,15 @@ that starts a dev server even when **Manage as development server** is off: for
 example, a saved `dev · pnpm run dev`. It checks whether that server already runs,
 then starts it as a managed dev server whose status and logs it can read. It asks
 only when several servers fit.
+
+The companion can also move around the window and read a few summaries. "Open
+settings" or "ayarları aç" switches to a view or settings section; it only
+navigates and never changes a setting or sends anything. "Search" or "ara" returns
+at most 20 matching conversations, messages and projects, never from locked
+projects. "Today" or "bugün" reads the Today summary, at most 30 items, and says
+when it is partial. "MCP" lists the project's MCP servers with their enabled state
+and status, never commands, environment values, headers or tokens. These need an
+open conversation in an unlocked project and a visible desktop window.
 
 Supported project tools use the verified assistant thread without creating a coding
 session. Working-copy operations still require an actual selected session.
@@ -791,9 +808,21 @@ before cloud connection seeding. Missing registration or an uncertain reply keep
 the provider disconnected. Privacy revocation waits for that exact runtime's
 closure; reopening the panel does not prove an old connection has closed.
 
-Background wake word is unavailable until a qualified local keyword engine,
-model provenance and explicit microphone lifecycle are provided. The semantic
-turn experiment does not enable wake word.
+**Wake and sleep phrases** (Settings → Voice assistant → Conversation style, off by
+default) let you open and close the conversation by voice. While no conversation is
+open, the desktop is unlocked and you are not Away or on Do not disturb, the
+microphone listens on this computer only for your wake phrase, and a visible
+indicator with **Turn off** shows it. Short sounds are recognized with the local
+voice pack (never a cloud provider), compared with the phrase and discarded;
+nothing is saved or sent. On a match the listener releases the microphone and Talk
+starts as if you pressed it. Saying your sleep phrase on its own, optionally
+followed by the assistant's name, ends the conversation and returns to Ready with
+the microphone closed; running work continues. Defaults follow the voice (or app)
+language, for example "Hey {name}" and "Görüşürüz" in Turkish, and update when the
+language changes until you type your own (2 to 40 characters). Without the local
+voice pack the indicator says **Wake phrase needs the local voice pack**; after
+many bursts of background speech it pauses for five minutes. The semantic turn
+experiment does not enable the wake phrase.
 
 Synthetic offline Turkish audio and subscription-login smoke checks can verify
 the individual runtime paths. They do not prove physical microphone acoustics,

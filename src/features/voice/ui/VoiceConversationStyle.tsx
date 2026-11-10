@@ -13,15 +13,18 @@ import {
   SettingsFeedback,
   Toggle,
 } from "../../settings/public/settingsControls";
+import { VoiceWakeRows } from "./VoiceWakeSettings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 
 /** How a spoken conversation takes turns: pauses, interruptions, progress updates and sleep. */
 export function VoiceConversationStyle({
   settings,
   change,
+  profile,
 }: {
   settings: Preferences;
   change: (patch: Partial<Preferences>) => void;
+  profile?: { name: string; language: string };
 }) {
   const [presetError, setPresetError] = useState(false);
   const [turnChoiceError, setTurnChoiceError] = useState(false);
@@ -189,6 +192,7 @@ export function VoiceConversationStyle({
           />
         </Row>
       )}
+      <VoiceWakeRows settings={settings} change={change} profile={profile} />
     </Group>
   );
 }

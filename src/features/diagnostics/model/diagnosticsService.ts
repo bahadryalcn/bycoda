@@ -44,8 +44,8 @@ export function subscribeDiagnostics(listener: () => void): () => void {
 }
 
 export const getPendingCrash = (): PendingCrash | null => scheduler?.getPending() ?? null;
-export const sendPendingCrash = async (): Promise<DiagnosticSendStatus> =>
-  (await scheduler?.sendPending()) ?? "not-configured";
+export const sendPendingCrash = async (always = false): Promise<DiagnosticSendStatus> =>
+  (await scheduler?.sendPending(always)) ?? "not-configured";
 export const dismissPendingCrash = async (): Promise<void> => scheduler?.dismissPending();
 
 /** Uploads a report now (manual button, feedback tick). Consent is the user's click. */

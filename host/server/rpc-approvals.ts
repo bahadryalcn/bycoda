@@ -11,6 +11,7 @@ export async function handleApprovalsRpc(
   request: OwnerRpcRequest,
 ): Promise<void> {
   const { approvals } = dependencies;
+  await approvals.ready;
   switch (request.input.method) {
     case "approvals.mirror":
       request.result = await approvals.mirror(
@@ -26,6 +27,8 @@ export async function handleApprovalsRpc(
       request.result = approvals.decide(
         APPROVALS_RPC["approvals.decide"].params.parse(request.params),
       );
+      // A phone answer is acknowledged only once it survives a restart.
+      await approvals.flush();
       break;
     case "approvals.decisions":
       APPROVALS_RPC["approvals.decisions"].params.parse(request.params);

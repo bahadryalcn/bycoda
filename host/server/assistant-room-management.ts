@@ -28,6 +28,7 @@ import { isRoomFolderAction } from "../assistant/folders/assistant-folder-schema
 import { isGlobalFolderFileWrite } from "../assistant/folders/assistant-folder-tools";
 import { isRoomInboxAction } from "../assistant/room/assistant-room-inbox";
 import { isRoomNotebookAction } from "../assistant/room/assistant-room-notebook";
+import { callRoomPrWatch, isRoomPrWatchAction } from "../assistant/room/assistant-room-pr-watch";
 import { validateRoomOrganization } from "../assistant/room/assistant-room-organization";
 import {
   isRoomSessionAction,
@@ -442,6 +443,10 @@ export function registerRoomManagement(
                 qualify,
               );
         }
+        if (isRoomPrWatchAction(call.action))
+          return dependencies.withRoomProjectScope(call, authorized, () =>
+            callRoomPrWatch(dependencies.assistant.tracked.prWatch, call, authorized),
+          );
         if (isRoomAppRead(call.action))
           return dependencies.withRoomProjectScope(call, authorized, (valid, captured) =>
             callRoomAppRead(

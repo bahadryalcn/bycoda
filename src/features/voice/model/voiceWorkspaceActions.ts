@@ -1,4 +1,5 @@
 import type { ProjectActionCatalog } from "../../projects";
+import type { VoiceWorkspaceInspectDeps } from "./voiceWorkspaceInspect";
 
 /** Desktop-owned actions. These are deliberately separate from project agent grants. */
 export type VoiceWorkspaceProject = {
@@ -75,6 +76,8 @@ export type VoiceWorkspaceActionsDeps = {
   onSubmit?: (sessionId: string, text: string) => boolean | Promise<boolean>;
   onStop?: (sessionId: string) => void | Promise<void>;
   onStopForRoom?: (sessionId: string) => Promise<void>;
+  /** Navigation and bounded reads; none of them selects, opens or submits. */
+  inspect?: VoiceWorkspaceInspectDeps;
 };
 
 const text = { type: "string", minLength: 1, maxLength: 4096 };

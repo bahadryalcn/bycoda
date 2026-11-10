@@ -53,3 +53,13 @@ Source references identify the original card's provenance; they are not acceptan
   window closes capture, shows an on-screen notice and sends a notification.
   This setting supersedes the 2026-11-02 "return keeps the microphone closed"
   rule only while it is on; with it off, return stays Ready with capture closed.
+
+- 2026-11-10, owner chat during the voice operator program (translated):
+
+  > let's do only wake and sleep, like "görüşürüz"; everyone can set their own; set the defaults by language
+
+  Consequence: an opt-in, default-off "Wake and sleep phrases" setting runs a local
+  listener that may open capture after the owner's chosen wake phrase, and a sleep phrase
+  closes the conversation to Ready with capture closed. Audio never leaves the machine
+  before a match (local recognition only, held in memory). No other spoken mic or speaker
+  commands. Phrase defaults follow the language until the owner types their own.

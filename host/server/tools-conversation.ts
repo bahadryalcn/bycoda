@@ -69,6 +69,7 @@ export async function dispatchConversationTools(
     | "projectSessionList"
     | "localSessionReference"
     | "featureSession"
+    | "assistant"
     | "roomNotebook"
     | "roomWorkspace"
     | "conversationThreadCrews"

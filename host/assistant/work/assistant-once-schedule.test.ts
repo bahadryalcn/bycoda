@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AssistantRequestValidationSchema,
   type AssistantQuickAutomationJob,
-  type AssistantSnapshot,
 } from "../../../src/shared/model/host-contracts/assistant";
-import { applySnapshotFeatures } from "./assistant-job-holds";
 import {
   assertQuickAutomationSchedule,
   assistantQuickAutomationConfiguration,
@@ -62,22 +60,5 @@ describe("one-time automations", () => {
       "one year",
     );
     expect(() => assertQuickAutomationSchedule({}, now)).not.toThrow();
-  });
-  it("are hidden from clients that did not ask for them", () => {
-    const job = { id: "j", kind: "quick", status: "done", quickAction: action };
-    const plain = {
-      id: "p",
-      kind: "quick",
-      status: "done",
-      quickAction: { ...action, scheduleKind: "daily" },
-    };
-    const snapshot = { jobs: [job, plain], notifications: [] } as unknown as AssistantSnapshot;
-    const gate = { emergencyStop: false, canCreateGoal: true };
-    expect(applySnapshotFeatures(snapshot, undefined, gate).jobs.map((item) => item.id)).toEqual([
-      "p",
-    ]);
-    expect(
-      applySnapshotFeatures(snapshot, ["onceSchedule"], gate).jobs.map((item) => item.id),
-    ).toEqual(["j", "p"]);
   });
 });

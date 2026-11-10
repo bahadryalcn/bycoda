@@ -4,7 +4,6 @@ import type {
   AssistantSnapshot,
 } from "../../../src/shared/model/host-contracts/assistant";
 
-type Feature = "jobHolds" | "jobStalled" | "reminders" | "onceSchedule";
 type HoldInput = Pick<AssistantSnapshot, "jobs" | "profile" | "usage" | "paused"> & {
   workHoursActive: boolean;
   emergencyStop: boolean;
@@ -47,10 +46,9 @@ export function assistantJobHolds(input: HoldInput): Record<string, AssistantJob
   return holds;
 }
 
-/** Drops data an older client's strict response schema would reject unless it asked for it. */
-export function applySnapshotFeatures(
+/** Adds job holds to a snapshot. */
+export function withJobHolds(
   snapshot: AssistantSnapshot,
-  features: readonly Feature[] | undefined,
   gate: {
     emergencyStop: boolean;
     canCreateGoal: boolean;
@@ -58,32 +56,14 @@ export function applySnapshotFeatures(
     dependencies?: HoldInput["dependencies"];
   },
 ): AssistantSnapshot {
-  const wanted = new Set(features);
-  const next: AssistantSnapshot = {
+  return {
     ...snapshot,
-    notifications: snapshot.notifications?.filter(
-      (item) =>
-        (item.kind !== "job.stalled" || wanted.has("jobStalled")) &&
-        (item.kind !== "reminder" || wanted.has("reminders")),
-    ),
-    jobs: wanted.has("onceSchedule")
-      ? snapshot.jobs
-      : snapshot.jobs.filter(
-          (job) =>
-            !(
-              job.kind === "quick" &&
-              job.quickAction?.kind === "automation" &&
-              job.quickAction.scheduleKind === "once"
-            ),
-        ),
-  };
-  if (wanted.has("jobHolds"))
-    next.jobHolds = assistantJobHolds({
+    jobHolds: assistantJobHolds({
       ...snapshot,
       workHoursActive: snapshot.workHoursActive ?? true,
       ...gate,
-    });
-  return next;
+    }),
+  };
 }
 
 /** Kinds that reach the owner even when the presence setting only allows urgent ones; quiet hours and do-not-disturb still defer them. */

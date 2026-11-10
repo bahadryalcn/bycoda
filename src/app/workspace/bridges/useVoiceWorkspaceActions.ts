@@ -11,6 +11,16 @@ import {
   type VoiceWorkspaceSession,
 } from "../../../features/voice/model/voiceWorkspaceActions";
 
+import { APP_UI_SETTINGS, APP_UI_VIEWS } from "../../model/appUiControl";
+import { createVoiceInspect } from "../../../features/voice/model/voiceWorkspaceInspect";
+
+/** Files and terminal are panels, not destinations; every other view comes from the registry. */
+const voiceInspect = createVoiceInspect({
+  views: APP_UI_VIEWS.filter((view) => view !== "files" && view !== "terminal"),
+  sections: APP_UI_SETTINGS,
+});
+const allTools = [...voiceWorkspaceTools, ...voiceInspect.tools];
+
 const clean = (value: unknown, field: string, max = 4096) => {
   if (typeof value !== "string" || !value.trim() || value.length > max)
     throw new Error(`Invalid ${field}.`);
@@ -257,12 +267,17 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
     workspaceRequestId?: string,
   ): Promise<VoiceWorkspaceResult> => {
     try {
-      const tool = voiceWorkspaceTools.find((entry) => entry.name === action);
+      const tool = allTools.find((entry) => entry.name === action);
       if (!tool) throw new Error("Unknown workspace action.");
       for (const key of Object.keys(args))
         if (!(key in tool.parameters.properties)) throw new Error(`Unknown argument: ${key}.`);
       for (const key of tool.parameters.required)
         if (args[key] === undefined) throw new Error(`Missing ${key}.`);
+      if (voiceInspect.handles(action))
+        return await voiceInspect.run(action, args, {
+          projects: read().getProjects(),
+          deps: read().inspect ?? {},
+        });
       if (action.endsWith(".list") || action === "workspace.projects.resolve")
         return await perform(action, args);
       const requestId = clean(args.requestId, "requestId");
@@ -291,7 +306,7 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
       };
     }
   };
-  return { tools: voiceWorkspaceTools, execute };
+  return { tools: allTools, execute };
 }
 
 export function useVoiceWorkspaceActions(deps: VoiceWorkspaceActionsDeps) {

@@ -6,6 +6,7 @@ import {
   type ManagementPorts,
 } from "../../conversation/conversation-management-tools";
 import type { HostAssistant } from "../service";
+import { describeRoomPrWatchTool, ROOM_PR_WATCH_TOOLS } from "./assistant-room-pr-watch";
 
 const id = z.string().min(1).max(300);
 const revision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -41,7 +42,9 @@ const object = (properties: Record<string, unknown>, required: string[]) => ({
   required,
   additionalProperties: false,
 });
+/** Also carries the Room-only PR watch schemas so they register wherever the notebook does. */
 export const ROOM_NOTEBOOK_TOOLS = {
+  ...ROOM_PR_WATCH_TOOLS,
   "notebook.list": object(
     { offset: version, limit: { type: "integer", minimum: 1, maximum: 100 } },
     [],
@@ -59,7 +62,7 @@ export const ROOM_NOTEBOOK_TOOLS = {
   ]),
 } as const;
 export function describeRoomNotebookTool(action: string) {
-  if (!isRoomNotebookAction(action)) return undefined;
+  if (!isRoomNotebookAction(action)) return describeRoomPrWatchTool(action);
   return "Manage personal Assistant notebook on this Host. List and get before updating or deleting; use the exact updatedAt revision. Writes require native owner review and stable requestId. Unknown results must be inspected, never replayed under a new identity.";
 }
 

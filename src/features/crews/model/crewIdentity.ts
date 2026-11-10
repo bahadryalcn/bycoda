@@ -1,5 +1,6 @@
 import { normalizeProjectMascotName } from "../../projects/model/projectMascots";
-import { TAB_GROUP_COLORS } from "../../workspace/model/tabGroups";
+// Pure list on purpose: tabGroups pulls desktop runtime, and this model is shared with the phone.
+import { TAB_GROUP_COLORS } from "../../workspace/model/tabGroupColors";
 import {
   AVATAR_ACCESSORY,
   AVATAR_FACE,

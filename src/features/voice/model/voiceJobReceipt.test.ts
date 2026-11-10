@@ -9,7 +9,7 @@ const jobs = [
 it("reports started and the hold reason with a spoken next hint", async () => {
   const request = vi.fn(async () => ({ snapshot: { jobHolds: { b: "report" as const } } }));
   const receipt = await voiceJobReceipt(jobs, request);
-  expect(request).toHaveBeenCalledWith({ op: "snapshot", limit: 100, features: ["jobHolds"] });
+  expect(request).toHaveBeenCalledWith({ op: "snapshot", limit: 100 });
   expect(receipt.jobs).toEqual([
     { id: "a", title: "A", status: "running", started: true },
     { id: "b", title: "B", status: "queued", started: false, holdReason: "report" },

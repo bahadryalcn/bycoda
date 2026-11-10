@@ -37,11 +37,10 @@ export async function voiceJobReceipt(
   request: (input: {
     op: "snapshot";
     limit: number;
-    features: ["jobHolds"];
   }) => Promise<{ snapshot?: { jobHolds?: Record<string, VoiceJobHold> } }>,
 ) {
   // A failed read only loses the reason; the jobs are already accepted.
-  const holds = await request({ op: "snapshot", limit: 100, features: ["jobHolds"] }).then(
+  const holds = await request({ op: "snapshot", limit: 100 }).then(
     (response) => response.snapshot?.jobHolds,
     () => undefined,
   );

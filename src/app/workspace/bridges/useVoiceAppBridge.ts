@@ -5,6 +5,7 @@ import {
 } from "../../../features/workspace/model/tabGroups";
 import { voiceProjectNames } from "../../../features/voice/model/voiceProjectNames";
 import { useVoiceWorkspaceActions } from "./useVoiceWorkspaceActions";
+import { createVoiceInspectPorts } from "./voiceInspectPorts";
 import type {
   VoiceProjectCreate,
   VoiceSessionCreate,
@@ -242,7 +243,18 @@ export function useVoiceAppBridge(deps: Deps) {
       throw new Error("Open this remote session before changing it.");
     return id;
   };
+  const inspect = useMemo(
+    () =>
+      createVoiceInspectPorts(() => ({
+        projects: latest.current.projects,
+        sessions: latest.current.sessions,
+        projectPath: latest.current.projectPath,
+        activeId: latest.current.activeId,
+      })),
+    [],
+  );
   const workspace = useVoiceWorkspaceActions({
+    inspect,
     getProjects: () => voiceProjectNames(latest.current.projects),
     getSessions: () => currentSessions.current,
     getActiveSessionId: () => latest.current.activeId,

@@ -166,7 +166,11 @@ export function VoiceSettings() {
       {companion ? (
         <>
           <VoiceEngine settings={settings} change={change} setup={setup} />
-          <VoiceConversationStyle settings={settings} change={change} />
+          <VoiceConversationStyle
+            settings={settings}
+            change={change}
+            profile={assistant?.profile}
+          />
           <VoiceCompanionSettings
             settings={settings}
             change={change}

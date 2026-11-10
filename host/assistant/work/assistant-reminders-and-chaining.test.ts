@@ -51,12 +51,11 @@ async function setup(ports: AssistantPorts = {}) {
   });
   return { service, request };
 }
-const notifications = async (f: Awaited<ReturnType<typeof setup>>, features?: string[]) =>
-  (await f.request({ op: "snapshot", ...(features ? { features } : {}) })).snapshot!
-    .notifications ?? [];
+const notifications = async (f: Awaited<ReturnType<typeof setup>>) =>
+  (await f.request({ op: "snapshot" })).snapshot!.notifications ?? [];
 
 describe("reminders", () => {
-  it("creates idempotently, validates the time, fires once and hides the kind from old clients", async () => {
+  it("creates idempotently, validates the time, fires once", async () => {
     let now = 1_000_000;
     const f = await setup({ now: () => now });
     const create = { op: "reminders.create", text: "Call Sam", at: now + 60_000, requestId: "r1" };
@@ -70,17 +69,16 @@ describe("reminders", () => {
       f.request({ ...create, requestId: "r3", at: now + 400 * 86_400_000 }),
     ).rejects.toThrow("year");
     await f.service.tick();
-    expect(await notifications(f, ["reminders"])).toEqual([]);
+    expect(await notifications(f)).toEqual([]);
     now += 61_000;
     await f.service.tick();
     await f.service.tick();
-    const fired = (await notifications(f, ["reminders"])).filter((n) => n.kind === "reminder");
+    const fired = (await notifications(f)).filter((n) => n.kind === "reminder");
     expect(fired).toHaveLength(1);
     expect(fired[0]).toMatchObject({ title: "Reminder", body: "Call Sam" });
-    // Older clients never see the new kind, and their strict schema still parses.
-    const old = await f.request({ op: "snapshot" });
-    expect(JSON.stringify(old.snapshot!.notifications)).not.toContain("reminder");
-    expect(AssistantResponseSchema.safeParse(old).success).toBe(true);
+    expect(AssistantResponseSchema.safeParse(await f.request({ op: "snapshot" })).success).toBe(
+      true,
+    );
     expect((await f.request({ op: "reminders.list" })).reminders!.items).toEqual([]);
   });
   it("cancels with the expected version", async () => {
@@ -173,11 +171,9 @@ describe("job chaining", () => {
     expect(b.status).toBe("queued");
     await f.service.tick();
     expect(c.submitted).toEqual(["A"]);
-    const held = (await f.request({ op: "snapshot", features: ["jobHolds"] })).snapshot!;
+    const held = (await f.request({ op: "snapshot" })).snapshot!;
     expect(held.jobHolds).toEqual({ [b.id]: "dependency" });
     expect(AssistantResponseSchema.safeParse({ snapshot: held }).success).toBe(true);
-    // Without the feature the hold reason is not sent.
-    expect((await f.request({ op: "snapshot" })).snapshot).not.toHaveProperty("jobHolds");
     c.status.set(a.id, "done");
     await f.service.tick();
     await f.service.tick();
@@ -198,7 +194,7 @@ describe("job chaining", () => {
     expect(waiting.map((n) => [n.kind, n.body])).toEqual([
       ["job.waiting", "Waiting for Build, which failed."],
     ]);
-    const holds = (await f.request({ op: "snapshot", features: ["jobHolds"] })).snapshot!.jobHolds;
+    const holds = (await f.request({ op: "snapshot" })).snapshot!.jobHolds;
     expect(holds?.[b.id]).toBe("dependency");
   });
   it("says the earlier job was cancelled", async () => {

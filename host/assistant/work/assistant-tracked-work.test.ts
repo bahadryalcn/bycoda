@@ -56,9 +56,16 @@ async function setup(ports: AssistantPorts = {}, autonomy: "report" | "jobs" | "
     store.db
       .prepare(`INSERT OR REPLACE INTO ${table}(id,value) VALUES(?,?)`)
       .run(value.id, JSON.stringify(value));
+  // The daily briefing depends on the wall clock (after 09:00), not on tracked work.
   const notices = async () =>
-    ((await service.request({ op: "snapshot", features: ["jobStalled"] }, "owner")).snapshot!
-      .notifications ?? []) as { kind: string; title: string; body: string; id: string }[];
+    (
+      ((await service.request({ op: "snapshot" }, "owner")).snapshot!.notifications ?? []) as {
+        kind: string;
+        title: string;
+        body: string;
+        id: string;
+      }[]
+    ).filter((notice) => notice.kind !== "briefing");
   return { store, service, put, notices };
 }
 const item = (id: string, kind: "goal" | "task" | "crew" = "goal") => ({

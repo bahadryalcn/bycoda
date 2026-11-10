@@ -3,6 +3,7 @@ import type {
   AssistantProfile,
 } from "../../../src/shared/model/host-contracts/assistant";
 import type { RecordValue } from "../repository";
+import { AssistantPrWatch } from "./assistant-pr-watch";
 import { assistantJobNotificationBody } from "./assistant-job-holds";
 import { nudgeStalledJobSessions, type JobsStallDeps } from "./assistant-jobs-stall";
 import {
@@ -39,7 +40,10 @@ export interface TrackedWorkDeps extends JobsStallDeps {
  */
 export class AssistantTrackedWork {
   private readonly read: TrackedWorkReader;
+  /** Pull requests the Room asked to follow; polled from the same tick. */
+  readonly prWatch: AssistantPrWatch;
   constructor(private readonly deps: TrackedWorkDeps) {
+    this.prWatch = new AssistantPrWatch(deps);
     this.read = deps.read ?? storeTrackedWorkReader(deps.repository.store);
   }
   /** Jobs mode only: one fixed follow-up per stall of the job's own workers. */
@@ -83,6 +87,7 @@ export class AssistantTrackedWork {
   }
   /** Polls canonical status and queues one notification per item per notable state. */
   async tick(profile: Pick<AssistantProfile, "stallMinutes">): Promise<void> {
+    await this.prWatch.tick().catch((error) => this.deps.onError?.(error));
     const rows = await this.store.db
       .prepare(
         "SELECT value FROM assistant_runtime WHERE id LIKE 'tracked:%' AND deleted_at IS NULL ORDER BY updated_at,id LIMIT ?",

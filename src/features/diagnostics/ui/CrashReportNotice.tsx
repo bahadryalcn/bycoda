@@ -2,7 +2,6 @@ import { useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Toast } from "../../../shared/ui/ToastRegion";
-import { setDiagnosticsMode } from "../model/diagnosticsConsent";
 import type { DiagnosticSendStatus } from "../model/diagnosticsReport";
 import {
   dismissPendingCrash,
@@ -34,9 +33,8 @@ export function CrashReportNotice() {
   }
   const send = async (always: boolean) => {
     setBusy(true);
-    if (always) setDiagnosticsMode("auto");
     try {
-      setResult(await sendPendingCrash());
+      setResult(await sendPendingCrash(always));
     } catch {
       setResult("failed"); // -- the marker stays, so Send can be tried again.
     } finally {

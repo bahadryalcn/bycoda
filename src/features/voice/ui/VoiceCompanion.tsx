@@ -6,7 +6,7 @@ import {
   bindVoiceGeneration,
   closeVoiceRuntimeEvidence,
 } from "../model/voiceGenerationRetirement";
-import { retireNarrationOutput } from "../model/voiceNarrationLifecycle";
+import { narrationWanted, retireNarrationOutput } from "../model/voiceNarrationLifecycle";
 import {
   useCallback,
   useEffect,
@@ -43,6 +43,7 @@ import {
   deriveCapturePresence,
   markAcceptedVoiceSpeech,
 } from "../model/voicePresence";
+import { voiceSleepRequested } from "../model/voiceWakePhrase";
 import { shouldSilentlyAcknowledgeVoice, shouldWaitForVoice } from "../model/voiceSpeechPolicy";
 import { classifyVoiceFailure } from "../model/voiceReconnect";
 import { VoiceReconnectScheduler } from "../model/voiceReconnectScheduler";
@@ -220,7 +221,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const audioLevel = useRef(0);
   const latest = useRef(props);
   const [open, setOpen] = useState(false);
-  // First launch offers persona setup until the owner saves or skips it.
   const [status, setStatus] = useState<
     "idle" | "connecting" | "live" | "reconnecting" | "sleeping" | "ready"
   >("idle");
@@ -1105,7 +1105,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       narration.threadId !== source.threadId ||
       narration.environmentId !== source.environmentId ||
       status !== "live" ||
-      !assistantSnapshot?.profile.voiceNarration ||
+      !narrationWanted(assistantSnapshot?.profile) ||
       presence !== "active" ||
       muted ||
       speakerMuted ||
@@ -1198,7 +1198,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     managementSource,
     narrationGeneration,
     status,
-    assistantSnapshot?.profile.voiceNarration,
+    narrationWanted(assistantSnapshot?.profile),
     presence,
     muted,
     speakerMuted,
@@ -1470,6 +1470,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     setPhase("listening");
     clearHistoryLoadNotice();
   }
+  function stopTo(next: "sleeping" | "ready") {
+    stopCapture(next);
+    setMuted(false);
+  }
   function close() {
     invalidateFeatureHosts();
     setLastAdmittedSpeechAt(null);
@@ -1560,6 +1564,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }
   function interceptSpeech(text: string) {
     if (!voiceDisclosureCurrent()) return true;
+    if (voiceSleepRequested(text, snapshotRef.current?.profile)) {
+      queueMicrotask(() => stopTo("ready"));
+      return true;
+    }
     if (shouldWaitForVoice(text)) {
       markAdmittedSpeech();
       if (!pendingChoice.current && !pendingJobs.current) {
@@ -2329,12 +2337,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }
   function recoverRealtime(provider: RealtimeProvider, _reason: string, rotation = false) {
     invalidateFeatureHosts();
-    manualPresenceCapture.current = false;
-    checkingTalkPresence.current = false;
     const wasMuted = mutedRef.current;
     if (presenceRef.current !== "active") {
-      stopCapture("sleeping");
-      setMuted(false);
+      stopTo("sleeping");
       setError("");
       return;
     }
@@ -2345,8 +2350,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     const retry = () => {
       if (generation.current !== epoch) return;
       if (presenceRef.current !== "active") {
-        stopCapture("sleeping");
-        setMuted(false);
+        stopTo("sleeping");
         return;
       }
       void startRealtime(epoch, provider, true, wasMuted);
@@ -2368,8 +2372,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       (capturePresence === "idle" || capturePresence === "away") &&
       (status === "live" || status === "connecting" || status === "reconnecting")
     ) {
-      stopCapture("sleeping");
-      setMuted(false);
+      stopTo("sleeping");
       setError("");
     } else if (capturePresence === "active" && status === "sleeping") {
       setStatus("ready"); // Returning never grants microphone permission.
@@ -2783,10 +2786,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     lastAdmittedSpeechAt,
     briefingDelivering: briefingRetry.delivering,
     start,
-    stopToReady: () => {
-      stopCapture("ready");
-      setMuted(false);
-    },
+    stopToReady: () => stopTo("ready"),
     setPlayback,
   });
   useVoiceTalkEvent({

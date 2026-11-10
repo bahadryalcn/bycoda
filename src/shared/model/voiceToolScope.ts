@@ -133,6 +133,9 @@ export function voiceThreadToolAllowed(family: string, action: string) {
       "browser.recording.start",
       "browser.recording.stop",
       "browser.recording.status",
+      "pullRequests.assistantWatch",
+      "pullRequests.assistantUnwatch",
+      "pullRequests.assistantWatches",
     ].includes(action)
   )
     return true;

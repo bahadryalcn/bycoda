@@ -706,12 +706,11 @@ describe("job attention", () => {
     projectId: "project",
     idempotencyKey: "attention",
   };
-  const kinds = async (f: Awaited<ReturnType<typeof setup>>, features?: string[]) =>
-    (
-      (await f.request({ op: "snapshot", ...(features ? { features } : {}) })).snapshot!
-        .notifications ?? []
-    ).map((n) => [n.kind, n.body]);
-  it("notifies once when a job stalls and hides it from requests without features", async () => {
+  const kinds = async (f: Awaited<ReturnType<typeof setup>>) =>
+    ((await f.request({ op: "snapshot" })).snapshot!.notifications ?? [])
+      .filter((n) => n.kind !== "briefing") // the daily briefing follows the wall clock
+      .map((n) => [n.kind, n.body]);
+  it("notifies once when a job stalls", async () => {
     let now = 1_000_000;
     const f = await setup({
       now: () => now,
@@ -729,17 +728,13 @@ describe("job attention", () => {
     await f.request(create);
     await f.service.tick();
     await f.service.tick();
-    expect(await kinds(f, ["jobStalled"])).toEqual([
-      ["job.stalled", "No output for 15 minutes. Compiling"],
-    ]);
-    expect(await kinds(f)).toEqual([]);
+    expect(await kinds(f)).toEqual([["job.stalled", "No output for 15 minutes. Compiling"]]);
     const response = await f.request({ op: "snapshot" });
-    expect(JSON.stringify(response.snapshot!.notifications)).not.toContain("job.stalled");
-    expect(response.snapshot).not.toHaveProperty("jobHolds");
+    expect(response.snapshot).toHaveProperty("jobHolds");
     expect(AssistantResponseSchema.safeParse(response).success).toBe(true);
     now += 60000;
     await f.service.tick();
-    expect(await kinds(f, ["jobStalled"])).toHaveLength(1);
+    expect(await kinds(f)).toHaveLength(1);
   });
   it("says why a blocked goal is waiting", async () => {
     const f = await setup({
@@ -758,17 +753,16 @@ describe("job attention", () => {
     await f.service.tick();
     expect(await kinds(f)).toEqual([["job.waiting", "Stopped with an error: Planner crashed"]]);
   });
-  it("reports why a queued job is not starting only when asked", async () => {
+  it("reports why a queued job is not starting", async () => {
     const f = await setup({ createGoal: async () => ({ goalId: "goal" }) });
     await f.configure("report");
     const job = (await f.request(create)).job!;
-    const asked = (await f.request({ op: "snapshot", features: ["jobHolds"] })).snapshot!;
+    const asked = (await f.request({ op: "snapshot" })).snapshot!;
     expect(asked.jobHolds).toEqual({ [job.id]: "report" });
-    expect((await f.request({ op: "snapshot" })).snapshot).not.toHaveProperty("jobHolds");
   });
   describe("model pool holds", () => {
     const holds = async (f: Awaited<ReturnType<typeof setup>>) =>
-      (await f.request({ op: "snapshot", features: ["jobHolds"] })).snapshot!;
+      (await f.request({ op: "snapshot" })).snapshot!;
     it("keeps a held job queued, notifies once per reset window and clears after start", async () => {
       let now = 1_000_000;
       let error: Error | null = new AssistantModelsHeldError("limits", 2_000_000);

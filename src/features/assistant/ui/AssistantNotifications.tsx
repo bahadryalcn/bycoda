@@ -32,7 +32,6 @@ export function AssistantNotifications() {
           await assistantRequest({
             op: "snapshot",
             limit: 100,
-            features: ["jobHolds", "jobStalled", "reminders", "onceSchedule"],
           })
         ).snapshot;
         return state?.profile.enabled && state.profile.setupComplete

@@ -2,6 +2,7 @@ import { sessionConversationPage } from "../../src/features/agent-app/model/sess
 import { localSessionLinkFields } from "../../src/features/sessions/model/localSessionReference";
 import { conversationSessionPage } from "../../src/shared/model/conversationSessionPage";
 import { isRoomNotebookAction } from "../assistant/room/assistant-room-notebook";
+import { callRoomPrWatch, isRoomPrWatchAction } from "../assistant/room/assistant-room-pr-watch";
 import {
   isRoomWorkspaceAction,
   validateRoomWorkspaceAction,
@@ -28,6 +29,7 @@ export async function handleAssistantThreadTools(
     | "projectSessionList"
     | "localSessionReference"
     | "featureSession"
+    | "assistant"
     | "roomNotebook"
     | "roomWorkspace"
     | "conversationThreadCrews"
@@ -141,6 +143,12 @@ export async function handleAssistantThreadTools(
             await dependencies.localSessionReference(target.session.id),
           );
         }
+        if (isRoomPrWatchAction(action))
+          return callRoomPrWatch(
+            dependencies.assistant.tracked.prWatch,
+            { action, input: args, ...ports.boundPrincipal },
+            authorized,
+          );
         if (isRoomNotebookAction(action))
           return dependencies.roomNotebook.call(
             action,

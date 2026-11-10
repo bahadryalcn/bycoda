@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setDiagnosticsMode } from "./diagnosticsConsent";
+import { getDiagnosticsMode, setDiagnosticsMode } from "./diagnosticsConsent";
 import { createDiagnosticsScheduler } from "./diagnosticsScheduler";
 import { CRASH, makeDeps } from "./testKit";
 
@@ -29,7 +29,11 @@ type Kit = ReturnType<typeof makeDeps>;
 const gzipBase64 = async (text: string) => gzipSync(text).toString("base64");
 const start = (kit: Kit) => {
   const native = { ...kit.deps.native, gzipBase64 };
-  const scheduler = createDiagnosticsScheduler({ ...kit.deps, native, now: () => now });
+  const scheduler = createDiagnosticsScheduler({
+    ...kit.deps,
+    native,
+    now: () => now,
+  });
   return { scheduler, stop: scheduler.start() };
 };
 const triggers = (kit: Kit, trigger: string) =>
@@ -72,6 +76,31 @@ describe("crash handling at start", () => {
     stop();
   });
 
+  it("always send: uploads the crash once, then switches to auto without a second report", async () => {
+    const kit = makeDeps({ logs: { crash: CRASH } });
+    const { scheduler, stop } = start(kit);
+    await flush();
+    const sending = scheduler.sendPending(true);
+    expect(getDiagnosticsMode()).toBe("ask");
+    expect(await sending).toBe("sent");
+    await flush();
+    expect(getDiagnosticsMode()).toBe("auto");
+    expect(triggers(kit, "crash")).toBe(1);
+    expect(triggers(kit, "periodic")).toBe(0);
+    stop();
+  });
+
+  it("always send: switches to auto even when the upload fails", async () => {
+    const kit = makeDeps({ logs: { crash: CRASH } });
+    kit.sendDiagnosticReport.mockRejectedValueOnce(new Error("offline"));
+    const { scheduler, stop } = start(kit);
+    await flush();
+    expect(await scheduler.sendPending(true)).toBe("failed");
+    expect(getDiagnosticsMode()).toBe("auto");
+    expect(scheduler.getPending()).not.toBeNull();
+    stop();
+  });
+
   it("off: discards the marker and sends nothing", async () => {
     setDiagnosticsMode("off");
     const kit = makeDeps({ logs: { crash: CRASH } });
@@ -106,7 +135,11 @@ describe("crash handling at start", () => {
 });
 
 describe("Host crash marker", () => {
-  const HOST_CRASH = { ...CRASH, message: "host exploded", occurredAt: "2026-11-09T09:00:00.000Z" };
+  const HOST_CRASH = {
+    ...CRASH,
+    message: "host exploded",
+    occurredAt: "2026-11-09T09:00:00.000Z",
+  };
 
   it("is a pending crash on its own, summarized with a Host prefix, and clears the markers", async () => {
     const kit = makeDeps({ logs: { hostCrash: HOST_CRASH } });

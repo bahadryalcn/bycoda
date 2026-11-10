@@ -30,7 +30,9 @@ and Assistant owns shared identity, Room and setup completion. Inspect mobile se
 
 ## Preserve
 
-- Capture needs explicit owner action. Authorized live recovery preserves mute; idle/lock sleep
+- Capture needs explicit owner action; the opt-in wake phrase counts as one only after the owner's
+  own phrase is heard by the local listener, which never sends audio off the machine, runs only
+  while no conversation is live, and shows an indicator. Authorized live recovery preserves mute; idle/lock sleep
   releases capture and returns Ready with microphone closed unless the opt-in return call is on.
   Disconnect cancels retries.
 - Onset/accepted binding captures target, including absence. Candidates and accepted speech have

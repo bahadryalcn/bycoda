@@ -7,3 +7,10 @@ export function retireNarrationOutput(
   abort?.abort();
   return Promise.all([retire(), playback ?? Promise.resolve()]).then(() => undefined);
 }
+
+/** The narration pump runs for spoken job updates, or for spoken reminders unless proactive speech is off. */
+export function narrationWanted(
+  profile: { voiceNarration?: boolean; proactiveSpeech?: string } | undefined,
+): boolean {
+  return !!profile && (!!profile.voiceNarration || profile.proactiveSpeech !== "never");
+}

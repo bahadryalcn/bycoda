@@ -7,6 +7,7 @@ import { ConversationGoalTools } from "../conversation/conversation-goal-tools";
 import { ConversationSecretTools } from "../secrets/conversation-secret-tools";
 import { SecretStore, osSecretValues } from "../secrets/secret-store";
 import { PullRequestWatches } from "../pull-request-watch/pull-request-watch";
+import { ghPrReader } from "../pull-request-watch/assistant-pr-reader";
 import { PullRequestWatchTools } from "../pull-request-watch/pull-request-watch-tools";
 import { ConversationProjectTools } from "../conversation/conversation-project-tools";
 import { ConversationRuntimeReadTools } from "../conversation/conversation-runtime-read-tools";
@@ -40,6 +41,7 @@ export function createProjectsRuntime(
     | "featureSession"
     | "inHost"
     | "conversationDesktop"
+    | "assistant"
   >,
 ) {
   const catalogs = new ModelCatalogCache(
@@ -163,6 +165,11 @@ export function createProjectsRuntime(
   // Session lists carry each watch as a wake source; a started or ended watch re-reads them.
   pullRequestWatch.onChange = () => signal.notify();
   const pullRequestWatchTools = new PullRequestWatchTools(pullRequestWatch);
+  // The Room's Host-level watches read through the same gh, never writing.
+  dependencies.assistant.tracked.prWatch.reader = ghPrReader(
+    (cwd, args) => workspace.ghCommand(cwd, args),
+    async (projectId) => (await dependencies.engine.store.project(projectId)).cwd,
+  );
   const conversationTaskQueue = new ConversationTaskQueueTools(dependencies.tasks);
   const conversationDelegation = new ConversationDelegation({
     engine: dependencies.engine,

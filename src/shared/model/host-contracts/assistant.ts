@@ -2,7 +2,6 @@ import { z } from "zod";
 import {
   AssistantJobHoldReasonSchema,
   AssistantNotificationKindSchema,
-  AssistantSnapshotFeaturesSchema,
   type AssistantJobHoldReason,
   type AssistantNotificationKind,
 } from "./assistant-attention";
@@ -376,7 +375,7 @@ export const AssistantRequestValidationSchema = z.union([
     AssistantOwnerQuestionSnoozeSchema,
     AssistantOwnerQuestionCancelSchema,
     z.strictObject({ op: z.literal("projects.list") }),
-    z.strictObject({ op: z.literal("snapshot"), limit, features: AssistantSnapshotFeaturesSchema }),
+    z.strictObject({ op: z.literal("snapshot"), limit }),
     z.strictObject({ op: z.literal("profile.get") }),
     ...AssistantModelPoolOps,
     ...AssistantRoomSettingsOps,
@@ -628,7 +627,7 @@ export type AssistantResponse = {
   sendIdentity?: { instanceId: string };
   narrationEvents?: {
     eventId: string;
-    kind: "progress" | "completed" | "question";
+    kind: "progress" | "completed" | "question" | "reminder";
     text: string;
     createdAt: number;
   }[];
@@ -969,7 +968,7 @@ export const AssistantResponseValidationSchema = z.strictObject({
     .array(
       z.strictObject({
         eventId: id,
-        kind: z.enum(["progress", "completed", "question"]),
+        kind: z.enum(["progress", "completed", "question", "reminder"]),
         text: z.string().max(8000),
         createdAt: z.number(),
       }),

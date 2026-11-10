@@ -6,6 +6,7 @@ import { assistantRequest, useAssistantSnapshot } from "../../assistant/model/as
 import { migrateVoiceOwnerMemory } from "../model/voiceHostMemory";
 import { AssistantSetup } from "../../assistant/ui/AssistantSetup";
 import { useVoiceSettings } from "../model/voiceSettings";
+import { VoiceWake } from "./VoiceWake";
 import type { VoiceCompanionProps } from "./VoiceCompanion";
 import styles from "./VoiceCompanion.module.css";
 
@@ -42,10 +43,21 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
         {setup && snapshot ? <AssistantSetup voice onClose={() => setSetup(false)} /> : null}
       </>
     );
-  return settings.enabled ? (
-    <Suspense fallback={null}>
-      {/* Navigation updates future speech targets without remounting the audio owner. */}
-      <Companion {...props} />
-    </Suspense>
-  ) : null;
+  return (
+    <>
+      <Suspense fallback={null}>
+        {/* Navigation updates future speech targets without remounting the audio owner. */}
+        <Companion {...props} />
+      </Suspense>
+      {settings.wakeEnabled ? (
+        <VoiceWake
+          settings={settings}
+          profile={snapshot.profile}
+          manualPresence={snapshot.presence?.state}
+          onSetup={() => setSetup(true)}
+        />
+      ) : null}
+      {setup ? <AssistantSetup voice onClose={() => setSetup(false)} /> : null}
+    </>
+  );
 }

@@ -209,9 +209,13 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
       "Connected desktop; cached status is not sign-in, credential changes remain owner-only.",
   },
   pullRequests: {
-    tools: [],
+    tools: [
+      "pullRequests.assistantWatch",
+      "pullRequests.assistantUnwatch",
+      "pullRequests.assistantWatches",
+    ],
     remaining:
-      "Linking a session to a pull request is an owner action in the Git panel. pullRequests.watch, unwatch and watches are stored per coding session, so they stay session-only; a Room thread has no session to watch from, so PR or CI follow-up from the Room is not offered.",
+      "Linking a session to a pull request is an owner action in the Git panel. pullRequests.watch, unwatch and watches stay per coding session. The Room watches through pullRequests.assistantWatch on the Host (read-only, up to 30, 14 days, project thread only): it notifies on merge, close, CI and review changes but never comments, merges or pushes.",
   },
   push: {
     tools: [],

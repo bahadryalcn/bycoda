@@ -251,6 +251,14 @@ const features: Record<string, string[]> = {
     "değişikliklerini",
   ],
   sprints: ["sprint", "sprints"],
+  pullRequests: [
+    "pull request",
+    "pull requests",
+    "pr",
+    "ci",
+    "birleştirme isteği",
+    "birleştirme istekleri",
+  ],
   notebook: ["notebook", "personal note", "not defteri", "kişisel not"],
   desktop: [
     "desktop",
@@ -275,7 +283,8 @@ const features: Record<string, string[]> = {
     "yoğunluk",
     "dil ayarı",
   ],
-  mcp: ["mcp"],
+  mcp: ["mcp", "mcp sunucu", "mcp sunucuları", "mcp server", "mcp servers"],
+  today: ["today", "bugün", "bugünkü", "heute", "hoy", "aujourd'hui", "hoje", "今日", "今天"],
 };
 
 const hintLabels: Record<string, string> = {

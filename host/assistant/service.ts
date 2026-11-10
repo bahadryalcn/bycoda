@@ -7,6 +7,13 @@ import {
   type NarrationIdentity,
 } from "./voice/assistant-narration";
 import {
+  narrationKindAllowed,
+  narrationQuietHours,
+  narrationSource,
+  narrationSourceAuthorized,
+  pendingNarrationEvents,
+} from "./voice/assistant-narration-source";
+import {
   mergeNativeLibraryProofs,
   type NativeLibraryProof,
 } from "./native/assistant-native-library-proof";
@@ -103,7 +110,7 @@ import { appendAssistantDailyNote } from "./work/assistant-daily-note";
 import * as jobLog from "./work/assistant-job-activity";
 import { readAssistantTrash } from "./work/assistant-trash";
 import {
-  applySnapshotFeatures,
+  withJobHolds,
   assistantJobNotificationBody,
   assistantNotificationUrgent,
 } from "./work/assistant-job-holds";
@@ -445,7 +452,7 @@ export class HostAssistant {
   private readonly ownerQuestions: HostAssistantOwnerQuestions;
   private readonly voiceContexts: HostAssistantVoiceContexts;
   private readonly threadSummaries: HostAssistantThreadSummaries;
-  private readonly tracked: AssistantTrackedWork;
+  readonly tracked: AssistantTrackedWork;
   private quickPolicyEpoch = 0;
   private readonly quickJobEpochs = new Map<string, number>();
   constructor(
@@ -2718,179 +2725,19 @@ export class HostAssistant {
       value,
     });
   }
-  private async narrationSource(eventId: string): Promise<NarrationEvent | undefined> {
-    if (eventId.startsWith("question:")) {
-      const row = await this.store.db
-        .prepare("SELECT value FROM assistant_owner_questions WHERE id=?")
-        .get(eventId.slice(9));
-      if (!row) return undefined;
-      const question = JSON.parse(String(row.value)) as {
-        id: string;
-        status: string;
-        origin: string;
-        jobId: string | null;
-        createdAt: number;
-        projectIds: string[];
-        sourceToken: string;
-        version: number;
-      };
-      // Chief questions derive from the canonical job/goal/task/session graph. Proposal
-      // questions can carry account context and need a separately verified account lease.
-      if (
-        question.origin !== "chief" ||
-        !question.jobId ||
-        question.status !== "open" ||
-        !Array.isArray(question.projectIds) ||
-        question.createdAt > this.now() ||
-        this.now() - question.createdAt > 300_000
-      )
-        return undefined;
-      return {
-        eventId,
-        kind: "question",
-        text: "Your assistant needs a decision.",
-        createdAt: question.createdAt,
-        projectIds: question.projectIds,
-        accountProofs: [],
-        sourceVersion: `${question.version}:${question.sourceToken}`,
-      };
-    }
-    if (eventId.startsWith("notification:observation:")) {
-      const notificationId = eventId.slice("notification:".length);
-      const notice = await this.runtime<PendingNotification | null>(
-        `notification:${notificationId}`,
-        null,
-      );
-      if (
-        !notice ||
-        notice.supersededBy ||
-        !notice.taskId ||
-        !notice.projectId ||
-        notice.taskCreatedAt === undefined ||
-        !["task.done", "task.needsInput"].includes(notice.kind) ||
-        notice.createdAt > this.now() ||
-        this.now() - notice.createdAt > 300_000
-      )
-        return undefined;
-      const observedId = notificationId.slice("observation:".length);
-      const observed = await this.store.db
-        .prepare(
-          "SELECT source_id,source_revision,project_ids FROM assistant_observation_events WHERE event_id=? AND source='task'",
-        )
-        .get(observedId);
-      const revision = await this.store.db
-        .prepare(
-          "SELECT version FROM assistant_observation_source_revisions WHERE source='task' AND source_id=?",
-        )
-        .get(notice.taskId);
-      const taskRow = await this.store.db
-        .prepare("SELECT value FROM tasks WHERE id=?")
-        .get(notice.taskId);
-      const task = taskRow
-        ? (JSON.parse(String(taskRow.value)) as {
-            id: string;
-            projectId: string;
-            createdAt: number;
-            status: string;
-            needsInput?: boolean;
-          })
-        : undefined;
-      const manual = await this.manualPolicy(),
-        policy = assistantPolicy(await this.profile());
-      if (
-        !observed ||
-        observed.source_id !== notice.taskId ||
-        observed.source_revision !== `db:${Number(revision?.version)}` ||
-        JSON.stringify(JSON.parse(String(observed.project_ids))) !==
-          JSON.stringify([notice.projectId]) ||
-        !manual.enabled ||
-        !manual.projectIds.includes(notice.projectId) ||
-        (notice.kind === "task.done"
-          ? !policy.observationTaskDone
-          : !policy.observationTaskNeedsInput) ||
-        !task ||
-        task.id !== notice.taskId ||
-        task.projectId !== notice.projectId ||
-        task.createdAt !== notice.taskCreatedAt ||
-        (notice.kind === "task.done"
-          ? task.status !== "done"
-          : task.status === "done" || !task.needsInput)
-      )
-        return undefined;
-      return {
-        eventId,
-        kind: notice.kind === "task.done" ? "completed" : "question",
-        text:
-          notice.kind === "task.done"
-            ? "An observed task completed."
-            : "An observed task needs your input.",
-        createdAt: notice.createdAt,
-        projectIds: [notice.projectId],
-        sourceVersion: String(observed.source_revision),
-      };
-    }
-    const activity = await this.repository.get<AssistantActivity>("activity", eventId);
-    if (!activity?.jobId) return undefined;
-    if (activity.createdAt > this.now() || this.now() - activity.createdAt > 300_000)
-      return undefined;
-    const kind =
-      activity.kind === "job.done"
-        ? "completed"
-        : activity.kind === "job.waiting"
-          ? "question"
-          : activity.kind === "job.running"
-            ? "progress"
-            : undefined;
-    if (!kind) return undefined;
-    const job = await this.repository.get<AssistantJob>("jobs", activity.jobId);
-    if (!job?.projectId) return undefined;
-    if (
-      (kind === "completed" && job.status !== "done") ||
-      (kind === "question" && job.status !== "waiting") ||
-      (kind === "progress" && job.status !== "running")
-    )
-      return undefined;
-    const text =
-      kind === "completed"
-        ? "A job completed."
-        : kind === "question"
-          ? "A job needs your input."
-          : "A job is making progress.";
-    return {
-      eventId,
-      kind,
-      text,
-      createdAt: activity.createdAt,
-      projectIds: assistantJobProjectIds(job),
-    };
-  }
-  private async narrationSourceAuthorized(event: NarrationEvent): Promise<boolean> {
-    if (event.eventId.startsWith("question:")) {
-      const question = (await this.ownerQuestions.get(event.eventId.slice(9))).ownerQuestion;
-      return (
-        question?.status === "open" &&
-        question.sourceCurrent === true &&
-        `${question.version}:${question.sourceToken}` === event.sourceVersion &&
-        JSON.stringify(question.projectIds) === JSON.stringify(event.projectIds)
-      );
-    }
-    if (event.eventId.startsWith("notification:observation:")) {
-      const notice = await this.runtime<PendingNotification | null>(
-        `notification:${event.eventId.slice("notification:".length)}`,
-        null,
-      );
-      return (
-        !!notice &&
-        (!this.ports.taskNotificationAllowed ||
-          (await this.ports.taskNotificationAllowed({
-            ...notice,
-            eligible: false,
-            deferredReason: "unknown",
-          })))
-      );
-    }
-    return true;
-  }
+  private narrationDeps = () => ({
+    store: this.store,
+    repository: this.repository,
+    now: () => this.now(),
+    runtime: <T>(id: string, fallback: T) => this.runtime(id, fallback),
+    profile: () => this.profile(),
+    manualPolicy: () => this.manualPolicy(),
+    ports: this.ports,
+    ownerQuestions: this.ownerQuestions,
+  });
+  private narrationSource = (eventId: string) => narrationSource(this.narrationDeps(), eventId);
+  private narrationSourceAuthorized = (event: NarrationEvent) =>
+    narrationSourceAuthorized(this.narrationDeps(), event);
   private narrationReceipts(admission: RoomManagementAdmission) {
     return new AssistantNarrationReceipts({
       transaction: (effect) => this.store.transaction(effect, "critical"),
@@ -2901,17 +2748,11 @@ export class HostAssistant {
       source: (id) => this.narrationSource(id),
       withAuthorization: async (identity, event, effect) => {
         const profile = await this.profile();
-        const hour = new Date(this.now()).getHours();
-        const quiet =
-          profile.quietStart !== profile.quietEnd &&
-          (profile.quietStart < profile.quietEnd
-            ? hour >= profile.quietStart && hour < profile.quietEnd
-            : hour >= profile.quietStart || hour < profile.quietEnd);
         if (
-          !profile.voiceNarration ||
+          !narrationKindAllowed(profile, event.kind) ||
           !profile.enabled ||
           !profile.setupComplete ||
-          quiet ||
+          narrationQuietHours(profile, this.now()) ||
           (await this.effectivePresence()) !== "present" ||
           !this.ports.withVoiceNarrationAuthorization ||
           !(await admission.authorized()) ||
@@ -3344,76 +3185,21 @@ export class HostAssistant {
           };
         }
         const profile = await this.profile();
-        const hour = new Date(this.now()).getHours();
-        const quiet =
-          profile.quietStart !== profile.quietEnd &&
-          (profile.quietStart < profile.quietEnd
-            ? hour >= profile.quietStart && hour < profile.quietEnd
-            : hour >= profile.quietStart || hour < profile.quietEnd);
         if (
-          !profile.voiceNarration ||
+          (!profile.voiceNarration && profile.proactiveSpeech === "never") ||
           !profile.enabled ||
           !profile.setupComplete ||
-          quiet ||
+          narrationQuietHours(profile, this.now()) ||
           (await this.effectivePresence()) !== "present"
         )
           return { narrationEvents: [] };
-        const rows = await this.store.db
-          .prepare(
-            "SELECT id FROM assistant_activity WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100",
-          )
-          .all();
-        const notifications = await this.store.db
-          .prepare(
-            "SELECT id FROM assistant_runtime WHERE id LIKE 'notification:observation:%' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100",
-          )
-          .all();
-        const questions = await this.store.db
-          .prepare(
-            "SELECT id FROM assistant_owner_questions WHERE json_extract(value,'$.status')='open' ORDER BY json_extract(value,'$.createdAt') DESC LIMIT 40",
-          )
-          .all();
-        const events: NarrationEvent[] = [];
-        const candidates = [
-          ...rows.map((row) => String(row.id)),
-          ...notifications.map((row) => String(row.id)),
-          ...questions.map((row) => `question:${String(row.id)}`),
-        ];
-        for (const id of candidates) {
-          try {
-            const event = await this.narrationSource(id);
-            if (
-              !event ||
-              this.now() - event.createdAt > 300_000 ||
-              event.createdAt > this.now() ||
-              !(await receipts.available(identity.threadId, event.eventId))
-            )
-              continue;
-            if (!(await this.narrationSourceAuthorized(event))) continue;
-            const port = this.ports.withVoiceNarrationAuthorization;
-            if (!port) break;
-            const allowed = await port(
-              {
-                threadId: identity.threadId,
-                generation: identity.generation,
-                eventId: event.eventId,
-                projectIds: event.projectIds,
-                accountProofs: event.accountProofs,
-              },
-              admission,
-              async (valid) =>
-                valid() &&
-                (await this.narrationSourceAuthorized(event)) &&
-                JSON.stringify(await this.narrationSource(event.eventId)) ===
-                  JSON.stringify(event) &&
-                valid(),
-            );
-            if (allowed) events.push(event);
-            if (events.length === 20) break;
-          } catch {
-            // A missing or revoked source is unavailable; continue with other events.
-          }
-        }
+        const events = await pendingNarrationEvents({
+          deps: this.narrationDeps(),
+          identity,
+          admission,
+          receipts,
+          authorize: this.ports.withVoiceNarrationAuthorization,
+        });
         return {
           narrationEvents: events.map(({ eventId, kind, text, createdAt }) => ({
             eventId,
@@ -3427,7 +3213,7 @@ export class HostAssistant {
         return { projects: ((await this.ports.listProjects?.()) ?? []).slice(0, 1000) };
       case "snapshot":
         return {
-          snapshot: applySnapshotFeatures(await this.snapshot(input.limit ?? 50), input.features, {
+          snapshot: withJobHolds(await this.snapshot(input.limit ?? 50), {
             emergencyStop: this.emergencyStop,
             canCreateGoal: !!this.ports.createGoal,
             modelHolds: await modelHold.loadModelHolds(this.store.db),

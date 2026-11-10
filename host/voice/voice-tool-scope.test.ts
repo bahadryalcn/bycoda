@@ -73,6 +73,30 @@ it("lists the newly opened reads and reviewed writes for a project thread and ma
   expect(roomManagementToolAllowed("conversation", "devices.list")).toBe(true);
 });
 
+it("lists the Host-level PR watch tools for a project thread only, never in a session", () => {
+  const actions = [
+    "pullRequests.assistantWatch",
+    "pullRequests.assistantUnwatch",
+    "pullRequests.assistantWatches",
+  ];
+  const project = ids(voiceToolsForScope({ projectId: "project", threadId: "thread" }));
+  const global = voiceToolsForScope({ threadId: "thread" });
+  const session = ids(voiceToolsForScope({ projectId: "project", sessionId: "session" }));
+  for (const action of actions) {
+    expect(project, action).toContain(`conversation:${action}`);
+    expect(roomManagementToolAllowed("conversation", action, "project"), action).toBe(true);
+    expect(
+      global.find((tool) => tool.action === action),
+      action,
+    ).toMatchObject({
+      requiresProject: true,
+    });
+    expect(roomManagementToolAllowed("conversation", action), action).toBe(false);
+    expect(isRoomOnlyConversationAction(action), action).toBe(true);
+    expect(session, action).not.toContain(`conversation:${action}`);
+  }
+});
+
 it("keeps desktop-relay, per-session and approval-bypass tools out of Room scopes", () => {
   const project = ids(voiceToolsForScope({ projectId: "project", threadId: "thread" }));
   const global = ids(voiceToolsForScope({ threadId: "thread" }));

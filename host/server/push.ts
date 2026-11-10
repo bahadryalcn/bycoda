@@ -1,5 +1,6 @@
 import type { HostSessionSummary } from "../../src/features/connections/model/protocol";
 import { ApprovalRegistry } from "../approvals/approval-registry";
+import { ApprovalStore } from "../approvals/approval-store";
 import { AssistantPushLedger } from "../push/push-assistant";
 import { PushNotifications } from "../push/push-service";
 import { PushDeviceStore } from "../push/push-store";
@@ -15,7 +16,7 @@ export function createPushRuntime(
   assistantLedger
     .prepare()
     .catch((error) => console.error("Assistant push ledger is unavailable:", error));
-  const approvals = new ApprovalRegistry();
+  const approvals = new ApprovalRegistry(Date.now, new ApprovalStore(dependencies.engine.store.db));
   const pushNotifications = new PushNotifications({
     store,
     assistantLedger,

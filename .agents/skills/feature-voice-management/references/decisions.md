@@ -43,3 +43,5 @@ Voice may request Git push and merge (never force push or history rewrite) and d
 > Owner-chosen folders: a Host setting "Assistant folders" ... Owner-only write path (Room/voice cannot change it). ... "Run commands without asking" (new owner-only setting next to the folders, default off).
 
 The global Room reads and changes files only inside owner-added folders (reads unapproved, writes with exact native approval). `commands.run` asks for exact native approval per run unless the owner enabled the default-off "Run commands without asking" setting, which applies to the global and project Room. Folders and the setting are owner-only; no tool writes them.
+
+2026-11-10 (translated): the owner approved moving PR/CI watching to the Host so the assistant can follow pull requests without an open session; the watcher only reads and notifies.

@@ -14,7 +14,7 @@ vi.mock("../../../platform/tauri/listenWindow", () => ({
     };
   },
 }));
-import { useVoiceTalkEvent } from "./useVoiceTalkEvent";
+import { useVoiceTalkEvent, VOICE_WAKE_EVENT } from "./useVoiceTalkEvent";
 
 it("starts Talk only when voice is not live, and cleans up its listener", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -42,4 +42,23 @@ it("starts Talk only when voice is not live, and cleans up its listener", async 
   await act(async () => root.unmount());
   expect(listeners).toHaveLength(0);
   expect(disposed).toHaveBeenCalledTimes(1);
+});
+
+it("starts Talk from the wake phrase only when voice is not live", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const start = vi.fn();
+  const root = createRoot(document.createElement("div"));
+  function Fixture({ status }: { status: string }) {
+    useVoiceTalkEvent({ status, start });
+    return null;
+  }
+  await act(async () => root.render(createElement(Fixture, { status: "ready" })));
+  window.dispatchEvent(new CustomEvent(VOICE_WAKE_EVENT));
+  expect(start).toHaveBeenCalledTimes(1);
+  await act(async () => root.render(createElement(Fixture, { status: "live" })));
+  window.dispatchEvent(new CustomEvent(VOICE_WAKE_EVENT));
+  expect(start).toHaveBeenCalledTimes(1);
+  await act(async () => root.unmount());
+  window.dispatchEvent(new CustomEvent(VOICE_WAKE_EVENT));
+  expect(start).toHaveBeenCalledTimes(1);
 });

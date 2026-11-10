@@ -19,6 +19,9 @@ contracts live in [Room, capture and delivery](room-and-delivery.md).
   tracking grants no write authority. Jobs autonomy may nudge its own stalled job worker once 
   per stall (the one-time restart gate is `supervisionAllowed(true)`); other supervision stays Chief-only.
 
+- Host PR watches (`host/assistant/work/assistant-pr-watch.ts`, Room tools `pullRequests.assistant*`) read
+  GitHub only through the read-only `PrReader` and notify on transitions; they never write.
+
 - Report observes; jobs dispatches/tracks; Chief reviews/replans/nudges its own
   workers. Manual sessions and reviewers keep their write owners.
 

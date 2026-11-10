@@ -586,7 +586,6 @@ export class VoiceAssistantControls {
     const response = await request({
       op: "snapshot",
       limit: 100,
-      features: ["jobHolds", "jobStalled", "reminders", "onceSchedule"],
     });
     const current = await this.ports.allowedProjectIds();
     const allowed = new Set(

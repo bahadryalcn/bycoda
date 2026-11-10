@@ -1,5 +1,9 @@
 import { DIAGNOSTIC_PERIODIC_INTERVAL_DAYS } from "@bycoda/account-contracts";
-import { getDiagnosticsMode, subscribeDiagnosticsConsent } from "./diagnosticsConsent";
+import {
+  getDiagnosticsMode,
+  setDiagnosticsMode,
+  subscribeDiagnosticsConsent,
+} from "./diagnosticsConsent";
 import {
   sendDiagnosticReport,
   type DiagnosticSendStatus,
@@ -98,6 +102,8 @@ export function createDiagnosticsScheduler(deps: DiagnosticsDeps) {
       summary: crash.message,
     });
     if (status === "sent" || status === "empty") await clearCrash(crash);
+    // A crash report carries the same logs, so it also counts as this interval's periodic one.
+    if (status === "sent") writeLastPeriodic(now());
     return status;
   }
 
@@ -124,13 +130,20 @@ export function createDiagnosticsScheduler(deps: DiagnosticsDeps) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    /** The notice's Send action. */
-    async sendPending(): Promise<DiagnosticSendStatus> {
+    /**
+     * The notice's Send and Always send actions. Always send switches to automatic mode only
+     * after this upload, so the consent change does not start a second report beside it.
+     */
+    async sendPending(always = false): Promise<DiagnosticSendStatus> {
       const crash = pending;
-      if (!crash) return "empty";
-      const status = await reportCrash(crash);
-      if (pending === crash && (status === "sent" || status === "empty")) setPending(null);
-      return status;
+      try {
+        if (!crash) return "empty";
+        const status = await reportCrash(crash);
+        if (pending === crash && (status === "sent" || status === "empty")) setPending(null);
+        return status;
+      } finally {
+        if (always) setDiagnosticsMode("auto");
+      }
     },
     /** The notice's Don't send action. */
     async dismissPending(): Promise<void> {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AssistantSnapshot } from "../../../src/shared/model/host-contracts/assistant";
 import {
-  applySnapshotFeatures,
+  withJobHolds,
   assistantJobHolds,
   assistantJobNotificationBody,
 } from "./assistant-job-holds";
@@ -81,34 +81,19 @@ describe("assistantJobHolds model holds", () => {
   });
 });
 
-describe("applySnapshotFeatures", () => {
+describe("withJobHolds", () => {
   const stalled = { id: "n", kind: "job.stalled", title: "t", body: "b", createdAt: 1 };
   const base = {
     ...input(),
     notifications: [stalled, { ...stalled, id: "m", kind: "job.done" }],
   } as unknown as AssistantSnapshot;
   const gate = { emergencyStop: false, canCreateGoal: true };
-  it("omits job.stalled and jobHolds for requests without features", () => {
-    const next = applySnapshotFeatures(
+  it("always adds holds and keeps stalled notifications", () => {
+    const next = withJobHolds(
       { ...base, usage: { mode: "report" } } as unknown as AssistantSnapshot,
-      undefined,
-      gate,
-    );
-    expect(next.notifications?.map((n) => n.kind)).toEqual(["job.done"]);
-    expect(next).not.toHaveProperty("jobHolds");
-  });
-  it("adds them when requested", () => {
-    const next = applySnapshotFeatures(
-      { ...base, usage: { mode: "report" } } as unknown as AssistantSnapshot,
-      ["jobHolds", "jobStalled"],
       gate,
     );
     expect(next.notifications).toHaveLength(2);
     expect(next.jobHolds).toEqual({ q: "budget" });
-  });
-  it("keeps the response schema valid for old requests", () => {
-    const next = applySnapshotFeatures(base, [], gate);
-    expect(JSON.stringify(next)).not.toContain("job.stalled");
-    expect(Object.keys(next)).not.toContain("jobHolds");
   });
 });

@@ -1269,14 +1269,6 @@
               {
                 "additionalProperties": false,
                 "properties": {
-                  "features": {
-                    "items": {
-                      "enum": ["jobHolds", "jobStalled", "reminders", "onceSchedule"],
-                      "type": "string"
-                    },
-                    "maxItems": 8,
-                    "type": "array"
-                  },
                   "limit": { "maximum": 100, "minimum": 1, "type": "integer" },
                   "op": { "const": "snapshot", "type": "string" }
                 },
@@ -3234,7 +3226,10 @@
               "properties": {
                 "createdAt": { "type": "number" },
                 "eventId": { "type": "string" },
-                "kind": { "enum": ["progress", "completed", "question"], "type": "string" },
+                "kind": {
+                  "enum": ["progress", "completed", "question", "reminder"],
+                  "type": "string"
+                },
                 "text": { "type": "string" }
               },
               "required": ["eventId", "kind", "text", "createdAt"],
@@ -52362,14 +52357,6 @@
                     {
                       "additionalProperties": false,
                       "properties": {
-                        "features": {
-                          "items": {
-                            "enum": ["jobHolds", "jobStalled", "reminders", "onceSchedule"],
-                            "type": "string"
-                          },
-                          "maxItems": 8,
-                          "type": "array"
-                        },
                         "limit": { "maximum": 100, "minimum": 1, "type": "integer" },
                         "op": { "const": "snapshot", "type": "string" }
                       },
@@ -69558,5 +69545,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "110cb635a9fa026a1763575d23c1c7324c64f2e3a50fce3a32721a8f25be29a3"
+  "schemaHash": "be926490ec330852fab949e7c04dc5894d8f700ca9fa02ad37ba1878c5b1ad2a"
 }

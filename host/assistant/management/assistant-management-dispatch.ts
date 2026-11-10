@@ -25,6 +25,7 @@ import {
 } from "../../conversation/conversation-management-runtime";
 import { isRoomFileAction } from "../room/assistant-room-files";
 import { isRoomAppRead } from "../room/assistant-room-app-reads";
+import { isRoomPrWatchAction } from "../room/assistant-room-pr-watch";
 import { isRoomFolderAction } from "../folders/assistant-folder-schemas";
 import { isRoomDevServerAction } from "../room/assistant-room-dev-servers";
 import { isRoomTerminalAction } from "../room/assistant-room-terminals";
@@ -104,7 +105,7 @@ export function roomManagementToolAllowed(family: string, action: string, projec
       voiceGlobalToolAllowed(family, action) ||
       (!!projectId && voiceThreadToolAllowed(family, action))
     );
-  if (family === "conversation" && isRoomAppRead(action))
+  if (family === "conversation" && (isRoomAppRead(action) || isRoomPrWatchAction(action)))
     return !!projectId && voiceThreadToolAllowed(family, action);
   if (!projectId) return voiceGlobalToolAllowed(family, action);
   if (family !== "conversation") return voiceThreadToolAllowed(family, action);

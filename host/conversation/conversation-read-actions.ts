@@ -31,6 +31,7 @@ export const CONVERSATION_READ_ACTIONS: ReadonlySet<string> = new Set<string>([
   ...FILE_CONVERSATION_READS,
   ...PROJECT_READ_ACTIONS,
   "pullRequests.watches",
+  "pullRequests.assistantWatches",
   ...SERVER_CONVERSATION_READS,
   ...Object.keys(TASK_READ_TOOLS),
   ...BROWSER_ANNOTATION_READ_ACTIONS,
