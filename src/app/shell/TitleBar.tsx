@@ -992,7 +992,7 @@ function TitleBarComponent({
           },
         }
       : undefined;
-  }, [activeId, tabs, onPlaceOnPane, onMoveToNewWindow, popOutTab]);
+  }, [activeId, tabs, onPlaceOnPane, onMoveToNewWindow, popOutTab, t]);
   const sortable = useAnimatedReorder(tabIds, onReorder, "x", externalTabDrop, {
     label: (tabId) => {
       const tab = tabs.find((entry) => entry.id === tabId);

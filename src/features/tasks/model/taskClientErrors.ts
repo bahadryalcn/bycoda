@@ -8,8 +8,7 @@ export const taskClientErrors = {
   crewHost: () => t("Update this project's host to run tasks with a crew."),
   creationUnchecked: () => t("The previous task creation could not be checked."),
   projectOnMachine: () => t("Choose a project on the selected machine."),
-  accountHost: () =>
-    t("Update the selected host to run tasks with the selected provider account."),
+  accountHost: () => t("Update the selected host to run tasks with the selected provider account."),
   continuationHost: (machineName: string) =>
     t("Update bycoda Host on {p0} to continue tasks until complete.", { p0: machineName }),
   workspaceHost: () =>

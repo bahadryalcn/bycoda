@@ -147,6 +147,7 @@ test("cross-feature imports require declared public entries and gate deep paths"
       rule: "cross-feature-deep-import",
       count: 1,
       allowed: 0,
+      tolerance: 0,
     },
   ]);
   const accepted = countFindings(
@@ -172,7 +173,7 @@ test("public entries come only from explicit feature index declarations", () => 
 
 test("compare reports only counts above the baseline and honours the file scope", () => {
   const counts = {
-    "host/server.ts": { "file-lines": 8300 },
+    "host/server.ts": { "file-lines": 8299 },
     "host/new-thing.ts": { "loose-host-file": 1 },
     "src/shared/ui/X.tsx": { "foundation-imports-app": 2 },
   };
@@ -187,13 +188,14 @@ test("compare reports only counts above the baseline and honours the file scope"
   assert.deepEqual(compare(counts, baseline, ["src/shared/ui/X.tsx"]), []);
 });
 
-test("a baselined file over the hard ceiling may shrink or stay flat but not grow", () => {
+test("a baselined file over the hard ceiling may grow by the tolerance, a new one may not", () => {
   const over = (file, count, allowed) =>
     compare({ [file]: { "file-lines": count } }, { [file]: { "file-lines": allowed } }, null);
-  assert.deepEqual(over("src/features/a/ui/A.tsx", 1300, 1300), []);
   assert.deepEqual(over("src/features/a/ui/A.tsx", 1250, 1300), []);
-  assert.equal(over("src/features/a/ui/A.tsx", 1301, 1300).length, 1);
-  // A file absent from the baseline that crosses its hard ceiling fails.
+  assert.deepEqual(over("src/features/a/ui/A.tsx", 1350, 1300), []);
+  assert.equal(over("src/features/a/ui/A.tsx", 1351, 1300).length, 1);
+  assert.equal(over("src/features/a/ui/A.tsx", 1351, 1300)[0].tolerance, 50);
+  // A file absent from the baseline that crosses its hard ceiling fails with no tolerance.
   assert.equal(over("src/features/a/ui/B.tsx", 1201, 0).length, 1);
 });
 

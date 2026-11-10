@@ -539,8 +539,7 @@ export async function saveTask(
       const existing = await remoteRequest<HostTask[]>(machine.id, "tasks.list", {
         projectId: project.id,
       });
-      if (!Array.isArray(existing))
-        throw new Error(taskClientErrors.creationUnchecked());
+      if (!Array.isArray(existing)) throw new Error(taskClientErrors.creationUnchecked());
       const recovered = existing.find(
         (task) => task.id === creation.id && task.projectId === project.id,
       );
@@ -582,8 +581,7 @@ export function taskMachineFor(
   const inferred = backgroundMachineFor(machines, cwd);
   const machine = machineId ? machines.find((entry) => entry.id === machineId) : inferred;
   if (!machine) throw new Error(TASK_MACHINE_ERROR);
-  if (!inferred || inferred.id !== machine.id)
-    throw new Error(taskClientErrors.projectOnMachine());
+  if (!inferred || inferred.id !== machine.id) throw new Error(taskClientErrors.projectOnMachine());
   return machine;
 }
 

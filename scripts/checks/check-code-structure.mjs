@@ -228,6 +228,13 @@ export function countFindings(
   return { counts, details, advisories };
 }
 
+/**
+ * Lines a baselined file over its hard ceiling may grow past its recorded count, so a fix
+ * or a small needed addition is never blocked. Not renewed by `--ratchet`; moving a
+ * responsibility out lowers the count and frees the room again.
+ */
+export const growthTolerance = 50;
+
 export function compare(counts, baseline, files) {
   const increases = [];
   const scope = files ? new Set(files) : null;
@@ -235,7 +242,8 @@ export function compare(counts, baseline, files) {
     if (scope && !scope.has(file)) continue;
     for (const [rule, count] of Object.entries(rules)) {
       const allowed = baseline[file]?.[rule] ?? 0;
-      if (count > allowed) increases.push({ file, rule, count, allowed });
+      const tolerance = rule === "file-lines" && allowed > 0 ? growthTolerance : 0;
+      if (count > allowed + tolerance) increases.push({ file, rule, count, allowed, tolerance });
     }
   }
   return increases;
@@ -340,13 +348,16 @@ export function main(argv = process.argv.slice(2)) {
   for (const increase of increases) {
     const detail =
       details.find((f) => f.file === increase.file && f.rule === increase.rule)?.detail ?? "";
+    const allowance = increase.tolerance
+      ? ` (baseline ${increase.allowed} + ${increase.tolerance} tolerated)`
+      : "";
     console.error(
-      `${increase.file}: ${increase.rule} ${increase.count} > ${increase.allowed} ${detail}`,
+      `${increase.file}: ${increase.rule} ${increase.count} > ${increase.allowed + increase.tolerance}${allowance} ${detail}`,
     );
   }
   if (increases.length) {
     console.error(
-      `\nA file may not cross its hard ceiling (${hardCeilingRatio}x the line target), and a baselined file already over it may not grow. Move the responsibility you touch into its owning feature/module folder or import through the layer's public entry (docs/reference/code-structure.md). Only an owner-approved exception may be accepted with --update-baseline.`,
+      `\nA file may not cross its hard ceiling (${hardCeilingRatio}x the line target). A baselined file already over it may grow by up to ${growthTolerance} lines over its baseline for fixes and small needed additions; beyond that, move a responsibility into its owning feature/module folder or import through the layer's public entry (docs/reference/code-structure.md). Only an owner-approved exception may be accepted with --update-baseline.`,
     );
   }
   // Advisories never fail the check. Listed per file only in changed-file mode to keep full runs quiet.

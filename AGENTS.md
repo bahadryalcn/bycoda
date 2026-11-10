@@ -94,8 +94,9 @@ Line targets are a hint, not a gate: 600 lines for `.tsx`, 800 for `.ts`, 1,500 
 Rust. Past a target, look for a separable responsibility and split if there is one;
 otherwise keep going. Never refuse, shrink or delay requested work because of a line
 count, and do not count lines while writing. The only hard limit is twice the target
-(1,200 / 1,600 / 3,000): no file may cross it and a file already over it may not grow,
-so move the part you touch into the owning folder.
+(1,200 / 1,600 / 3,000): no new file may cross it. A file already over it takes fixes
+and small needed additions in place (up to 50 lines over its baseline); a new
+responsibility goes into the owning folder instead.
 
 # Code invariants
 

@@ -83,10 +83,11 @@ Line counts are a hint to ask the questions above, not a rule to obey.
 - Over a target: the check prints a note for changed files and never fails. Split if a
   separable responsibility exists; otherwise continue. A line count is never a reason
   to refuse, shrink or delay requested work.
-- Over a hard ceiling (twice the target): gated. No file may cross it. Files already
-  over it are listed in the baseline with their line count and may not grow; touching
-  one means keeping its length flat or moving the part you touch into the owning
-  feature folder.
+- Over a hard ceiling (twice the target): gated. No new file may cross it. Files already
+  over it are listed in the baseline with their line count and may grow by up to 50
+  lines past that count, so a fix or a small needed addition goes in place without a
+  detour. A new responsibility goes into the owning feature folder instead. The room is
+  not renewed by `--ratchet`; moving a part out lowers the count and frees it again.
 
 ## Import boundaries
 
