@@ -236,6 +236,7 @@ jobs:
         with:
           name: standalone-host-packages
           path: temp/build/standalone-host-packages/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
 
@@ -504,6 +505,7 @@ jobs:
         with:
           name: desktop-package-${{ matrix.platform }}
           path: temp/build/release-package/${{ matrix.platform }}/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
       - name: Retain isolated smoke diagnostics
