@@ -3583,7 +3583,16 @@
               },
               "jobHolds": {
                 "additionalProperties": {
-                  "enum": ["report", "hours", "budget", "paused", "noExecution", "disabled"],
+                  "enum": [
+                    "report",
+                    "hours",
+                    "budget",
+                    "paused",
+                    "noExecution",
+                    "disabled",
+                    "limits",
+                    "noModel"
+                  ],
                   "type": "string"
                 },
                 "propertyNames": { "type": "string" },
@@ -67259,5 +67268,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "d681c5731dc2c423367255a5d09f11f6e77139261f71ff6e872695347965e8a1"
+  "schemaHash": "996d26431bbd262b92d919d695733c380c68c9f135f903133da362b1947cd68d"
 }

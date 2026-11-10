@@ -100,6 +100,7 @@ import { appendAssistantDailyNote } from "./work/assistant-daily-note";
 import * as jobLog from "./work/assistant-job-activity";
 import { readAssistantTrash } from "./work/assistant-trash";
 import { applySnapshotFeatures, assistantJobNotificationBody } from "./work/assistant-job-holds";
+import * as modelHold from "./work/assistant-model-hold";
 import { GOAL_RESENT, hasErrorCode, resubmitGoal } from "./work/assistant-goal-recovery";
 import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
@@ -252,7 +253,10 @@ export interface AssistantPorts {
   /** Transport supplies a live source permit and holds it through actual disclosure. */
   taskNotificationAllowed?(notification: AssistantNotification): Promise<boolean>;
   listProjects?(): Promise<{ id: string; path: string; name: string }[]>;
-  createGoal?(input: { job: AssistantJob; profile: AssistantProfile }): Promise<{ goalId: string }>;
+  createGoal?(input: {
+    job: AssistantJob;
+    profile: AssistantProfile;
+  }): Promise<modelHold.AssistantGoalSubmission>;
   findGoal?(jobId: string, job?: AssistantJob): Promise<{ goalId: string } | undefined>;
   goalStatus?(
     goalId: string,
@@ -3442,6 +3446,7 @@ export class HostAssistant {
           snapshot: applySnapshotFeatures(await this.snapshot(input.limit ?? 50), input.features, {
             emergencyStop: this.emergencyStop,
             canCreateGoal: !!this.ports.createGoal,
+            modelHolds: await modelHold.loadModelHolds(this.store.db),
           }),
         };
       case "models.pool.get":
@@ -6579,30 +6584,25 @@ export class HostAssistant {
               job.version,
             );
             events.push(
-              await this.activity("job.started", "The job was submitted to the goal planner.", {
+              await this.activity("job.started", modelHold.goalSubmittedText(goal), {
                 jobId: job.id,
               }),
             );
+            await this.setRuntime(modelHold.modelHoldKey(job.id), null);
             return next;
           }, "critical");
         } catch (error) {
-          // The effect might have committed before transport/storage failed.
-          // Keep its stable identity and reconcile it via findGoal on next tick.
-          await this.store.transaction(async () => {
-            await this.repository.put(
-              "jobs",
-              {
-                ...job,
-                status: "waiting",
-                summary: `Planner submission outcome is unknown. ${String(error).slice(0, 1000)}`,
-                updatedAt: this.now(),
-              },
-              job.version,
-            );
-            await this.activity("job.unknown", "Planner submission needs reconciliation.", {
-              jobId: job.id,
-            });
-          }, "critical");
+          await modelHold.handleJobSubmitFailure({
+            error,
+            job,
+            original,
+            now: this.now(),
+            store: this.store,
+            repository: this.repository,
+            setRuntime: (id, value) => this.setRuntime(id, value),
+            queueNotification: (value) => this.queueNotification(value),
+            activity: (kind, text, extra) => this.activity(kind, text, extra),
+          });
           continue;
         }
       }

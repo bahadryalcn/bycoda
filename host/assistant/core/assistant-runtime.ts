@@ -35,6 +35,7 @@ import { AssistantChiefReads } from "../chief/assistant-chief-reads";
 import { assistantWorkerModelSettings } from "../work/assistant-worker-settings";
 import { assistantCacheMeasurement } from "../work/assistant-cache-usage";
 import { AssistantGoalMissingError } from "../work/assistant-goal-recovery";
+import { repointUnstartedGoalTasks } from "../models/assistant-task-repoint";
 
 function assistantNoteDto(note: HostNote): AssistantNote {
   return {
@@ -372,6 +373,12 @@ export function assistantExecutionPorts(
         throw new AssistantJobScopeError(
           "A canonical goal task moved outside its assistant job scope.",
         );
+      // Work that has not started follows the owner's pool order past a limited model;
+      // started work keeps its model and resumes on it when the limit resets.
+      if (profile && !["done", "cancelled"].includes(goal.status))
+        await repointUnstartedGoalTasks({ tasks, selector: models, profile, children }).catch(
+          (error) => console.error("Could not re-point unstarted goal tasks:", String(error)),
+        );
       // Admission uses the policy saved on the canonical goal. Status reads
       // cannot approve a plan after the assistant's current profile changes.
       const status =
@@ -394,7 +401,9 @@ export function assistantExecutionPorts(
         needsOwner = false,
         tokens = 0,
         lastActivityAt = 0,
-        runningChildren = false;
+        runningChildren = false,
+        sessionRunning = false;
+      const limited: { model: string; resetsAt?: number }[] = [];
       for (const sessionId of sessionIds) {
         try {
           const record = await store.session(sessionId);
@@ -410,7 +419,19 @@ export function assistantExecutionPorts(
             activity.lastActivityAt >= 0 &&
             activity.lastActivityAt <= Date.now();
           if (knownActivity) lastActivityAt = Math.max(lastActivityAt, activity!.lastActivityAt);
+          if (
+            record.status !== "running" &&
+            record.session.usageLimit &&
+            children.some((task) => task.status === "running" && task.sessionId === sessionId)
+          )
+            limited.push({
+              model: record.session.model,
+              ...(record.session.usageLimit.resetsAt === undefined
+                ? {}
+                : { resetsAt: record.session.usageLimit.resetsAt }),
+            });
           if (record.status === "running") {
+            sessionRunning = true;
             runningChildren = true;
             if (!knownActivity) activityIncomplete = true;
             needsOwner ||= sessionNeedsInput(record.session);
@@ -491,9 +512,29 @@ export function assistantExecutionPorts(
             : recoveryAttention || (status === "running" && needsOwner)
               ? "owner"
               : undefined;
+      // Every running worker is stopped by a provider limit: the goal waits for the reset.
+      const limitWait =
+        status === "running" && !waitingReason && !sessionRunning && limited.length
+          ? limited.reduce((first, next) =>
+              (next.resetsAt ?? Infinity) < (first.resetsAt ?? Infinity) ? next : first,
+            )
+          : undefined;
       return {
-        status: recoveryAttention || (status === "running" && needsOwner) ? "waiting" : status,
-        ...(waitingReason ? { waitingReason } : {}),
+        status:
+          limitWait || recoveryAttention || (status === "running" && needsOwner)
+            ? "waiting"
+            : status,
+        ...(waitingReason
+          ? { waitingReason }
+          : limitWait
+            ? // shortcut: the union lives in service.ts; add "limits" there and drop this cast.
+              { waitingReason: "limits" as AssistantGoalStatus["waitingReason"] }
+            : {}),
+        ...(limitWait
+          ? {
+              summary: `Waiting for the ${limitWait.model} limit to reset${limitWait.resetsAt === undefined ? "" : ` at ${new Date(limitWait.resetsAt).toISOString()}`}.`,
+            }
+          : {}),
         taskIds: goal.taskIds,
         sessionIds,
         tokens,

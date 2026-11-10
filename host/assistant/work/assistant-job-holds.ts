@@ -8,12 +8,14 @@ type HoldInput = Pick<AssistantSnapshot, "jobs" | "profile" | "usage" | "paused"
   workHoursActive: boolean;
   emergencyStop: boolean;
   canCreateGoal: boolean;
+  /** Jobs the model pool currently refuses to run, by job id. */
+  modelHolds?: Record<string, { held: "limits" | "noRow" }>;
 };
 
 /** Why each queued project job is not starting; mirrors the dispatch gate in the job tick. */
 export function assistantJobHolds(input: HoldInput): Record<string, AssistantJobHoldReason> {
   const { profile, usage } = input;
-  const reason: AssistantJobHoldReason | null =
+  const gate: AssistantJobHoldReason | null =
     !profile.enabled || !profile.setupComplete
       ? "disabled"
       : input.paused || input.emergencyStop
@@ -24,13 +26,17 @@ export function assistantJobHolds(input: HoldInput): Record<string, AssistantJob
             ? "report"
             : !input.workHoursActive
               ? "hours"
-              : !profile.execution || !input.canCreateGoal
-                ? "noExecution"
-                : null;
+              : null;
   const holds: Record<string, AssistantJobHoldReason> = {};
-  if (reason)
-    for (const job of input.jobs)
-      if (job.kind !== "quick" && job.status === "queued") holds[job.id] = reason;
+  for (const job of input.jobs) {
+    if (job.kind === "quick" || job.status !== "queued") continue;
+    const held = input.modelHolds?.[job.id]?.held;
+    const reason =
+      gate ??
+      (held === "limits" ? "limits" : held === "noRow" ? "noModel" : null) ??
+      (!profile.execution || !input.canCreateGoal ? "noExecution" : null);
+    if (reason) holds[job.id] = reason;
+  }
   return holds;
 }
 
@@ -38,7 +44,11 @@ export function assistantJobHolds(input: HoldInput): Record<string, AssistantJob
 export function applySnapshotFeatures(
   snapshot: AssistantSnapshot,
   features: readonly Feature[] | undefined,
-  gate: { emergencyStop: boolean; canCreateGoal: boolean },
+  gate: {
+    emergencyStop: boolean;
+    canCreateGoal: boolean;
+    modelHolds?: HoldInput["modelHolds"];
+  },
 ): AssistantSnapshot {
   const wanted = new Set(features);
   const next: AssistantSnapshot = {

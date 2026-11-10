@@ -5,6 +5,7 @@ import {
   sessionNeedsInput,
   type RuntimeMode,
   type SessionMessageAuthor,
+  type UsageLimit,
 } from "../../src/features/sessions/model/session";
 import type { HostEngine } from "../engine";
 import type { HostStore } from "../store";
@@ -56,6 +57,8 @@ export type SessionRunState =
       state: "finished";
       status: "succeeded" | "failed" | "cancelled";
       error?: string;
+      /** The provider usage limit that ended the turn, read from the session itself. */
+      usageLimit?: UsageLimit;
     };
 
 /** Starts the prompt in a new session. A failure is returned, not thrown, with
@@ -163,7 +166,13 @@ export async function sessionRunState(
   const note = last?.role === "system" ? last.text.trim() : "";
   if (!note) return { state: "finished", status: "succeeded" };
   if (note === STOPPED_BY_USER) return { state: "finished", status: "cancelled" };
-  return { state: "finished", status: "failed", error: note };
+  const usageLimit = session.session.usageLimit;
+  return {
+    state: "finished",
+    status: "failed",
+    error: note,
+    ...(usageLimit ? { usageLimit } : {}),
+  };
 }
 
 export async function cancelSessionRun(

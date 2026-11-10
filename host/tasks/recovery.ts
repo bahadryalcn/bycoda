@@ -355,7 +355,7 @@ export async function resumeInterrupted(
         commandId: newRequestId(),
         sessionId: task.sessionId!,
         text: [
-          "The host stopped before this task finished. Continue this task from the existing conversation and working copy. Inspect the current changes and the last tool results first; keep completed work and do not start over. Completion still requires the original task's checks and review.",
+          `${session.usageLimit ? "The provider usage limit has reset." : "The host stopped before this task finished."} Continue this task from the existing conversation and working copy. Inspect the current changes and the last tool results first; keep completed work and do not start over. Completion still requires the original task's checks and review.`,
           "",
           workerPrompt(task, project.cwd),
         ].join("\n"),

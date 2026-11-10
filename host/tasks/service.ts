@@ -23,6 +23,7 @@ import type { WorkspaceRpcRequest } from "../workspaces/workspace-rpc-contracts"
 import type { BranchMergeReceipt } from "../workspaces/workspace-contracts";
 import { VERIFY_TIMEOUT_MS } from "./constants";
 import * as goalBudget from "./goal-budget";
+import * as repoint from "./repoint";
 import * as assistantRecovery from "./assistant-recovery";
 import * as taskActions from "./task-actions";
 import * as managedSession from "./managed-session";
@@ -438,6 +439,11 @@ export class HostTasks {
     settings: Parameters<typeof goalBudget.updateGoalSettings>[3],
   ): Promise<void> {
     return goalBudget.updateGoalSettings(this.context, goalId, taskIds, settings);
+  }
+
+  /** Re-points one queued assistant-goal task that has not started to another model. */
+  repointUnstartedTask(input: repoint.RepointInput): Promise<HostTask | undefined> {
+    return repoint.repointUnstartedTask(this.context, input);
   }
 
   /** Moving a reviewed task to done merges its branch; that can fail, and the

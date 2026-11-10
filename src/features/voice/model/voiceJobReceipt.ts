@@ -1,5 +1,13 @@
 import { t } from "../../../shared/i18n";
-export type VoiceJobHold = "report" | "hours" | "budget" | "paused" | "noExecution" | "disabled";
+export type VoiceJobHold =
+  | "report"
+  | "hours"
+  | "budget"
+  | "paused"
+  | "noExecution"
+  | "disabled"
+  | "limits"
+  | "noModel";
 type ReceiptJob = { id: string; title: string; status: string };
 
 const NEXT: Record<VoiceJobHold, string> = {
@@ -14,6 +22,10 @@ const NEXT: Record<VoiceJobHold, string> = {
     "Jobs wait because no execution model is selected; the owner can pick one in Room settings.",
   disabled:
     "Jobs wait because the assistant is turned off; the owner can turn it on in Room settings.",
+  limits:
+    "Jobs wait because every model in the pool is at its limit; they start after the limit resets.",
+  noModel:
+    "Jobs wait because no model in the pool can run them; the owner can add one in Room settings.",
 };
 
 /** Tool result for accepted jobs: states which started and why the others wait. */

@@ -23,6 +23,7 @@ import { TaskPreparationSuperseded } from "./errors";
 import { git } from "./git";
 import { available } from "./git";
 import { workerPrompt } from "./prompts";
+import { canResumeAfterUsageLimit } from "./usage-limit";
 import type { TaskContext } from "./context";
 export async function workingCopy(context: TaskContext, task: HostTask): Promise<HostTask> {
   const expected = await context.taskValue(task.id);
@@ -381,7 +382,9 @@ export async function launch(
   }
   const finalLaunchBudget = await context.budgetReason(ready, true);
   if (finalLaunchBudget) return await context.budgetBlock(ready, finalLaunchBudget, context.now());
-  const resumable = await context.canResumeAfterHostStop(ready);
+  const resumable =
+    (await context.canResumeAfterHostStop(ready)) ||
+    (await canResumeAfterUsageLimit(context, ready, context.now()));
   if (context.closing) return (await context.find(task.id)) ?? task;
   // Persist normalization (including current-checkout defaults and execution
   // cwd) before admission. Every later guard and receipt uses this same source.

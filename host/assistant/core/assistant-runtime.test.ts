@@ -519,3 +519,39 @@ it("reproduces the profile goal input exactly when the pool is derived", async (
   expect(derived.create.mock.calls[0][0]).toEqual(plain.create.mock.calls[0][0]);
   expect(result).toEqual({ goalId: "assistant-pool" });
 });
+it("reports a goal whose running work waits on a usage limit as waiting for limits", async () => {
+  const f = fixture(),
+    resetsAt = Date.parse("2026-11-10T18:00:00.000Z");
+  f.list.mockResolvedValue([
+    { id: "assistant-j1", status: "running", taskIds: ["task"], projectIds: ["p1"] },
+  ] as never);
+  Object.assign(f.tasks, {
+    list: vi.fn(async () => [
+      {
+        id: "task",
+        goalId: "assistant-j1",
+        projectId: "p1",
+        sessionId: "worker",
+        status: "running",
+      },
+    ]),
+    hasRunningGoalWork: vi.fn(async () => true),
+  });
+  const record = {
+    projectId: "p1",
+    runId: "run",
+    status: "idle",
+    updatedAt: 1,
+    session: { blocks: [], model: "claude-opus", usageLimit: { resetsAt, resumeAtReset: true } },
+  };
+  Object.assign(f.store, { session: vi.fn(async () => record) });
+  const ports = assistantExecutionPorts(f.store, f.goals, f.tasks);
+  expect(await ports.goalStatus!("assistant-j1")).toMatchObject({
+    status: "waiting",
+    waitingReason: "limits",
+    summary: "Waiting for the claude-opus limit to reset at 2026-11-10T18:00:00.000Z.",
+  });
+  // A worker that is running again is not waiting.
+  record.status = "running";
+  expect(await ports.goalStatus!("assistant-j1")).not.toHaveProperty("waitingReason");
+});

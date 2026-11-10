@@ -6,6 +6,7 @@ import { HostStore } from "../store";
 import { HostAssistant, type AssistantPorts } from "./service";
 import { AssistantResponseSchema } from "../../src/shared/model/host-contracts/assistant";
 import { chiefContextAction, tokenBudgetMode, workerContextAction } from "./cost";
+import { AssistantModelsHeldError } from "./models/assistant-model-execution";
 import { AssistantTextPreflightError } from "./core/assistant-text-budget";
 
 it("reads the profile alone, without Room history that needs project disclosure", async () => {
@@ -764,6 +765,75 @@ describe("job attention", () => {
     const asked = (await f.request({ op: "snapshot", features: ["jobHolds"] })).snapshot!;
     expect(asked.jobHolds).toEqual({ [job.id]: "report" });
     expect((await f.request({ op: "snapshot" })).snapshot).not.toHaveProperty("jobHolds");
+  });
+  describe("model pool holds", () => {
+    const holds = async (f: Awaited<ReturnType<typeof setup>>) =>
+      (await f.request({ op: "snapshot", features: ["jobHolds"] })).snapshot!;
+    it("keeps a held job queued, notifies once per reset window and clears after start", async () => {
+      let now = 1_000_000;
+      let error: Error | null = new AssistantModelsHeldError("limits", 2_000_000);
+      const f = await setup({
+        now: () => now,
+        createGoal: async () => {
+          if (error) throw error;
+          return {
+            goalId: "goal",
+            modelChoice: {
+              rowId: "b",
+              reason: "skipped:a,c",
+              model: "m2",
+              providerAccountId: "acc",
+            },
+          };
+        },
+        goalStatus: async () => ({
+          status: "running",
+          taskIds: [],
+          sessionIds: [],
+          progress: { done: 0, total: 1 },
+        }),
+      });
+      await f.configure();
+      const job = (await f.request(create)).job!;
+      await f.service.tick();
+      let snap = await holds(f);
+      expect(snap.jobs.find((item) => item.id === job.id)?.status).toBe("queued");
+      expect(snap.jobHolds).toEqual({ [job.id]: "limits" });
+      const waiting = () => snap.notifications?.filter((n) => n.kind === "job.waiting") ?? [];
+      expect(waiting().map((n) => n.body)).toEqual([
+        `All models in the pool are at their limit until ${new Date(2_000_000).toISOString()}.`,
+      ]);
+      now += 1000;
+      await f.service.tick();
+      snap = await holds(f);
+      expect(waiting()).toHaveLength(1);
+      error = new AssistantModelsHeldError("limits", 3_000_000);
+      await f.service.tick();
+      snap = await holds(f);
+      expect(waiting()).toHaveLength(2);
+      error = null;
+      await f.service.tick();
+      snap = await holds(f);
+      expect(snap.jobHolds).toEqual({});
+      expect(JSON.stringify(snap.activity)).toContain(
+        "Using m2 (account acc): skipped 2 rows below their limit",
+      );
+    });
+    it("reports noModel when the pool has no row for the role", async () => {
+      const f = await setup({
+        createGoal: async () => {
+          throw new AssistantModelsHeldError("noRow");
+        },
+      });
+      await f.configure();
+      const job = (await f.request(create)).job!;
+      await f.service.tick();
+      const snap = await holds(f);
+      expect(snap.jobHolds).toEqual({ [job.id]: "noModel" });
+      expect(snap.notifications?.map((n) => n.body)).toContain(
+        "No model in the pool can run this job.",
+      );
+    });
   });
 });
 it("uses bounded context actions and the 150k/250k chief defaults", () => {

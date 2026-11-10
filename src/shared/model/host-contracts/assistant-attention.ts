@@ -19,6 +19,8 @@ export const AssistantJobHoldReasonSchema = z.enum([
   "paused",
   "noExecution",
   "disabled",
+  "limits",
+  "noModel",
 ]);
 /** Why a queued job is not starting. */
 export type AssistantJobHoldReason = z.infer<typeof AssistantJobHoldReasonSchema>;

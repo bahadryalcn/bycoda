@@ -63,6 +63,22 @@ describe("assistantJobNotificationBody", () => {
   });
 });
 
+describe("assistantJobHolds model holds", () => {
+  const modelHolds = { q: { held: "limits" as const } };
+  it("reports limits and noModel before noExecution", () => {
+    expect(assistantJobHolds(input({ modelHolds }, { execution: null }))).toEqual({ q: "limits" });
+    expect(assistantJobHolds(input({ modelHolds: { q: { held: "noRow" } } }))).toEqual({
+      q: "noModel",
+    });
+  });
+  it("yields to the earlier gates", () => {
+    expect(assistantJobHolds(input({ modelHolds, workHoursActive: false }))).toEqual({
+      q: "hours",
+    });
+    expect(assistantJobHolds(input({ modelHolds, paused: true }))).toEqual({ q: "paused" });
+  });
+});
+
 describe("applySnapshotFeatures", () => {
   const stalled = { id: "n", kind: "job.stalled", title: "t", body: "b", createdAt: 1 };
   const base = {

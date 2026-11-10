@@ -24,3 +24,13 @@ it("still returns a receipt when the hold read fails", async () => {
   expect(receipt.jobs[0]).toMatchObject({ started: false });
   expect(receipt.jobs[0]).not.toHaveProperty("holdReason");
 });
+
+it.each([
+  ["limits", "at its limit"],
+  ["noModel", "no model in the pool"],
+] as const)("explains the %s model-pool hold", async (reason, text) => {
+  const receipt = await voiceJobReceipt(jobs, async () => ({
+    snapshot: { jobHolds: { b: reason } },
+  }));
+  expect(receipt.next).toContain(text);
+});

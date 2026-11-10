@@ -34,6 +34,7 @@ import { reviewerVerdict } from "./review-outcomes";
 import { MAX_RUNTIME_RETRIES } from "./constants";
 import { isTransientRunFailure } from "./review-outcomes";
 import { runtimeRetryCount } from "./review-outcomes";
+import { waitForUsageLimit } from "./usage-limit";
 import type { TaskContext } from "./context";
 export async function acceptCrewTask(context: TaskContext, id: string): Promise<HostTask> {
   await context.ready;
@@ -295,6 +296,13 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
       });
       return;
     }
+    // A usage limit is a wait for the reset, not a failure of the task.
+    if (
+      outcome.usageLimit &&
+      outcome.status === "failed" &&
+      (await waitForUsageLimit(context, task, outcome.usageLimit, now))
+    )
+      return;
     const recovery = await readAssistantRecovery(context.store, task.id);
     if (
       recovery &&
