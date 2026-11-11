@@ -81,12 +81,15 @@ describe("modal scrim layers", () => {
     expect(layers[1]!.textContent).toContain("Inner body");
   });
 
-  it("keeps blur and dim in the shared theme layer, only on the scrim and only once when nested", () => {
+  it("keeps blur and dim in the shared theme layer, on the scrim only, with a lighter dim when nested", () => {
     const css = fs.readFileSync("src/styles/index.css", "utf8");
     expect(css).toMatch(/--ui-overlay-backdrop-blur:/);
-    expect(css).toMatch(
-      /\[data-modal-layer\] ~ \[data-modal-layer\] \.modal-backdrop \{[^}]*backdrop-filter: none;/,
-    );
+    // A dialog above another still blurs the dialog beneath it; only its dim is lighter.
+    const nested = css.match(
+      /\[data-modal-layer\] ~ \[data-modal-layer\] \.modal-backdrop \{([^}]*)\}/,
+    )?.[1];
+    expect(nested).toContain("background: var(--ui-overlay-backdrop-nested);");
+    expect(nested).not.toContain("backdrop-filter");
     expect(css).toMatch(
       /\.modal-backdrop \{[^}]*backdrop-filter: blur\(var\(--ui-overlay-backdrop-blur\)\)/,
     );

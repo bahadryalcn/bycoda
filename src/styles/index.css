@@ -13,6 +13,12 @@
 @source not "../../tests";
 @source not "../../docs";
 @source not "../../mobile";
+/* Output and scratch trees hold no product classes; a large local temp/ otherwise stalls the scan. */
+@source not "../../temp";
+@source not "../../target";
+@source not "../../build";
+@source not "../../dist";
+@source not "../../test-results";
 @source "../../node_modules/streamdown/dist/*.js";
 @source "../../node_modules/@streamdown/code/dist/*.js";
 @source "../../node_modules/@streamdown/mermaid/dist/*.js";
@@ -528,7 +534,7 @@ html.theme-light {
      --ui-tint-base (the palette ground), not the painted canvas, so they keep the same steps when
      the Pure background paints the canvas pure black or white (V3-039). */
   --ui-surface-panel: var(--ui-chat-canvas);
-  --ui-surface: color-mix(in oklab, var(--color-content) 10%, var(--ui-tint-base));
+  --ui-surface: color-mix(in oklab, var(--color-content) 10%, var(--ui-layer-base));
   /* Workspace panes share the owning canvas's glass instead of stacking opaque
      fills. Floating overlays and embedded document/media pixels keep their roles. */
   --ui-workspace-canvas: var(--color-background-base);
@@ -555,7 +561,7 @@ html.theme-light {
   /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
   --ui-startup-surface: var(--palette-scrim);
   --ui-startup-text: var(--palette-solidInk);
-  --ui-surface-raised: color-mix(in oklab, var(--color-content) 16%, var(--ui-tint-base));
+  --ui-surface-raised: color-mix(in oklab, var(--color-content) 16%, var(--ui-layer-base));
   /* Container role for every floating surface: dialogs, sheets, popovers, menus, tooltips, toasts
      and floating panels (V3-040). Tinted canvases keep the raised step; the Pure background maps it
      near the pure ground below. Controls inside keep their own field, hover and selected steps. */
@@ -574,7 +580,7 @@ html.theme-light {
   --ui-conflict-current-word: color-mix(in oklab, var(--color-conflict-ours) 30%, transparent);
   --ui-conflict-incoming-word: color-mix(in oklab, var(--color-conflict-theirs) 30%, transparent);
   /* Keep fields and muted controls at their existing tone independently of navigation. */
-  --ui-surface-muted: color-mix(in oklab, var(--color-content) 5%, var(--ui-tint-base));
+  --ui-surface-muted: color-mix(in oklab, var(--color-content) 5%, var(--ui-layer-base));
   /* Hover, selected and pressed share one base (the muted surface) so their steps are monotonic:
      hover 7% < selected 15% < pressed 24%. Mirrored in model/interactionTint.ts. */
   --ui-interaction-tint: var(--color-content);
@@ -636,8 +642,8 @@ html.theme-light {
      which the light, dark and custom themes already override, so one definition serves all. Inputs,
      selected rows, focus rings and drag targets keep their own boundary roles. */
   --ui-settings-group-surface: transparent;
-  --ui-settings-group-border: color-mix(in oklab, var(--color-content) 15%, var(--ui-tint-base));
-  --ui-settings-hairline: color-mix(in oklab, var(--color-content) 9%, var(--ui-tint-base));
+  --ui-settings-group-border: color-mix(in oklab, var(--color-content) 15%, var(--ui-layer-base));
+  --ui-settings-hairline: color-mix(in oklab, var(--color-content) 9%, var(--ui-layer-base));
   --ui-settings-row-hover: color-mix(in oklab, var(--color-content) 4%, transparent);
   --ui-radius-card: 0.5rem;
   /* One scrollbar family for native bars, custom rails (editor, rulers) and the terminal.
@@ -728,10 +734,11 @@ html.theme-light {
   /* Modal focus layer. The blur softens the work beneath, so it carries a lighter dim than the
      plain scrim (kept as the readable fallback). Light, dark and custom themes share these values:
      the blur follows the theme glass budget (0 under the no-blur performance mode) and the dim
-     derives from the one scrim role. A dialog opened above another keeps only the nested tint. */
+     derives from the one scrim role. A dialog opened above another blurs the dialog beneath it too
+     and adds the lighter nested tint instead of a second full dim. */
   --ui-overlay-backdrop-blur: min(4px, var(--glass-blur));
   --ui-overlay-backdrop-soft: color-mix(in oklab, var(--ui-overlay-backdrop) 60%, transparent);
-  --ui-overlay-backdrop-nested: color-mix(in oklab, var(--ui-overlay-backdrop) 24%, transparent);
+  --ui-overlay-backdrop-nested: color-mix(in oklab, var(--ui-overlay-backdrop) 40%, transparent);
   /* Field and focus tokens (--ui-field-*, --ui-focus-*) have one owner: the contract at the top
      of arc.css. Do not redeclare them here. */
   /* Global motion scale. Arc's --duration-* / --ease-* (arc.css) point at these; use them in
@@ -813,6 +820,12 @@ html.theme-light {
   /* The palette ground every derived layer mixes from. The painted canvas
      (--color-background-base) equals it unless the Pure background is active. */
   --ui-tint-base: hsl(var(--theme-hue) var(--theme-saturation) var(--background-lightness));
+  /* Ground for derived layers (cards, fields, hover/selected, borders). It never drops below the
+     default depth, so a fully black canvas (Depth 0) keeps the same visible steps instead of
+     collapsing every layer into the canvas. Painted canvases keep --ui-tint-base. */
+  --ui-layer-base: hsl(
+    var(--theme-hue) var(--theme-saturation) max(var(--background-lightness), 4%)
+  );
   --content-lightness: 92%;
   --link-color: var(--palette-hex7dd3fc);
   --color-skill: var(--palette-hexe8c547);
@@ -907,6 +920,7 @@ html.theme-light {
   --background-lightness: 98.6%;
   --content-lightness: 13%;
   --ui-tint-base: hsl(var(--theme-hue) var(--theme-light-saturation) var(--background-lightness));
+  --ui-layer-base: var(--ui-tint-base);
   --color-background-base: var(--ui-tint-base);
   --color-content: hsl(
     var(--theme-hue) calc(var(--theme-saturation) * 0.35) var(--content-lightness)
@@ -976,9 +990,13 @@ html[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureDark);
   --ui-chat-canvas: var(--color-background-base);
   /* Every floating container (dialogs, sheets, popovers, menus, tooltips, toasts, floating panels)
-     stays near the pure ground instead of a mid gray slab; the pane border and floating elevation
-     separate it, and controls inside keep their steps (fields stay one step lighter). */
-  --ui-surface-floating: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
+     stays near the pure ground instead of a mid gray slab, but one visible step above it. The mix
+     is in srgb: an oklab mix this close to black rounds to the canvas itself. Controls inside
+     keep their steps. */
+  --ui-surface-floating: color-mix(in srgb, var(--color-content) 6%, var(--color-background-base));
+  /* Groups and cards read as cards on the black ground: a faint ink fill over whatever surface
+     holds them, framed by the group border. */
+  --ui-settings-group-surface: var(--ui-fill-faint);
   /* Keep the writing area visibly above the dark chat canvas while retaining the user's tint. */
   --ui-composer-surface: color-mix(in srgb, var(--color-content) 9%, var(--color-background-base));
   /* A canvas-tinted veil vanishes on pure black, so the activity/queue glass is a faint light
@@ -991,6 +1009,7 @@ html.theme-light[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureLight);
   --ui-chat-pane-canvas: var(--ui-chat-canvas);
   --ui-surface-floating: var(--ui-surface-raised);
+  --ui-settings-group-surface: transparent;
   /* Mirror of the dark step: a faint off-white on the white ground. */
   --ui-composer-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
   /* Paper-white reading surfaces would vanish into the white canvas; one faint tint step keeps
@@ -4708,12 +4727,12 @@ html.theme-light .btw-burst {
   }
 }
 
-/* Dialogs stack in DOM order: only the lowest layer dims and blurs the work beneath; a dialog above
-   another adds a light tint over the one below. Media viewers keep the full dim for legibility. */
+/* Dialogs stack in DOM order: every layer blurs what is beneath it, so a dialog opened above another
+   pushes the lower dialog back as well. Only the lowest layer carries the full dim; a layer above
+   adds the lighter nested tint so stacked scrims do not turn the work black. Media viewers keep the
+   full dim for legibility. */
 [data-modal-layer] ~ [data-modal-layer] .modal-backdrop {
   background: var(--ui-overlay-backdrop-nested);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
 }
 
 [data-modal-layer="media"] .modal-backdrop,

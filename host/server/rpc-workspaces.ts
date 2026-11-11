@@ -149,7 +149,7 @@ export async function handleWorkspacesRpc(
             });
             if (operation?.kind !== "delivery" || !operation.merge)
               throw new Error("Task delivery receipt is unavailable");
-            await dependencies.managed.retention.onLifecycle(value.id);
+            scheduleRetention(dependencies, value.id);
             return operation.merge;
           }
           const receipt = await dependencies.managed.delivery.merge(
@@ -157,7 +157,7 @@ export async function handleWorkspacesRpc(
             owner,
           );
           await dependencies.tasks.reconcileDelivery(value.id);
-          await dependencies.managed.retention.onLifecycle(value.id);
+          scheduleRetention(dependencies, value.id);
           return receipt;
         });
       if (request.input.method !== "workspaces.delivery.review")
@@ -261,7 +261,6 @@ export async function handleWorkspacesRpc(
       request.result = await dependencies.managedWorkspaces[action](
         request.params as unknown as WorkspaceRpcRequest<"workspaces.resume">,
       );
-      await dependencies.managed.retention.onLifecycle(String(request.params.workspaceId));
       if (action !== "resume")
         await recordRemoteActivity(dependencies, request, "worktreeChanged", {
           projectId: lifecycleWorkspace.projectId,
@@ -293,4 +292,12 @@ export async function handleWorkspacesRpc(
       break;
     }
   }
+}
+
+/**
+ * Queues lifecycle cleanup without holding the RPC open: it waits behind other retention
+ * passes and reports its own failures, while the lifecycle change is already committed.
+ */
+function scheduleRetention(dependencies: Pick<ServerBindings, "managed">, workspaceId: string) {
+  void dependencies.managed.retention.onLifecycle(workspaceId).catch(() => {});
 }

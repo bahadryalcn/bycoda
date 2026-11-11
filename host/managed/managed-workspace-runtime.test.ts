@@ -830,3 +830,20 @@ it("prevents a host provider from starting while the same managed session has a 
   );
   await f.runtime.withOwner("native-device", (owner) => f.runtime.nativeTurns.end(boundary, owner));
 });
+
+it("closes a workspace without waiting for a busy retention pass", async () => {
+  const f = await fixture();
+  await f.runtime.recover();
+  const workspace = (await f.runtime.registry.prepare(f.request)).workspace;
+  // A startup or hourly pass that is still checking or deleting other worktrees.
+  const queued = vi
+    .spyOn(f.runtime.retention, "onLifecycle")
+    .mockReturnValue(new Promise(() => {}));
+  const closed = await f.runtime.registry.close({
+    workspaceId: workspace.id,
+    expectedRevision: workspace.revision,
+    idempotencyKey: "close-while-retention-busy",
+  });
+  expect(closed.state).toBe("abandoned");
+  expect(queued).toHaveBeenCalledWith(workspace.id);
+});

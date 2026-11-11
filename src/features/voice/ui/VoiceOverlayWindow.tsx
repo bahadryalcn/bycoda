@@ -404,7 +404,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           </Button>
         </header>
         <LiveText
-          className={compact ? styles.srOnly : styles.status}
+          className={compact || status === "idle" ? styles.srOnly : styles.status}
           text={`${compact && state?.error ? t("Voice needs attention") : statusText}${state?.working ? ` | ${state.workingStatus || t("Session working")}` : ""}`}
         />
         {!compact && (
@@ -427,10 +427,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 </InlineError>
               )}
               {side === "inline" ? questions : null}
-
-              {status === "idle" && state?.privacy && (
-                <p className={styles.caption}>{state.privacy}</p>
-              )}
               {state?.transcript && (
                 <div className={`${styles.turn} ${styles.heard}`}>
                   <span className="sr-only">{t("You")}: </span>

@@ -70,6 +70,16 @@ it("finishes fresh setup directly and allows reopening from Settings", async () 
   await act(async () => container.querySelector("button")!.click());
   expect(container.textContent).toBe("");
 });
+it("asks for file access only after Quick setup and the guide close", async () => {
+  // A consent dialog opened under setup stays hidden until its native deadline expires.
+  await render();
+  expect(configureFileAccess).not.toHaveBeenCalled();
+  await act(async () => container.querySelectorAll("button")[1].click());
+  expect(container.textContent).toContain("Close guide");
+  expect(configureFileAccess).not.toHaveBeenCalled();
+  await act(async () => container.querySelector("button")!.click());
+  expect(configureFileAccess).toHaveBeenCalledOnce();
+});
 it("starts the spotlight tour from the guide and closes it independently", async () => {
   await render(1);
   await act(async () => window.dispatchEvent(new Event(OPEN_USAGE_GUIDE_EVENT)));

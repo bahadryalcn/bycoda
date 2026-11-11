@@ -79,10 +79,15 @@ export function OnboardingHost({
       .catch((error) => setAccessError(String(error)))
       .finally(() => setAccessBusy(false));
   };
+  // Native storage owns the decision, including migration of existing installs, and its
+  // approval lock deduplicates StrictMode and concurrent windows. Ask only once Quick setup
+  // and the guide are closed: those dialogs mount later and would cover the consent dialog
+  // until its native deadline expires.
+  const accessReady = !open && !guide;
   useEffect(() => {
-    // Native storage owns the decision, including migration of existing installs.
-    // The native approval lock deduplicates StrictMode and concurrent windows.
-    setupAccess();
+    if (accessReady) setupAccess();
+  }, [accessReady]);
+  useEffect(() => {
     // Record existing installations too: deleting their last project isn't a first run.
     if (!shouldShowOnboarding(context)) finishOnboarding();
     // A fresh install starts "What's new" from this version; an update keeps older entries pending.

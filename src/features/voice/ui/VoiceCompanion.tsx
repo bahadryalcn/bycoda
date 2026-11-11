@@ -2975,13 +2975,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       error: shownError,
       notice: historyNotice,
       manualTurnEnd: settings.manualTurnEnd === true,
-      privacy: realtime
-        ? t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
-            p1: realtime.name,
-          })
-        : t(
-            "Audio is processed on this computer. Replies use the session’s signed-in provider. No API key required.",
-          ),
     },
     onCommand: onOverlayCommand,
     onChoice: (id, reply) => {

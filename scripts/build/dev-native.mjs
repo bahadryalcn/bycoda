@@ -646,8 +646,10 @@ export async function runNativeDev(args = process.argv.slice(2)) {
               timeout: 5_000,
             });
             try {
+              // A cold dev server can take longer than the default to serve the first document.
               await waitForNativePage(browser, environment.devUrl, manifest, {
                 signal: abort.signal,
+                timeoutMs: 180_000,
               });
             } finally {
               await browser.close();

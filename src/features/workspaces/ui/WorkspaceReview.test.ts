@@ -6,6 +6,7 @@ import type { BranchDeliveryPlan, ManagedWorkspace } from "../model/contracts";
 import { getWorkspaceCapabilities, workspaceRequest } from "../model/workspaceClient";
 import { WorkspaceReview } from "./WorkspaceReview";
 import { WorkspaceDirectoryRemoval } from "./WorkspaceDirectoryRemoval";
+import { toast } from "../../../shared/ui/ToastRegion";
 
 vi.mock("../model/workspaceClient", () => ({
   workspaceRequest: vi.fn(),
@@ -250,7 +251,7 @@ it("skips filesystem cleanup when closing already retired the missing record", a
   ]);
 });
 
-it("keeps the dialog open with the Host's reasons when closing still leaves a blocker", async () => {
+it("closes the dialog at once and reports a blocker left after closing in the background", async () => {
   vi.mocked(workspaceRequest).mockImplementation(async (method) => {
     if (method === "workspaces.get") return workspace as never;
     if (method === "workspaces.close") return { ...workspace, state: "abandoned" } as never;
@@ -270,9 +271,15 @@ it("keeps the dialog open with the Host's reasons when closing still leaves a bl
       }),
     ),
   );
+  const show = vi.spyOn(toast, "show");
   await act(async () => button("Remove record").click());
-  expect(close).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("Workspace is still in use.");
+  expect(close).toHaveBeenCalledOnce();
+  expect(show).toHaveBeenLastCalledWith(
+    expect.objectContaining({ tone: "danger", message: "Workspace is still in use." }),
+  );
+  expect(vi.mocked(workspaceRequest).mock.calls.map(([method]) => method)).not.toContain(
+    "workspaces.cleanup.apply",
+  );
 });
 
 it("keeps the PR draft and reconciles an uncertain publication with the original operation after reopening", async () => {

@@ -34,7 +34,6 @@ function Fixture() {
       transcript: "",
       message: "",
       error: "",
-      privacy: "Local",
     },
     onCommand: vi.fn(),
     onClosed: vi.fn(),

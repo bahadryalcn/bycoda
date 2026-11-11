@@ -289,7 +289,9 @@ export function createManagedWorkspaceRuntime(
     const transition = registry[action].bind(registry);
     registry[action] = async (request) => {
       const result = await transition(request);
-      await retention.onLifecycle(result.id);
+      // The transition is committed. Cleanup queues behind other retention passes (Git status,
+      // directory deletion), so waiting here would push the caller past its request deadline.
+      void retention.onLifecycle(result.id).catch(() => {});
       return result;
     };
   }

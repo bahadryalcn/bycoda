@@ -37,9 +37,8 @@ export function WorkspaceDirectoryRemoval({
 }) {
   const t = useT();
   const [plan, setPlan] = useState<WorkspaceCleanupPlan | null>(null);
-  const [pending, setPending] = useState<"plan" | "remove" | null>(null);
+  const [pending, setPending] = useState<"plan" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [closing, setClosing] = useState(closeFirst);
   const lock = useRef(false);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -77,15 +76,15 @@ export function WorkspaceDirectoryRemoval({
     // An active record cannot be previewed for removal until the owner confirms closing it.
     if (!closeFirst) void preview();
   }, [workspace.id]);
-  async function remove() {
+  /** Closes the dialog at once; closing, planning and deleting continue in the background. */
+  function remove() {
     if (lock.current) return;
-    if (!closing && (!plan || plan.expiresAt <= Date.now() || plan.blockers.length)) return;
-    lock.current = true;
-    setPending("remove");
-    setError(null);
-    try {
-      let approved = plan;
-      if (closing) {
+    if (!closeFirst && (!plan || plan.expiresAt <= Date.now() || plan.blockers.length)) return;
+    const approved = plan;
+    onClose();
+    void runBackgroundRemoval(workspace.path, projectName(workspace.path), async () => {
+      let confirmed = approved;
+      if (closeFirst) {
         const fresh = await latest();
         const closed = await workspaceRequest(
           "workspaces.close",
@@ -95,51 +94,43 @@ export function WorkspaceDirectoryRemoval({
             idempotencyKey: workspaceOperationKey(),
           },
           context,
-        );
-        onWorkspaceChange?.(closed);
-        if (closed.directoryState === "removed") {
-          onClose();
-          return;
-        }
-        setClosing(false);
-        approved = await planFor(closed);
-        setPlan(approved);
-        if (approved.blockers.length) return;
-      }
-      const confirmed = approved!;
-      onClose();
-      void runBackgroundRemoval(workspace.path, projectName(workspace.path), async () => {
-        let failure: unknown;
-        await workspaceRequest(
-          "workspaces.cleanup.apply",
-          {
-            workspaceId: workspace.id,
-            expectedRevision: confirmed.expectedRevision,
-            idempotencyKey: workspaceOperationKey(),
-            planToken: confirmed.token,
-          },
-          context,
-        ).catch((reason: unknown) => {
-          failure = reason;
+        ).catch(async (reason: unknown) => {
+          // An unconfirmed close is settled by the Host's record, never by a blind retry.
+          const current = await latest().catch(() => null);
+          if (current?.state === "abandoned") return current;
+          throw reason;
         });
-        // An unconfirmed apply is settled by the Host's status, never by a blind retry.
-        const status = await workspaceRequest(
-          "workspaces.cleanup.status",
-          { workspaceId: workspace.id },
-          context,
-        ).catch(() => null);
-        if (status) onWorkspaceChange?.(status.workspace);
-        if (status?.workspace.directoryState === "removed") return;
-        throw failure instanceof Error
-          ? failure
-          : new Error(t("Directory removal is not complete. Open its removal again to check it."));
+        onWorkspaceChange?.(closed);
+        if (closed.directoryState === "removed") return;
+        confirmed = await planFor(closed);
+        if (confirmed.blockers.length) throw new Error(confirmed.blockers.join("; "));
+      }
+      if (!confirmed) return;
+      let failure: unknown;
+      await workspaceRequest(
+        "workspaces.cleanup.apply",
+        {
+          workspaceId: workspace.id,
+          expectedRevision: confirmed.expectedRevision,
+          idempotencyKey: workspaceOperationKey(),
+          planToken: confirmed.token,
+        },
+        context,
+      ).catch((reason: unknown) => {
+        failure = reason;
       });
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      lock.current = false;
-      setPending(null);
-    }
+      // An unconfirmed apply is settled by the Host's status, never by a blind retry.
+      const status = await workspaceRequest(
+        "workspaces.cleanup.status",
+        { workspaceId: workspace.id },
+        context,
+      ).catch(() => null);
+      if (status) onWorkspaceChange?.(status.workspace);
+      if (status?.workspace.directoryState === "removed") return;
+      throw failure instanceof Error
+        ? failure
+        : new Error(t("Directory removal is not complete. Open its removal again to check it."));
+    });
   }
   const missingRecord = missing || closeFirst;
   return (
@@ -153,7 +144,7 @@ export function WorkspaceDirectoryRemoval({
           <Button variant="secondary" disabled={!!pending} onClick={onClose}>
             {t("Cancel")}
           </Button>
-          {!closing && (
+          {!closeFirst && (
             <Button
               variant="secondary"
               loading={pending === "plan"}
@@ -166,11 +157,11 @@ export function WorkspaceDirectoryRemoval({
           <Button
             variant="primary"
             tone="danger"
-            loading={pending === "remove"}
             disabled={
-              !!pending || (!closing && (!plan || !!plan.blockers.length || plan.expiresAt <= now))
+              !!pending ||
+              (!closeFirst && (!plan || !!plan.blockers.length || plan.expiresAt <= now))
             }
-            onClick={() => void remove()}
+            onClick={remove}
           >
             {missingRecord ? t("Remove record") : t("Delete directory")}
           </Button>
@@ -179,7 +170,7 @@ export function WorkspaceDirectoryRemoval({
     >
       <div className="space-y-3 text-ui-body">
         <p>
-          {closing && workspace.state === "active"
+          {closeFirst && workspace.state === "active"
             ? t(
                 "The folder is gone but this workspace is still marked active. Removing the record closes the workspace first; the conversation and branch are kept.",
               )

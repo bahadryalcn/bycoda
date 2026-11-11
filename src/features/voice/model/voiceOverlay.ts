@@ -27,8 +27,6 @@ export type VoiceOverlayState = {
   error: string;
   notice?: string;
   manualTurnEnd?: boolean;
-  /** Text describing local or cloud audio handling, shown before starting. */
-  privacy: string;
   choice?: VoiceChoice | null;
   jobReview?: VoiceJobReviewState | null;
 };

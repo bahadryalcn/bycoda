@@ -16,11 +16,13 @@ html:root {
   --ui-field-height-sm: var(--ui-control-height-compact);
   --ui-field-height-md: calc(var(--ui-control-height) - 0.25rem);
   --ui-field-radius: 0.5rem;
-  --ui-field-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface-muted));
-  --ui-field-border-hover: color-mix(in oklab, var(--color-content) 22%, var(--ui-surface-muted));
+  /* The resting frame must read as an input on every canvas, the pure black and white grounds
+     included: about 3:1 against the surface around it. Hover and focus step up from there. */
+  --ui-field-border: color-mix(in oklab, var(--color-content) 38%, var(--ui-surface-muted));
+  --ui-field-border-hover: color-mix(in oklab, var(--color-content) 52%, var(--ui-surface-muted));
   /* Minimal focus: a neutral border step, no accent-colored frame or halo. Bright custom accents
      (white) otherwise paint a glaring frame on every click. */
-  --ui-field-border-focus: color-mix(in oklab, var(--color-content) 32%, var(--ui-surface-muted));
+  --ui-field-border-focus: color-mix(in oklab, var(--color-content) 68%, var(--ui-surface-muted));
   --ui-field-border-invalid: var(--ui-tone-danger-fg);
   --ui-focus-ring-color: color-mix(in oklab, var(--color-content) 34%, transparent);
   --ui-focus-ring: 0 0 0 0 transparent;
