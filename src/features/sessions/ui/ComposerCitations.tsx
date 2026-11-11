@@ -12,6 +12,35 @@ import { tokenLabel } from "../model/attachmentTokens";
 import { highlightChatCitation } from "../model/chatCitationHighlight";
 import styles from "./ComposerCitations.module.css";
 
+// Module level: React Compiler cannot lower try/finally inside a component.
+async function copyCitation(
+  citation: ChatCitation,
+  {
+    copying,
+    setCopied,
+    setCopyingId,
+    setError,
+    failure,
+  }: {
+    copying: { current: boolean };
+    setCopied: (id: string | null) => void;
+    setCopyingId: (id: string | null) => void;
+    setError: (message: string) => void;
+    failure: string;
+  },
+) {
+  try {
+    await copyMessage(citation.text);
+    setCopied(citation.id);
+    setError("");
+  } catch {
+    setError(failure);
+  } finally {
+    copying.current = false;
+    setCopyingId(null);
+  }
+}
+
 /** Quote chips above the composer; each names the `[quoteN]` token the draft text uses. */
 export function ComposerCitations({
   citations,
@@ -85,16 +114,13 @@ export function ComposerCitations({
               copying.current = true;
               setCopied(null);
               setCopyingId(citation.id);
-              try {
-                await copyMessage(citation.text);
-                setCopied(citation.id);
-                setError("");
-              } catch {
-                setError(t("Could not copy quote. Please try again."));
-              } finally {
-                copying.current = false;
-                setCopyingId(null);
-              }
+              await copyCitation(citation, {
+                copying,
+                setCopied,
+                setCopyingId,
+                setError,
+                failure: t("Could not copy quote. Please try again."),
+              });
             }}
           >
             <Copy />

@@ -11,35 +11,40 @@ for (const theme of ["dark", "light"]) {
       await expect(panel.locator(".approval-toast")).toHaveCount(3);
       await expect(panel.locator(".approval-toast").first()).toHaveCSS("animation-name", "none");
       await page.screenshot({
-        path: `temp/verification/2026-11-11-notification-tones/pending-${theme}-${width}.png`,
+        path: `temp/verification/2026-11-11-notification-center/pending-${theme}-${width}.png`,
       });
-      const list = panel.getByRole("tabpanel");
+      const list = panel.locator(".notification-sheet-list");
       expect((await list.boundingBox())!.y - (await panel.boundingBox())!.y).toBeLessThan(110);
       await page.getByRole("button", { name: "Allow", exact: true }).click();
       await expect(page.getByLabel("Fixture result")).toHaveText("fixture-1:1:allow");
       await expect(panel.locator(".approval-toast")).toHaveCount(2);
-      await page.getByRole("tab", { name: /^Recent/ }).click();
-      const recentBox = (await page.getByRole("tab", { name: /^Recent/ }).boundingBox())!;
       const clearBox = (await page
         .getByRole("button", { name: "Clear all", exact: true })
         .boundingBox())!;
+      const summaryBox = (await panel.locator(".notification-summary").boundingBox())!;
       expect(
-        Math.abs(recentBox.y + recentBox.height / 2 - clearBox.y - clearBox.height / 2),
+        Math.abs(summaryBox.y + summaryBox.height / 2 - clearBox.y - clearBox.height / 2),
       ).toBeLessThan(4);
-      expect(clearBox.x).toBeGreaterThan(recentBox.x + recentBox.width);
+      expect(clearBox.x).toBeGreaterThan(summaryBox.x + summaryBox.width);
       await expect(panel.getByText(/What this app announced/)).toHaveCount(0);
       const failed = panel.locator('.notification-history-kind[data-tone="danger"]').first();
       const finished = panel.locator('.notification-history-kind[data-tone="success"]').first();
+      // The tone lives on the kind icon; the label next to the project stays plain text.
+      const failedIcon = panel.locator('.notification-history-icon[data-tone="danger"]').first();
+      const finishedIcon = panel.locator('.notification-history-icon[data-tone="success"]').first();
+      await expect(panel.locator(".notification-pending-card")).toBeVisible();
       await expect(failed).toHaveText("Failed");
       await expect(finished).toHaveText("Finished");
-      expect(await failed.evaluate((node) => getComputedStyle(node).color)).not.toBe(
-        await finished.evaluate((node) => getComputedStyle(node).color),
+      expect(await failedIcon.evaluate((node) => getComputedStyle(node).color)).not.toBe(
+        await finishedIcon.evaluate((node) => getComputedStyle(node).color),
       );
-      // The two requests still pending are marked; the answered one is not.
-      await expect(panel.getByText("Waiting for you", { exact: true })).toHaveCount(2);
+      // Requests still pending live in the pending card, not in the recent rows.
+      await expect(
+        panel.locator(".notification-history-item").getByText("Waiting for you"),
+      ).toHaveCount(0);
       const row = panel.locator(".notification-history-item").first();
-      const more = row.getByRole("button", { name: "Show more", exact: true });
-      await more.focus();
+      const rowToggle = row.locator(".notification-row-toggle");
+      await rowToggle.focus();
       await page.keyboard.press("Enter");
       await expect(row.locator(".notification-history-path")).toBeVisible();
       await page.keyboard.press("Enter");
@@ -47,20 +52,21 @@ for (const theme of ["dark", "light"]) {
       expect(await list.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       // A conversation that is gone says so in its row and keeps the panel open.
       const gone = panel.locator(".notification-history-item").filter({ hasText: "old-gone" });
-      await gone.locator(".notification-request-body").click();
+      await gone.locator(".notification-row-toggle").click();
+      await gone.getByRole("button", { name: "Open conversation", exact: true }).click();
       await expect(gone.getByText("This conversation is no longer available.")).toBeVisible();
-      // One entry leaves on its own.
+      // One entry leaves on its own; the row is still expanded from the failed open.
       const rows = await panel.locator(".notification-history-item").count();
       await gone.getByRole("button", { name: "Remove", exact: true }).click();
       await expect(panel.locator(".notification-history-item")).toHaveCount(rows - 1);
       await page.screenshot({
-        path: `temp/verification/2026-11-11-notification-tones/${theme}-${width}.png`,
+        path: `temp/verification/2026-11-11-notification-center/${theme}-${width}.png`,
       });
       await page.getByRole("button", { name: "Clear all", exact: true }).click();
       await expect(page.getByRole("button", { name: "Clear", exact: true })).toBeVisible();
       expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await page.screenshot({
-        path: `temp/verification/2026-11-11-notification-tones/confirm-${theme}-${width}.png`,
+        path: `temp/verification/2026-11-11-notification-center/confirm-${theme}-${width}.png`,
       });
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
       await page.getByRole("button", { name: "Notification options", exact: true }).click();
@@ -85,21 +91,20 @@ for (const theme of ["dark", "light"]) {
 test("empty state, persisted preferences and clearing history", async ({ page }) => {
   await page.goto("/tests/browser/notifications/notifications.html?empty");
   await page.getByRole("button", { name: "Notifications", exact: true }).click();
-  await expect(page.getByText("No pending requests", { exact: true })).toBeVisible();
+  // Nothing waits and nothing is new, but the log still lists what was announced.
+  await expect(page.getByText("You're all caught up", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Notification options", exact: true }).click();
   await page.getByRole("switch", { name: "Show request popups", exact: true }).click();
   await page.keyboard.press("Escape");
-  await page.getByRole("tab", { name: /^Recent/ }).focus();
-  await page.keyboard.press("Home");
-  await expect(page.getByRole("tab", { name: /Pending/ })).toBeFocused();
-  await page.keyboard.press("End");
   // Clearing asks in place, beside the list, and only empties it once the write is confirmed.
   await page.getByRole("button", { name: "Clear all", exact: true }).click();
   // A press right after the question opens is its own tail, not an answer.
   await page.waitForTimeout(400);
-  await page.screenshot({ path: "temp/verification/2026-11-10-notifications/clear-confirm.png" });
+  await page.screenshot({
+    path: "temp/verification/2026-11-11-notification-center/clear-confirm.png",
+  });
   await page.getByRole("button", { name: "Clear", exact: true }).click();
-  await expect(page.getByText("No recent notifications", { exact: true })).toBeVisible();
+  await expect(page.getByText("All clear", { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Notifications", exact: true }).click();
   await page.getByRole("button", { name: "Notification options", exact: true }).click();

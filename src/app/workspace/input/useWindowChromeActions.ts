@@ -102,7 +102,7 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
     openRef.current.projectRail = next;
     setProjectRailOpen(next);
     saveProjectRailOpen(next);
-  }, []);
+  }, [setProjectRailOpen]);
   const onToggleSidebar = onToggleProjectRail;
 
   const onToggleSessionSidebar = useCallback(() => {
@@ -110,7 +110,7 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
     openRef.current.sessionSidebar = next;
     setSessionSidebarOpen(next);
     saveSessionSidebarOpen(next);
-  }, []);
+  }, [setSessionSidebarOpen]);
 
   const onGoToFile = useCallback(() => {
     setSearchViewOpen(false);
@@ -143,7 +143,7 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
         return;
       window.location.reload();
     })();
-  }, []);
+  }, [dirtyFilesRef]);
 
   const onFindInProject = useCallback(() => {
     setSearchViewOpen(false);

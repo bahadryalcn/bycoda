@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AssistantSessionManagement } from "../model/session";
 import { useAssistantSnapshot } from "../../assistant/model/assistantClient";
 import {
@@ -38,6 +38,28 @@ export function AssistantSessionControl(props: {
     </>
   );
 }
+// Reads only environmentId, so heartbeat and profile changes do not re-render each pane.
+const selectEnvironmentId = (state: { environmentId: string | null }) => state.environmentId;
+
+/**
+ * Awaits `run`, then hands its value, its failure and the end to the callers. `live` is checked
+ * after the await, so a stale run only reaches the callbacks that check it themselves.
+ */
+async function settle<T>(
+  run: () => Promise<T>,
+  live: () => boolean,
+  on: { value: (value: T) => void; error: (cause: unknown) => void; done: () => void },
+): Promise<void> {
+  try {
+    const value = await run();
+    if (!live()) return;
+    on.value(value);
+  } catch (cause) {
+    on.error(cause);
+  } finally {
+    on.done();
+  }
+}
 function LocalControl({
   sessionId,
   cwd,
@@ -48,7 +70,7 @@ function LocalControl({
   management: AssistantSessionManagement;
 }) {
   const t = useT(),
-    { environmentId } = useAssistantSnapshot();
+    environmentId = useAssistantSnapshot(selectEnvironmentId);
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -59,7 +81,10 @@ function LocalControl({
   > | null>(null);
   const epoch = useRef(0),
     scope = useRef({ environmentId, sessionId, cwd });
-  scope.current = { environmentId, sessionId, cwd };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the latest scope in a ref so stale async detach results can be told apart
+  useLayoutEffect(() => {
+    scope.current = { environmentId, sessionId, cwd };
+  }, [environmentId, sessionId, cwd]);
   useEffect(
     () => () => {
       epoch.current++;
@@ -87,41 +112,53 @@ function LocalControl({
       scope.current.environmentId === source &&
       scope.current.sessionId === sessionId &&
       scope.current.cwd === cwd;
-    try {
-      const next = await prepareAssistantSessionDetach({
-        sessionId,
-        cwd,
-        management,
-        environmentId: source,
-        current,
-      });
-      if (!current()) return;
-      setPrepared(next);
-      setDetached(next.detached);
-      if (next.detached) setUncertain(false);
-    } catch (cause) {
-      if (current()) setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      if (current()) setBusy(false);
-    }
+    await settle(
+      () =>
+        prepareAssistantSessionDetach({
+          sessionId,
+          cwd,
+          management,
+          environmentId: source,
+          current,
+        }),
+      current,
+      {
+        value: (next) => {
+          setPrepared(next);
+          setDetached(next.detached);
+          if (next.detached) setUncertain(false);
+        },
+        error: (cause) => {
+          if (current()) setError(cause instanceof Error ? cause.message : String(cause));
+        },
+        done: () => {
+          if (current()) setBusy(false);
+        },
+      },
+    );
   }
   async function detach() {
     if (!prepared || busy || uncertain || detached) return;
     setBusy(true);
     setError("");
     const token = epoch.current;
-    try {
-      await prepared.detach();
-      if (token === epoch.current) setDetached(true);
-    } catch (cause) {
-      if (token === epoch.current) {
-        setUncertain(!(cause instanceof AssistantSessionDetachError) || cause.submitted);
-        setPrepared(null);
-        setError(cause instanceof Error ? cause.message : String(cause));
-      }
-    } finally {
-      if (token === epoch.current) setBusy(false);
-    }
+    await settle(
+      () => prepared.detach(),
+      () => token === epoch.current,
+      {
+        value: () => setDetached(true),
+        error: (cause) => {
+          if (token === epoch.current) {
+            setUncertain(!(cause instanceof AssistantSessionDetachError) || cause.submitted);
+            setPrepared(null);
+            setError(cause instanceof Error ? cause.message : String(cause));
+          }
+        },
+        done: () => {
+          if (token === epoch.current) setBusy(false);
+        },
+      },
+    );
   }
   return (
     <>

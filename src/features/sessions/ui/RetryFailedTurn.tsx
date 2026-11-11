@@ -52,6 +52,32 @@ export function failedTurnRetry(session: Session) {
     : null;
 }
 
+type RetrySubmit = (
+  text: string,
+  attachments: Attachment[],
+  options?: ComposerTurnOptions,
+) => boolean | void;
+
+/** Sends the retry; a rejection or a throw releases the button before it propagates. */
+function submitRetry(
+  onSubmit: RetrySubmit,
+  retry: { text: string; attachments: Attachment[]; intent?: ComposerTurnOptions["intent"] },
+  release: () => boolean,
+) {
+  try {
+    if (
+      onSubmit(retry.text, retry.attachments, {
+        ...(retry.intent ? { intent: retry.intent } : {}),
+        onSendRejected: release,
+      }) === false
+    )
+      release();
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
+
 export function RetryFailedTurn({
   session,
   blocked,
@@ -93,18 +119,7 @@ export function RetryFailedTurn({
               if (submitting.current === key) return;
               submitting.current = key;
               setSubmitted(key);
-              try {
-                if (
-                  onSubmit(retry.text, retry.attachments, {
-                    ...(retry.intent ? { intent: retry.intent } : {}),
-                    onSendRejected: release,
-                  }) === false
-                )
-                  release();
-              } catch (error) {
-                release();
-                throw error;
-              }
+              submitRetry(onSubmit, retry, release);
             }}
           >
             {t("Retry")}

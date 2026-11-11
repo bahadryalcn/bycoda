@@ -182,7 +182,7 @@ export function useProjectImport({
         target.providerAccountId,
       );
     },
-    [],
+    [turnGen, sessionsRef, setSessions],
   );
 
   const onPlaceSessionInFolder = useCallback(
@@ -247,14 +247,14 @@ export function useProjectImport({
         ),
       );
     },
-    [],
+    [sessionsRef],
   );
 
   // Imported sessions add projects to the rail and rows to the open project.
   const onSessionsImported = useCallback(() => {
     setRecents(loadRecents());
     void refreshHistory(sidebarCwdRef.current);
-  }, [refreshHistory]);
+  }, [refreshHistory, sidebarCwdRef, setRecents]);
 
   return {
     openCodeWorkspace,

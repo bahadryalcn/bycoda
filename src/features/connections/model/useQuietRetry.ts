@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { classifyRemoteError } from "./remoteFailure";
 
 /** Waits between automatic retries of a busy machine: 2, 4, 8, 16 s. */
@@ -15,10 +16,7 @@ export const QUIET_RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 16_000] as const;
 export function useQuietRetry(error: unknown, retry: (() => void) | undefined): boolean {
   const transient = !!error && !!retry && classifyRemoteError(error).kind === "temporary";
   const [attempts, setAttempts] = useState(0);
-  const retryRef = useRef(retry);
-  useEffect(() => {
-    retryRef.current = retry;
-  });
+  const retryLatest = useStableCallback(retry);
   useEffect(() => {
     if (!transient) {
       const reset = setTimeout(() => setAttempts(0), 0);
@@ -27,9 +25,9 @@ export function useQuietRetry(error: unknown, retry: (() => void) | undefined): 
     if (attempts >= QUIET_RETRY_DELAYS_MS.length) return;
     const timer = setTimeout(() => {
       setAttempts((count) => count + 1);
-      retryRef.current?.();
+      retryLatest?.();
     }, QUIET_RETRY_DELAYS_MS[attempts]);
     return () => clearTimeout(timer);
-  }, [transient, attempts, error]);
+  }, [transient, attempts, error, retryLatest]);
   return transient && attempts < QUIET_RETRY_DELAYS_MS.length;
 }

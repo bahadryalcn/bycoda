@@ -51,14 +51,13 @@ import {
 } from "../../features/sessions/ui/ProviderSignInPanel";
 import {
   newProviderAccount,
-  providerAccountExists,
-  providerAccounts,
+  providerAccountExistsIn,
   saveProviderAccount,
-  defaultProviderAccountId,
-  sessionProviderAccountId,
-  subscribeProviderAccounts,
+  defaultProviderAccountIdIn,
+  sessionProviderAccountIdIn,
   type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
+import { useProviderAccounts } from "../../features/providers/model/useProviderAccounts";
 
 export type UsageFooterSession = {
   id?: string;
@@ -110,27 +109,26 @@ export function UsageFooter({
   // One shared minute clock (paused while hidden); countdowns show whole minutes.
   const now = useMinuteNow();
   const [refreshing, setRefreshing] = useState(false);
-  const [, setAccountsVersion] = useState(0);
   const inflight = useRef<Promise<void> | null>(null);
   // Set only by refresh; null for consume/reconnect operations, which refresh joins as before.
   const inflightKey = useRef<string | null>(null);
   // A legacy thread without a pin runs on "default", not the current default.
   const preferredClaudeAccountId = useUsageDisplayAccount("claude");
   const preferredCodexAccountId = useUsageDisplayAccount("codex");
-  const claudeAccounts = providerAccounts("claude");
-  const codexAccounts = providerAccounts("codex");
+  const claudeAccounts = useProviderAccounts("claude");
+  const codexAccounts = useProviderAccounts("codex");
   const claudeAccountId = claudeAccounts.some((account) => account.id === preferredClaudeAccountId)
     ? preferredClaudeAccountId!
     : session?.harness === "claude"
-      ? sessionProviderAccountId("claude", session)
-      : defaultProviderAccountId("claude");
+      ? sessionProviderAccountIdIn(claudeAccounts, session)
+      : defaultProviderAccountIdIn(claudeAccounts);
   const codexAccountId = codexAccounts.some((account) => account.id === preferredCodexAccountId)
     ? preferredCodexAccountId!
     : session?.harness === "codex"
-      ? sessionProviderAccountId("codex", session)
-      : defaultProviderAccountId("codex");
-  const claudeAccountAvailable = providerAccountExists("claude", claudeAccountId);
-  const codexAccountAvailable = providerAccountExists("codex", codexAccountId);
+      ? sessionProviderAccountIdIn(codexAccounts, session)
+      : defaultProviderAccountIdIn(codexAccounts);
+  const claudeAccountAvailable = providerAccountExistsIn(claudeAccounts, claudeAccountId);
+  const codexAccountAvailable = providerAccountExistsIn(codexAccounts, codexAccountId);
   const cachedClaude = useRateLimitQuery(
     "claude",
     claudeAccountId,
@@ -149,8 +147,6 @@ export function UsageFooter({
   const codex = codexAccountAvailable
     ? cachedCodex
     : unavailableRateLimits("codex", "This conversation uses a removed account");
-
-  useEffect(() => subscribeProviderAccounts(() => setAccountsVersion((value) => value + 1)), []);
 
   const refresh = useCallback(() => {
     const targets: [RateLimitProvider, string][] = [];

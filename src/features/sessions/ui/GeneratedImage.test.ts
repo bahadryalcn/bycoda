@@ -31,6 +31,7 @@ beforeEach(() => {
         intersect = (visible) => callback([{ isIntersecting: visible }]);
       }
       observe() {}
+      unobserve() {}
       disconnect() {
         disconnects += 1;
       }

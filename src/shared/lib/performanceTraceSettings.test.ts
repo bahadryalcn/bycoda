@@ -21,6 +21,7 @@ class FakePerformanceObserver {
     FakePerformanceObserver.instances.push(this);
   }
   observe() {}
+  unobserve() {}
   disconnect() {
     this.disconnected = true;
   }

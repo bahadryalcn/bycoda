@@ -109,6 +109,14 @@ export function useClosePaneActions({
       refreshHistory,
       sidebarCwd,
       tabCloseScope,
+      setComposerFocused,
+      windowTransferPendingRef,
+      activeTabIdRef,
+      movingTabIds,
+      setTabs,
+      tabsRef,
+      sessionsRef,
+      tabWorktreeOf,
     ],
   );
 
@@ -128,7 +136,17 @@ export function useClosePaneActions({
       }
       onCloseTab(id);
     },
-    [onClosePane, onCloseTab, tabCloseScope],
+    [
+      onClosePane,
+      onCloseTab,
+      tabCloseScope,
+      movingTabIds,
+      tabsRef,
+      sessionsRef,
+      tabWorktreeOf,
+      windowTransferPendingRef,
+      activeTabIdRef,
+    ],
   );
 
   return { onClosePane, onCloseTitleTab };

@@ -65,7 +65,7 @@ export function useHistorySessionArchive(deps: HistorySessionArchiveDeps) {
         return false;
       }
     },
-    [onRemoveHistorySession],
+    [onRemoveHistorySession, setHistory, removingSessionIds],
   );
 
   const onArchiveFocusedSession = useCallback(
@@ -93,7 +93,21 @@ export function useHistorySessionArchive(deps: HistorySessionArchiveDeps) {
         },
       );
     },
-    [onArchiveHistorySession],
+    [
+      onArchiveHistorySession,
+      tabsRef,
+      whatsNewVersionRef,
+      sessionsRef,
+      inboxViewOpenRef,
+      notesViewOpenRef,
+      filePickerOpenRef,
+      projectTerminalFocusedRef,
+      searchViewOpenRef,
+      automationsViewOpenRef,
+      serversViewOpenRef,
+      activeTabIdRef,
+      settingsOpenRef,
+    ],
   );
 
   const onArchiveHistorySessions = useCallback(

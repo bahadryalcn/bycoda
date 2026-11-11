@@ -1,9 +1,12 @@
+import { boundFormat } from "../../../shared/i18n/boundFormat";
+import { t } from "../../../shared/i18n/core";
 import { describe, expect, it } from "vitest";
 import {
   clampUsedPercent,
   exhaustedWindowResetAt,
   formatRateLimitWindowChipLabel,
   formatResetCountdown,
+  formatResetCountdownWith,
   formatResetDuration,
   formatUsagePercent,
   formatWindowLabel,
@@ -14,6 +17,7 @@ import {
   parseOpencodeGoUsage,
   parseResetTimestamp,
   rateLimitWindowTooltip,
+  rateLimitWindowTooltipWith,
 } from "./rateLimits";
 
 describe("formatWindowLabel", () => {
@@ -382,5 +386,30 @@ describe("rateLimitWindowTooltip", () => {
     expect(
       rateLimitWindowTooltip({ usedPercent, windowMinutes: 10_080, resetsAt: null }, 0, true),
     ).toBe(`${remaining} remaining · wk window`);
+  });
+});
+
+describe("explicit-translator variants", () => {
+  const shout = ((key: string, params?: Record<string, unknown>) =>
+    `X:${key.replace("{p0}", String(params?.p0 ?? ""))}`) as typeof t;
+  it("match the originals with the module translator", () => {
+    const window = { usedPercent: 40, windowMinutes: 300, resetsAt: 1_000_000 + 9_000_000 };
+    for (const showRemaining of [false, true]) {
+      expect(rateLimitWindowTooltipWith(window, 1_000_000, showRemaining, t, boundFormat())).toBe(
+        rateLimitWindowTooltip(window, 1_000_000, showRemaining),
+      );
+    }
+    const open = { usedPercent: 10, windowMinutes: 300, resetsAt: null };
+    expect(rateLimitWindowTooltipWith(open, 0, false, t, boundFormat())).toBe(
+      rateLimitWindowTooltip(open, 0),
+    );
+    expect(formatResetCountdownWith(5_400_000, t, boundFormat())).toBe(
+      formatResetCountdown(5_400_000),
+    );
+    expect(formatResetCountdownWith(0, t, boundFormat())).toBe(formatResetCountdown(0));
+  });
+  it("use the translator passed in", () => {
+    expect(formatResetCountdownWith(0, shout, boundFormat())).toBe("X:Resets now");
+    expect(formatResetCountdownWith(3_600_000, shout, boundFormat())).toContain("X:Resets in");
   });
 });

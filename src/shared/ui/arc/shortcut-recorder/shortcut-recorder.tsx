@@ -26,11 +26,10 @@ import styles from "./shortcut-recorder.module.css";
  * ============================================================================================== */
 
 import {
-  formatShortcut,
   keyId,
   normalizeShortcut,
   shortcutFromEvent,
-  shortcutTokens,
+  shortcutTokensWith,
   splitShortcut,
   usePlatform,
   type Platform,
@@ -48,6 +47,13 @@ export {
   usePlatform,
 } from "../../shortcut";
 export type { Platform, ShortcutChord, ShortcutSequence, ShortcutToken } from "../../shortcut";
+
+/** The spoken form of a shortcut, translated with the component's bound translator so it follows the locale. */
+function spokenShortcut(shortcut: string, platform: Platform, t: ReturnType<typeof useT>) {
+  return shortcutTokensWith(shortcut, platform, t)
+    .map((token) => token.spoken)
+    .join(" ");
+}
 
 const subscribe = () => () => {};
 /** Reduced motion that only applies after hydration, so server and client render the same styles. */
@@ -268,7 +274,7 @@ export function ShortcutRecorder({
   }, []);
 
   const spoken = (shortcut: string | null) =>
-    shortcut ? formatShortcut(shortcut, platform).spoken : "none";
+    shortcut ? spokenShortcut(shortcut, platform, t) : "none";
 
   const commit = useCallback(
     (next: string | null, replaced?: ShortcutBinding) => {
@@ -279,11 +285,11 @@ export function ShortcutRecorder({
       setSettled((count) => count + 1);
       setAnnouncement(
         next
-          ? t("Shortcut set to {p0}", { p0: formatShortcut(next, platform).spoken })
+          ? t("Shortcut set to {p0}", { p0: spokenShortcut(next, platform, t) })
           : t("Shortcut cleared"),
       );
     },
-    [onValueChange, platform, value],
+    [onValueChange, platform, t, value],
   );
 
   const start = () => {
@@ -384,9 +390,9 @@ export function ShortcutRecorder({
 
   const shown = pending?.shortcut ?? current;
   const tokens = recording
-    ? shortcutTokens(live.join("+"), platform)
+    ? shortcutTokensWith(live.join("+"), platform, t)
     : shown
-      ? shortcutTokens(shown, platform)
+      ? shortcutTokensWith(shown, platform, t)
       : [];
   const state = recording ? "recording" : pending ? "conflict" : "idle";
   const canReset = !recording && (pending !== null || (current ?? null) !== (restoreTo ?? null));
@@ -555,7 +561,7 @@ export function ShortcutRecorder({
                     size="sm"
                     iconOnly
                     motion="none"
-                    label={`Reset to ${restoreTo ? formatShortcut(restoreTo, platform).spoken : "none"}`}
+                    label={`Reset to ${restoreTo ? spokenShortcut(restoreTo, platform, t) : "none"}`}
                     onClick={() => {
                       commit(restoreTo ?? null);
                       buttonRef.current?.focus();
@@ -714,7 +720,7 @@ export function ShortcutList({
   platform: platformProp,
   className,
 }: ShortcutListProps) {
-  useT();
+  const t = useT();
   const reduced = useReducedFlag();
   const platform = usePlatform(platformProp);
   const held = usePressedKeys(highlightPressed);
@@ -752,7 +758,7 @@ export function ShortcutList({
       ...group,
       items: group.items.filter((item) => {
         if (!words.length) return true;
-        const tokens = shortcutTokens(item.shortcut, platform);
+        const tokens = shortcutTokensWith(item.shortcut, platform, t);
         const haystack =
           `${item.label} ${group.label} ${item.keywords ?? ""} ${tokens.map((token) => `${token.spoken} ${token.label}`).join(" ")}`.toLowerCase();
         return words.every(
@@ -810,7 +816,7 @@ export function ShortcutList({
               <ul className={styles.rows}>
                 <AnimatePresence initial={false}>
                   {group.items.map((item) => {
-                    const tokens = shortcutTokens(item.shortcut, platform);
+                    const tokens = shortcutTokensWith(item.shortcut, platform, t);
                     const ids = tokens.map((token) => token.id);
                     const match = held.size > 0 && ids.every((key) => held.has(key));
                     const dim =

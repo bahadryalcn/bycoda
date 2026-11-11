@@ -104,7 +104,15 @@ export function useSourceControlSurfaces(deps: SourceControlSurfacesDeps): Sourc
       }
       void resolveOpenablePath(diffCwd, path).then((resolved) => open(resolved ?? path));
     },
-    [activeTabId],
+    [
+      activeTabId,
+      sessionsRef,
+      setComposerFocused,
+      gitCwdRef,
+      sidebarCwdRef,
+      setTabs,
+      setSidebarTab,
+    ],
   );
 
   const onOpenWorkingTreeDiff = useCallback(
@@ -132,7 +140,7 @@ export function useSourceControlSurfaces(deps: SourceControlSurfacesDeps): Sourc
       );
       setComposerFocused(false);
     },
-    [activeTabId],
+    [activeTabId, sidebarCwdRef, setTabs, setComposerFocused, gitCwdRef],
   );
 
   const onOpenCommit = useCallback(
@@ -157,12 +165,12 @@ export function useSourceControlSurfaces(deps: SourceControlSurfacesDeps): Sourc
       );
       setComposerFocused(false);
     },
-    [activeTabId],
+    [activeTabId, sidebarCwdRef, setTabs, setComposerFocused, gitCwdRef],
   );
 
   const onShowSourceControl = useCallback(() => {
     setSidebarTab("changes");
-  }, []);
+  }, [setSidebarTab]);
 
   const onToggleChanges = useCallback(() => {
     onShowSourceControl();

@@ -483,7 +483,6 @@ function TasksContent({
       put: { task: putTask, tasks: putTasks, remove: removeTask },
       machines,
       visibleTasks,
-      draft,
       setDraft,
       currentSprint,
       sprintBoard,
@@ -852,9 +851,8 @@ function TasksContent({
           saving={saving}
           error={error}
           sprintName={currentSprint?.name}
-          onChange={setDraft}
           onClose={() => setDraft(null)}
-          onSave={(mode) => void onSave(mode)}
+          onSave={(mode, saved) => void onSave(mode, saved)}
         />
       ) : null}
       <GoalSettingsDialog goals={goals} saving={saving} />

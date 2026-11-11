@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 
 // One mouse-wheel notch (~100px) is about one 1.22x step; a trackpad pinch
 // sends many small deltas and so zooms smoothly instead of in jumps.
@@ -61,10 +62,7 @@ export function useWheelZoom(
   onZoom: (factor: number, clientX: number, clientY: number) => void,
   active = true,
 ) {
-  const latest = useRef(onZoom);
-  useEffect(() => {
-    latest.current = onZoom;
-  });
+  const zoomLatest = useStableCallback(onZoom);
 
   useEffect(() => {
     const element = ref.current;
@@ -77,7 +75,7 @@ export function useWheelZoom(
       frame = 0;
       const pending = factor;
       factor = 1;
-      if (pending !== 1) latest.current(pending, x, y);
+      if (pending !== 1) zoomLatest(pending, x, y);
     };
     const onWheel = (event: WheelEvent) => {
       if (!isZoomWheel(event)) return;
@@ -94,7 +92,7 @@ export function useWheelZoom(
       element.removeEventListener("wheel", onWheel);
       if (frame) window.cancelAnimationFrame(frame);
     };
-  }, [ref, active]);
+  }, [ref, active, zoomLatest]);
 }
 
 /**

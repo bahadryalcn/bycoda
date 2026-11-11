@@ -10,6 +10,7 @@ import {
   useReducedMotion,
   type AnimationPlaybackControls,
 } from "motion/react";
+import { observeResize } from "../../../lib/observeResize";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./badge.module.css";
 
@@ -78,7 +79,16 @@ export function Badge({
   }, [text, glyphKey]);
   useEffect(() => {
     const node = content.current;
-    if (!node || typeof ResizeObserver === "undefined") return;
+    if (!node) return;
+    // Reduced motion never springs, so there is nothing to observe; an animation cut short by the switch is released.
+    if (reduce) {
+      width.jump("auto");
+      if (body.current) {
+        body.current.style.width = "auto";
+        delete body.current.dataset.morphing;
+      }
+      return;
+    }
     let last: number | undefined;
     let controls: AnimationPlaybackControls | undefined;
     const settle = () => {
@@ -88,19 +98,13 @@ export function Badge({
         delete body.current.dataset.morphing;
       }
     };
-    const observer = new ResizeObserver(([entry]) => {
-      if (!entry) return;
+    const unobserve = observeResize(node, (entry) => {
       const next = entry.borderBoxSize?.[0]?.inlineSize ?? node.offsetWidth;
       const current = width.get();
       const from = typeof current === "number" ? current : last;
       last = next;
       controls?.stop();
-      if (
-        reduce ||
-        from === undefined ||
-        from === next ||
-        performance.now() - changedAt.current > 120
-      )
+      if (from === undefined || from === next || performance.now() - changedAt.current > 120)
         return settle();
       // Pin the old width before this frame paints, then spring to the new one.
       // While morphing the label keeps its natural one-line width and the body clips it, so the
@@ -111,9 +115,8 @@ export function Badge({
       }
       controls = animate(width, [from, next], { ...motionTokens.spring.morph, onComplete: settle });
     });
-    observer.observe(node);
     return () => {
-      observer.disconnect();
+      unobserve();
       controls?.stop();
     };
   }, [width, reduce]);

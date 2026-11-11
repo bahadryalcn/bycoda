@@ -39,6 +39,7 @@ beforeEach(() => {
         observerCallback = callback;
       }
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

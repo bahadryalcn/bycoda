@@ -1,3 +1,4 @@
+import { useMemo, useSyncExternalStore } from "react";
 import {
   requirePrivacyMutationToken,
   withRoomPrivacyMutation,
@@ -24,6 +25,7 @@ const RAIL_PINNED_KEY = "bycoda.projectRailPinned";
 const ARCHIVED_KEY = "bycoda.archivedProjects";
 const ARCHIVED_CHANGED = "bycoda:archived-projects-changed";
 const PROJECT_PATHS_CHANGED = "bycoda:project-paths-changed";
+const RAIL_ORDER_CHANGED = "bycoda:project-rail-order-changed";
 // The rail lists every remembered project, so this also bounds how many a
 // bulk import (history from another tool) can bring in.
 const MAX = 200;
@@ -44,7 +46,14 @@ function normalize(path: string): string {
 
 export function loadRecents(): RecentProject[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    return parseRecents(localStorage.getItem(KEY));
+  } catch {
+    return [];
+  }
+}
+
+function parseRecents(raw: string | null): RecentProject[] {
+  try {
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -61,6 +70,20 @@ export function loadRecents(): RecentProject[] {
   } catch {
     return [];
   }
+}
+
+function recentsSnapshot(): string | null {
+  try {
+    return localStorage.getItem(KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** `loadRecents` for render: re-renders the caller when the recent projects are saved. */
+export function useRecents(): RecentProject[] {
+  const raw = useSyncExternalStore(subscribeProjectPathsChanged, recentsSnapshot, () => null);
+  return useMemo(() => parseRecents(raw), [raw]);
 }
 
 function save(next: RecentProject[]) {
@@ -341,6 +364,8 @@ export function saveProjectRailOrder(order: string[]) {
   if (next.length === previous.length && next.every((path, index) => path === previous[index]))
     return;
   savePathList(RAIL_ORDER_KEY, next);
+  // Not a rail-wide announcement (see `commitProjectRailOrder`): only `useProjectRailLayout` listens.
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(RAIL_ORDER_CHANGED));
 }
 
 export function loadPinnedProjects(): string[] {
@@ -385,6 +410,15 @@ export function collectRailProjects(
   recents: RecentProject[],
   currentCwd: string,
 ): Map<string, RecentProject> {
+  return collectRailProjectsAt(recents, currentCwd, Date.now());
+}
+
+/** `collectRailProjects` with the time a not-yet-remembered current folder counts as opened. */
+function collectRailProjectsAt(
+  recents: RecentProject[],
+  currentCwd: string,
+  now: number,
+): Map<string, RecentProject> {
   const map = new Map<string, RecentProject>();
   for (const item of recents) {
     if (!looksLikeProject(item.path)) continue;
@@ -395,7 +429,7 @@ export function collectRailProjects(
     const path = normalize(currentCwd);
     const key = pathKey(path);
     if (!map.has(key)) {
-      map.set(key, { path, openedAt: Date.now() });
+      map.set(key, { path, openedAt: now });
     }
   }
   return map;
@@ -428,7 +462,17 @@ export function projectRailSections(
   order: string[],
   pinnedPaths: string[],
 ): ProjectRailSections {
-  const projects = collectRailProjects(recents, currentCwd);
+  return projectRailSectionsAt(recents, currentCwd, order, pinnedPaths, Date.now());
+}
+
+function projectRailSectionsAt(
+  recents: RecentProject[],
+  currentCwd: string,
+  order: string[],
+  pinnedPaths: string[],
+  now: number,
+): ProjectRailSections {
+  const projects = collectRailProjectsAt(recents, currentCwd, now);
   const syncedOrder = syncProjectRailOrder(order, projects);
   const pinnedSet = new Set(pinnedPaths.map(pathKey));
   const pinned: RecentProject[] = [];
@@ -445,15 +489,83 @@ export function projectRailSections(
 
 /** Recents plus the current folder when it is a project not yet remembered. */
 export function projectRailItems(recents: RecentProject[], currentCwd: string): RecentProject[] {
-  const projects = collectRailProjects(recents, currentCwd);
-  const order = syncProjectRailOrder(loadProjectRailOrder(), projects);
-  const { pinned, projects: unpinned } = projectRailSections(
+  return railItemsAt(recents, currentCwd, loadProjectRailOrder(), loadPinnedProjects(), Date.now());
+}
+
+function railItemsAt(
+  recents: RecentProject[],
+  currentCwd: string,
+  order: string[],
+  pinnedPaths: string[],
+  now: number,
+): RecentProject[] {
+  const projects = collectRailProjectsAt(recents, currentCwd, now);
+  const { pinned, projects: unpinned } = projectRailSectionsAt(
     recents,
     currentCwd,
-    order,
-    loadPinnedProjects(),
+    syncProjectRailOrder(order, projects),
+    pinnedPaths,
+    now,
   );
   return [...pinned, ...unpinned];
+}
+
+/**
+ * `projectRailItems` with the saved order and pins given (see `useProjectRailLayout`), so
+ * render reads no store. A current folder that is not remembered yet counts as opened after
+ * every recent project, which is where `Date.now()` puts it, without reading the clock.
+ */
+export function projectRailItemsFrom(
+  recents: RecentProject[],
+  currentCwd: string,
+  layout: ProjectRailLayout,
+): RecentProject[] {
+  const newest = recents.reduce((latest, item) => Math.max(latest, item.openedAt), 0);
+  return railItemsAt(recents, currentCwd, layout.order, layout.pinned, newest + 1);
+}
+
+export type ProjectRailLayout = { order: string[]; pinned: string[] };
+
+let layoutCache: { key: string; layout: ProjectRailLayout } | null = null;
+
+/** The saved order and pins, with one object identity while the stored text is unchanged. */
+function projectRailLayoutSnapshot(): ProjectRailLayout {
+  let key = "";
+  try {
+    key = `${localStorage.getItem(RAIL_ORDER_KEY)}
+${localStorage.getItem(RAIL_PINNED_KEY)}`;
+  } catch {
+    /* storage unavailable: nothing saved */
+  }
+  if (layoutCache?.key !== key)
+    layoutCache = {
+      key,
+      layout: { order: loadProjectRailOrder(), pinned: loadPinnedProjects() },
+    };
+  return layoutCache.layout;
+}
+
+const NO_LAYOUT: ProjectRailLayout = { order: [], pinned: [] };
+
+function subscribeProjectRailLayout(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const stop = subscribeProjectPathsChanged(onChange);
+  window.addEventListener(RAIL_ORDER_CHANGED, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    stop();
+    window.removeEventListener(RAIL_ORDER_CHANGED, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+/** The saved rail order and pins for render: re-renders the caller when either is saved. */
+export function useProjectRailLayout(): ProjectRailLayout {
+  return useSyncExternalStore(
+    subscribeProjectRailLayout,
+    projectRailLayoutSnapshot,
+    () => NO_LAYOUT,
+  );
 }
 
 /** True if this looks like a user project, not an app bundle or system root. */

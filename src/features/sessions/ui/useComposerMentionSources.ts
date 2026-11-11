@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   loadProjectFiles,
   peekProjectFiles,
@@ -45,7 +45,7 @@ export function useComposerProjectFiles(input: {
   }));
   const [failedCwd, setFailedCwd] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const retry = useCallback(() => setAttempt((count) => count + 1), []);
+  const retry = () => setAttempt((count) => count + 1);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,11 +118,8 @@ export function useComposerMentionSources(input: {
     active: mentionOpen,
     query: mentionQuery,
   });
-  const mentionFiles = useMemo(
-    () => (!remote && notesEnabled ? [...files, ...notesAsProjectFiles(notes)] : files),
-    [files, notes, notesEnabled, remote],
-  );
-  const mentionIndex = useMemo(() => buildMentionIndex(mentionFiles), [mentionFiles]);
+  const mentionFiles = !remote && notesEnabled ? [...files, ...notesAsProjectFiles(notes)] : files;
+  const mentionIndex = buildMentionIndex(mentionFiles);
   const deferredMentionQuery = useDeferredValue(mentionQuery);
   const rankedFiles = useMemo(() => {
     if (!mentionOpen) return [];

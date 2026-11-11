@@ -88,7 +88,19 @@ export function useRepairChecks(deps: RepairChecksDeps): {
       setSidebarTab("sessions", cwd);
       await onSelectHistorySession(session.id);
     },
-    [ensureOpenSession, onSubmit, onSelectHistorySession, sessionDefaults?.runtimeMode],
+    [
+      ensureOpenSession,
+      onSubmit,
+      onSelectHistorySession,
+      sessionDefaults?.runtimeMode,
+      setInboxViewOpen,
+      setSidebarTab,
+      setNotesViewOpen,
+      sessionsRef,
+      setSearchViewOpen,
+      setSessions,
+      setServersViewOpen,
+    ],
   );
 
   return { onRepairChecks };

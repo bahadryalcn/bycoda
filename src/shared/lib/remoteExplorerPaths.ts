@@ -48,6 +48,31 @@ export function localExplorerPath(path: string): string | undefined {
   return mapping.localRoot === "/" ? result.replace(/^\/+/, "/") : result;
 }
 
+const listeners = new Set<() => void>();
+
+/** Subscribe to saved-mapping changes (also other windows), for `useLocalExplorerPath`. */
+export function subscribeMappings(listener: () => void): () => void {
+  listeners.add(listener);
+  // Another window saving a mapping arrives as a storage event.
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === KEY || event.key === null) listener();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+/** The raw stored mappings: a primitive, so it is stable until a mapping is saved. */
+export function mappingsSnapshot(): string | null {
+  try {
+    return localStorage.getItem(KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function saveExplorerMapping(remoteRoot: string, localRoot: string): void {
   const mapping = {
     remoteRoot:
@@ -65,4 +90,5 @@ export function saveExplorerMapping(remoteRoot: string, localRoot: string): void
       mapping,
     ]),
   );
+  for (const notify of listeners) notify();
 }

@@ -1,6 +1,5 @@
 import { useState, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { useT } from "../../../shared/i18n";
-import { formatNumber } from "../../../shared/i18n/core";
+import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -199,6 +198,7 @@ function SettingRow({
   onPick: () => void;
 }) {
   const t = useT();
+  const { formatNumber } = useFormat();
   const [open, setOpen] = useState(false);
   const labels = setting.options.map((option) => t(option.label));
   const kind = settingControlKind(setting, labels);

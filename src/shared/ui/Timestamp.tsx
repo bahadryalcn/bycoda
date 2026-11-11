@@ -52,13 +52,6 @@ export function Timestamp({
     date.getFullYear() === other.getFullYear() &&
     date.getMonth() === other.getMonth() &&
     date.getDate() === other.getDate();
-  const full = dateTimeFormat(locale, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
   const day =
     format === "auto"
       ? sameDay(today)
@@ -67,6 +60,18 @@ export function Timestamp({
           ? t("Yesterday")
           : undefined
       : undefined;
+  const showTitle = tooltip ?? (format === "auto" ? day != null : true);
+  // The full date is only needed for the title and the auto format's older-date label.
+  const full =
+    showTitle || (format === "auto" && !day)
+      ? dateTimeFormat(locale, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        }).format(date)
+      : "";
   const clock = dateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(date);
   const text =
     format === "auto"
@@ -98,7 +103,6 @@ export function Timestamp({
                   minute: "numeric",
                   second: "numeric",
                 }).format(date);
-  const showTitle = tooltip ?? (format === "auto" ? day != null : true);
   return (
     <time
       title={showTitle ? (prefix ? `${prefix}: ${full}` : full) : undefined}

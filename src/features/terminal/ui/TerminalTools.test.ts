@@ -17,6 +17,7 @@ beforeEach(() => {
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -130,6 +131,7 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -238,6 +240,7 @@ it("keeps automatic exposure and source choices explicit without requesting on m
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

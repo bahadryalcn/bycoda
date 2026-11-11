@@ -6,7 +6,12 @@ import {
   useProjectTerminalDockActions,
   type ProjectTerminalDockActionDeps,
 } from "./useProjectTerminalDockActions";
-import { newEditorPane, newTerminalFile } from "../../../features/workspace/model/layout";
+import {
+  newEditorPane,
+  newTab,
+  newTerminalFile,
+  type WorkspaceTab,
+} from "../../../features/workspace/model/layout";
 import type { ProjectTerminalDock } from "../../../features/projects/model/projectTerminal";
 import {
   confirmCloseTerminal,
@@ -111,5 +116,43 @@ it("closes every terminal and the panel, keeping one opened during confirmation"
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
+  }
+});
+
+it("terminal meta events leave tabs untouched unless a terminal really changed", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const terminal = newTerminalFile("/a");
+  const plain = newTab("s1");
+  const withTerminal = { ...newTab("s2"), terminalPanes: [newEditorPane(terminal)] };
+  const tabs = [plain, withTerminal];
+  const setTabs = vi.fn();
+  let actions!: ReturnType<typeof useProjectTerminalDockActions>;
+  function Consumer() {
+    actions = useProjectTerminalDockActions({
+      projectCwdRef: { current: "/a" },
+      setTabs,
+      dock: { setProjectTerminals: vi.fn() },
+    } as unknown as ProjectTerminalDockActionDeps);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  try {
+    act(() => root.render(createElement(Consumer)));
+    const run = () => {
+      const update = setTabs.mock.calls.at(-1)![0] as (previous: WorkspaceTab[]) => WorkspaceTab[];
+      return update(tabs);
+    };
+    act(() => actions.onTerminalMetaChange(terminal.id, { cwd: "/a" }));
+    expect(run()).toBe(tabs);
+    act(() => actions.onTerminalMetaChange("missing", { cwd: "/z" }));
+    expect(run()).toBe(tabs);
+    act(() => actions.onTerminalMetaChange(terminal.id, { cwd: "/b" }));
+    const changed = run();
+    expect(changed).not.toBe(tabs);
+    expect(changed[0]).toBe(plain);
+    expect(changed[1]).not.toBe(withTerminal);
+    expect(changed[1].terminalPanes?.[0].files[0].cwd).toBe("/b");
+  } finally {
+    act(() => root.unmount());
   }
 });

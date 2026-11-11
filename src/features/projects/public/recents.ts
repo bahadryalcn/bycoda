@@ -13,5 +13,6 @@ export {
   sameProjectPath,
   subscribeArchivedProjects,
   subscribeProjectPathsChanged,
+  useRecents,
 } from "../model/recents";
 export type { RecentProject, ArchivedProject } from "../model/recents";

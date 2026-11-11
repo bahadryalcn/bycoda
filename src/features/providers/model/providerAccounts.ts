@@ -302,9 +302,15 @@ export function providerAccountExists(
   provider: ProviderAccountProvider,
   accountId: string | undefined,
 ): boolean {
-  return providerAccounts(provider).some(
-    (account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID),
-  );
+  return providerAccountExistsIn(providerAccounts(provider), accountId);
+}
+
+/** `providerAccountExists` over an account list the caller already holds (see `useProviderAccounts`). */
+export function providerAccountExistsIn(
+  accounts: readonly ProviderAccount[],
+  accountId: string | undefined,
+): boolean {
+  return accounts.some((account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID));
 }
 
 /**
@@ -312,10 +318,12 @@ export function providerAccountExists(
  * session itself, so changing the default never moves an existing conversation.
  */
 export function defaultProviderAccountId(provider: ProviderAccountProvider): string {
-  return (
-    providerAccounts(provider).find((account) => account.isDefault)?.id ??
-    DEFAULT_PROVIDER_ACCOUNT_ID
-  );
+  return defaultProviderAccountIdIn(providerAccounts(provider));
+}
+
+/** `defaultProviderAccountId` over an account list the caller already holds. */
+export function defaultProviderAccountIdIn(accounts: readonly ProviderAccount[]): string {
+  return accounts.find((account) => account.isDefault)?.id ?? DEFAULT_PROVIDER_ACCOUNT_ID;
 }
 
 /**
@@ -327,9 +335,17 @@ export function sessionProviderAccountId(
   provider: ProviderAccountProvider,
   session: { providerAccountId?: string; providerSessionId?: string },
 ): string {
+  return sessionProviderAccountIdIn(providerAccounts(provider), session);
+}
+
+/** `sessionProviderAccountId` over an account list the caller already holds. */
+export function sessionProviderAccountIdIn(
+  accounts: readonly ProviderAccount[],
+  session: { providerAccountId?: string; providerSessionId?: string },
+): string {
   return (
     session.providerAccountId ??
-    (session.providerSessionId ? DEFAULT_PROVIDER_ACCOUNT_ID : defaultProviderAccountId(provider))
+    (session.providerSessionId ? DEFAULT_PROVIDER_ACCOUNT_ID : defaultProviderAccountIdIn(accounts))
   );
 }
 
@@ -337,13 +353,20 @@ export function providerAccountLabel(
   provider: ProviderAccountProvider,
   accountId: string | undefined,
 ): string {
+  return providerAccountLabelIn(providerAccounts(provider), accountId, t);
+}
+
+/** `providerAccountLabel` over an account list and translator the caller already holds. */
+export function providerAccountLabelIn(
+  accounts: readonly ProviderAccount[],
+  accountId: string | undefined,
+  translate: (message: string, values?: Record<string, unknown>) => string,
+): string {
   return (
-    providerAccounts(provider).find(
-      (account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID),
-    )?.label ??
+    accounts.find((account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID))?.label ??
     (accountId && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID
-      ? t("Removed account")
-      : t("Default account"))
+      ? translate("Removed account")
+      : translate("Default account"))
   );
 }
 

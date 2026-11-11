@@ -5,8 +5,8 @@ import { RailSearch } from "./RailAction";
 
 /**
  * The project rail's identity row: the bycoda mark with its outlined wordmark, plus the global
- * Search. The lockup stays visible at every rail width so the product name reads on screen
- * shares; `title` sits in the window title row, `column` at the top of the rail column. On
+ * Search. Below 140px the wordmark drops and only the mark stays (see bycoda.css);
+ * `title` sits in the window title row, `column` at the top of the rail column. On
  * Windows the column copy only appears where the title row runs out of room (see bycoda.css).
  */
 export function RailBrand({
@@ -58,23 +58,14 @@ export function RailBrand({
   );
 }
 
-/** The product mark stacked over its wordmark at the start of the collapsed rail; not a control. */
+/** The product mark alone at the start of the collapsed rail; not a control. */
 export function CompactRailLogo() {
   return (
-    <span
-      data-compact-rail-logo
-      className="bycoda-rail-lockup bycoda-rail-lockup--stacked shrink-0 select-none"
-    >
+    <span data-compact-rail-logo className="bycoda-rail-lockup shrink-0 select-none">
       <img
         className="bycoda-rail-mark"
         src={PRODUCT_IDENTITY.smallLogoSrc}
         alt={PRODUCT_IDENTITY.displayName}
-        draggable={false}
-      />
-      <img
-        className="bycoda-brand-lettering bycoda-rail-wordmark"
-        src={PRODUCT_IDENTITY.wordmarkSrc}
-        alt=""
         draggable={false}
       />
     </span>

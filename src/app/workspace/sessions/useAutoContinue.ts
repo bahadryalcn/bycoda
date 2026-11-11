@@ -62,5 +62,5 @@ export function useAutoContinue({
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [autoContinueKey, onSubmit]);
+  }, [autoContinueKey, onSubmit, windowTransferPendingRef, sessionsRef, movingSessionIds]);
 }

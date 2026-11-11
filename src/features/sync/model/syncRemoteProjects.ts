@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { pathKey } from "../../../shared/lib/paths";
 import { openRemoteProject, parseRemotePath } from "../../connections/model/remoteProjects";
@@ -30,6 +31,29 @@ export type RemoteOpenTarget = {
 };
 
 let openTargets: readonly RemoteOpenTarget[] = [];
+const openTargetListeners = new Set<() => void>();
+
+/** Subscribes to every replacement of the open targets. */
+export function subscribeRemoteOpenTargets(listener: () => void): () => void {
+  openTargetListeners.add(listener);
+  return () => {
+    openTargetListeners.delete(listener);
+  };
+}
+
+/** The machines synced projects may be opened on; the same array until they are replaced. */
+export function remoteOpenTargetsSnapshot(): readonly RemoteOpenTarget[] {
+  return openTargets;
+}
+
+/** The machines synced projects may be opened on, re-rendering when they are replaced. */
+export function useRemoteOpenTargets(): readonly RemoteOpenTarget[] {
+  return useSyncExternalStore(
+    subscribeRemoteOpenTargets,
+    remoteOpenTargetsSnapshot,
+    remoteOpenTargetsSnapshot,
+  );
+}
 
 /** Replaces the machines synced projects may be opened on; announces a change
  * so the rail re-reads which placeholders can be opened remotely. */
@@ -39,6 +63,7 @@ export function setRemoteOpenTargets(targets: readonly RemoteOpenTarget[]): void
   const changed = signature(targets) !== signature(openTargets);
   openTargets = targets;
   setKnownHostEnvironments(targets.map((target) => target.environmentId));
+  openTargetListeners.forEach((listener) => listener());
   if (changed) notifyProjectPathsChanged();
 }
 
@@ -48,6 +73,14 @@ export type RemoteOpenMatch = { target: RemoteOpenTarget; path: string };
 export function remoteOpenMatch(
   project: RemoteOnlyProject,
   targets: readonly RemoteOpenTarget[] = openTargets,
+): RemoteOpenMatch | undefined {
+  return remoteOpenMatchIn(project, targets);
+}
+
+/** `remoteOpenMatch` over explicit targets (from `useRemoteOpenTargets`), reading no module state. */
+export function remoteOpenMatchIn(
+  project: RemoteOnlyProject,
+  targets: readonly RemoteOpenTarget[],
 ): RemoteOpenMatch | undefined {
   if (!project.hostEnvironmentId) return undefined;
   const target = targets.find((entry) => entry.environmentId === project.hostEnvironmentId);

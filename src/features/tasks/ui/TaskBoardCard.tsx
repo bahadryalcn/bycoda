@@ -7,7 +7,7 @@ import { Modal } from "../../../shared/ui/Modal";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
-import { type BoardTask, taskTimeLabel } from "../model/taskClient";
+import type { BoardTask } from "../model/taskClient";
 import { hasUnmergedBranch } from "../model/hostTasks";
 import { t, useLocale } from "../../../shared/i18n";
 import { memo, useMemo, useState } from "react";
@@ -28,7 +28,7 @@ export type { TaskActionHandlers };
 
 export const TaskCard = memo(function TaskCard({
   task,
-  now,
+  timeLabel,
   project,
   goal,
   planning,
@@ -41,7 +41,8 @@ export const TaskCard = memo(function TaskCard({
   orderKey,
 }: {
   task: BoardTask;
-  now: number;
+  /** The relative time line, resolved by the board so the card re-renders only when its text changes. */
+  timeLabel: string;
   project: string;
   goal?: string;
   planning?: string;
@@ -60,7 +61,7 @@ export const TaskCard = memo(function TaskCard({
   return (
     <TaskCardBody
       task={task}
-      now={now}
+      timeLabel={timeLabel}
       project={project}
       goal={goal}
       planning={planning}
@@ -74,7 +75,7 @@ export const TaskCard = memo(function TaskCard({
 
 function TaskCardBody({
   task,
-  now,
+  timeLabel,
   project,
   goal,
   planning,
@@ -84,7 +85,7 @@ function TaskCardBody({
   ...actions
 }: {
   task: BoardTask;
-  now: number;
+  timeLabel: string;
   project: string;
   /** The title of the goal the task was planned for. */
   goal?: string;
@@ -100,7 +101,6 @@ function TaskCardBody({
   const model = resolveModel(task.harness, task.model);
   const description = taskInstructionsSummary(task.prompt);
   const unread = unreadReviewNotes(task.reviewNotes);
-  const timeLabel = taskTimeLabel(task, now);
   // Exceptional state leads the card; machine, model and branch are ambient.
   const status = taskStatusLine(task);
   const hasFailureDetails = Boolean(

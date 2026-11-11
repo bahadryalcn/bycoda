@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useDelayedVisible } from "../hooks/useDelayedVisible";
-import { formatDuration } from "../i18n/format";
+import { useFormat } from "../i18n";
 import { elapsedSince, monotonicNow } from "../lib/time/timestamps";
 import { Spinner } from "./Spinner";
 import styles from "./LoadingCard.module.css";
@@ -40,6 +40,7 @@ export function LoadingCard({
   slowAction,
   slowAfter = SLOW_LOAD_MS,
 }: LoadingCardProps) {
+  const { formatDuration } = useFormat();
   const visible = useDelayedVisible(true);
   const [startedAt] = useState(monotonicNow);
   const [elapsed, setElapsed] = useState<number | null>(null);

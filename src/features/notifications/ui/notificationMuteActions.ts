@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n";
+import { notificationMuteLabel } from "./notificationMuteLabel";
 import {
   isProjectMuted,
   NOTIFICATION_MUTE_HOURS,
@@ -10,14 +11,7 @@ export function notificationMuteStatus(
   preference: ProjectNotificationPreference | undefined,
 ): string | null {
   if (!preference || !isProjectMuted(preference)) return null;
-  return preference.mutedUntil === null
-    ? t("Muted until resumed")
-    : t("Muted until {p0}", {
-        p0: new Date(preference.mutedUntil!).toLocaleString(undefined, {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }),
-      });
+  return notificationMuteLabel(preference, t);
 }
 
 /** The same preset IDs and durations are used by project and Inbox menus. */

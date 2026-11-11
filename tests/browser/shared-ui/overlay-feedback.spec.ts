@@ -43,6 +43,27 @@ test.describe("evidence captures", () => {
         }
       });
     }
+    test(`toast stack ${theme}`, async ({ page }) => {
+      for (const width of [1280, 800]) {
+        await page.setViewportSize({ width, height: 800 });
+        await open(page, `?theme=${theme}`);
+        const add = page.getByRole("button", { name: "Add toast" });
+        for (let i = 0; i < 4; i++) await add.click();
+        await page.mouse.move(10, 10);
+        await page.waitForTimeout(500);
+        const clip = { x: width - 420, y: 380, width: 420, height: 420 };
+        await page.screenshot({
+          path: `${outDir}/${prefix}stack-closed-${theme}-${width}.png`,
+          clip,
+        });
+        await page.locator("[data-toast-stack]").hover();
+        await page.waitForTimeout(500);
+        await page.screenshot({
+          path: `${outDir}/${prefix}stack-open-${theme}-${width}.png`,
+          clip,
+        });
+      }
+    });
     test(`boot ${theme}`, async ({ page }) => {
       for (const [width, height, tag] of [
         [1280, 800, "1280"],
@@ -273,18 +294,60 @@ test.describe("feedback behavior", () => {
     expect(await counter(page, "notice-retry")).toBe(1);
     await page.clock.fastForward(1000);
     await expect(retry).not.toHaveAttribute("aria-busy", "true");
-    // The action sits under the message, not between title and message.
+    // The action closes the row beside the copy, never between title and message.
     const boxes = await Promise.all([
       notice.getByText("Update failed").boundingBox(),
       notice.getByText("The release feed returned 503").boundingBox(),
       retry.boundingBox(),
     ]);
     expect(boxes[0]!.y).toBeLessThan(boxes[1]!.y);
-    expect(boxes[1]!.y).toBeLessThan(boxes[2]!.y);
+    expect(boxes[2]!.x).toBeGreaterThanOrEqual(boxes[1]!.x + boxes[1]!.width);
     await page.getByRole("button", { name: "Show file action error" }).click();
     const fileError = page.getByRole("alert").filter({ hasText: "Could not rename the file." });
     await page.clock.fastForward(60_000);
     await expect(fileError).toBeVisible();
+  });
+
+  test("corner toasts stack newest in front and fan out on hover", async ({ page }) => {
+    await open(page);
+    const add = page.getByRole("button", { name: "Add toast" });
+    for (let i = 0; i < 4; i++) await add.click();
+    const stack = page.locator("[data-toast-stack]");
+    const items = stack.locator("[data-toast-item]:not([data-toast-leaving])");
+    const front = stack.locator('[data-toast-item][data-front="true"]:not([data-toast-leaving])');
+    await expect(items).toHaveCount(4);
+    await expect(front).toContainText("Update failed");
+    // Three show at once; the oldest waits behind them, out of reach.
+    await expect(stack.locator("[data-toast-item][inert]")).toHaveCount(1);
+    await page.waitForTimeout(400);
+    const closed = (await stack.boundingBox())!.height;
+    const frontHeight = (await front.boundingBox())!.height;
+    expect(closed).toBeCloseTo(frontHeight + 28, 0);
+    await stack.hover();
+    await expect(stack.locator('[data-toast-item][data-expanded="true"]')).toHaveCount(4);
+    await expect.poll(async () => (await stack.boundingBox())!.height).toBeGreaterThan(closed + 60);
+    // A dismissed toast leaves a fading picture of itself, which then goes too.
+    await page.evaluate(() => {
+      new MutationObserver((records) => {
+        for (const record of records)
+          for (const node of record.addedNodes)
+            if (node instanceof HTMLElement && node.hasAttribute("data-toast-leaving"))
+              window.__counters["stack-copies"] = (window.__counters["stack-copies"] ?? 0) + 1;
+      }).observe(document.querySelector("[data-toast-stack]")!, { childList: true });
+    });
+    await front.getByRole("button", { name: "Dismiss notice" }).click();
+    await expect(items).toHaveCount(3);
+    await expect.poll(() => counter(page, "stack-copies")).toBe(1);
+    await expect(stack.locator("[data-toast-leaving]")).toHaveCount(0);
+    expect(await counter(page, "stack-dismiss")).toBe(1);
+    await expect(front).toContainText("Sync is slow");
+    // The toast that waited behind returns once there is room.
+    await expect(stack.locator("[data-toast-item][inert]")).toHaveCount(0);
+    // The corner leaves the page with its last toast, once that toast has faded.
+    for (let left = 3; left > 0; left--)
+      await front.getByRole("button", { name: "Dismiss notice" }).click();
+    await expect(page.locator("[data-toast-region]")).toHaveCount(0);
+    expect(await counter(page, "stack-copies")).toBe(4);
   });
 
   test("empty states keep one adapter and change only density by context", async ({ page }) => {

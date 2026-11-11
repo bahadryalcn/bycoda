@@ -10,6 +10,24 @@ export function isModuleLoadError(error: unknown): boolean {
   );
 }
 
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Waits for a retry the caller owns; its own failure is reported by the caller. */
+async function settled(promise: Promise<unknown>) {
+  try {
+    await promise;
+  } catch {
+    // The caller owns the operation and reports its own failure.
+  }
+}
+
 /** The readable preview is bounded; copying always uses the complete diagnostic. */
 export const FAILURE_PREVIEW_CHARS = 8000;
 
@@ -66,14 +84,9 @@ export function FailureState({
     if (copyGuard.current) return;
     copyGuard.current = true;
     setCopy("pending");
-    try {
-      await navigator.clipboard.writeText(`${title}\n\n${full}`);
-      setCopy("done");
-    } catch {
-      setCopy("failed");
-    } finally {
-      copyGuard.current = false;
-    }
+    const copied = await copyText(`${title}\n\n${full}`);
+    setCopy(copied ? "done" : "failed");
+    copyGuard.current = false;
   }
   async function retry() {
     if (retryGuard.current || retrying) return;
@@ -90,14 +103,9 @@ export function FailureState({
       return;
     }
     setRetryPending(true);
-    try {
-      await result;
-    } catch {
-      // The caller owns the operation and reports its own failure.
-    } finally {
-      retryGuard.current = false;
-      setRetryPending(false);
-    }
+    await settled(result);
+    retryGuard.current = false;
+    setRetryPending(false);
   }
   // Manual fallback: put the complete text in the selection so a native copy works.
   useEffect(() => {

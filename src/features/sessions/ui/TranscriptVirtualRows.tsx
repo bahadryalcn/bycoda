@@ -1,17 +1,20 @@
 import { stableCodeDisclosureIdentity } from "./stableCodeDisclosureIdentity";
 import { flushSync } from "react-dom";
 import { deferDuringResize } from "../../../shared/lib/resizeGesture";
-import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import {
   Fragment,
   useCallback,
+  type ContextType,
   useContext,
   useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type Key,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   closestScroll,
@@ -36,7 +39,6 @@ export type TranscriptVirtualRow = {
   renderElement?: (props: TranscriptVirtualElement) => ReactNode;
 };
 export const TRANSCRIPT_VIRTUAL_THRESHOLD = 80;
-const ESTIMATED_ROW_HEIGHT = 96;
 
 /** Variable-height rows use real measurements after mounting; estimates only locate unseen rows.
  * Selection/focus, original pending controls, live output and exact reveal targets remain mounted. */
@@ -71,7 +73,8 @@ function MeasuredTranscriptRows({
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const [virtualized, setVirtualized] = useState(rows.length > TRANSCRIPT_VIRTUAL_THRESHOLD);
-  const oldCount = useRef(rows.length);
+  // The row count of the last commit: a list crossing the threshold keeps its old rows for one frame.
+  const [oldCount, setOldCount] = useState(rows.length);
   const transition = useRef<{ node: HTMLElement; top: number } | null>(null);
   const [scroll, setScroll] = useState<HTMLElement | null>(null);
   const [margin, setMargin] = useState(0);
@@ -81,67 +84,32 @@ function MeasuredTranscriptRows({
   const [focus, setFocus] = useState<string | null>(null);
   const [selection, setSelection] = useState<readonly number[] | null>(null);
   const anchor = useRef<{ changed: () => void; release: () => void } | null>(null);
-  const sizes = useMemo(() => {
-    let cache = owner?.measurements.get(listId);
-    if (!cache) {
-      cache = new Map<string, { width: number; height: number }>();
-      owner?.measurements.set(listId, cache);
-    }
-    return cache;
-  }, [owner, listId]);
+  const sizes = useMemo(
+    () =>
+      owner ? owner.measurementsFor(listId) : new Map<string, { width: number; height: number }>(),
+    [owner, listId],
+  );
   const anchorId = scroll ? owner?.anchorId(scroll) : undefined;
   const pins = useMemo(
-    () =>
-      rows.flatMap((row, index) =>
-        row.pinned ||
-        row.blockIds.some((id) => owner?.activeBlocks.has(id)) ||
-        (target && row.blockIds.includes(target)) ||
-        (anchorId && row.blockIds.includes(anchorId))
-          ? [index]
-          : [],
-      ),
+    () => pinnedRowIndexes(rows, owner, target, anchorId),
+    // activeVersion: `owner.activeBlocks` changes without a new owner.
     [rows, target, anchorId, owner, activeVersion],
   );
-  const virtual = useVirtualizer<HTMLElement, HTMLDivElement>({
-    count: rows.length,
+  const virtual = useRowVirtualizer({
+    rows,
     enabled: virtualized,
-    getScrollElement: () => scroll,
-    getItemKey: (index) => rows[index].id,
-    estimateSize: (index) => {
-      const measured = sizes.get(rows[index].id);
-      return measured?.width === width
-        ? measured.height
-        : (rows[index].estimate ?? ESTIMATED_ROW_HEIGHT);
-    },
-    initialRect: { width: 1, height: 800 },
-    overscan: 5,
-    scrollMargin: margin,
-    rangeExtractor: (range) => {
-      const included = new Set([...defaultRangeExtractor(range), ...pins]);
-      const focusedIndex = focus === null ? -1 : rows.findIndex((row) => row.id === focus);
-      if (focusedIndex >= 0) included.add(focusedIndex);
-      const selected = root.current
-        ? selectedVirtualRange(root.current, id, rows.length)
-        : selection;
-      if (selected)
-        for (let index = selected[0]; index <= selected[1]; index++) included.add(index);
-      return [...included]
-        .filter((index) => index >= 0 && index < rows.length)
-        .sort((a, b) => a - b);
-    },
-    measureElement: (element, entry) => {
-      const index = Number(element.dataset.index);
-      const height = entry?.borderBoxSize?.[0]?.blockSize ?? element.getBoundingClientRect().height;
-      const row = rows[index];
-      if (!height && !scroll?.clientHeight)
-        return (row && sizes.get(row.id)?.height) ?? row?.estimate ?? ESTIMATED_ROW_HEIGHT;
-      if (row && height >= 0) sizes.set(row.id, { width: liveWidth.current || width, height });
-      anchor.current?.changed();
-      return height;
-    },
+    scroll,
+    margin,
+    width,
+    sizes,
+    pins,
+    focus,
+    selection,
+    root,
+    ownerId: id,
+    liveWidth,
+    anchor,
   });
-  // Shared visible-row anchoring owns corrections once, including nested lists.
-  virtual.shouldAdjustScrollPositionOnItemSizeChange = () => false;
 
   useLayoutEffect(() => {
     const element = root.current;
@@ -188,14 +156,8 @@ function MeasuredTranscriptRows({
     };
   }, [scroll, virtualized]);
   useLayoutEffect(() => {
-    virtual.measure();
-  }, [virtual, width]);
-  useLayoutEffect(() => {
     if (!scroll || !owner || !virtualized) return;
-    const acquired = owner.acquire(
-      scroll,
-      root.current?.closest<HTMLElement>("[data-transcript-turn]") ?? null,
-    );
+    const acquired = owner.acquire(scroll, owningTurn(root.current));
     anchor.current = acquired;
     return () => {
       acquired.release();
@@ -206,9 +168,7 @@ function MeasuredTranscriptRows({
     const selected = (synchronous = false) => {
       const next = root.current ? selectedVirtualRange(root.current, id, rows.length) : null;
       const update = () =>
-        setSelection((previous) =>
-          previous?.[0] === next?.[0] && previous?.[1] === next?.[1] ? previous : next,
-        );
+        setSelection((previous) => (sameRange(previous, next) ? previous : next));
       if (synchronous && next) flushSync(update);
       else update();
     };
@@ -242,34 +202,33 @@ function MeasuredTranscriptRows({
     };
   }, [id, rows.length, virtualized]);
   useLayoutEffect(() => {
-    const retained = new Set(rows.map((row) => row.id));
-    for (const key of sizes.keys()) if (!retained.has(key)) sizes.delete(key);
-  }, [rows, sizes]);
+    owner?.retainMeasurements(listId, new Set(rows.map((row) => row.id)));
+  }, [rows, owner, listId]);
 
   useLayoutEffect(() => {
     if (!virtualized && rows.length > TRANSCRIPT_VIRTUAL_THRESHOLD) {
-      const node = scroll && owner?.firstVisibleRow(scroll);
+      const node = scroll && owner ? owner.firstVisibleRow(scroll) : null;
       if (node) transition.current = { node, top: node.getBoundingClientRect().top };
       setVirtualized(true);
     } else if (transition.current) {
       const saved = transition.current;
       transition.current = null;
       if (scroll && saved.node.isConnected) {
-        scroll.scrollTop += saved.node.getBoundingClientRect().top - saved.top;
+        shiftScrollTop(scroll, saved.node.getBoundingClientRect().top - saved.top);
         owner?.resetAnchors();
         owner?.adjusted?.(scroll);
       }
     }
-    oldCount.current = rows.length;
+    setOldCount(rows.length);
     anchor.current?.changed();
   }, [virtualized, rows, scroll, owner]);
 
-  const items = virtualized
-    ? virtual.getVirtualItems()
+  const items: { index: number; key: Key; start: number; end: number }[] = virtualized
+    ? virtual.items
     : rows
-        .slice(0, Math.min(rows.length, Math.max(TRANSCRIPT_VIRTUAL_THRESHOLD, oldCount.current)))
+        .slice(0, Math.min(rows.length, Math.max(TRANSCRIPT_VIRTUAL_THRESHOLD, oldCount)))
         .map((row, index) => ({ index, key: row.id, start: 0, end: 0 }));
-  let previousEnd = 0;
+  const { placed, previousEnd } = placeRows(items, margin);
   return (
     <div
       ref={root}
@@ -280,7 +239,7 @@ function MeasuredTranscriptRows({
         let element = event.target as HTMLElement;
         while (element && element !== event.currentTarget) {
           if (element.dataset.transcriptVirtualOwner === id) {
-            setFocus(rows[Number(element.dataset.index)]?.id ?? null);
+            setFocus(rowIdAt(rows, Number(element.dataset.index)));
             return;
           }
           element = element.parentElement!;
@@ -291,10 +250,7 @@ function MeasuredTranscriptRows({
           setFocus(null);
       }}
     >
-      {items.map((item) => {
-        const start = Math.max(0, item.start - margin);
-        const gap = Math.max(0, start - previousEnd);
-        previousEnd = Math.max(previousEnd, item.end - margin);
+      {placed.map(({ item, gap }) => {
         return (
           <Fragment key={item.key}>
             {gap > 0 ? (
@@ -311,16 +267,34 @@ function MeasuredTranscriptRows({
           </Fragment>
         );
       })}
-      {virtualized && virtual.getTotalSize() > previousEnd ? (
+      {virtualized && virtual.totalSize > previousEnd ? (
         <div
           aria-hidden="true"
           data-transcript-virtual-spacer
-          style={{ height: virtual.getTotalSize() - previousEnd }}
+          style={{ height: virtual.totalSize - previousEnd }}
         />
       ) : null}
     </div>
   );
 }
+/** The row's DOM node and its ref callback; kept in a hook so the node ref never reaches render. */
+function useRowNode(
+  owner: ContextType<typeof TranscriptVirtualizationContext>,
+  measure: (node: HTMLDivElement | null) => void,
+  scroll: HTMLElement | null,
+) {
+  const element = useRef<HTMLDivElement | null>(null);
+  const setNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      element.current = node;
+      if (node && scroll) owner?.rowScroll.set(node, scroll);
+      measure(node);
+    },
+    [measure, owner, scroll],
+  );
+  return { element, setNode };
+}
+
 function MeasuredRow({
   row,
   index,
@@ -337,16 +311,8 @@ function MeasuredRow({
   scroll: HTMLElement | null;
 }) {
   const owner = useContext(TranscriptVirtualizationContext);
-  const element = useRef<HTMLDivElement | null>(null);
   const key = JSON.stringify([listId, row.id]);
-  const setNode = useCallback(
-    (node: HTMLDivElement | null) => {
-      element.current = node;
-      if (node && scroll) owner?.rowScroll.set(node, scroll);
-      measure(node);
-    },
-    [measure, owner, scroll],
-  );
+  const { element, setNode } = useRowNode(owner, measure, scroll);
   useLayoutEffect(() => {
     const node = element.current;
     const saved = owner?.codeFolds.get(key);
@@ -380,7 +346,7 @@ function MeasuredRow({
           ),
         );
     };
-  }, [owner, key]);
+  }, [owner, key, element]);
   const attributes: TranscriptVirtualElement = {
     ref: setNode,
     "data-index": index,
@@ -396,10 +362,157 @@ function MeasuredRow({
   );
 }
 
+function sameRange(a: readonly number[] | null, b: readonly number[] | null): boolean {
+  return a?.[0] === b?.[0] && a?.[1] === b?.[1];
+}
+
+function owningTurn(node: HTMLElement | null): HTMLElement | null {
+  return node?.closest<HTMLElement>("[data-transcript-turn]") ?? null;
+}
+
+function rowIdAt(rows: readonly TranscriptVirtualRow[], index: number): string | null {
+  return rows[index]?.id ?? null;
+}
+
+/** Rows that stay mounted wherever the viewport is: pinned, active, revealed or anchored. */
+function pinnedRowIndexes(
+  rows: readonly TranscriptVirtualRow[],
+  owner: ContextType<typeof TranscriptVirtualizationContext>,
+  target: string | null,
+  anchorId: string | undefined,
+): number[] {
+  return rows.flatMap((row, index) =>
+    row.pinned ||
+    row.blockIds.some((id) => owner?.activeBlocks.has(id)) ||
+    (target && row.blockIds.includes(target)) ||
+    (anchorId && row.blockIds.includes(anchorId))
+      ? [index]
+      : [],
+  );
+}
+
+/** Each item with the empty space between it and the item before it. */
+function placeRows<T extends { start: number; end: number }>(
+  items: readonly T[],
+  margin: number,
+): { placed: { item: T; gap: number }[]; previousEnd: number } {
+  let previousEnd = 0;
+  const placed = items.map((item) => {
+    const start = Math.max(0, item.start - margin);
+    const gap = Math.max(0, start - previousEnd);
+    previousEnd = Math.max(previousEnd, item.end - margin);
+    return { item, gap };
+  });
+  return { placed, previousEnd };
+}
+
+/** DOM write kept out of the component body: the scroller is a state value to the compiler. */
+function shiftScrollTop(scroll: HTMLElement, delta: number): void {
+  scroll.scrollTop += delta;
+}
+
 const noMeasure = (_node: HTMLDivElement | null) => {};
 
 function ownCodeShells(node: HTMLElement): HTMLElement[] {
   return [...node.querySelectorAll<HTMLElement>(".markdown-code-shell")].filter(
     (shell) => shell.closest("[data-transcript-virtual-owner]") === node,
   );
+}
+
+const ESTIMATED_ROW_HEIGHT = 96;
+
+type RowSize = { width: number; height: number };
+type Options = {
+  rows: readonly { id: string; estimate?: number }[];
+  enabled: boolean;
+  scroll: HTMLElement | null;
+  margin: number;
+  /** Committed list width; a change drops every measured size. */
+  width: number;
+  /** Measured row sizes by row id, shared with the virtualization owner. */
+  sizes: Map<string, RowSize>;
+  /** Row indexes that must stay mounted. */
+  pins: readonly number[];
+  focus: string | null;
+  selection: readonly number[] | null;
+  root: RefObject<HTMLDivElement | null>;
+  ownerId: string;
+  /** Newest measured width, ahead of `width` while a live resize holds the commit back. */
+  liveWidth: RefObject<number>;
+  anchor: RefObject<{ changed: () => void } | null>;
+};
+
+/**
+ * TanStack Virtual for one transcript list. The library is not compatible with
+ * the React Compiler, so it lives here and hands the list plain data: the
+ * component that renders the rows stays compiled.
+ */
+function useRowVirtualizer({
+  rows,
+  enabled,
+  scroll,
+  margin,
+  width,
+  sizes,
+  pins,
+  focus,
+  selection,
+  root,
+  ownerId,
+  liveWidth,
+  anchor,
+}: Options): {
+  items: VirtualItem[];
+  totalSize: number;
+  measureElement: (node: HTMLDivElement | null) => void;
+} {
+  const virtual = useVirtualizer<HTMLElement, HTMLDivElement>({
+    count: rows.length,
+    enabled,
+    getScrollElement: () => scroll,
+    getItemKey: (index) => rows[index].id,
+    estimateSize: (index) => {
+      const measured = sizes.get(rows[index].id);
+      return measured?.width === width
+        ? measured.height
+        : (rows[index].estimate ?? ESTIMATED_ROW_HEIGHT);
+    },
+    initialRect: { width: 1, height: 800 },
+    overscan: 5,
+    scrollMargin: margin,
+    rangeExtractor: (range) => {
+      const included = new Set([...defaultRangeExtractor(range), ...pins]);
+      const focusedIndex = focus === null ? -1 : rows.findIndex((row) => row.id === focus);
+      if (focusedIndex >= 0) included.add(focusedIndex);
+      const selected = root.current
+        ? selectedVirtualRange(root.current, ownerId, rows.length)
+        : selection;
+      if (selected)
+        for (let index = selected[0]; index <= selected[1]; index++) included.add(index);
+      return [...included]
+        .filter((index) => index >= 0 && index < rows.length)
+        .sort((a, b) => a - b);
+    },
+    measureElement: (element, entry) => {
+      const index = Number(element.dataset.index);
+      const height = entry?.borderBoxSize?.[0]?.blockSize ?? element.getBoundingClientRect().height;
+      const row = rows[index];
+      if (!height && !scroll?.clientHeight)
+        return (row && sizes.get(row.id)?.height) ?? row?.estimate ?? ESTIMATED_ROW_HEIGHT;
+      if (row && height >= 0) sizes.set(row.id, { width: liveWidth.current || width, height });
+      anchor.current?.changed();
+      return height;
+    },
+  });
+  // Shared visible-row anchoring owns corrections once, including nested lists.
+  virtual.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- the virtualizer caches row sizes outside React and must drop them when the list width changes
+  useLayoutEffect(() => {
+    virtual.measure();
+  }, [virtual, width]);
+  return {
+    items: enabled ? virtual.getVirtualItems() : [],
+    totalSize: enabled ? virtual.getTotalSize() : 0,
+    measureElement: virtual.measureElement,
+  };
 }

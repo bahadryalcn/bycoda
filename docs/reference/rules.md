@@ -52,8 +52,8 @@ fall. Suppress one line only, always with a reason.
 
 - `bycoda/app-locale-formatting` (`src/**`)
   - Format dates, times, numbers, byte sizes and durations through the shared helpers so every surface agrees on locale, calendar day and density: formatDate / formatNumber (src/shared/i18n/core.ts), formatRelativeTime / formatBytes / formatDuration (src/shared/i18n/format.ts), dateTimeFormat / relativeTimeFormat (src/shared/lib/intl.ts) or the \<Timestamp> component. Direct toLocale*String / new Intl.*Format calls belong only in those helpers.
-- `bycoda/compiler-owns-memo` (`src/shared/ui/**, src/features/sessions/ui/**, src/app/shell/**`)
-  - The React Compiler compiles every component and hook of this file and memoizes values, callbacks and components itself. Drop `useMemo`, `useCallback`, `memo()` and the `"use memo"` directive here: compute the value in render and pass plain functions. If the compiler skips this function (a `[react-compiler]` build warning names it), fix what it cannot prove safe, or keep the hook with `// oxlint-disable-next-line bycoda/compiler-owns-memo -- <why the compiler cannot memoize this>` on the line above.
+- `bycoda/compiler-owns-memo` (`src/shared/ui/**, src/features/sessions/ui/**, src/features/sync/**, src/features/terminal/**, src/features/projects/**, src/features/notifications/**, src/app/shell/**`)
+  - The React Compiler compiles the components and hooks of this folder and memoizes values, callbacks and components itself. Drop `useMemo`, `useCallback`, `memo()` and the `"use memo"` directive here: compute the value in render and pass plain functions. If the compiler skips this function (a `[react-compiler]` build warning names it), fix what it cannot prove safe, or keep the hook with `// oxlint-disable-next-line bycoda/compiler-owns-memo -- <why the compiler cannot memoize this>` on the line above.
 - `bycoda/compiler-stays-on` (`src/**`)
   - `"use no memo"` hides code the React Compiler cannot prove safe instead of fixing it. Remove the directive and fix the cause the `[react-compiler]` build warning names (a mutation after render, a ref read in render, state read outside React). The build guard already opts out functions that read state the compiler cannot see. If the opt-out must stay, put `// oxlint-disable-next-line bycoda/compiler-stays-on -- <what the compiler gets wrong here>` on the line above.
 - `bycoda/effect-names-its-sync` (`src/**`)
@@ -156,7 +156,7 @@ fall. Suppress one line only, always with a reason.
   - React hooks and React Compiler diagnostic; see the rule of the same name in eslint-plugin-react-hooks.
 - `react-hooks-js/purity` (`src/**`)
   - React hooks and React Compiler diagnostic; see the rule of the same name in eslint-plugin-react-hooks.
-- `react-hooks-js/refs` (`src/shared/ui/**, src/features/sessions/ui/**, src/app/shell/**`)
+- `react-hooks-js/refs` (`src/shared/ui/**, src/features/sessions/ui/**, src/features/sync/**, src/features/terminal/**, src/features/projects/**, src/features/notifications/**, src/app/shell/**`)
   - React hooks and React Compiler diagnostic; see the rule of the same name in eslint-plugin-react-hooks.
 - `react-hooks-js/set-state-in-render` (`src/**`)
   - React hooks and React Compiler diagnostic; see the rule of the same name in eslint-plugin-react-hooks.

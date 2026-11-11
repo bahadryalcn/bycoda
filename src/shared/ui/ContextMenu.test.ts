@@ -10,6 +10,7 @@ it("keeps point/anchor context actions, disabled gate and submenu keyboard owner
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -112,6 +113,7 @@ it("searches a long submenu while preserving text editing, keyboard picks and Es
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

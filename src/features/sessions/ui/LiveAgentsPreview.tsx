@@ -36,7 +36,7 @@ import { HarnessIcon } from "./HarnessIcon";
 import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { SessionWorkingStatus } from "./SessionWorkingStatus";
-import { sessionWaitReason } from "../model/sessionWait";
+import { sessionWaitReasonWith } from "../model/sessionWait";
 
 const LIVE_AGENT_CAP = 4;
 
@@ -372,7 +372,7 @@ function LiveAgentCard({
           : agent.activity;
   const live = !agent.needsApproval && !agent.done && !agent.waiting;
   const remote = isRemoteProjectPath(agent.cwd);
-  const waitReason = agent.waiting && !agent.done ? sessionWaitReason(agent.waiting) : "";
+  const waitReason = agent.waiting && !agent.done ? sessionWaitReasonWith(t, agent.waiting) : "";
   const title = [
     agent.title,
     remote ? `${project} (remote)` : project,

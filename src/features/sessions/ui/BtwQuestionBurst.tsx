@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 
 // Longest mark delay plus duration, with a little slack for the fade.
 const BURST_MS = 1900;
@@ -46,13 +47,12 @@ function makeMarks(): Mark[] {
  */
 export function BtwQuestionBurst({ rect, onDone }: { rect: BurstRect; onDone: () => void }) {
   const [marks] = useState(makeMarks);
+  const done = useStableCallback(onDone);
 
   useEffect(() => {
-    const timer = setTimeout(onDone, BURST_MS);
+    const timer = setTimeout(done, BURST_MS);
     return () => clearTimeout(timer);
-    // One burst per mount; a new open remounts with a new key.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [done]);
 
   return (
     <div

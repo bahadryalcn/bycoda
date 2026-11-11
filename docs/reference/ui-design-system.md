@@ -826,7 +826,10 @@ blur/glow or layout movement just to demonstrate a library component.
 
 - Toasts: one stack per corner (`ToastRegion`). Never position a notice with `fixed` and an
   offset, never report heights between notices; render `<Toast>` or wrap a custom card in
-  `<ToastSlot>`.
+  `<ToastSlot>`. Every toast uses the one card (`ToastCard`: tone glyph, title, description, one
+  pill action, dismiss) and the stack owns its motion: the newest toast sits in front, three
+  show at once, and hover or keyboard focus fans the stack out and holds expiry. Feature cards
+  in a `ToastSlot` stay whole next to the window edge and never tuck into the stack.
 - Sheets: `Sheet` for every side or bottom panel. Modal sheets trap focus; non-modal sheets
   are `role="dialog"` without `aria-modal` and keep Escape scoped to their pane or the overlay
   stack. No hand-rolled `role="dialog"` overlays with their own Escape or focus handling.

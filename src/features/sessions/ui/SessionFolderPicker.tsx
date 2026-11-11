@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { type SessionFolderTarget, type SessionFolder } from "../model/sessionFolders";
 import { Folder, Plus, X } from "../../../shared/ui/icons";
 import {
@@ -20,11 +20,10 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
   const t = useT();
   const [query, setQuery] = useState("");
   const name = query.trim();
-  const matching = useMemo(() => {
-    const needle = name.toLocaleLowerCase();
-    if (!needle) return folders;
-    return folders.filter((folder) => folder.name.toLocaleLowerCase().includes(needle));
-  }, [folders, name]);
+  const needle = name.toLocaleLowerCase();
+  const matching = needle
+    ? folders.filter((folder) => folder.name.toLocaleLowerCase().includes(needle))
+    : folders;
   const exact = folders.some(
     (folder) => folder.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
   );

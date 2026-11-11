@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { McpConnection } from "../../settings";
 import {
   getCachedMcpSettings,
@@ -68,9 +68,9 @@ export function useComposerMcpCatalog(input: {
   const [state, setState] = useState<ScopedMcpCatalog | null>(null);
 
   /** Opening the picker shows a loading list rather than the previous one. */
-  const reset = useCallback(() => {
+  const reset = () => {
     setState({ ...LOADING, scope });
-  }, [scope]);
+  };
 
   useEffect(() => {
     if (!active) return;

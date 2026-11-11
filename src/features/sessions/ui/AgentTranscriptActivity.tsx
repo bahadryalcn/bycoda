@@ -5,7 +5,7 @@ import {
   handoffPhaseOf,
   subscribeHandoffPhase,
 } from "../../../integrations/harness/core/handoffPhase";
-import { t, useLocale, useT } from "../../../shared/i18n";
+import { t, useFormat, useLocale, useT, type BoundFormat } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   ChevronRight,
@@ -21,7 +21,6 @@ import {
 import {
   memo,
   useEffect,
-  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -56,7 +55,6 @@ import {
   type ToolPreview,
 } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
-import { formatElapsed } from "../../../shared/i18n/format";
 import { useElapsedFrom } from "./useElapsedFrom";
 import { AgentMarkdown } from "./AgentMarkdown";
 import {
@@ -124,7 +122,7 @@ export const ActivityPhases = memo(function ActivityPhases({
   onOpenDiff,
 }: ActivityPhasesProps) {
   useLocale();
-  const phases = useMemo(() => buildActivityPhases(blocks), [blocks]);
+  const phases = buildActivityPhases(blocks);
 
   return (
     <div className={`flex min-w-0 flex-col ${padded ? "px-4" : ""}`}>
@@ -611,12 +609,12 @@ export const ActivityRow = memo(function ActivityRow({
 
 /** A status row folded into the trail: one muted line, nothing to open. */
 function ActivityStatusRow({ block }: { block: Block }) {
-  useLocale();
+  const format = useFormat();
   const startedAt = block.statusRunningSince;
   const running = startedAt != null;
   // Idle (paused) once the row settles, so a finished row keeps no ticker.
   const elapsedMs = useElapsedFrom(startedAt, !running);
-  const elapsed = running ? formatElapsed(elapsedMs) : null;
+  const elapsed = running ? format.formatElapsed(elapsedMs) : null;
   return (
     <div className="flex min-w-0 items-center gap-1.5 py-1">
       {running ? <Spinner size="xs" className="shrink-0" /> : null}
@@ -1107,13 +1105,17 @@ function ToolCallStatusIcon({
   return null;
 }
 
+type Translator = typeof t;
+
 export function formatWorkingDuration(
+  t: Translator,
+  format: Pick<BoundFormat, "formatElapsed">,
   elapsedMs: number | null,
   modelName?: string,
   done = false,
 ): string {
   const who = modelName?.trim();
-  const elapsed = formatElapsed(elapsedMs);
+  const elapsed = format.formatElapsed(elapsedMs);
   if (elapsed == null) {
     if (done) return who ? t("{p0} worked", { p0: who }) : t("Worked");
     return who ? t("{p0} working…", { p0: who }) : t("Working…");

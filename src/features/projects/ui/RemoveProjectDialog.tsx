@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { projectSessionCount } from "../model/projectData";
@@ -29,7 +29,7 @@ export function RemoveProjectDialog({
   onCancel,
   onConfirm,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [sessions, setSessions] = useState<number | null>(null);
   const [countError, setCountError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);

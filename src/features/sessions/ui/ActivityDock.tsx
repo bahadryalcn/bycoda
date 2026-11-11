@@ -1,8 +1,8 @@
 import { LiveText } from "../../../shared/ui/LiveText";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale, useT } from "../../../shared/i18n";
-import { memo, useEffect, useRef, useState } from "react";
+import { useLocale, useT } from "../../../shared/i18n";
+import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { Shimmer } from "../../../shared/ui/Shimmer";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -11,7 +11,9 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { AccountColorDot } from "../../providers/public/accountIdentity";
 import {
   providerAccounts,
+  subscribeProviderAccounts,
   supportsProviderAccounts,
+  type ProviderAccount,
 } from "../../providers/public/providerAccounts";
 import { Check, ChevronRight, ChevronUp, CircleAlert, Square, X } from "../../../shared/ui/icons";
 import { useActivityDock, useDockCountLabel, useStopAllControl } from "../model/reactiveReads";
@@ -19,7 +21,7 @@ import { type ActivityDock as ActivityDockModel, type DockAgent } from "../model
 import { canStopAgent } from "../model/backgroundStop";
 import { hasPendingApproval, type Block, type HarnessId } from "../model/session";
 import { executionUserIndex } from "../model/executionTurn";
-import { turnClockOrigin, useTurnClockInTranscript } from "../model/turnActivity";
+import { useTurnClockInTranscript, useTurnClockOrigin } from "../model/turnActivity";
 import { AgentClock } from "./AgentClock";
 import { SubagentMarks, SubagentStatusSummary } from "./SubagentAnatomy";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
@@ -147,7 +149,7 @@ export const ActivityDock = memo(function ActivityDock({
   // nothing else to show; with the reader at the end it is on screen, so the
   // dock keeps its state, controls and figure but leaves the number out.
   const clockInTranscript = useTurnClockInTranscript(sessionId) && visible && atEnd;
-  const clockOrigin = busy ? turnClockOrigin(blocks[executionUserIndex(blocks)]) : undefined;
+  const clockOrigin = useTurnClockOrigin(busy ? blocks[executionUserIndex(blocks)] : undefined);
   const questionOnlyNotice =
     questionPresented &&
     pendingQuestion &&
@@ -359,7 +361,7 @@ function DockClock({ startedAt }: { startedAt?: number }) {
 }
 
 function DockMark({ state }: { state: ActivityDockModel["state"] }) {
-  useLocale();
+  const t = useT();
   if (state === "done" || state === "background") {
     return (
       <Check
@@ -386,6 +388,12 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
   );
 }
 
+function accountSnapshot(provider: HarnessId | undefined, accountId: string | undefined): string {
+  if (!provider || !accountId || !supportsProviderAccounts(provider)) return "";
+  const account = providerAccounts(provider).find((item) => item.id === accountId);
+  return account ? JSON.stringify(account) : "";
+}
+
 function DockAgentRow({
   agent,
   harness,
@@ -406,10 +414,11 @@ function DockAgentRow({
     interrupted: t("Interrupted"),
   }[agent.status];
   const provider = agent.harness ?? harness;
-  const account =
-    provider && agent.providerAccountId && supportsProviderAccounts(provider)
-      ? providerAccounts(provider).find((item) => item.id === agent.providerAccountId)
-      : undefined;
+  // The account list lives in storage; a string snapshot keeps the subscription value-stable.
+  const accountJson = useSyncExternalStore(subscribeProviderAccounts, () =>
+    accountSnapshot(provider, agent.providerAccountId),
+  );
+  const account: ProviderAccount | undefined = accountJson ? JSON.parse(accountJson) : undefined;
   const accountLabel = account?.label ?? agent.providerAccountId;
   const summary = [agent.name, agent.model, accountLabel, agent.detail, statusWord]
     .filter(Boolean)

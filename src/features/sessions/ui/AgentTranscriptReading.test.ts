@@ -22,6 +22,7 @@ beforeEach(() => {
       observe(target: Element) {
         this.targets.push(target);
       }
+      unobserve() {}
       disconnect() {
         this.targets = [];
       }

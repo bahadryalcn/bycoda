@@ -6,8 +6,8 @@ import {
   railBackgroundColor,
   resolveTabGroupColor,
   resolveTabGroupLabel,
-  resolveTabGroupLogo,
   resolveTabGroupMascot,
+  useResolvedTabGroupLogo,
 } from "../../features/workspace/model/tabGroups";
 import {
   getSessionProjectAppearanceServerSnapshot,
@@ -15,6 +15,15 @@ import {
   getSessionProjectBackground,
   subscribeSessionProjectAppearance,
 } from "./sessionProjectAppearanceStore";
+
+/** The rail background of a project; the lookup is cached per appearance snapshot, so the result is stable. */
+function useSessionProjectBackground(key: string) {
+  return useSyncExternalStore(
+    subscribeSessionProjectAppearance,
+    () => getSessionProjectBackground(getSessionProjectAppearanceSnapshot(), key),
+    () => undefined,
+  );
+}
 
 /** The same saved project identity as the rail, independent of the execution worktree. */
 export function useSessionProjectAppearance(cwd: string) {
@@ -24,12 +33,13 @@ export function useSessionProjectAppearance(cwd: string) {
     getSessionProjectAppearanceServerSnapshot,
   );
   const key = projectKey(cwd);
+  const background = useSessionProjectBackground(key);
   const seed = projectName(cwd);
   const color = resolveTabGroupColor(key, appearance.colors, appearance.customColors, seed);
-  const logo = resolveTabGroupLogo(key, appearance.logos);
+  const logo = useResolvedTabGroupLogo(key, appearance.logos);
   return {
     name: resolveTabGroupLabel(key, appearance.labels, seed),
-    backgroundColor: railBackgroundColor(getSessionProjectBackground(appearance, key)),
+    backgroundColor: railBackgroundColor(background),
     icon: logo ? (
       <ProjectLogoIcon path={logo} className="icon-xs rounded-sm" imageClassName="icon-xs" />
     ) : (

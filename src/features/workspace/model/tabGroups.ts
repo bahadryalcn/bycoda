@@ -1,8 +1,18 @@
 import { TAB_GROUP_COLORS } from "./tabGroupColors";
 import type { Tab } from "../../../app/shell/TitleBar";
 import { projectKey, projectName } from "../../../shared/lib/paths";
-import { knownProjectPaths, notifyProjectPathsChanged } from "../../projects/model/recents";
-import { detectedProjectLogo, notifyTabGroupLogosChanged } from "./projectLogoState";
+import {
+  knownProjectPaths,
+  notifyProjectPathsChanged,
+  subscribeProjectPathsChanged,
+} from "../../projects/model/recents";
+import { useSyncExternalStore } from "react";
+import {
+  detectedProjectLogo,
+  notifyTabGroupLogosChanged,
+  TAB_GROUP_LOGOS_CHANGED,
+  useDetectedProjectLogo,
+} from "./projectLogoState";
 
 export { TAB_GROUP_COLORS };
 
@@ -203,6 +213,59 @@ export function loadTabGroupCustomColors(): Record<string, string> {
   return out;
 }
 
+/** A reader of one stored record that keeps one result while the stored text is unchanged. */
+function cachedRecordReader<T>(key: string, read: () => T): () => T {
+  let raw: string | null | undefined;
+  let value: T;
+  return () => {
+    migrateProjectAppearanceKeys();
+    let now: string | null = null;
+    try {
+      now = localStorage.getItem(key);
+    } catch {
+      /* storage unavailable: nothing saved */
+    }
+    if (now !== raw) {
+      raw = now;
+      value = read();
+    }
+    return value;
+  };
+}
+
+const getTabGroupColorsSnapshot = cachedRecordReader(COLOR_KEY, loadTabGroupColors);
+const getTabGroupCustomColorsSnapshot = cachedRecordReader(
+  CUSTOM_COLOR_KEY,
+  loadTabGroupCustomColors,
+);
+const NO_COLORS: Record<string, number> = {};
+const NO_CUSTOM_COLORS: Record<string, string> = {};
+
+function subscribeTabGroupColors(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  // Saved colors announce themselves as a rail change; other windows via `storage`.
+  const stop = subscribeProjectPathsChanged(onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    stop();
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+/** Reactive `loadTabGroupColors`. */
+export function useTabGroupColors(): Record<string, number> {
+  return useSyncExternalStore(subscribeTabGroupColors, getTabGroupColorsSnapshot, () => NO_COLORS);
+}
+
+/** Reactive `loadTabGroupCustomColors`. */
+export function useTabGroupCustomColors(): Record<string, string> {
+  return useSyncExternalStore(
+    subscribeTabGroupColors,
+    getTabGroupCustomColorsSnapshot,
+    () => NO_CUSTOM_COLORS,
+  );
+}
+
 function writeTabGroupColorIndices(next: Record<string, number>): void {
   writeRecord(COLOR_KEY, Object.fromEntries(Object.entries(next).map(([k, v]) => [k, String(v)])));
 }
@@ -341,6 +404,47 @@ export function loadTabGroupMascots(): Record<string, string> {
   return readRecord(MASCOT_KEY);
 }
 
+let mascotsRaw: string | null | undefined;
+let mascotsSnapshot: Record<string, string> = {};
+
+/** Same record as `loadTabGroupMascots`, with one identity while the stored value is unchanged. */
+function getTabGroupMascotsSnapshot(): Record<string, string> {
+  migrateProjectAppearanceKeys();
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(MASCOT_KEY);
+  } catch {
+    /* storage unavailable: no mascots */
+  }
+  if (raw !== mascotsRaw) {
+    mascotsRaw = raw;
+    mascotsSnapshot = readRecord(MASCOT_KEY);
+  }
+  return mascotsSnapshot;
+}
+
+const NO_MASCOTS: Record<string, string> = {};
+
+function subscribeTabGroupMascots(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  // A picked, cleared or moved mascot announces itself as a logo change; other windows via `storage`.
+  window.addEventListener(TAB_GROUP_LOGOS_CHANGED, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(TAB_GROUP_LOGOS_CHANGED, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+/** Reactive `loadTabGroupMascots`. */
+export function useTabGroupMascots(): Record<string, string> {
+  return useSyncExternalStore(
+    subscribeTabGroupMascots,
+    getTabGroupMascotsSnapshot,
+    () => NO_MASCOTS,
+  );
+}
+
 /** `null` restores the mascot picked from the project's name. */
 export function saveTabGroupMascot(project: string, name: string | null): void {
   const next = loadTabGroupMascots();
@@ -353,17 +457,19 @@ export function saveTabGroupMascot(project: string, name: string | null): void {
 
 /** Drops every saved appearance override for a project. */
 export function clearTabGroupSettings(project: string): void {
+  let colorsChanged = false;
   for (const key of APPEARANCE_KEYS) {
     const next = readRecord(key);
     if (!(project in next)) continue;
     delete next[project];
-    if (
-      writeRecord(key, next) &&
-      (key === LABEL_KEY || key === AUTO_LABEL_KEY || key === WORKSPACE_LABEL_KEY)
-    ) {
+    if (!writeRecord(key, next)) continue;
+    if (key === LABEL_KEY || key === AUTO_LABEL_KEY || key === WORKSPACE_LABEL_KEY) {
       notifyTabGroupLabelsChanged();
     }
+    if (key === MASCOT_KEY) notifyTabGroupLogosChanged(); // A cleared mascot shows the shipped logo again.
+    colorsChanged ||= key === COLOR_KEY || key === CUSTOM_COLOR_KEY;
   }
+  if (colorsChanged) notifyProjectPathsChanged();
 }
 
 /** Move project appearance overrides to the key derived from its new path. */
@@ -373,6 +479,7 @@ export function rebaseProjectTabGroupSettings(from: string, to: string): void {
   if (oldKey === newKey) return;
   let labelsChanged = false;
   let logosChanged = false;
+  let colorsChanged = false;
   for (const key of APPEARANCE_KEYS) {
     const next = readRecord(key);
     if (!(oldKey in next)) continue;
@@ -380,8 +487,10 @@ export function rebaseProjectTabGroupSettings(from: string, to: string): void {
     delete next[oldKey];
     if (!writeRecord(key, next)) continue;
     labelsChanged ||= key === LABEL_KEY || key === AUTO_LABEL_KEY || key === WORKSPACE_LABEL_KEY;
-    logosChanged ||= key === LOGO_KEY;
+    logosChanged ||= key === LOGO_KEY || key === MASCOT_KEY;
+    colorsChanged ||= key === COLOR_KEY || key === CUSTOM_COLOR_KEY;
   }
+  if (colorsChanged) notifyProjectPathsChanged();
   if (labelsChanged) notifyTabGroupLabelsChanged();
   if (logosChanged) notifyTabGroupLogosChanged();
 }
@@ -402,6 +511,54 @@ export function resolveTabGroupLogo(
   if (chosen) return chosen;
   const shipped = detectedProjectLogo(project);
   return shipped && !(project in loadTabGroupMascots()) ? shipped : null;
+}
+
+/** `resolveTabGroupLogo` with the shipped logo and mascots passed in (from the hooks). */
+export function resolveTabGroupLogoWith(
+  project: string,
+  overrides: Record<string, string> | undefined,
+  shipped: string | null,
+  mascots: Record<string, string>,
+): string | null {
+  const chosen = overrides?.[project];
+  if (chosen) return chosen;
+  return shipped && !(project in mascots) ? shipped : null;
+}
+
+/**
+ * Reactive `resolveTabGroupLogo`: re-renders when the shipped logo is detected or a
+ * mascot is picked, cleared or moved.
+ */
+export function useResolvedTabGroupLogo(
+  project: string,
+  overrides?: Record<string, string>,
+): string | null {
+  const mascots = useTabGroupMascots();
+  // A chosen logo wins, so nothing is detected for it (same as `resolveTabGroupLogo`).
+  const shipped = useDetectedProjectLogo(overrides?.[project] ? "" : project);
+  return resolveTabGroupLogoWith(project, overrides, shipped, mascots);
+}
+
+/**
+ * Reactive `resolveTabGroupLogo` for a list of projects: one hook call for every row.
+ * Re-renders when a shipped logo is detected or a mascot is picked, cleared or moved. The
+ * snapshot is the resolved text, so it only changes with a result.
+ */
+export function useResolvedTabGroupLogos(
+  projects: readonly string[],
+  overrides?: Record<string, string>,
+): Record<string, string | null> {
+  const key = useSyncExternalStore(
+    subscribeTabGroupMascots,
+    () =>
+      JSON.stringify(
+        Object.fromEntries(
+          projects.map((project) => [project, resolveTabGroupLogo(project, overrides)]),
+        ),
+      ),
+    () => "{}",
+  );
+  return JSON.parse(key) as Record<string, string | null>;
 }
 
 export function resolveTabGroupColor(

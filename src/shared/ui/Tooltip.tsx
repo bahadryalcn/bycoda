@@ -16,7 +16,8 @@ import {
 import type { PopoverAlign, PopoverSide } from "../lib/popover";
 import { Popover } from "./Popover";
 import { ShortcutKeys } from "./ShortcutKbd";
-import { formatShortcutLabel, usePlatform } from "./shortcut";
+import { useT } from "../i18n";
+import { formatShortcutLabelWith, usePlatform } from "./shortcut";
 import { needsOverflowTooltip } from "./tooltipVisibility";
 
 /** Time the pointer rests on a control before its tooltip opens. */
@@ -62,7 +63,8 @@ export function useHoverIntent({
     window.clearTimeout(timer.current.id);
     timer.current = null;
   };
-  const close = () => {
+  // Named `handle*`: these only run from pointer events and timers, never during render.
+  const handleClose = () => {
     cancel();
     if (opened.current) {
       opened.current = null;
@@ -77,9 +79,9 @@ export function useHoverIntent({
     opened.current = element;
     setAnchor(element);
   };
-  const warm = () => performance.now() - (lastClosedAt[group] ?? -Infinity) < warmMs;
+  const handleWarm = () => performance.now() - (lastClosedAt[group] ?? -Infinity) < warmMs;
   /** Opens after the rest delay (or at once when warm or `delay` is 0). */
-  const scheduleOpen = (element: HTMLElement, delay = warm() ? 0 : openDelay) => {
+  const scheduleOpen = (element: HTMLElement, delay = handleWarm() ? 0 : openDelay) => {
     if (timer.current?.kind === "close") cancel();
     if (opened.current === element) return;
     if (timer.current?.kind === "open") return;
@@ -96,18 +98,18 @@ export function useHoverIntent({
   /** Closes after the close delay; a pointer coming back (or into a card) cancels it. */
   const scheduleClose = (delay = closeDelay) => {
     if (!opened.current || delay <= 0) {
-      close();
+      handleClose();
       return;
     }
     if (timer.current?.kind === "close") return;
     cancel();
     const id = window.setTimeout(() => {
       timer.current = null;
-      close();
+      handleClose();
     }, delay);
     timer.current = { id, kind: "close" };
   };
-  return { anchor, scheduleOpen, scheduleClose, close, cancel };
+  return { anchor, scheduleOpen, scheduleClose, close: handleClose, cancel };
 }
 
 /** A `display: contents` wrapper has no box; the control inside is the anchor. */
@@ -228,12 +230,13 @@ export function useTooltip({
 } {
   const id = useId();
   const platform = usePlatform();
+  const t = useT();
   const [, refresh] = useState(0);
   const intent = useHoverIntent({ openDelay: delay });
   const lines = presentLines(details);
   const empty = !label && !shortcut && lines.length === 0;
   const anchor = intent.anchor;
-  const formatted = shortcut ? formatShortcutLabel(shortcut, platform) : null;
+  const formatted = shortcut ? formatShortcutLabelWith(shortcut, platform, t) : null;
   const shortcutInfo =
     shortcut && formatted
       ? {

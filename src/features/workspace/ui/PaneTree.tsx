@@ -452,178 +452,181 @@ function PaneTreeComponent({
   // One handler for every pane and tab: `SessionPane` compares props shallowly, so a
   // fresh handler per render would re-render the whole session subtree (transcript,
   // composer, picker). The pane comes from the nearest tab or pane element.
-  const startPaneDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    const handle = event.currentTarget;
-    const owner = handle.closest<HTMLElement>("[data-pane-tab-id], [data-pane-leaf]");
-    const ownerId = owner?.dataset.paneTabId ?? owner?.dataset.paneLeaf;
-    if (!ownerId) return;
-    const fromId: string = ownerId; // hoisted inner functions do not keep the narrowing
-    cancelPaneDrag.current?.();
-    const pointerId = event.pointerId;
-    const startX = event.clientX;
-    const startY = event.clientY;
-    let active = false;
-    let windowDrag: ReturnType<typeof beginWindowTabDrag> | undefined;
-    const canPopOut = () =>
-      Boolean(dragContents.current.onPopOutPane) &&
-      !dragContents.current.editorPanes
-        .find((pane) => pane.id === fromId)
-        ?.files.some((file) => file.terminal);
+  const startPaneDrag = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (event.button !== 0) return;
+      const handle = event.currentTarget;
+      const owner = handle.closest<HTMLElement>("[data-pane-tab-id], [data-pane-leaf]");
+      const ownerId = owner?.dataset.paneTabId ?? owner?.dataset.paneLeaf;
+      if (!ownerId) return;
+      const fromId: string = ownerId; // hoisted inner functions do not keep the narrowing
+      cancelPaneDrag.current?.();
+      const pointerId = event.pointerId;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let active = false;
+      let windowDrag: ReturnType<typeof beginWindowTabDrag> | undefined;
+      const canPopOut = () =>
+        Boolean(dragContents.current.onPopOutPane) &&
+        !dragContents.current.editorPanes
+          .find((pane) => pane.id === fromId)
+          ?.files.some((file) => file.terminal);
 
-    let lastX = startX;
-    let lastY = startY;
-    let screenX = event.screenX;
-    let screenY = event.screenY;
-    handle.setPointerCapture(pointerId);
-    const restoreSelection = suppressTextSelection();
-    const dropTarget = (x: number, y: number) => {
-      const over = paneDropFromPoint(x, y);
-      if (over?.tabPosition) return over;
-      if (over?.id !== fromId) return over;
-      const group = layoutLeaves(layoutRef.current).find((pane) => pane.id === fromId);
-      const sibling = group?.tabIds?.find((id) => id !== fromId);
-      return sibling ? { ...over, id: sibling } : over;
-    };
+      let lastX = startX;
+      let lastY = startY;
+      let screenX = event.screenX;
+      let screenY = event.screenY;
+      handle.setPointerCapture(pointerId);
+      const restoreSelection = suppressTextSelection();
+      const dropTarget = (x: number, y: number) => {
+        const over = paneDropFromPoint(x, y);
+        if (over?.tabPosition) return over;
+        if (over?.id !== fromId) return over;
+        const group = layoutLeaves(layoutRef.current).find((pane) => pane.id === fromId);
+        const sibling = group?.tabIds?.find((id) => id !== fromId);
+        return sibling ? { ...over, id: sibling } : over;
+      };
 
-    const onMove = (ev: PointerEvent) => {
-      if (ev.pointerId !== pointerId) return;
-      lastX = ev.clientX;
-      lastY = ev.clientY;
-      screenX = ev.screenX;
-      screenY = ev.screenY;
-      if (!active) {
-        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD) {
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        lastX = ev.clientX;
+        lastY = ev.clientY;
+        screenX = ev.screenX;
+        screenY = ev.screenY;
+        if (!active) {
+          if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD) {
+            return;
+          }
+          active = true;
+          setGrabbing(true);
+          dragContents.current.onFocus(fromId);
+          setPaneDrag({ fromId, overId: null, edge: "left" });
+        }
+        const titleTab = titleTabDropFromPoint(ev.clientX, ev.clientY);
+        if (canPopOut()) {
+          if (!windowDrag) {
+            const editor = dragContents.current.editorPanes.find((pane) => pane.id === fromId);
+            const file = editor?.files.length === 1 ? editor.files[0] : undefined;
+            const fileOnly = file && isFilesystemTab(file) && !file.terminal;
+            windowDrag = beginWindowTabDrag(fileOnly ? `file:${file.id}` : fromId, [
+              fromId,
+              ...(editor?.files.map((entry) => entry.id) ?? []),
+            ]);
+          }
+          windowDrag.move(ev);
+        }
+        setExternalTitleTabDrop(titleTab ? { fromId, ...titleTab } : null);
+        if (
+          canPopOut() &&
+          isPointerOutsideWindow(ev.clientX, ev.clientY, window.innerWidth, window.innerHeight)
+        ) {
+          setDropFeedback(
+            "window",
+            ev,
+            dragContents.current.sessionById.get(fromId)?.busy
+              ? "Move after response finishes"
+              : undefined,
+          );
+          setPaneDrag({ fromId, overId: null, edge: "left" });
           return;
         }
-        active = true;
-        setGrabbing(true);
-        dragContents.current.onFocus(fromId);
-        setPaneDrag({ fromId, overId: null, edge: "left" });
-      }
-      const titleTab = titleTabDropFromPoint(ev.clientX, ev.clientY);
-      if (canPopOut()) {
-        if (!windowDrag) {
-          const editor = dragContents.current.editorPanes.find((pane) => pane.id === fromId);
-          const file = editor?.files.length === 1 ? editor.files[0] : undefined;
-          const fileOnly = file && isFilesystemTab(file) && !file.terminal;
-          windowDrag = beginWindowTabDrag(fileOnly ? `file:${file.id}` : fromId, [
-            fromId,
-            ...(editor?.files.map((entry) => entry.id) ?? []),
-          ]);
+        if (titleTab) {
+          setDropFeedback("move", ev, "Release to create a tab");
+          setPaneDrag({ fromId, overId: null, edge: "left" });
+          return;
         }
-        windowDrag.move(ev);
-      }
-      setExternalTitleTabDrop(titleTab ? { fromId, ...titleTab } : null);
-      if (
-        canPopOut() &&
-        isPointerOutsideWindow(ev.clientX, ev.clientY, window.innerWidth, window.innerHeight)
-      ) {
+        const over = dropTarget(ev.clientX, ev.clientY);
+        if (!over || over.invalid || (over.id === fromId && over.edge === "center")) {
+          setDropFeedback("blocked", ev);
+          setPaneDrag({
+            fromId,
+            overId: over?.id ?? null,
+            edge: over?.edge ?? "left",
+            invalid: true,
+          });
+          return;
+        }
+        setPaneDrag({ fromId, overId: over.id, edge: over.edge, tabPosition: over.tabPosition });
         setDropFeedback(
-          "window",
+          "move",
           ev,
-          dragContents.current.sessionById.get(fromId)?.busy
-            ? "Move after response finishes"
-            : undefined,
+          over.id === fromId
+            ? `Split ${over.edge} with a new session`
+            : over.edge === "center"
+              ? "Add as pane tab"
+              : `Place ${over.edge}`,
         );
-        setPaneDrag({ fromId, overId: null, edge: "left" });
-        return;
-      }
-      if (titleTab) {
-        setDropFeedback("move", ev, "Release to create a tab");
-        setPaneDrag({ fromId, overId: null, edge: "left" });
-        return;
-      }
-      const over = dropTarget(ev.clientX, ev.clientY);
-      if (!over || over.invalid || (over.id === fromId && over.edge === "center")) {
-        setDropFeedback("blocked", ev);
-        setPaneDrag({
-          fromId,
-          overId: over?.id ?? null,
-          edge: over?.edge ?? "left",
-          invalid: true,
-        });
-        return;
-      }
-      setPaneDrag({ fromId, overId: over.id, edge: over.edge, tabPosition: over.tabPosition });
-      setDropFeedback(
-        "move",
-        ev,
-        over.id === fromId
-          ? `Split ${over.edge} with a new session`
-          : over.edge === "center"
-            ? "Add as pane tab"
-            : `Place ${over.edge}`,
-      );
-    };
+      };
 
-    const onUp = (ev: PointerEvent) => {
-      if (ev.pointerId !== pointerId) return;
-      onMove(ev);
-      finish(true);
-    };
-    const onCancel = () => finish(false);
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key !== "Escape") return;
-      ev.preventDefault();
-      finish(false);
-    };
+      const onUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        onMove(ev);
+        finish(true);
+      };
+      const onCancel = () => finish(false);
+      const onKey = (ev: KeyboardEvent) => {
+        if (ev.key !== "Escape") return;
+        ev.preventDefault();
+        finish(false);
+      };
 
-    function finish(commit: boolean) {
-      windowDrag?.finish();
-      cancelPaneDrag.current = null;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onCancel);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("blur", onCancel);
-      handle.removeEventListener("lostpointercapture", onCancel);
-      restoreSelection();
-      setGrabbing(false);
-      setPaneDrag(null);
-      setExternalTitleTabDrop(null);
-      try {
-        handle.releasePointerCapture(pointerId);
-      } catch {
-        /* already released */
+      function finish(commit: boolean) {
+        windowDrag?.finish();
+        cancelPaneDrag.current = null;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+        window.removeEventListener("keydown", onKey);
+        window.removeEventListener("blur", onCancel);
+        handle.removeEventListener("lostpointercapture", onCancel);
+        restoreSelection();
+        setGrabbing(false);
+        setPaneDrag(null);
+        setExternalTitleTabDrop(null);
+        try {
+          handle.releasePointerCapture(pointerId);
+        } catch {
+          /* already released */
+        }
+        if (!active || !commit) return;
+        if (
+          canPopOut() &&
+          isPointerOutsideWindow(lastX, lastY, window.innerWidth, window.innerHeight)
+        ) {
+          dragContents.current.onPopOutPane?.(
+            fromId,
+            pointerWindowMovePosition({
+              screenX,
+              screenY,
+              clientX: lastX,
+              clientY: lastY,
+            }),
+          );
+          return;
+        }
+        const titleTab = titleTabDropFromPoint(lastX, lastY);
+        if (titleTab) {
+          dragContents.current.onDetachPane(fromId, titleTab.targetTabId, titleTab.position);
+          return;
+        }
+        const over = dropTarget(lastX, lastY);
+        if (over && !over.invalid && (over.id !== fromId || over.edge !== "center")) {
+          if (over.tabPosition)
+            dragContents.current.onMovePane(fromId, over.id, over.edge, over.tabPosition);
+          else dragContents.current.onMovePane(fromId, over.id, over.edge);
+        }
       }
-      if (!active || !commit) return;
-      if (
-        canPopOut() &&
-        isPointerOutsideWindow(lastX, lastY, window.innerWidth, window.innerHeight)
-      ) {
-        dragContents.current.onPopOutPane?.(
-          fromId,
-          pointerWindowMovePosition({
-            screenX,
-            screenY,
-            clientX: lastX,
-            clientY: lastY,
-          }),
-        );
-        return;
-      }
-      const titleTab = titleTabDropFromPoint(lastX, lastY);
-      if (titleTab) {
-        dragContents.current.onDetachPane(fromId, titleTab.targetTabId, titleTab.position);
-        return;
-      }
-      const over = dropTarget(lastX, lastY);
-      if (over && !over.invalid && (over.id !== fromId || over.edge !== "center")) {
-        if (over.tabPosition)
-          dragContents.current.onMovePane(fromId, over.id, over.edge, over.tabPosition);
-        else dragContents.current.onMovePane(fromId, over.id, over.edge);
-      }
-    }
 
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onCancel);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("blur", onCancel);
-    handle.addEventListener("lostpointercapture", onCancel);
-    cancelPaneDrag.current = onCancel;
-  }, []);
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+      window.addEventListener("keydown", onKey);
+      window.addEventListener("blur", onCancel);
+      handle.addEventListener("lostpointercapture", onCancel);
+      cancelPaneDrag.current = onCancel;
+    },
+    [setPaneDrag],
+  );
 
   return (
     <div className="h-full min-h-0 min-w-0 overflow-hidden">

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { formatDate, useT } from "../../shared/i18n";
-import { formatDuration } from "../../shared/i18n/format";
+import { useFormat, useT } from "../../shared/i18n";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import { useSession } from "../../features/sessions/public/sessionsStore";
 import { sessionWorkedMs } from "../../features/sessions/public/sessionActivity";
@@ -19,6 +18,7 @@ export function SessionDetailTimes({
   runningSince?: number;
 }) {
   const t = useT();
+  const format = useFormat();
   const now = useMinuteNow(runningSince !== undefined);
   const live = useSession(session.id);
   const loaded = live && !live.historyPartial && !live.historyLoading ? live : undefined;
@@ -53,7 +53,7 @@ export function SessionDetailTimes({
     <div className="mt-2 grid gap-0.5 text-ui-caption text-(--ui-text-secondary)">
       <p>
         {t("Last activity: {p0}", {
-          p0: formatDate(session.lastActivityAt ?? session.updatedAt, {
+          p0: format.formatDate(session.lastActivityAt ?? session.updatedAt, {
             year: "numeric",
             month: "short",
             day: "numeric",
@@ -63,7 +63,9 @@ export function SessionDetailTimes({
         })}
       </p>
       {worked ? (
-        <p className="tabular-nums">{t("Total work time: {p0}", { p0: formatDuration(worked) })}</p>
+        <p className="tabular-nums">
+          {t("Total work time: {p0}", { p0: format.formatDuration(worked) })}
+        </p>
       ) : null}
     </div>
   );

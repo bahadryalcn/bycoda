@@ -118,4 +118,49 @@ build and process population still require review. Idle and active need separate
 baselines. Cross-platform validation and release acceptance remain separate from
 local Windows evidence.
 
+## React render counts (`VITE_REACT_SCAN`)
+
+Setting `VITE_REACT_SCAN=1` when the Vite dev server starts makes `src/main.tsx` load
+`react-scan` and call `scan({ enabled: true })`, which outlines every component that
+re-renders and shows a toolbar with per-component render counts. It is a
+development-only opt-in: the branch is guarded by `import.meta.env.DEV`, so production
+builds drop both the code and the dependency. The app runs under `React.StrictMode` in
+development, so counts include its double renders, and scanning adds its own overhead;
+compare runs of the same kind only. React Compiler also runs in the dev server, so the
+counts describe compiled components. Start an isolated instance with the usual
+isolated development run (`$env:VITE_REACT_SCAN = "1"; pnpm dev:native`, which
+supervises its own Host, Vite and native processes), and leave the variable unset for
+ordinary development.
+
+### Render budget suite
+
+`tests/browser/render-budget/` turns render counts into a regression test. It runs five fixed
+scenarios (`idle60`, `streaming`, `composerTyping`, `windowFocus`, `tasksBoard` with the phases
+`boardStay` and `newTaskFormTyping`) against fixtures served by a Vite dev server that uses the
+app's React plus React Compiler pipeline, counts composite-component renders with react-scan's
+`onRender`, and fails when the total or a named root (`SidebarComponent`, `TitleBar`,
+`SessionPane`, `Composer`, `AgentTranscript`, `Turn`, `TasksContent`, ...) exceeds the upper
+bound in `budgets.json`. The streaming scenario also fails unless the streamed token index
+grows in the DOM, so a frozen transcript cannot pass.
+
+```powershell
+node scripts/checks/browser-tests.mjs --suite render-budget --project chromium
+```
+
+It takes about 4 minutes and is not part of the `smoke` alias, but every non-variant suite
+belongs to `all`, so the sharded CI browser jobs run it. A failure names the scenario, phase,
+metric, measured value and bound (`streaming/run: Composer measured 40 > budget 12`); the
+test also attaches `render-counts.json` with every measured number. Find the cause with the
+react-scan toolbar above, fix the extra renders, then lower the bound if the fix earned
+headroom. Bounds are the largest of three reference runs times 1.25 plus 2; never raise one to
+make a failure pass without an owner decision.
+
+Comparability: the fixtures mount the real `Sidebar`, `TitleBar`, `SessionPane` and the tasks
+board with a mocked Tauri boundary, not the full `App`/`Workspace` (so `App`, `Workspace`,
+`ProjectRail` and crew polling are not counted). There is no `React.StrictMode`, so absolute
+numbers are lower than in the dev app. `windowFocus` dispatches synthetic
+`visibilitychange`/`blur`/`focus` events because headless Chromium has no window focus; Tauri
+window events are not covered. react-scan adds its own overhead, and timer-driven scenarios
+(`tasksBoard` polls every 15 s) vary by one poll between runs, which the margin absorbs.
+
 Focused checks: `node --test scripts/checks/measure-performance.test.mjs`.

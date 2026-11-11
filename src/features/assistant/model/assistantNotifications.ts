@@ -19,6 +19,16 @@ type Ports = {
 const KEY = "bycoda.assistant.notification-ack-pending.v1";
 
 /** Persist successful native outcomes before retrying a failed Host acknowledgement. */
+/** The only snapshot fields delivery reads, so callers can pass a narrow selection. */
+export type AssistantNotificationInput = {
+  profile: Pick<AssistantSnapshot["profile"], "enabled" | "setupComplete">;
+  notifications?: readonly (Pick<
+    NonNullable<AssistantSnapshot["notifications"]>[number],
+    "id" | "eligible"
+  > &
+    Record<string, unknown>)[];
+};
+
 export class AssistantNotificationDelivery {
   private delivered = new Set<string>();
   private running = false;
@@ -51,7 +61,7 @@ export class AssistantNotificationDelivery {
       /* Next poll retries only the acknowledgement. */
     }
   }
-  async check(snapshot: AssistantSnapshot) {
+  async check(snapshot: AssistantNotificationInput) {
     if (this.running) return;
     this.running = true;
     try {

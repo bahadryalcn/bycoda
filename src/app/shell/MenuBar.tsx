@@ -15,13 +15,13 @@ import {
   layoutPresetFromMenuId,
 } from "./layoutMenu";
 import {
-  keybindingShortcutLabel,
   loadAutosave,
   loadKeybindingOverrides,
   saveAutosave,
   subscribeAutosave,
   subscribeKeybindings,
 } from "../../features/settings/model/settings";
+import { quickComposerShortcutLabel } from "../../features/quick-composer/model/quickComposerShortcut";
 import { useStableHandlers } from "../../shared/hooks/useStableHandlers";
 
 type MenuKey = "file" | "view" | "terminal";
@@ -86,7 +86,7 @@ const MemoMenuBar = memo(function MenuBar({
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   // The title bar's compact button opens the menus as one popover, not as the menubar band.
   const [popover, setPopover] = useState<{ x: number; y: number } | null>(null);
-  const [, refreshShortcuts] = useState(loadKeybindingOverrides);
+  const [keybindingOverrides, refreshShortcuts] = useState(loadKeybindingOverrides);
   const [autosave, setAutosave] = useState(loadAutosave);
   const barRef = useRef<HTMLDivElement>(null);
 
@@ -94,8 +94,12 @@ const MemoMenuBar = memo(function MenuBar({
 
   useEffect(() => subscribeAutosave(() => setAutosave(loadAutosave())), []);
 
-  const shortcut = (command: string, keys: string) =>
-    keybindingShortcutLabel(command, keys) ?? undefined;
+  // Same rule as `keybindingShortcutLabel`, read from the state this component re-renders on.
+  const shortcut = (command: string, keys: string) => {
+    const override = keybindingOverrides[command];
+    if (override?.disabled) return undefined;
+    return override?.shortcut ? quickComposerShortcutLabel(override.shortcut) : keys;
+  };
 
   // Toggle with a standalone Alt tap or F10 (outside terminals, where F10 belongs to the program).
   useEffect(() => {
@@ -152,11 +156,11 @@ const MemoMenuBar = memo(function MenuBar({
     };
   }, []);
 
-  const openDropdown = useCallback((key: MenuKey, target: HTMLElement) => {
+  const openDropdown = (key: MenuKey, target: HTMLElement) => {
     const rect = target.getBoundingClientRect();
     setActiveMenu(key);
     setMenuAnchor({ x: rect.left, y: rect.bottom + 2 });
-  }, []);
+  };
 
   const closeMenu = useCallback(() => {
     setActiveMenu(null);
@@ -311,84 +315,64 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "new_tab",
-            get label() {
-              return t("New Tab");
-            },
+            label: t("New Tab"),
             shortcut: shortcut("Tab: New", `${MOD}T`),
           },
           {
             kind: "item",
             id: "new_terminal",
-            get label() {
-              return t("New Terminal");
-            },
+            label: t("New Terminal"),
             shortcut: shortcut("Terminal: New", `${MOD}\``),
           },
           {
             kind: "item",
             id: "new_window",
-            get label() {
-              return t("New Window");
-            },
+            label: t("New Window"),
             shortcut: shortcut("App: New Window", `${MOD}${SHIFT}N`),
           },
           { kind: "sep" },
           {
             kind: "item",
             id: "toggle_autosave",
-            get label() {
-              return t("Autosave");
-            },
+            label: t("Autosave"),
             checked: autosave,
           },
           { kind: "sep" },
           {
             kind: "item",
             id: "open_project",
-            get label() {
-              return t("Open Project…");
-            },
+            label: t("Open Project…"),
             shortcut: shortcut("App: Open Project", `${MOD}O`),
           },
           {
             kind: "item",
             id: "open_search",
-            get label() {
-              return t("Search…");
-            },
+            label: t("Search…"),
             shortcut: shortcut("App: Search", `${MOD}K`),
           },
           {
             kind: "item",
             id: "go_to_file",
-            get label() {
-              return t("Go to File…");
-            },
+            label: t("Go to File…"),
             shortcut: shortcut("App: Go to File", `${MOD}P`),
           },
           {
             kind: "item",
             id: "find_in_project",
-            get label() {
-              return t("Find in Files…");
-            },
+            label: t("Find in Files…"),
             shortcut: shortcut("App: Find in Files", `${MOD}${SHIFT}F`),
           },
           { kind: "sep" },
           {
             kind: "item",
             id: "close_tab",
-            get label() {
-              return t("Close Pane");
-            },
+            label: t("Close Pane"),
             shortcut: shortcut("Pane: Close", `${MOD}W`),
           },
           {
             kind: "item",
             id: "close_other_tabs",
-            get label() {
-              return t("Close Other Tabs");
-            },
+            label: t("Close Other Tabs"),
             shortcut: shortcut("Tab: Close Others", `${MOD}${ALT}T`),
           },
           ...(onCloseIdleTabs
@@ -396,9 +380,7 @@ const MemoMenuBar = memo(function MenuBar({
                 {
                   kind: "item" as const,
                   id: "close_idle_tabs",
-                  get label() {
-                    return t("Close Idle Tabs");
-                  },
+                  label: t("Close Idle Tabs"),
                   disabled: !idleTabCount,
                 },
               ]
@@ -406,18 +388,14 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "close_all_tabs",
-            get label() {
-              return t("Close All Tabs");
-            },
+            label: t("Close All Tabs"),
             shortcut: shortcut("Tab: Close All", `${MOD}${SHIFT}W`),
           },
           { kind: "sep" },
           {
             kind: "item",
             id: "check_for_updates",
-            get label() {
-              return t("Check for Updates…");
-            },
+            label: t("Check for Updates…"),
           },
         ];
       case "view":
@@ -425,83 +403,63 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "usage_guide",
-            get label() {
-              return t("Usage guide");
-            },
+            label: t("Usage guide"),
           },
           {
             kind: "item",
             id: "product_tour",
-            get label() {
-              return t("Take the tour");
-            },
+            label: t("Take the tour"),
           },
           { kind: "sep" },
           {
             kind: "item",
             id: "toggle_sidebar",
-            get label() {
-              return t("Toggle Sidebar");
-            },
+            label: t("Toggle Sidebar"),
             shortcut: shortcut("App: Toggle Sidebar", `${MOD}B`),
           },
           {
             kind: "item",
             id: "toggle_session_sidebar",
-            get label() {
-              return t("Toggle Session Sidebar");
-            },
+            label: t("Toggle Session Sidebar"),
             shortcut: shortcut("App: Toggle Session Sidebar", `${MOD}${SHIFT}B`),
           },
           {
             kind: "item",
             id: "open_inbox",
-            get label() {
-              return t("Inbox");
-            },
+            label: t("Inbox"),
           },
           ...(onOpenNotes
             ? [
                 {
                   kind: "item" as const,
                   id: "open_notes",
-                  get label() {
-                    return t("Notes");
-                  },
+                  label: t("Notes"),
                 },
               ]
             : []),
           {
             kind: "item",
             id: "toggle_terminal",
-            get label() {
-              return t("Toggle Terminal");
-            },
+            label: t("Toggle Terminal"),
             shortcut: shortcut("Terminal: Toggle Dock", `${MOD}J`),
           },
           {
             kind: "item",
             id: "open_model_picker",
-            get label() {
-              return t("Switch Model…");
-            },
+            label: t("Switch Model…"),
             shortcut: shortcut("App: Switch Model", `${MOD}.`),
           },
           {
             kind: "item",
             id: "toggle_diff",
-            get label() {
-              return t("Toggle Changes");
-            },
+            label: t("Toggle Changes"),
           },
           ...(layout
             ? [
                 {
                   kind: "item" as const,
                   id: "layout_menu",
-                  get label() {
-                    return t("Layout");
-                  },
+                  label: t("Layout"),
                   submenu: buildLayoutMenuItems({
                     current: layout.current,
                     canArrange: layout.canArrange,
@@ -515,25 +473,19 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "zoom_in",
-            get label() {
-              return t("Zoom In");
-            },
+            label: t("Zoom In"),
             shortcut: shortcut("View: Zoom In", `${MOD}+`),
           },
           {
             kind: "item",
             id: "zoom_out",
-            get label() {
-              return t("Zoom Out");
-            },
+            label: t("Zoom Out"),
             shortcut: shortcut("View: Zoom Out", `${MOD}-`),
           },
           {
             kind: "item",
             id: "zoom_reset",
-            get label() {
-              return t("Reset Zoom");
-            },
+            label: t("Reset Zoom"),
             shortcut: shortcut("View: Reset Zoom", `${MOD}0`),
           },
         ];
@@ -542,17 +494,13 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "new_terminal",
-            get label() {
-              return t("New Terminal");
-            },
+            label: t("New Terminal"),
             shortcut: shortcut("Terminal: New", `${MOD}\``),
           },
           {
             kind: "item",
             id: "toggle_terminal",
-            get label() {
-              return t("Toggle Terminal");
-            },
+            label: t("Toggle Terminal"),
             shortcut: shortcut("Terminal: Toggle Dock", `${MOD}J`),
           },
         ];
@@ -585,21 +533,15 @@ const MemoMenuBar = memo(function MenuBar({
   const MENUS: { key: MenuKey; label: string }[] = [
     {
       key: "file",
-      get label() {
-        return t("File");
-      },
+      label: t("File"),
     },
     {
       key: "view",
-      get label() {
-        return t("View");
-      },
+      label: t("View"),
     },
     {
       key: "terminal",
-      get label() {
-        return t("Terminal");
-      },
+      label: t("Terminal"),
     },
   ];
 

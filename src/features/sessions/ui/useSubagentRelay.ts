@@ -5,6 +5,53 @@ import type { Block, ComposerTurnOptions } from "../model/session";
 type Entry = { draft: string; status?: "accepted" | "rejected" };
 const EMPTY: Entry = { draft: "" };
 
+// Module-level so the try/finally stays out of the hook the React Compiler compiles.
+function submitRelay({
+  draft,
+  prompt,
+  submitting,
+  onSubmit,
+  read,
+  write,
+}: {
+  draft: string;
+  prompt: string;
+  submitting: { current: boolean };
+  onSubmit: (text: string, options: ComposerTurnOptions) => boolean | void;
+  read: () => Entry;
+  write: (value: Entry) => void;
+}) {
+  let rejected = false;
+  const recover = () => {
+    if (rejected) return true;
+    rejected = true;
+    const current = read();
+    // A late rejection must not overwrite a newer draft.
+    write({
+      draft:
+        current.draft && current.draft !== draft
+          ? `${current.draft}
+
+${draft}`
+          : draft,
+      status: "rejected",
+    });
+    return true;
+  };
+  try {
+    const accepted = onSubmit(prompt, { onSendRejected: recover });
+    if (accepted === false) {
+      if (!rejected) recover();
+    } else if (!rejected) {
+      write({ draft: "", status: "accepted" });
+    }
+  } catch {
+    if (!rejected) recover();
+  } finally {
+    submitting.current = false;
+  }
+}
+
 /** Kept in the pane so closing or swapping sheets preserves each agent's draft. */
 export function useSubagentRelay({
   sessionId,
@@ -32,30 +79,14 @@ export function useSubagentRelay({
     const prompt = subagentRelayPrompt(block, draft);
     if (!prompt) return;
     submitting.current = true;
-    let rejected = false;
-    const recover = () => {
-      if (rejected) return true;
-      rejected = true;
-      const current = entriesRef.current[key] ?? EMPTY;
-      // A late rejection must not overwrite a newer draft.
-      update(key, {
-        draft: current.draft && current.draft !== draft ? `${current.draft}\n\n${draft}` : draft,
-        status: "rejected",
-      });
-      return true;
-    };
-    try {
-      const accepted = onSubmit(prompt, { onSendRejected: recover });
-      if (accepted === false) {
-        if (!rejected) recover();
-      } else if (!rejected) {
-        update(key, { draft: "", status: "accepted" });
-      }
-    } catch {
-      if (!rejected) recover();
-    } finally {
-      submitting.current = false;
-    }
+    submitRelay({
+      draft,
+      prompt,
+      submitting,
+      onSubmit,
+      read: () => entriesRef.current[key] ?? EMPTY,
+      write: (value) => update(key, value),
+    });
   };
   return {
     ...entry,

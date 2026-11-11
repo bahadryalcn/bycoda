@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { useLocale } from "../../../shared/i18n";
 import {
   getPathEnvironmentRevision,
@@ -15,7 +15,7 @@ import {
 } from "./activityDock";
 import { stopAllControl } from "./backgroundStop";
 import { delegatedChildren, delegatedDockAgents } from "./delegatedAgents";
-import { crewMemberChildren, placeDelegatedCards } from "./delegatedCards";
+import { createCardPlacer, crewMemberChildren } from "./delegatedCards";
 import { executionUserIndex } from "./executionTurn";
 import { queuedSteerRoute, queuedTargetSummary } from "./messageQueue";
 import { getModelSnapshot, resolveModel, subscribeModels } from "./models";
@@ -133,7 +133,8 @@ export function useDelegatedCardBlocks(
     (sessions) => (enabled ? crewMemberChildren(delegatedChildren(sessions, parentId)) : []),
     sameSessionList,
   );
-  return useMemo(() => placeDelegatedCards(blocks, children), [blocks, children]);
+  const [place] = useState(createCardPlacer);
+  return useMemo(() => place(blocks, children), [place, blocks, children]);
 }
 
 /** Cross-provider children of one session, as dock rows for its current turn. */

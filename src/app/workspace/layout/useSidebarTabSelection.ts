@@ -23,14 +23,17 @@ export function useSidebarTabSelection({ sidebarCwd, sidebarCwdRef }: SidebarTab
     sidebarTabSelection.project === pathKey(sidebarCwd)
       ? sidebarTabSelection.tab
       : loadProjectSidebarTab(sidebarCwd);
-  const setSidebarTab = useCallback((tab: SidebarTabId, project?: string) => {
-    const cwd = project ?? sidebarCwdRef.current;
-    saveProjectSidebarTab(cwd, tab);
-    setSidebarTabSelection({
-      project: pathKey(cwd),
-      tab: tab === "inbox" ? "sessions" : tab,
-    });
-  }, []);
+  const setSidebarTab = useCallback(
+    (tab: SidebarTabId, project?: string) => {
+      const cwd = project ?? sidebarCwdRef.current;
+      saveProjectSidebarTab(cwd, tab);
+      setSidebarTabSelection({
+        project: pathKey(cwd),
+        tab: tab === "inbox" ? "sessions" : tab,
+      });
+    },
+    [sidebarCwdRef],
+  );
 
   return { sidebarTab, setSidebarTabSelection, setSidebarTab };
 }

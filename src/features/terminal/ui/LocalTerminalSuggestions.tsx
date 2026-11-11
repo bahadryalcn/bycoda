@@ -2,7 +2,7 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { Button } from "../../../shared/ui/Button";
-import { t } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { getPtySuggestions } from "../../../platform/tauri/pty";
 import {
   localTerminalCompletion,
@@ -28,6 +28,14 @@ function sameSnapshot(a: Snapshot, b: Snapshot) {
   );
 }
 
+function pasteCompletion(terminal: Terminal, text: string, completing: { current: boolean }) {
+  try {
+    terminal.paste(text);
+  } finally {
+    completing.current = false;
+  }
+}
+
 export function LocalTerminalSuggestions({
   terminal,
   terminalId,
@@ -39,6 +47,7 @@ export function LocalTerminalSuggestions({
   explicit: boolean;
   onClose: () => void;
 }) {
+  const t = useT();
   const [snapshot, setSnapshot] = useState<Snapshot>(null);
   const [selected, setSelected] = useState(0);
   const expandedRef = useRef(explicit);
@@ -78,11 +87,7 @@ export function LocalTerminalSuggestions({
       return;
     dismiss();
     completing.current = true;
-    try {
-      terminal.paste(value.slice(fresh.prefix.length));
-    } finally {
-      completing.current = false;
-    }
+    pasteCompletion(terminal, value.slice(fresh.prefix.length), completing);
     terminal.focus();
   };
   const acceptRef = useRef(accept);

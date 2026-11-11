@@ -86,7 +86,21 @@ export function useAutomationSessionOpeners({
       setRecents(await rememberProject(session.cwd));
       await onSelectHistorySession(sessionId);
     },
-    [ensureOpenSession, onSelectHistorySession, toolWindow],
+    [
+      ensureOpenSession,
+      onSelectHistorySession,
+      toolWindow,
+      setAutomationsViewOpen,
+      setProjectCwd,
+      setServersViewOpen,
+      setSearchViewOpen,
+      setSettingsOpen,
+      setSidebarTab,
+      setNotesViewOpen,
+      setRecents,
+      setFilePickerOpen,
+      setInboxViewOpen,
+    ],
   );
 
   // Host-owned task and automation conversations open in the normal transcript
@@ -180,6 +194,17 @@ export function useAutomationSessionOpeners({
       onSelectRemoteSession,
       promptAddedProjectNames,
       toolWindow,
+      setRecents,
+      setInboxViewOpen,
+      lastPersisted,
+      setServersViewOpen,
+      setSettingsOpen,
+      setNotesViewOpen,
+      setAutomationsViewOpen,
+      setProjectCwd,
+      setSearchViewOpen,
+      setFilePickerOpen,
+      setSidebarTab,
     ],
   );
 

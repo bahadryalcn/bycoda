@@ -1,6 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { useT } from "../../../shared/i18n";
 import { useState, useSyncExternalStore } from "react";
 import { ToastSlot } from "../../../shared/ui/ToastRegion";
@@ -42,10 +42,13 @@ export function ReminderNotices({
   onOpenSettings: () => void;
 }) {
   const t = useT();
+  const projectLabels = useProjectLabels();
   const [snooze, setSnooze] = useState<{
     reminder: SessionReminder;
     x: number;
     y: number;
+    /** The snooze choices with their clock times, fixed when the menu opens. */
+    presets: ReturnType<typeof sessionReminderPresets>;
   } | null>(null);
   const notifications = useSyncExternalStore(subscribeNotifications, loadNotificationsEnabled);
   const visible = reminders.length > 0 || error != null;
@@ -95,7 +98,8 @@ export function ReminderNotices({
                   {sessionDisplayTitle(reminder.title, reminder.harness)}
                 </span>
                 <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
-                  {projectDisplayName(reminder.cwd)} · {formatReminderTime(reminder.dueAt)}
+                  {projectDisplayNameFrom(reminder.cwd, projectLabels)} ·{" "}
+                  {formatReminderTime(reminder.dueAt)}
                 </span>
               </Button>
               <div className="mt-1 flex items-center gap-1">
@@ -109,7 +113,12 @@ export function ReminderNotices({
                   aria-expanded={snooze?.reminder.sessionId === reminder.sessionId}
                   onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
-                    setSnooze({ reminder, x: rect.left, y: rect.bottom + 4 });
+                    setSnooze({
+                      reminder,
+                      x: rect.left,
+                      y: rect.bottom + 4,
+                      presets: sessionReminderPresets(),
+                    });
                   }}
                 >
                   {t("Snooze")}
@@ -147,7 +156,7 @@ export function ReminderNotices({
         <ExplorerMenu
           x={snooze.x}
           y={snooze.y}
-          items={sessionReminderPresets()}
+          items={snooze.presets}
           ariaLabel="Snooze reminder"
           onClose={() => setSnooze(null)}
           onPick={(id) => {

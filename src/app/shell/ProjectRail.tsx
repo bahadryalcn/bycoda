@@ -140,7 +140,8 @@ import {
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
 import {
   remoteOnlyProjectHint,
-  remoteOpenMatch,
+  remoteOpenMatchIn,
+  useRemoteOpenTargets,
 } from "../../features/sync/model/syncRemoteProjects";
 import { LastSessionsSection, type RecentSessionsSource } from "./LastSessionsSection";
 import { DevModeIndicator, TabVisitNav } from "./TitleBar";
@@ -357,7 +358,7 @@ export function ProjectRail({
   const assistantLabel = useAssistantRoomLabel();
   // Read once: the saved width is localStorage, which the compiler cannot see change.
   const [initialRailWidth] = useState(loadProjectRailWidth);
-  const commitRailWidth = useCallback((width: number) => saveProjectRailWidth(width), []);
+  const commitRailWidth = (width: number) => saveProjectRailWidth(width);
   const resize = useDragResize({
     min: railMin,
     max: () => sidePaneMaxWidth("rail", PROJECT_RAIL_WIDTH_MAX, 0.35, railMin),
@@ -451,11 +452,7 @@ export function ProjectRail({
       revealProject(added[added.length - 1]);
     })().catch(() => setGroupMutationError(true));
   };
-  const busy = useMemo(() => {
-    const set = new Set<string>();
-    for (const path of busyPaths ?? []) set.add(path);
-    return set;
-  }, [busyPaths]);
+  const busy = new Set<string>(busyPaths ?? []);
   const allProjects = useMemo(() => collectRailProjects(recents, cwd), [cwd, recents]);
   const projectMenu = useProjectMenu({
     onRenameProjectFolder,
@@ -476,14 +473,10 @@ export function ProjectRail({
   // Projects in a locked group stay in `allProjects` so their saved order and
   // pins survive, but nothing below lists them while the group is locked.
   const { lock, hiddenGroupIds } = useGroupLock();
-  const railProjectKeys = useMemo(
-    () => new Set([...allProjects.keys()].filter((key) => !lock.lockedProjectKeys.has(key))),
-    [allProjects, lock],
+  const railProjectKeys = new Set(
+    [...allProjects.keys()].filter((key) => !lock.lockedProjectKeys.has(key)),
   );
-  const visibleLiveAgents = useMemo(
-    () => liveAgents.filter((agent) => !isProjectLockedIn(lock, agent.cwd)),
-    [liveAgents, lock],
-  );
+  const visibleLiveAgents = liveAgents.filter((agent) => !isProjectLockedIn(lock, agent.cwd));
   const notificationProjects = useNotificationProjects([...allProjects.keys()]);
   // Display names need not be unique; rows that would read the same get a short folder hint.
   const nameCollisions = duplicateProjectNames(
@@ -519,16 +512,12 @@ export function ProjectRail({
         .includes(filterQuery),
     [filterQuery, groupLabels],
   );
-  const pinnedProjects = useMemo(
-    () =>
-      sections.pinned.filter(
-        (item) =>
-          !isProjectLockedIn(lock, item.path) &&
-          !workspaceRootKeys.has(pathKey(item.path)) &&
-          !projectGroupIdForPath(item.path, projectGroupAssignments) &&
-          projectMatches(item.path),
-      ),
-    [lock, sections.pinned, workspaceRootKeys, projectGroupAssignments, projectMatches],
+  const pinnedProjects = sections.pinned.filter(
+    (item) =>
+      !isProjectLockedIn(lock, item.path) &&
+      !workspaceRootKeys.has(pathKey(item.path)) &&
+      !projectGroupIdForPath(item.path, projectGroupAssignments) &&
+      projectMatches(item.path),
   );
   const groupedProjectSections = useMemo(() => {
     const byGroup = new Map<string, RecentProject[]>(projectGroups.map((group) => [group.id, []]));
@@ -1545,7 +1534,8 @@ function RemoteProjectSuggestion({
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
   const t = useT();
-  const match = remoteOpenMatch(project);
+  const openTargets = useRemoteOpenTargets();
+  const match = remoteOpenMatchIn(project, openTargets);
   return (
     <>
       <Button
@@ -1735,7 +1725,7 @@ function ProjectGroupSection({
   const linkStatus = useLinkedGroupStatus(group.id);
   const workspaceRoot = projectGroupWorkspaceRoot(group);
   const workspaceSelected = !!workspaceRoot && !searchActive && sameProjectPath(workspaceRoot, cwd);
-  const localPaths = useMemo(() => items.map((item) => item.path).filter(isLocalProject), [items]);
+  const localPaths = items.map((item) => item.path).filter(isLocalProject);
   // Share card stats, but wait until opening settles before starting subscriptions.
   const groupStats = useProjectsDiffStats(localPaths, statsEnabled && settledOpen);
   const gitSummary = summarizeGroupGit(

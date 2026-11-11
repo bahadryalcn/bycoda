@@ -1,30 +1,36 @@
-import { formatNumber, getLocale, useT } from "../../../shared/i18n";
+import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Surface } from "../../../shared/ui/Surface";
 import { Progress } from "../../../shared/ui/Progress";
 import { candidateKey } from "../import/importModel";
 import type { ImportProgress, ImportSummary } from "../import/importRunner";
 
-export function plural(count: number, one: string, many = `${one}s`): string {
+export function plural(
+  formatNumber: (count: number) => string,
+  count: number,
+  one: string,
+  many = `${one}s`,
+): string {
   return `${formatNumber(count)} ${count === 1 ? one : many}`;
 }
 
 export function RunningView({ progress }: { progress: ImportProgress }) {
   const t = useT();
+  const locale = useLocale();
   const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   return (
     <div className="flex flex-col gap-3 py-6" role="status">
       <p className="text-ui-secondary font-medium">
         {t("Importing ")}
-        {progress.done.toLocaleString(getLocale())}
-        {t(" of")} {progress.total.toLocaleString(getLocale())}…
+        {progress.done.toLocaleString(locale)}
+        {t(" of")} {progress.total.toLocaleString(locale)}…
       </p>
       <Progress compact value={percent} max={100} />
       <p className="truncate text-ui-caption text-(--ui-text-secondary)">
         {progress.current ?? " "}
       </p>
       <p className="text-ui-micro text-(--ui-text-secondary)">
-        {progress.imported.toLocaleString(getLocale())}
+        {progress.imported.toLocaleString(locale)}
         {t(" imported")}
         {progress.skipped > 0 ? t(" · {p0} skipped", { p0: progress.skipped }) : ""}
         {progress.failed.length > 0 ? t(" · {p0} failed", { p0: progress.failed.length }) : ""}
@@ -35,6 +41,7 @@ export function RunningView({ progress }: { progress: ImportProgress }) {
 
 export function DoneView({ summary }: { summary: ImportSummary }) {
   const t = useT();
+  const { formatNumber } = useFormat();
   return (
     <div className="flex flex-col gap-3 py-4">
       <p className="text-ui-body font-medium">
@@ -42,7 +49,7 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
       </p>
       <ul className="flex flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
         <li>
-          {plural(summary.imported, "conversation")}
+          {plural(formatNumber, summary.imported, "conversation")}
           {t(" imported.")}
         </li>
         {summary.skipped > 0 ? (
@@ -55,7 +62,7 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
         ) : null}
         {summary.projects > 0 ? (
           <li>
-            {plural(summary.projects, "folder")}
+            {plural(formatNumber, summary.projects, "folder")}
             {t(" added to the sidebar")}
             {summary.groups.length > 0
               ? t(", grouped as {p0}", { p0: summary.groups.join(", ") })
@@ -85,7 +92,7 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
           className="border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle)"
         >
           <p className="text-(--ui-tone-danger-fg)">
-            {plural(summary.failed.length, "conversation")}
+            {plural(formatNumber, summary.failed.length, "conversation")}
             {t(" could not be imported")}
           </p>
           <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto">

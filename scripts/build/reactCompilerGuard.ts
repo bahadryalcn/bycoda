@@ -38,6 +38,8 @@ const KEEPING_HOOKS = new Set([
   "useRef",
   "useSyncExternalStore",
   "useMemo",
+  // Keyed `useState`: the initializer runs once while no entry exists for the key and its result is kept.
+  "useRetainedState",
 ]);
 
 function hookCall(path: NodePath | null | undefined, hooks: Set<string>) {
@@ -47,6 +49,8 @@ function hookCall(path: NodePath | null | undefined, hooks: Set<string>) {
     hooks.has(path.node.callee.name)
   );
 }
+
+type Binding = NonNullable<ReturnType<NodePath["scope"]["getBinding"]>>;
 
 type Module = {
   file: string;
@@ -154,6 +158,144 @@ function exportTainted(file: string, name: string, seen = new Set<string>()): bo
   return module.stars.some((star) => exportTainted(star, name, seen));
 }
 
+/** Callees whose function arguments run later: promise continuations, timers, frames,
+ * microtasks and event listeners (also `window.` / `globalThis.` qualified). */
+const LATER_CALLEES = new Set([
+  "then",
+  "catch",
+  "finally",
+  "setTimeout",
+  "setInterval",
+  "requestAnimationFrame",
+  "queueMicrotask",
+  "addEventListener",
+]);
+const GLOBAL_OBJECTS = new Set(["window", "globalThis"]);
+const EVENT_NAME = /^on[A-Z]/;
+
+function calleeName(call: t.CallExpression): string {
+  const callee = call.callee;
+  if (t.isIdentifier(callee)) return callee.name;
+  if (t.isMemberExpression(callee) && !callee.computed && t.isIdentifier(callee.property)) {
+    // `then`/`catch`/`finally`/`addEventListener` run their callback later on any receiver;
+    // the global timer functions only when qualified with window/globalThis.
+    const name = callee.property.name;
+    if (
+      name === "then" ||
+      name === "catch" ||
+      name === "finally" ||
+      name === "addEventListener" ||
+      (t.isIdentifier(callee.object) && GLOBAL_OBJECTS.has(callee.object.name))
+    )
+      return name;
+  }
+  return "";
+}
+
+function eventKey(node: t.Node, computed: boolean) {
+  return !computed && t.isIdentifier(node) && EVENT_NAME.test(node.name);
+}
+
+/** Whether `ref` (a reference to a local function) is in a position that only runs it later. */
+function referenceDeferred(ref: NodePath, component: NodePath, visiting: Set<t.Node>): boolean {
+  const holder = ref.parentPath;
+  if (!holder) return false;
+  if (holder.isJSXExpressionContainer() && holder.parentPath?.isJSXAttribute()) {
+    const name = holder.parentPath.node.name;
+    return t.isJSXIdentifier(name) && EVENT_NAME.test(name.name);
+  }
+  if (holder.isObjectProperty() && holder.node.value === ref.node)
+    return eventKey(holder.node.key, holder.node.computed);
+  if (holder.isCallExpression() && holder.node.arguments.includes(ref.node as t.Expression))
+    return LATER_CALLEES.has(calleeName(holder.node));
+  // Used inside another function that itself runs after render.
+  const owner = ref.getFunctionParent();
+  return !!owner && owner.node !== component.node && runsAfterRender(owner, component, visiting);
+}
+
+/** Calls of an async function whose Promise result is handed to React's `use()`. */
+function asyncResultUsed(inner: NodePath<t.Function>, binding: Binding | undefined) {
+  const sites: NodePath[] = [];
+  const parent = inner.parentPath;
+  if (parent?.isCallExpression() && parent.node.callee === inner.node) sites.push(parent);
+  for (const ref of binding?.referencePaths ?? [])
+    if (ref.parentPath?.isCallExpression() && ref.parentPath.node.callee === ref.node)
+      sites.push(ref.parentPath);
+  return sites.some((site) => {
+    const outer = site.parentPath;
+    return (
+      !!outer?.isCallExpression() &&
+      outer.node.arguments.includes(site.node as t.Expression) &&
+      (t.isIdentifier(outer.node.callee, { name: "use" }) ||
+        (t.isMemberExpression(outer.node.callee) &&
+          t.isIdentifier(outer.node.callee.property, { name: "use" })))
+    );
+  });
+}
+
+/**
+ * Whether a function inside `component` runs only after render (or never synchronously
+ * as render output), so a hidden-state read inside it cannot be memoized by the compiler.
+ * When unsure this answers false: a wrong opt-out only costs speed, a wrong release shows
+ * a stale language or clock.
+ */
+function runsAfterRender(
+  inner: NodePath<t.Function>,
+  component: NodePath,
+  visiting = new Set<t.Node>(),
+): boolean {
+  if (visiting.has(inner.node)) return false;
+  visiting.add(inner.node);
+  try {
+    const parent = inner.parentPath;
+    // Callbacks of effect-like hooks.
+    if (parent?.isCallExpression() && t.isIdentifier(parent.node.callee)) {
+      if (DEFERRED_HOOKS.has(parent.node.callee.name) && parent.node.arguments[0] === inner.node)
+        return true;
+    }
+    // Inline functions on JSX event attributes.
+    if (parent?.isJSXExpressionContainer() && parent.parentPath?.isJSXAttribute()) {
+      const name = parent.parentPath.node.name;
+      return t.isJSXIdentifier(name) && EVENT_NAME.test(name.name);
+    }
+    // Callbacks handed to promises, timers, frames, microtasks and listeners.
+    if (
+      parent?.isCallExpression() &&
+      parent.node.arguments.includes(inner.node as t.Expression) &&
+      LATER_CALLEES.has(calleeName(parent.node))
+    )
+      return true;
+    // A function stored under an `onX` object key, as a property or a method.
+    if (inner.isObjectMethod() && eventKey(inner.node.key, inner.node.computed)) return true;
+    if (parent?.isObjectProperty() && parent.node.value === inner.node)
+      if (eventKey(parent.node.key, parent.node.computed)) return true;
+    const name =
+      parent?.isVariableDeclarator() && t.isIdentifier(parent.node.id)
+        ? parent.node.id.name
+        : inner.isFunctionDeclaration()
+          ? inner.node.id?.name
+          : undefined;
+    if (name && /^(on|handle)[A-Z]/.test(name) && !inner.isFunctionDeclaration()) return true;
+    const binding = name ? inner.parentPath?.scope.getBinding(name) : undefined;
+    // An async function: calling it during render only starts it. A component receives a
+    // Promise, never the value, so a hidden read inside cannot become memoized render
+    // output. The one way to unwrap it during render is React's `use(promise)`; keep the
+    // opt-out there. Generators and everything non-async are never released by this rule.
+    if (inner.node.async && !inner.node.generator && !asyncResultUsed(inner, binding)) return true;
+    // A local function whose every reference is in a deferred position.
+    if (
+      binding &&
+      binding.constant &&
+      binding.referencePaths.length > 0 &&
+      binding.referencePaths.every((ref) => referenceDeferred(ref, component, visiting))
+    )
+      return true;
+    return false;
+  } finally {
+    visiting.delete(inner.node);
+  }
+}
+
 /** Reads of hidden state inside `path`, skipping callbacks that run after render. */
 function readsHiddenState(
   file: string,
@@ -163,19 +305,8 @@ function readsHiddenState(
   renderOnly: boolean,
 ): boolean {
   let found = false;
-  const deferred = (inner: NodePath) => {
-    if (!renderOnly || !inner.isFunction()) return false;
-    const parent = inner.parentPath;
-    if (parent?.isCallExpression() && t.isIdentifier(parent.node.callee))
-      return DEFERRED_HOOKS.has(parent.node.callee.name) && parent.node.arguments[0] === inner.node;
-    if (parent?.isJSXExpressionContainer() && parent.parentPath?.isJSXAttribute()) {
-      const name = parent.parentPath.node.name;
-      return t.isJSXIdentifier(name) && /^on[A-Z]/.test(name.name);
-    }
-    if (parent?.isVariableDeclarator() && t.isIdentifier(parent.node.id))
-      return /^(on|handle)[A-Z]/.test(parent.node.id.name);
-    return false;
-  };
+  const deferred = (inner: NodePath) =>
+    renderOnly && inner.isFunction() && runsAfterRender(inner, path);
   path.traverse({
     Function(inner) {
       if (deferred(inner)) inner.skip();

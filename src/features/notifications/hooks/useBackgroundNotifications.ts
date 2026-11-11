@@ -1,6 +1,7 @@
 import { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
 export { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   backgroundMachines,
   listHostAutomations,
@@ -20,6 +21,48 @@ import { loadNotificationsEnabled, notifyBackground } from "../model/notificatio
 
 const POLL_MS = 60_000;
 
+type PollState = { cancelled: boolean; running: boolean; previous: BackgroundSnapshot | null };
+
+async function pollBackground(state: PollState, tasksViewOpen: () => boolean) {
+  if (state.running) return;
+  // Off: nothing to announce, and turning it on starts from a new baseline.
+  if (!loadNotificationsEnabled() || !(await isLeadWindow())) {
+    state.previous = null;
+    return;
+  }
+  state.running = true;
+  try {
+    const watchTasks = !tasksViewOpen();
+    const [taskMachines, automationMachines, goalMachines] = await Promise.all([
+      watchTasks ? backgroundMachines(HOST_TASKS) : [],
+      backgroundMachines(HOST_AUTOMATIONS),
+      watchTasks ? backgroundMachines(HOST_GOALS) : [],
+    ]);
+    const [tasks, automations, goals] = await Promise.all([
+      listBoardTasks(taskMachines),
+      listHostAutomations(automationMachines),
+      listBoardGoals(goalMachines),
+    ]);
+    if (state.cancelled) return;
+    const seen = backgroundSnapshot(tasks, automations, goals);
+    const previous = state.previous;
+    if (previous && !watchTasks) {
+      previous.tasks.clear();
+      previous.goals.clear();
+    }
+    if (previous) {
+      const next = carryForward(previous, seen);
+      for (const transition of backgroundTransitions(previous, next))
+        void notifyBackground(transition);
+      state.previous = next;
+    } else state.previous = seen;
+  } catch {
+    // A machine list that cannot be read is tried again next time.
+  } finally {
+    state.running = false;
+  }
+}
+
 /** Watches every machine's task board, goals and background automations, with
  * or without their views open, and raises an OS notification when one
  * finishes for review, gets blocked, fails, or waits on the owner. The first
@@ -27,55 +70,15 @@ const POLL_MS = 60_000;
 export function useBackgroundNotifications(tasksViewOpen: boolean) {
   // The Tasks view polls the boards itself and shows every change; while it
   // is open the boards are left alone here, and watched afresh once it closes.
-  const tasksViewOpenRef = useRef(tasksViewOpen);
-  tasksViewOpenRef.current = tasksViewOpen;
+  const isTasksViewOpen = useStableCallback(() => tasksViewOpen);
   useEffect(() => {
-    let cancelled = false;
-    let running = false;
-    let previous: BackgroundSnapshot | null = null;
-    const poll = async () => {
-      if (running) return;
-      // Off: nothing to announce, and turning it on starts from a new baseline.
-      if (!loadNotificationsEnabled() || !(await isLeadWindow())) {
-        previous = null;
-        return;
-      }
-      running = true;
-      try {
-        const watchTasks = !tasksViewOpenRef.current;
-        const [taskMachines, automationMachines, goalMachines] = await Promise.all([
-          watchTasks ? backgroundMachines(HOST_TASKS) : [],
-          backgroundMachines(HOST_AUTOMATIONS),
-          watchTasks ? backgroundMachines(HOST_GOALS) : [],
-        ]);
-        const [tasks, automations, goals] = await Promise.all([
-          listBoardTasks(taskMachines),
-          listHostAutomations(automationMachines),
-          listBoardGoals(goalMachines),
-        ]);
-        if (cancelled) return;
-        const seen = backgroundSnapshot(tasks, automations, goals);
-        if (previous && !watchTasks) {
-          previous.tasks.clear();
-          previous.goals.clear();
-        }
-        if (previous) {
-          const next = carryForward(previous, seen);
-          for (const transition of backgroundTransitions(previous, next))
-            void notifyBackground(transition);
-          previous = next;
-        } else previous = seen;
-      } catch {
-        // A machine list that cannot be read is tried again next time.
-      } finally {
-        running = false;
-      }
-    };
+    const state: PollState = { cancelled: false, running: false, previous: null };
+    const poll = () => pollBackground(state, isTasksViewOpen);
     void poll();
     const timer = setInterval(() => void poll(), POLL_MS);
     return () => {
-      cancelled = true;
+      state.cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [isTasksViewOpen]);
 }

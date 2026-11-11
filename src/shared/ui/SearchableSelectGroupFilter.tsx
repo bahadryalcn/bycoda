@@ -1,12 +1,14 @@
-import { useMemo } from "react";
-import { t } from "../i18n";
+import { useT, type t as Translate } from "../i18n";
 import { SegmentedControl } from "./SegmentedControl";
 import type { SearchableSelectOption } from "./SearchableSelect";
 
 export const ALL_GROUPS = "";
 
 /** "All" plus one entry per distinct `group`, in option order; empty when fewer than two groups exist. */
-export function groupFilterSegments(options: readonly SearchableSelectOption[]) {
+export function groupFilterSegments(
+  options: readonly SearchableSelectOption[],
+  t: typeof Translate,
+) {
   const counts = new Map<string, number>();
   for (const option of options) {
     if (option.group) counts.set(option.group, (counts.get(option.group) ?? 0) + 1);
@@ -39,7 +41,8 @@ export function SearchableSelectGroupFilter({
   value: string;
   onChange: (group: string) => void;
 }) {
-  const segments = useMemo(() => groupFilterSegments(options), [options]);
+  const t = useT();
+  const segments = groupFilterSegments(options, t);
   if (segments.length === 0) return null;
   return (
     <div

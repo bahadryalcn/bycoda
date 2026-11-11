@@ -10,11 +10,11 @@ import {
 } from "../../providers/model/accountUsage";
 import {
   DEFAULT_PROVIDER_ACCOUNT_ID,
-  providerAccountLabel,
-  providerAccounts,
+  providerAccountLabelIn,
   subscribeProviderAccounts,
   type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
+import { useProviderAccounts } from "../../providers/public/useProviderAccounts";
 import { AccountColorDot } from "../../providers/ui/AccountColorDot";
 import { useModelSource } from "./modelSource";
 
@@ -42,10 +42,10 @@ export function ProviderAccountMenu({
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const trigger = useRef<HTMLButtonElement>(null);
+  const storedAccounts = useProviderAccounts(source.accounts === undefined ? provider : null);
   useEffect(() => subscribeProviderAccounts(() => setVersion((value) => value + 1)), []);
-  const localAccounts = source.accounts === undefined ? providerAccounts(provider) : [];
   const accounts =
-    source.accounts === undefined ? localAccounts : (source.accounts[provider] ?? []);
+    source.accounts === undefined ? storedAccounts : (source.accounts[provider] ?? []);
   const usage = useProviderAccountUsage(version, {
     provider,
     enabled: source.accounts === undefined && open && accounts.length > 1,
@@ -60,7 +60,7 @@ export function ProviderAccountMenu({
 
   const label =
     source.accounts === undefined
-      ? providerAccountLabel(provider, accountId)
+      ? providerAccountLabelIn(storedAccounts, accountId, t)
       : (accounts.find((account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID))
           ?.label ?? t("Unavailable Host account"));
   const current = accounts.find(
@@ -86,8 +86,8 @@ export function ProviderAccountMenu({
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setOpen((value) => !value)}
       >
-        {current && localAccounts.find((account) => account.id === current.id) ? (
-          <AccountColorDot account={localAccounts.find((account) => account.id === current.id)!} />
+        {current && storedAccounts.find((account) => account.id === current.id) ? (
+          <AccountColorDot account={storedAccounts.find((account) => account.id === current.id)!} />
         ) : null}
         <span className={variant === "pill" ? "min-w-0 truncate text-ui-micro" : ""}>
           {variant === "pill" ? label : t("Switch account")}
@@ -106,7 +106,7 @@ export function ProviderAccountMenu({
           label={variant === "pill" ? t("Account") : t("Continue with another account")}
           data-model-control
           items={accounts.map((account) => {
-            const local = localAccounts.find((entry) => entry.id === account.id);
+            const local = storedAccounts.find((entry) => entry.id === account.id);
             const status = local
               ? accountStatus(usage.usage[accountUsageKey(local)], usage.now)
               : undefined;

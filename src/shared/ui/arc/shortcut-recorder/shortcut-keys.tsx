@@ -2,7 +2,8 @@
 
 import { forwardRef } from "react";
 import type { HTMLAttributes, ReactNode } from "react";
-import { formatShortcutLabel, usePlatform, type Platform } from "../../shortcut";
+import { useT } from "../../../i18n";
+import { formatShortcutLabelWith, usePlatform, type Platform } from "../../shortcut";
 import styles from "./shortcut-recorder.module.css";
 
 /* ================================================================================================
@@ -60,8 +61,9 @@ export function ShortcutKeys({
   size = "md",
   className,
 }: ShortcutKeysProps) {
+  const t = useT();
   const platform = usePlatform(platformProp);
-  const { alternatives, spoken } = formatShortcutLabel(shortcut, platform);
+  const { alternatives, spoken } = formatShortcutLabelWith(shortcut, platform, t);
   return (
     <span
       className={[styles.keys, className].filter(Boolean).join(" ")}

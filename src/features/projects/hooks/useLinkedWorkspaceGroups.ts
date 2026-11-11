@@ -1,5 +1,6 @@
 import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { message } from "@tauri-apps/plugin-dialog";
 import { listDir, readTextFile } from "../../../platform/tauri/fs";
 import { pathKey } from "../../../shared/lib/paths";
@@ -126,14 +127,13 @@ export async function syncLinkedGroup(groupId: string, onProjectsAdded: () => vo
  * while the app was closed are picked up on startup.
  */
 export function useLinkedWorkspaceGroups(onProjectsAdded: () => void): void {
-  const addedRef = useRef(onProjectsAdded);
-  addedRef.current = onProjectsAdded;
+  const projectsAdded = useStableCallback(onProjectsAdded);
 
   useEffect(() => {
     // file path -> stop watching, for every group that is currently linked.
     const watchers = new Map<string, () => void>();
     const sync = (groupId: string) =>
-      void syncLinkedGroup(groupId, () => addedRef.current()).catch(() => {
+      void syncLinkedGroup(groupId, projectsAdded).catch(() => {
         /* the next change or refresh retries */
       });
 
@@ -177,5 +177,5 @@ export function useLinkedWorkspaceGroups(onProjectsAdded: () => void): void {
       for (const stop of watchers.values()) stop();
       watchers.clear();
     };
-  }, []);
+  }, [projectsAdded]);
 }

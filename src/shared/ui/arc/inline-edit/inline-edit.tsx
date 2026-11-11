@@ -218,6 +218,26 @@ type CaretDocument = Document & {
   caretRangeFromPoint?: (x: number, y: number) => Range | null;
 };
 
+/** Applies a retired outcome inside the work scope, then always settles the pending outcome. */
+function applyThenDone(
+  original: (callback: () => void) => void,
+  apply: () => void,
+  done: () => void,
+) {
+  try {
+    original(apply);
+  } finally {
+    done();
+  }
+}
+
+function validationProblem(
+  validate: ((next: string) => string | null | undefined) | undefined,
+  next: string,
+) {
+  return validate?.(next) || null;
+}
+
 export function InlineEdit(props: InlineEditProps) {
   return <InlineEditControl key={nativeInputControlKey(props.inputObserver)} {...props} />;
 }
@@ -549,13 +569,7 @@ function InlineEditControl({
     const record: NonNullable<typeof awaitingOutcome.current> = {
       port,
       view,
-      retire: () => {
-        try {
-          original(() => port.retiredOutcome(retired()));
-        } finally {
-          done();
-        }
-      },
+      retire: () => applyThenDone(original, () => port.retiredOutcome(retired()), done),
     };
     awaitingOutcome.current = record;
     try {
@@ -606,7 +620,7 @@ function InlineEditControl({
     const next = clean(draft);
     let problem: string | null;
     try {
-      problem = validate?.(next) || null;
+      problem = validationProblem(validate, next);
     } catch (error) {
       finish();
       throw error;

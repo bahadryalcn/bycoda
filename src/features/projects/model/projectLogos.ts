@@ -73,7 +73,12 @@ export async function clearProjectLogo(project: string): Promise<void> {
   notifyTabGroupLogosChanged();
 }
 
-export function projectLogoSrc(path: string | null | undefined): string | null {
+/** The logo URL for a given display revision, so a component can pass the revision it subscribes to. */
+export function projectLogoSrcAt(path: string | null | undefined, revision: number): string | null {
   if (!path) return null;
-  return `${convertFileSrc(path)}?v=${tabGroupLogoDisplayRevision()}`;
+  return `${convertFileSrc(path)}?v=${revision}`;
+}
+
+export function projectLogoSrc(path: string | null | undefined): string | null {
+  return projectLogoSrcAt(path, tabGroupLogoDisplayRevision());
 }

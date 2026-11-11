@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { skillTextParts } from "../../skills/model/skills";
 import type { HarnessId } from "../model/session";
 import { useComposerSkills } from "./useComposerSkills";
@@ -24,10 +24,8 @@ export function TranscriptSkills({
     sessionId,
     pickerOpen: false,
   });
-  const names = useMemo(
-    () =>
-      new Set(skills.filter((skill) => skill.kind !== "template").map((skill) => skill.invocation)),
-    [skills],
+  const names = new Set(
+    skills.filter((skill) => skill.kind !== "template").map((skill) => skill.invocation),
   );
   return <TranscriptSkillNames value={names}>{children}</TranscriptSkillNames>;
 }

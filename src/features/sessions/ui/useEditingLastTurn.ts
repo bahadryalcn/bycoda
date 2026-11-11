@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
 /**
  * Whether the earlier turn is being edited and resent. One owner holds it: the
@@ -16,10 +16,7 @@ export function useEditingLastTurn(
     current = { sessionId, supported, editing: false };
     setState(current);
   }
-  const setEditing = useCallback(
-    (editing: boolean) =>
-      setState((previous) => (previous.editing === editing ? previous : { ...previous, editing })),
-    [],
-  );
+  const setEditing = (editing: boolean) =>
+    setState((previous) => (previous.editing === editing ? previous : { ...previous, editing }));
   return [current.editing, setEditing];
 }

@@ -5,7 +5,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Plus } from "../../../shared/ui/icons";
-import { t, useT } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { CUSTOM_OPTION_ID, isOtherOption, type UserQuestion } from "../model/userQuestion";
 import styles from "./QuestionForm.module.css";
 import type { QuestionDraft } from "../model/questionDrafts";
@@ -49,7 +49,7 @@ export function QuestionFields({
   locked?: boolean;
 }) {
   const t = useT();
-  const options = displayOptions(question);
+  const options = displayOptions(question, t("Other"));
   const customSelected = selected.some((id) => isCustomId(question, id));
   const [highlighted, setHighlighted] = useState(() => {
     const selectedIndex = options.findIndex((option) => selected.includes(option.id));
@@ -255,7 +255,7 @@ export function QuestionFields({
   );
 }
 
-function displayOptions(question: UserQuestion): UserQuestion["options"] {
+function displayOptions(question: UserQuestion, otherLabel: string): UserQuestion["options"] {
   if (question.options.length === 0) return question.options;
   if (question.options.some(isOtherOption) || !question.allowCustom) {
     return question.options;
@@ -264,9 +264,7 @@ function displayOptions(question: UserQuestion): UserQuestion["options"] {
     ...question.options,
     {
       id: CUSTOM_OPTION_ID,
-      get label() {
-        return t("Other");
-      },
+      label: otherLabel,
     },
   ];
 }

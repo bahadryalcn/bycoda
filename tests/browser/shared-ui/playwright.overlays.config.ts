@@ -22,7 +22,7 @@ export default defineConfig({
   webServer: {
     command: "node tests/browser/shared-ui/serve-overlays.mjs",
     cwd: "../../..",
-    url: `http://127.0.0.1:${fixture.port}/tests/browser/overlay-${fixture.names[0]}.html`,
+    url: `http://127.0.0.1:${fixture.port}/tests/browser/shared-ui/overlay-${fixture.names[0]}.html`,
     reuseExistingServer: false,
     timeout: 180000,
   },

@@ -7,6 +7,7 @@ import { DeliveryProgressNotice, DeliveryProgressIndicator } from "./DeliveryPro
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
 import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
+import type { MountedComposerAction } from "../data/composerClosure";
 import {
   retainParentInput,
   useParentInputClosure,
@@ -198,7 +199,7 @@ import {
   subscribeNotesEnabled,
 } from "../../settings/public/settings";
 import { isNoteMentionPath, type NoteComposerCard } from "../../notes";
-import { resolveTabGroupLogo } from "../../workspace/model/tabGroups";
+import { useResolvedTabGroupLogo } from "../../workspace/model/tabGroups";
 import { UsageLimitNotice } from "./UsageLimitNotice";
 import {
   supportsProviderAccounts,
@@ -441,6 +442,67 @@ type Props = {
   remoteOrigin?: "running" | "idle";
   children?: ReactNode;
 };
+type SubmissionRun = {
+  admitted: ParentAdmission;
+  rawAction: MountedComposerAction;
+  parentChanged: ParentInputHandle;
+  originalIdentity: unknown;
+  intent: number;
+  generation: number;
+  token: symbol;
+  value: string;
+  queue: boolean;
+  pasteFlightRef: { current: Promise<void> | null };
+  pasteGenerationRef: { current: number };
+  sendIntentRef: { current: number };
+  submitLockRef: { current: symbol | null };
+  submitInputRef: { current: { text: string; queue: boolean } | null };
+  submitContinuationRef: {
+    current: ((value: string, queue: boolean, original: ParentAdmission) => void) | null;
+  };
+  setPasteError: (value: string | null | ((current: string | null) => string | null)) => void;
+  setSubmission: (value: null) => void;
+  t: (key: string) => string;
+};
+
+/** Waits out the in-flight paste, then hands the draft to the send continuation and releases the lock. */
+async function awaitSubmission(run: SubmissionRun): Promise<void> {
+  const { admitted, rawAction, parentChanged, originalIdentity, intent, generation, token } = run;
+  try {
+    let pending = run.pasteFlightRef.current;
+    while (pending) {
+      await pending;
+      // Check the original owner before reading refs that a reused view may
+      // already have assigned to a different logical session.
+      if (parentChanged.identity() !== originalIdentity) return;
+      if (run.pasteGenerationRef.current !== generation || run.sendIntentRef.current !== intent) {
+        // A failed read already explains itself; keep that message.
+        run.setPasteError(
+          (current) =>
+            current ?? run.t("The draft changed while it was being prepared. Send it again."),
+        );
+        return;
+      }
+      pending = run.pasteFlightRef.current;
+    }
+    if (parentChanged.identity() !== originalIdentity) return;
+    admitted.apply(() =>
+      rawAction.apply(() => run.submitContinuationRef.current?.(run.value, run.queue, admitted)),
+    );
+  } catch (error) {
+    if (parentChanged.identity() === originalIdentity)
+      run.setPasteError(error instanceof Error ? error.message : String(error));
+  } finally {
+    rawAction.finish();
+    if (parentChanged.identity() === originalIdentity && run.submitLockRef.current === token) {
+      run.submitLockRef.current = null;
+      run.submitInputRef.current = null;
+      parentChanged();
+      run.setSubmission(null);
+    }
+  }
+}
+
 export const Composer = memo(function Composer({
   enabled = true,
   focused,
@@ -549,7 +611,6 @@ export const Composer = memo(function Composer({
   remoteOrigin,
   children,
 }: Props) {
-  "use memo";
   const t = useT();
   const logicalParentSessionId =
     parentSessionId === null ? undefined : (parentSessionId ?? sessionId);
@@ -813,9 +874,8 @@ export const Composer = memo(function Composer({
   const [sessionFolderPending, setSessionFolderPending] = useState(false);
   const [sessionFolderSaving, setSessionFolderSaving] = useState(false);
   const sessionFolderLoading = useRef(false);
-  const sessionFolderMutationBlocked = useRef(false);
-  const sessionFolderCwd = useRef(cwd);
-  sessionFolderCwd.current = cwd;
+  const [sessionFolderMutationBlocked, setSessionFolderMutationBlocked] = useState(false);
+  const latestCwd = useStableCallback(() => cwd);
   const [sessionFolderSelected, setSessionFolderSelected] = useState(false);
   // The folder choice belongs to one working directory.
   const [folderScopeCwd, setFolderScopeCwd] = useState(cwd);
@@ -856,6 +916,20 @@ export const Composer = memo(function Composer({
     },
     [canMutateDraft],
   );
+  // Named handle*: runs when the closure gate reopens, never during render.
+  const handleReopened = () => {
+    const text = ref.current?.value ?? draftTextRef.current;
+    publishDraft(text);
+    if (sessionId)
+      mountedClosureRef.current?.publishCache(() =>
+        setComposerDraftSnapshot(sessionId, {
+          text: withChatCitations(text, citationsRef.current),
+          attachments: attachmentsRef.current,
+          mcpTags: selectedMcpRef.current,
+          ...(draftModeRef.current ? { mode: "save" as const } : {}),
+        }),
+      );
+  };
   const mountedClosure = useMountedComposerClosure({
     sessionId,
     input: ref,
@@ -865,19 +939,7 @@ export const Composer = memo(function Composer({
       mcpTags: selectedMcpRef.current,
       ...(draftModeRef.current ? { mode: "save" as const } : {}),
     }),
-    reopened: () => {
-      const text = ref.current?.value ?? draftTextRef.current;
-      publishDraft(text);
-      if (sessionId)
-        mountedClosureRef.current?.publishCache(() =>
-          setComposerDraftSnapshot(sessionId, {
-            text: withChatCitations(text, citationsRef.current),
-            attachments: attachmentsRef.current,
-            mcpTags: selectedMcpRef.current,
-            ...(draftModeRef.current ? { mode: "save" as const } : {}),
-          }),
-        );
-    },
+    reopened: handleReopened,
   });
   useLayoutEffect(() => {
     mountedClosureRef.current = mountedClosure;
@@ -925,7 +987,7 @@ export const Composer = memo(function Composer({
     [editingLastTurn, onEditingLastTurnChange, setLocalResendEdited],
   );
   const groupLogos = useTabGroupLogos();
-  const projectLogoPath = resolveTabGroupLogo(projectKey(cwd), groupLogos);
+  const projectLogoPath = useResolvedTabGroupLogo(projectKey(cwd), groupLogos);
   useLayoutEffect(() => {
     slashRef.current = slash;
     mentionRef.current = mention;
@@ -1109,7 +1171,7 @@ export const Composer = memo(function Composer({
       syncHasText(ref.current?.value ?? "");
       ref.current?.focus();
     },
-    [harness, insertIntoDraft, syncHasText],
+    [canMutateDraft, harness, insertIntoDraft, syncHasText],
   );
 
   useComposerRegistrations({
@@ -1136,7 +1198,7 @@ export const Composer = memo(function Composer({
       insertIntoDraft(attachmentTokens(attachmentsRef.current)[index]);
       ref.current?.focus();
     },
-    [insertIntoDraft],
+    [canMutateDraft, insertIntoDraft],
   );
 
   const removeAttachment = useCallback(
@@ -1173,7 +1235,7 @@ export const Composer = memo(function Composer({
       syncHasText(ref.current?.value ?? "");
       ref.current?.focus();
     },
-    [syncHasText],
+    [canMutateDraft, syncHasText],
   );
   // IPC listener registration is asynchronous; changing providers must not
   // detach it or leave it reading obsolete capabilities and callbacks.
@@ -1422,12 +1484,12 @@ export const Composer = memo(function Composer({
       setSessionFolderError(null);
       void hydrateSessionOrganization()
         .then((state) => {
-          if (sessionFolderCwd.current !== cwd) return;
+          if (latestCwd() !== cwd) return;
           setSessionFolders(organizationFoldersForProject(state, cwd));
           setSessionFolderOpen(true);
         })
         .catch((error: unknown) => {
-          if (sessionFolderCwd.current === cwd) setSessionFolderError(String(error));
+          if (latestCwd() === cwd) setSessionFolderError(String(error));
         })
         .finally(() => {
           sessionFolderLoading.current = false;
@@ -1437,7 +1499,7 @@ export const Composer = memo(function Composer({
     }
     setSessionFolders(loadSessionFolders(cwd));
     setSessionFolderOpen(true);
-  }, [cwd]);
+  }, [cwd, latestCwd]);
 
   useEffect(() => {
     if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !sessionFolderOpen) return;
@@ -1724,7 +1786,7 @@ export const Composer = memo(function Composer({
     setSelectedMcp([]);
     syncHasText("");
     ref.current?.focus();
-  }, [clearComposer, setResendEdited, syncHasText]);
+  }, [canMutateDraft, clearComposer, setResendEdited, setSelectedMcp, syncHasText]);
 
   const recallLastTurn = useCallback(() => {
     if (!canMutateDraft()) return;
@@ -1744,6 +1806,7 @@ export const Composer = memo(function Composer({
     );
     setResendEdited(true);
   }, [
+    canMutateDraft,
     editLastTurnSupported,
     onRecallLastTurn,
     exitEditMode,
@@ -1902,41 +1965,28 @@ export const Composer = memo(function Composer({
     parentChanged();
     submitLockRef.current = token;
     setSubmission({ sessionId, action: queue ? "queue" : "send" });
-    void admitted.run(async () => {
-      try {
-        let pending = pasteFlightRef.current;
-        while (pending) {
-          await pending;
-          // Check the original owner before reading refs that a reused view may
-          // already have assigned to a different logical session.
-          if (parentChanged.identity() !== originalIdentity) return;
-          if (pasteGenerationRef.current !== generation || sendIntentRef.current !== intent) {
-            // A failed read already explains itself; keep that message.
-            setPasteError(
-              (current) =>
-                current ?? t("The draft changed while it was being prepared. Send it again."),
-            );
-            return;
-          }
-          pending = pasteFlightRef.current;
-        }
-        if (parentChanged.identity() !== originalIdentity) return;
-        admitted.apply(() =>
-          rawAction.apply(() => submitContinuationRef.current?.(value, queue, admitted)),
-        );
-      } catch (error) {
-        if (parentChanged.identity() === originalIdentity)
-          setPasteError(error instanceof Error ? error.message : String(error));
-      } finally {
-        rawAction.finish();
-        if (parentChanged.identity() === originalIdentity && submitLockRef.current === token) {
-          submitLockRef.current = null;
-          submitInputRef.current = null;
-          parentChanged();
-          setSubmission(null);
-        }
-      }
-    });
+    void admitted.run(() =>
+      awaitSubmission({
+        admitted,
+        rawAction,
+        parentChanged,
+        originalIdentity,
+        intent,
+        generation,
+        token,
+        value,
+        queue,
+        pasteFlightRef,
+        pasteGenerationRef,
+        sendIntentRef,
+        submitLockRef,
+        submitInputRef,
+        submitContinuationRef,
+        setPasteError,
+        setSubmission,
+        t,
+      }),
+    );
   };
   const completeSubmit = (submittedValue: string, queue = false, original?: ParentAdmission) => {
     const value = ref.current?.value ?? submittedValue;
@@ -3073,7 +3123,7 @@ export const Composer = memo(function Composer({
                 if (
                   !canMutateDraft() ||
                   sessionFolderLoading.current ||
-                  sessionFolderMutationBlocked.current
+                  sessionFolderMutationBlocked
                 )
                   return;
                 sessionFolderLoading.current = true;
@@ -3084,7 +3134,7 @@ export const Composer = memo(function Composer({
                   const result = await onPlaceInFolder?.(target);
                   if (result === false) return;
                   if (result && result.state === "unknown") {
-                    sessionFolderMutationBlocked.current = true;
+                    setSessionFolderMutationBlocked(true);
                     setSessionFolderError(
                       t("Folder change outcome is unknown: {p0}", { p0: result.operationId }),
                     );
@@ -3095,7 +3145,7 @@ export const Composer = memo(function Composer({
                     return;
                   }
                   if (result && result.state === "applied-unavailable") {
-                    sessionFolderMutationBlocked.current = true;
+                    setSessionFolderMutationBlocked(true);
                     setSessionFolderError(
                       t("Folder change was applied, but refresh failed: {p0}", {
                         p0: result.operationId,
@@ -3174,11 +3224,13 @@ export const Composer = memo(function Composer({
                     void accepted.whenSettled?.().then(attempt.finish, attempt.finish);
                     // A successful file creation is never repeated merely because
                     // its later mounted capture/Native draft ACK needs retry.
-                    createdPath ??= await createBlankSkill({
-                      cwd: executionCwd,
-                      name,
-                      scope,
-                    });
+                    if (createdPath == null) {
+                      createdPath = await createBlankSkill({
+                        cwd: executionCwd,
+                        name,
+                        scope,
+                      });
+                    }
                     const path = createdPath;
                     attempt.apply(() =>
                       accepted.apply(() => {
@@ -3282,14 +3334,14 @@ export const Composer = memo(function Composer({
             <Alert
               tone="danger"
               action={
-                sessionFolderMutationBlocked.current ? (
+                sessionFolderMutationBlocked ? (
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => {
                       void recheckSessionFolderState()
                         .then((message) => {
-                          if (!message) sessionFolderMutationBlocked.current = false;
+                          if (!message) setSessionFolderMutationBlocked(false);
                           setSessionFolderError(message);
                         })
                         .catch((error: unknown) => setSessionFolderError(String(error)));

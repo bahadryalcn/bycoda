@@ -11,6 +11,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { withSlowStartupNotice } from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   ProviderRetirementError,
@@ -288,7 +289,9 @@ export async function sendOpenCodeTurn(input: SendTurnInput): Promise<void> {
         if (program) return sendGenericAcpTurn(input, program);
         let live: Live;
         try {
-          live = await ensureLive(input, hostRun, hostControlRun);
+          live = await withSlowStartupNotice(input.onEvent, "OpenCode", () =>
+            ensureLive(input, hostRun, hostControlRun),
+          );
         } catch (error) {
           cancelledThreads.delete(input.sessionId);
           throw error;

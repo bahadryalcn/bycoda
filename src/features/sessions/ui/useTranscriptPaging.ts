@@ -12,12 +12,13 @@ import { flushSync } from "react-dom";
 import type { Block } from "../model/session";
 import { pinToBottom, syncTranscriptViewport } from "./transcriptScroll";
 import { TranscriptRetentionContext } from "./TranscriptPool";
+import { useReleasedTail } from "./useReleasedTail";
 
 const INITIAL_TURNS = 20;
 const FIRST_PAINT_TURNS = 3;
 const TURN_PAGE_SIZE = 20;
 export const MAX_TRANSCRIPT_WINDOW_TURNS = 60;
-type Window = { firstId?: string; offset: number; count: number; tail: boolean };
+export type Window = { firstId?: string; offset: number; count: number; tail: boolean };
 type Anchor = { id?: string; offset: number; edge: "start" | "end" };
 type Options = {
   turns: Block[][];
@@ -32,15 +33,43 @@ type Options = {
   onRevealReady?: (reveal: ((blockId: string) => boolean) | null) => void;
 };
 
+/** The remote history request and what must run however it ends; kept out of the hook for the compiler. */
+async function runRemoteLoad({
+  load,
+  stale,
+  apply,
+  loadingRef,
+  setPagingLoading,
+  setPagingError,
+}: {
+  load: () => Promise<number | void> | void;
+  stale: () => boolean;
+  apply: () => void;
+  loadingRef: { current: boolean };
+  setPagingLoading: (loading: boolean) => void;
+  setPagingError: (error: string | null) => void;
+}): Promise<void> {
+  try {
+    await load();
+    if (stale()) return;
+    apply();
+  } catch (error) {
+    setPagingError(error instanceof Error ? error.message : String(error));
+  } finally {
+    loadingRef.current = false;
+    setPagingLoading(false);
+  }
+}
+
 /** Bounded settled-history window. Model history remains reachable in both directions. */
 export function useTranscriptPaging({
   turns,
   blockCount,
   openWork,
-  scroller,
-  stickToBottom,
-  distanceFromBottom,
-  prependHeight,
+  scroller: scrollerRef,
+  stickToBottom: stickToBottomRef,
+  distanceFromBottom: distanceFromBottomRef,
+  prependHeight: prependHeightRef,
   remoteHistoryHasMore,
   onLoadRemoteHistory,
   onRevealReady,
@@ -64,22 +93,8 @@ export function useTranscriptPaging({
     };
   });
   const previous = useRef<{ firstId?: string; lastId?: string; count: number } | null>(null);
-  let selected = window;
   const lastId = turns[turns.length - 1]?.[0]?.id;
-  if (
-    window.tail &&
-    !stickToBottom.current &&
-    previous.current?.lastId &&
-    previous.current.lastId !== lastId
-  ) {
-    selected = {
-      firstId: previous.current.firstId,
-      offset: 0,
-      count: previous.current.count,
-      tail: false,
-    };
-    setWindow(selected);
-  }
+  const selected = useReleasedTail(window, setWindow, lastId, stickToBottomRef, previous);
   const count = Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, selected.count);
   const located = selected.firstId
     ? turns.findIndex((turn) => turn[0]?.id === selected.firstId)
@@ -112,7 +127,7 @@ export function useTranscriptPaging({
 
   const captureAnchor = useCallback(
     (edge: Anchor["edge"]) => {
-      const el = scroller.current;
+      const el = scrollerRef.current;
       const top = el?.getBoundingClientRect().top ?? 0;
       const node =
         el &&
@@ -124,14 +139,14 @@ export function useTranscriptPaging({
         offset: node ? node.getBoundingClientRect().top - top : 0,
         edge,
       };
-      prependHeight.current = null;
-      stickToBottom.current = false;
+      prependHeightRef.current = null;
+      stickToBottomRef.current = false;
     },
-    [scroller, prependHeight, stickToBottom],
+    [scrollerRef, prependHeightRef, stickToBottomRef],
   );
 
   useLayoutEffect(() => {
-    const el = scroller.current;
+    const el = scrollerRef.current;
     if (!el) return;
     const anchor = anchorRef.current;
     if (anchor) {
@@ -144,21 +159,28 @@ export function useTranscriptPaging({
         el.scrollTop +=
           node.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset;
       else el.scrollTop = anchor.edge === "end" ? el.scrollHeight - el.clientHeight : 0;
-      distanceFromBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight;
+      distanceFromBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight;
       return;
     }
     const firstBlockId = previous.current?.firstId;
     const prepended = firstBlockRef.current !== firstBlockId;
     firstBlockRef.current = firstBlockId;
-    if (stickToBottom.current) {
+    if (stickToBottomRef.current) {
       syncTranscriptViewport(el);
       pinToBottom(el);
     } else if (prepended)
-      el.scrollTop = el.scrollHeight - el.clientHeight - distanceFromBottom.current;
-  }, [firstVisibleTurn, lastVisibleTurn, blockCount, scroller, stickToBottom, distanceFromBottom]);
+      el.scrollTop = el.scrollHeight - el.clientHeight - distanceFromBottomRef.current;
+  }, [
+    firstVisibleTurn,
+    lastVisibleTurn,
+    blockCount,
+    scrollerRef,
+    stickToBottomRef,
+    distanceFromBottomRef,
+  ]);
 
   useLayoutEffect(() => {
-    const el = scroller.current;
+    const el = scrollerRef.current;
     if (
       !selected.tail ||
       !el ||
@@ -171,7 +193,7 @@ export function useTranscriptPaging({
       ...current,
       count: Math.min(INITIAL_TURNS, current.count + FIRST_PAINT_TURNS),
     }));
-  }, [count, selected.tail, turns.length, scroller]);
+  }, [count, selected.tail, turns.length, scrollerRef]);
   useEffect(() => {
     startTransition(() =>
       setWindow((current) => ({ ...current, count: Math.max(current.count, INITIAL_TURNS) })),
@@ -205,23 +227,23 @@ export function useTranscriptPaging({
     setPagingError(null);
     const firstId = turnsRef.current[0]?.[0]?.id;
     const requestedNavigation = navigationRef.current;
-    try {
-      await onLoadRemoteHistory();
-      if (navigationRef.current !== requestedNavigation) return;
-      navigationRef.current++;
-      captureAnchor("start");
-      setWindow({
-        firstId,
-        offset: -TURN_PAGE_SIZE,
-        count: Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, range.count + TURN_PAGE_SIZE),
-        tail: false,
-      });
-    } catch (error) {
-      setPagingError(error instanceof Error ? error.message : String(error));
-    } finally {
-      loadingRef.current = false;
-      setPagingLoading(false);
-    }
+    await runRemoteLoad({
+      load: onLoadRemoteHistory,
+      stale: () => navigationRef.current !== requestedNavigation,
+      apply: () => {
+        navigationRef.current++;
+        captureAnchor("start");
+        setWindow({
+          firstId,
+          offset: -TURN_PAGE_SIZE,
+          count: Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, range.count + TURN_PAGE_SIZE),
+          tail: false,
+        });
+      },
+      loadingRef,
+      setPagingLoading,
+      setPagingError,
+    });
   }, [captureAnchor, moveWindow, remoteHistoryHasMore, onLoadRemoteHistory]);
   const loadNewer = useCallback(() => {
     const range = rangeRef.current;
@@ -234,10 +256,10 @@ export function useTranscriptPaging({
   const jumpLatest = useCallback(() => {
     navigationRef.current++;
     anchorRef.current = null;
-    prependHeight.current = null;
-    stickToBottom.current = true;
+    prependHeightRef.current = null;
+    stickToBottomRef.current = true;
     flushSync(() => setWindow({ offset: 0, count: INITIAL_TURNS, tail: true }));
-  }, [prependHeight, stickToBottom]);
+  }, [prependHeightRef, stickToBottomRef]);
   const revealBlock = useCallback(
     (blockId: string): boolean => {
       const all = turnsRef.current;

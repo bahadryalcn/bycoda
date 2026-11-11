@@ -8,13 +8,13 @@ import {
   subscribeTranscriptJump,
 } from "../model/transcriptJump";
 import { HarnessIcon } from "./HarnessIcon";
-import { findModel } from "../model/models";
+import { findModel, subscribeModels } from "../model/models";
 import { usePaneSession } from "../model/sessionsStore";
 import { PresentationVisibility } from "./presentationVisibility";
 import { HARNESS_TITLE, sessionDisplayTitle, sessionWorkCwd, type Session } from "../model/session";
 import { createNote, noteTitle } from "../../notes";
 import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/settings";
-import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
+import { useHostSessionBinding } from "../../connections/public/useHostSessionBinding";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import { useReadOnlyHostSession } from "./useReadOnlyHostSession";
 import { Button } from "../../../shared/ui/Button";
@@ -29,10 +29,11 @@ type AgentTabViewProps = {
 };
 
 export function AgentTabView(props: AgentTabViewProps) {
+  const hostBinding = useHostSessionBinding(props.session);
   // A hidden tab must not run its text-reveal frame loop.
   return (
     <PresentationVisibility.Provider value={props.visible}>
-      {props.session && hostSessionBinding(props.session) ? (
+      {props.session && hostBinding ? (
         <HostAgentTabView {...props} session={props.session} />
       ) : (
         <LocalAgentTabView {...props} />
@@ -129,30 +130,28 @@ function LocalAgentTabView({
     return () => cancelAnimationFrame(frame);
   }, [visible, navigatorReady, jumpRequest, navigateBlock, session?.id, session?.blocks]);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
-  const saveNote = useCallback(
-    async (text: string) => {
-      if (!session) return;
-      const sessionTitle = sessionDisplayTitle(session.title, session.harness);
-      await createNote({
-        title: sessionTitle && sessionTitle !== "New session" ? sessionTitle : noteTitle(text),
-        body: text,
-        sourceSessionId: session.id,
-        sourceCwd: session.cwd,
-      });
-    },
-    [session?.cwd, session?.harness, session?.id, session?.title],
-  );
-  const saveSelectionNote = useCallback(
-    async (text: string) => {
-      if (!session) return;
-      await createNote({
-        title: noteTitle(text),
-        body: text,
-        sourceSessionId: session.id,
-        sourceCwd: session.cwd,
-      });
-    },
-    [session?.cwd, session?.id],
+  const saveNote = async (text: string) => {
+    if (!session) return;
+    const sessionTitle = sessionDisplayTitle(session.title, session.harness);
+    await createNote({
+      title: sessionTitle && sessionTitle !== "New session" ? sessionTitle : noteTitle(text),
+      body: text,
+      sourceSessionId: session.id,
+      sourceCwd: session.cwd,
+    });
+  };
+  const saveSelectionNote = async (text: string) => {
+    if (!session) return;
+    await createNote({
+      title: noteTitle(text),
+      body: text,
+      sourceSessionId: session.id,
+      sourceCwd: session.cwd,
+    });
+  };
+  // The model catalog can change while the tab is open; the name follows it.
+  const modelName = useSyncExternalStore(subscribeModels, () =>
+    session ? findModel(session.model)?.name : undefined,
   );
   if (!session) {
     return (
@@ -165,7 +164,7 @@ function LocalAgentTabView({
       </div>
     );
   }
-  const model = findModel(session.model)?.name ?? session.model;
+  const model = modelName ?? session.model;
   return (
     <div data-agent-tab className="flex h-full min-h-0 flex-col">
       <div className="@container relative min-h-0 flex-1">

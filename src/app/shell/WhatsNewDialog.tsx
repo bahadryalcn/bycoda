@@ -5,7 +5,7 @@ import { Modal } from "../../shared/ui/Modal";
 import { Button } from "../../shared/ui/Button";
 import { startTour } from "../../features/onboarding/model/tourState";
 import { usePendingHighlights } from "../../features/onboarding/model/useFeatureHighlights";
-import { appName } from "../../shared/lib/appName";
+import { useAppName } from "../../shared/lib/appName";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 
 type Props = {
@@ -40,6 +40,7 @@ export function WhatsNewBody({ version }: { version: string }) {
 
 export function WhatsNewDialog({ version, onClose }: Props) {
   const t = useT();
+  const name = useAppName();
   const notes = presentReleaseNotes(version);
   const date = notes?.date ? formatReleaseDate(notes.date) : null;
   // Features added since the user last looked can be pointed out in the app itself.
@@ -50,7 +51,7 @@ export function WhatsNewDialog({ version, onClose }: Props) {
       padding="none"
       onClose={onClose}
       title={t("What's new")}
-      description={`${appName()} ${version}${date ? ` · ${date}` : ""}`}
+      description={`${name} ${version}${date ? ` · ${date}` : ""}`}
       size="md"
       className="h-[min(72vh,640px)]"
     >

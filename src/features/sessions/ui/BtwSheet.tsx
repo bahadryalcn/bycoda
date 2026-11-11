@@ -5,6 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Sheet } from "../../../shared/ui/Sheet";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { useT } from "../../../shared/i18n";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Plus, RefreshCw, X } from "../../../shared/ui/icons";
 
@@ -147,47 +148,40 @@ export function useBtwConversation({
     missingCoverage: ["nested-btw-input-scope", "decision-conservation"],
   });
 
-  const turns = useMemo(() => groupTurns(blocks, managed), [blocks, managed]);
-  const entries = useMemo(() => sessionBtwThreads(blocks, managed), [blocks, managed]);
+  const turns = groupTurns(blocks, managed);
+  const entries = sessionBtwThreads(blocks, managed);
   // Drafts and the optimistic message are placeholders until the persisted thread shows up.
-  const pendingDrafts = useMemo(() => {
-    const persistedIds = new Set(entries.map(({ thread }) => thread.id));
-    return drafts.filter((draft) => !persistedIds.has(draft.id));
-  }, [drafts, entries]);
-  const pendingOptimistic = useMemo(
-    () =>
-      optimistic &&
-      !entries.some(
-        ({ thread }) =>
-          thread.id === optimistic.threadId &&
-          thread.messages.some((message) => message.id === optimistic.message.id),
-      )
-        ? optimistic
-        : null,
-    [optimistic, entries],
-  );
-  const tabs = useMemo(() => {
-    const next: BtwTab[] = entries.map(({ thread, turn }) => ({
-      id: thread.id,
-      turn,
-      thread,
-    }));
-    for (const draft of pendingDrafts) {
-      if (next.some((tab) => tab.id === draft.id)) continue;
-      const turn = turns.find((entry) => entry[0]?.id === draft.turnId);
-      if (turn) next.push({ id: draft.id, turn });
-    }
-    return next.map((tab) => {
-      const pending = pendingOptimistic?.threadId === tab.id ? pendingOptimistic : null;
-      return {
-        ...tab,
-        question:
-          tab.thread?.messages.find((message) => message.role === "user")?.text ??
-          pending?.message.text,
-        status: tab.thread?.status ?? (pending ? "running" : undefined),
-      };
-    });
-  }, [pendingDrafts, entries, pendingOptimistic, turns]);
+  const persistedThreadIds = new Set(entries.map(({ thread }) => thread.id));
+  const pendingDrafts = drafts.filter((draft) => !persistedThreadIds.has(draft.id));
+  const pendingOptimistic =
+    optimistic &&
+    !entries.some(
+      ({ thread }) =>
+        thread.id === optimistic.threadId &&
+        thread.messages.some((message) => message.id === optimistic.message.id),
+    )
+      ? optimistic
+      : null;
+  const baseTabs: BtwTab[] = entries.map(({ thread, turn }) => ({
+    id: thread.id,
+    turn,
+    thread,
+  }));
+  for (const draft of pendingDrafts) {
+    if (baseTabs.some((tab) => tab.id === draft.id)) continue;
+    const turn = turns.find((entry) => entry[0]?.id === draft.turnId);
+    if (turn) baseTabs.push({ id: draft.id, turn });
+  }
+  const tabs = baseTabs.map((tab) => {
+    const pending = pendingOptimistic?.threadId === tab.id ? pendingOptimistic : null;
+    return {
+      ...tab,
+      question:
+        tab.thread?.messages.find((message) => message.role === "user")?.text ??
+        pending?.message.text,
+      status: tab.thread?.status ?? (pending ? "running" : undefined),
+    };
+  });
   const active = tabs.find((tab) => tab.id === activeId) ?? tabs[tabs.length - 1];
   const activeTabId = active?.id ?? null;
   const persisted = active?.thread;
@@ -200,13 +194,10 @@ export function useBtwConversation({
     pendingOptimistic?.threadId === activeTabId ? pendingOptimistic.message : undefined;
   const persistedMessages = persisted?.messages ?? NO_MESSAGES;
   // Stable while nothing changes, so the transcript is not re-fed each render.
-  const messages = useMemo(
-    () =>
-      optimisticForTab && !persistedMessages.some((message) => message.id === optimisticForTab.id)
-        ? [...persistedMessages, optimisticForTab]
-        : persistedMessages,
-    [optimisticForTab, persistedMessages],
-  );
+  const messages =
+    optimisticForTab && !persistedMessages.some((message) => message.id === optimisticForTab.id)
+      ? [...persistedMessages, optimisticForTab]
+      : persistedMessages;
   const running = persisted?.status === "running" || !!optimisticForTab;
   const selectedModel = draftModel ?? persisted?.model ?? (active ? baseModelFor(active) : model);
   const selectedModelSettings = useMemo(() => {
@@ -229,56 +220,59 @@ export function useBtwConversation({
     setDraftModelSettings(null);
   };
 
-  const send = (
-    tab: BtwTab,
-    text: string,
-    nextModel: string,
-    nextSettings: Record<string, string>,
-    rawText = text,
-    original?: ParentAdmission,
-  ): boolean => {
-    const operation = () => {
-      const messageId = crypto.randomUUID();
-      const input = {
-        source: "btw-dispatch-intent",
-        disposition: "dispatching",
-        threadId: tab.id,
-        turnIds: tab.turn.map((block) => block.id),
-        messageId,
-        text,
-        rawText,
-        model: nextModel,
-        modelSettings: nextSettings,
+  // Stable so the read of `Date.now()` inside stays an event-time read, not a render-time one.
+  const send = useStableCallback(
+    (
+      tab: BtwTab,
+      text: string,
+      nextModel: string,
+      nextSettings: Record<string, string>,
+      rawText = text,
+      original?: ParentAdmission,
+    ): boolean => {
+      const operation = () => {
+        const messageId = crypto.randomUUID();
+        const input = {
+          source: "btw-dispatch-intent",
+          disposition: "dispatching",
+          threadId: tab.id,
+          turnIds: tab.turn.map((block) => block.id),
+          messageId,
+          text,
+          rawText,
+          model: nextModel,
+          modelSettings: nextSettings,
+        };
+        const retained = retainParentInput({
+          kind: "btw-parent",
+          sessionId: parentSessionId,
+          snapshot: () => input,
+          missingCoverage: ["decision-conservation", "nested-btw-input-scope"],
+        });
+        const accepted = onSubmit(
+          tab.turn,
+          tab.id,
+          messageId,
+          text,
+          nextModel || undefined,
+          nextSettings,
+        );
+        if (accepted === false) {
+          retained.release();
+          return false;
+        }
+        retained.update({ ...input, disposition: "accepted-unknown" });
+        setOptimistic({
+          threadId: tab.id,
+          message: { id: messageId, role: "user", text, createdAt: Date.now() },
+        });
+        return true;
       };
-      const retained = retainParentInput({
-        kind: "btw-parent",
-        sessionId: parentSessionId,
-        snapshot: () => input,
-        missingCoverage: ["decision-conservation", "nested-btw-input-scope"],
-      });
-      const accepted = onSubmit(
-        tab.turn,
-        tab.id,
-        messageId,
-        text,
-        nextModel || undefined,
-        nextSettings,
-      );
-      if (accepted === false) {
-        retained.release();
-        return false;
-      }
-      retained.update({ ...input, disposition: "accepted-unknown" });
-      setOptimistic({
-        threadId: tab.id,
-        message: { id: messageId, role: "user", text, createdAt: Date.now() },
-      });
-      return true;
-    };
-    return original
-      ? parentChanged.continue(original, operation)
-      : mutateParentInput(parentChanged, operation);
-  };
+      return original
+        ? parentChanged.continue(original, operation)
+        : mutateParentInput(parentChanged, operation);
+    },
+  );
 
   // A new tab reads from the latest finished turn at the moment it opens.
   const startDraft = (): BtwTab | null => {
@@ -308,31 +302,12 @@ export function useBtwConversation({
     }));
   };
 
-  return {
-    parentSessionId,
-    open,
-    rendered,
-    tabs,
-    activeTabId,
-    persisted,
-    messages,
-    pendingBlocks: persisted?.pendingBlocks ?? NO_BLOCKS,
-    running,
-    harness: composerHarness,
-    canAsk: !inputClosed && tabHarness != null,
-    canAskCurrentTarget: available && tabHarness != null,
-    inputClosed,
-    seed,
-    model: selectedModel,
-    modelSettings: selectedModelSettings,
-    canStartDraft: !inputClosed && btwOpenTargetTurnId(turns, blocks, harness, managed) != null,
-    finishClose,
-    selectTab,
-    /**
-     * Open a new tab. `text` is sent right away, or left unsent in the side
-     * composer with `draft`.
-     */
-    openWith(text: string, options?: { draft?: boolean }, original?: ParentAdmission): boolean {
+  /**
+   * Open a new tab. `text` is sent right away, or left unsent in the side
+   * composer with `draft`. Stable so its `preferredModelSettings` read stays an event-time read.
+   */
+  const openWith = useStableCallback(
+    (text: string, options?: { draft?: boolean }, original?: ParentAdmission): boolean => {
       const operation = () => {
         if (!parentChanged.canMutate()) return false;
         if (!available) return false;
@@ -380,6 +355,44 @@ export function useBtwConversation({
       };
       return original ? parentChanged.continue(original, operation) : operation();
     },
+  );
+
+  // Stable so its `preferredModelSettings` read stays an event-time read, not a render-time one.
+  const changeModel = useStableCallback((nextHarness: HarnessId, nextModel: string) => {
+    if (!parentChanged.canMutate()) return;
+    if (nextHarness !== composerHarness) return;
+    const nextSettings = preferredModelSettings(
+      resolveModel(nextHarness, nextModel),
+      selectedModelSettings,
+    );
+    setDraftModel(nextModel);
+    setDraftModelSettings(nextSettings);
+    if (persisted && active) {
+      onModelChange?.(active.turn, active.id, nextModel, nextSettings);
+    }
+  });
+
+  return {
+    parentSessionId,
+    open,
+    rendered,
+    tabs,
+    activeTabId,
+    persisted,
+    messages,
+    pendingBlocks: persisted?.pendingBlocks ?? NO_BLOCKS,
+    running,
+    harness: composerHarness,
+    canAsk: !inputClosed && tabHarness != null,
+    canAskCurrentTarget: available && tabHarness != null,
+    inputClosed,
+    seed,
+    model: selectedModel,
+    modelSettings: selectedModelSettings,
+    canStartDraft: !inputClosed && btwOpenTargetTurnId(turns, blocks, harness, managed) != null,
+    finishClose,
+    selectTab,
+    openWith,
     startDraft() {
       startDraft();
     },
@@ -424,19 +437,7 @@ export function useBtwConversation({
       if (!parentChanged.canMutate()) return;
       if (active && persisted) onRetry(active.turn, persisted.id);
     },
-    changeModel(nextHarness: HarnessId, nextModel: string) {
-      if (!parentChanged.canMutate()) return;
-      if (nextHarness !== composerHarness) return;
-      const nextSettings = preferredModelSettings(
-        resolveModel(nextHarness, nextModel),
-        selectedModelSettings,
-      );
-      setDraftModel(nextModel);
-      setDraftModelSettings(nextSettings);
-      if (persisted && active) {
-        onModelChange?.(active.turn, active.id, nextModel, nextSettings);
-      }
-    },
+    changeModel,
     changeModelSettings(nextSettings: Record<string, string>) {
       if (!parentChanged.canMutate()) return;
       setDraftModelSettings(nextSettings);

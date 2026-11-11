@@ -3,7 +3,7 @@ import {
   defaultDateRangePresets,
   type DateRangePickerProps,
 } from "./arc/date-range-picker/date-range-picker";
-import { getLocale, useT } from "../i18n";
+import { useLocale, useT } from "../i18n";
 
 export type { DateRange } from "./arc/date-range-picker/date-range-picker";
 
@@ -14,9 +14,10 @@ export type { DateRange } from "./arc/date-range-picker/date-range-picker";
  */
 export function DateRangePicker(props: DateRangePickerProps) {
   const t = useT();
+  const locale = useLocale();
   return (
     <ArcDateRangePicker
-      locale={getLocale()}
+      locale={locale}
       weekStartsOn={1}
       label={t("Date range")}
       placeholder={t("Custom date range")}

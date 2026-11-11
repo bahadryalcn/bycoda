@@ -137,11 +137,9 @@ function ItemButton({
 }: ItemProps & { trigger?: ExpandingButtonGroupTriggerProps }) {
   const showDone = done && !!item.doneLabel;
   // The resting word and icon appear without motion; only a confirmation, and the return from it, animate in.
-  const confirmed = useRef(false);
-  useEffect(() => {
-    if (showDone) confirmed.current = true;
-  }, [showDone]);
-  const swap = showDone || confirmed.current ? "" : undefined;
+  const [confirmed, setConfirmed] = useState(false);
+  if (showDone && !confirmed) setConfirmed(true);
+  const swap = showDone || confirmed ? "" : undefined;
   const word = showDone ? item.doneLabel! : item.label;
 
   // The reveal is pure layout: the label's grid track grows from 0fr to 1fr in CSS. Nothing is measured, observed or animated
@@ -213,6 +211,31 @@ function ItemButton({
       </span>
     </Button>
   );
+}
+
+/** Runs one action; a throw counts as a failure, and the busy latch is always released. */
+async function runAction(
+  item: ExpandingButtonGroupItem,
+  onAction: ((id: string) => void) | undefined,
+  setBusy: (update: (current: string | null) => string | null) => void,
+  running: { current: boolean },
+  mounted: { current: boolean },
+): Promise<void | boolean> {
+  let result: void | boolean;
+  try {
+    onAction?.(item.id);
+    const pending = item.onSelect?.();
+    if (typeof pending === "object" && pending !== null && "then" in pending) {
+      setBusy(() => item.id);
+      result = await pending;
+    } else result = pending;
+  } catch {
+    result = false;
+  } finally {
+    running.current = false;
+    if (mounted.current) setBusy((current) => (current === item.id ? null : current));
+  }
+  return result;
 }
 
 /**
@@ -321,20 +344,7 @@ export function ExpandingButtonGroup({
       if (item.disabled || running.current || doneRef.current === item.id) return;
       running.current = true;
       setIntent(item.id);
-      let result: void | boolean;
-      try {
-        onAction?.(item.id);
-        const pending = item.onSelect?.();
-        if (typeof pending === "object" && pending !== null && "then" in pending) {
-          setBusy(item.id);
-          result = await pending;
-        } else result = pending;
-      } catch {
-        result = false;
-      } finally {
-        running.current = false;
-        if (mounted.current) setBusy((current) => (current === item.id ? null : current));
-      }
+      const result = await runAction(item, onAction, setBusy, running, mounted);
       if (!mounted.current || result === false || !item.doneLabel) return;
       confirm(item);
     },

@@ -1,6 +1,5 @@
 import { useT } from "../i18n";
 import {
-  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -141,18 +140,15 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
   useEffect(() => () => dragCleanup.current?.(), []);
 
   const inert = disabled || readOnly;
-  const applyHsv = useCallback(
-    (updater: Hsv | ((prev: Hsv) => Hsv)) => {
-      if (inert) return;
-      const next = typeof updater === "function" ? updater(currentHsv.current) : updater;
-      const hex = hsvToHex(next.h, next.s, next.v);
-      currentHsv.current = next;
-      setHsv(next);
-      setHexDraft(hex);
-      onChange(hex);
-    },
-    [onChange, inert],
-  );
+  const applyHsv = (updater: Hsv | ((prev: Hsv) => Hsv)) => {
+    if (inert) return;
+    const next = typeof updater === "function" ? updater(currentHsv.current) : updater;
+    const hex = hsvToHex(next.h, next.s, next.v);
+    currentHsv.current = next;
+    setHsv(next);
+    setHexDraft(hex);
+    onChange(hex);
+  };
 
   const onHexInput = (raw: string) => {
     if (inert) return;

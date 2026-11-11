@@ -5,6 +5,7 @@ import {
   loadNotificationPreferences,
   updateNotificationPreferences,
   notificationPreferencesSnapshot,
+  notificationPreferencesViewSnapshot,
   subscribeNotificationPreferences,
   getProjectNotificationRule,
   notificationPreferencesStatus,
@@ -202,6 +203,28 @@ it("reports unreadable preferences as unavailable, notifies subscribers and reco
     localStorage.setItem("bycoda.projectNotifications.v1", JSON.stringify({}));
     expect(retryNotificationPreferencesRead()).toBe("ready");
     expect(notificationPreferencesStatus()).toBe("ready");
+  } finally {
+    unsubscribe();
+  }
+});
+
+it("keeps one view identity until a writer changes the preferences, then reports muted ids", () => {
+  const first = notificationPreferencesViewSnapshot();
+  expect(notificationPreferencesViewSnapshot()).toBe(first);
+  const listener = vi.fn();
+  const unsubscribe = subscribeNotificationPreferences(listener);
+  try {
+    updateNotificationPreferences(["a", "b"], { mutedUntil: null });
+    expect(listener).toHaveBeenCalled();
+    const next = notificationPreferencesViewSnapshot();
+    expect(next).not.toBe(first);
+    expect([...next.muted].sort()).toEqual(["a", "b"]);
+    expect(next.preferences).toEqual(loadNotificationPreferences());
+    expect(next.unavailable).toBe(false);
+    expect(notificationPreferencesViewSnapshot()).toBe(next);
+    localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
+    retryNotificationPreferencesRead();
+    expect(notificationPreferencesViewSnapshot().unavailable).toBe(true);
   } finally {
     unsubscribe();
   }

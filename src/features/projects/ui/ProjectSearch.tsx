@@ -7,7 +7,8 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { t, useLocale } from "../../../shared/i18n";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+import { useLocale, useT } from "../../../shared/i18n";
 import { CaseSensitive, ListFilter, ChevronLeft, Regex, WholeWord } from "../../../shared/ui/icons";
 import {
   useEffect,
@@ -66,13 +67,12 @@ function ProjectSearchContent({
   onOpenFile,
   onOpenMatch,
   onClose,
-  search = searchProject,
+  search,
 }: Props) {
-  useLocale();
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const [filtersAnchor, setFiltersAnchor] = useState<HTMLButtonElement | null>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const closeLatest = useStableCallback(onClose);
   const stateKey = `find-in-files:${pathKey(cwd)}`;
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
   const [include, setInclude] = useRetainedState(`${stateKey}:include`, "");
@@ -126,11 +126,11 @@ function ProjectSearchContent({
         return;
       event.preventDefault();
       event.stopPropagation();
-      onCloseRef.current();
+      closeLatest();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
+  }, [closeLatest]);
 
   useEffect(() => {
     if (!request.query || !cwd || cwd === "~") return;
@@ -139,7 +139,7 @@ function ProjectSearchContent({
     const timer = window.setTimeout(() => {
       const searchId = crypto.randomUUID();
       activeSearchId.current = searchId;
-      void search({
+      void (search ?? searchProject)({
         ...request,
         searchId,
       })
@@ -172,7 +172,7 @@ function ProjectSearchContent({
     };
   }, [cwd, request, search]);
 
-  const groups = useMemo(() => groupMatches(matches), [matches]);
+  const groups = groupMatches(matches);
   const matchCount = matches.length;
   const fileCount = groups.length;
 
@@ -435,40 +435,39 @@ function MatchPreview({
   regex: boolean;
 }) {
   useLocale();
-  if (!query) return <>{preview}</>;
-  if (regex) {
-    try {
-      const pattern = new RegExp(query, caseSensitive ? "" : "i");
-      const match = preview.match(pattern);
-      if (!match || match.index == null) return <>{preview}</>;
-      const start = match.index;
-      const end = start + match[0].length;
-      return (
-        <>
-          {preview.slice(0, start)}
-          <mark className="rounded-sm bg-[var(--ui-tone-accent-subtle)] text-content">
-            {preview.slice(start, end)}
-          </mark>
-          {preview.slice(end)}
-        </>
-      );
-    } catch {
-      return <>{preview}</>;
-    }
-  }
-
-  const source = caseSensitive ? preview : preview.toLowerCase();
-  const needle = caseSensitive ? query : query.toLowerCase();
-  const index = source.indexOf(needle);
-  if (index < 0) return <>{preview}</>;
-  const end = index + needle.length;
+  const range = highlightRange(preview, query, caseSensitive, regex);
+  if (!range) return <>{preview}</>;
+  const [start, end] = range;
   return (
     <>
-      {preview.slice(0, index)}
+      {preview.slice(0, start)}
       <mark className="rounded-sm bg-[var(--ui-tone-accent-subtle)] text-content">
-        {preview.slice(index, end)}
+        {preview.slice(start, end)}
       </mark>
       {preview.slice(end)}
     </>
   );
+}
+
+/** The `[start, end)` span of the first match of `query` in `preview`, or `null`. */
+function highlightRange(
+  preview: string,
+  query: string,
+  caseSensitive: boolean,
+  regex: boolean,
+): [number, number] | null {
+  if (!query) return null;
+  if (regex) {
+    try {
+      const match = preview.match(new RegExp(query, caseSensitive ? "" : "i"));
+      if (!match || match.index == null) return null;
+      return [match.index, match.index + match[0].length];
+    } catch {
+      return null;
+    }
+  }
+  const source = caseSensitive ? preview : preview.toLowerCase();
+  const needle = caseSensitive ? query : query.toLowerCase();
+  const index = source.indexOf(needle);
+  return index < 0 ? null : [index, index + needle.length];
 }

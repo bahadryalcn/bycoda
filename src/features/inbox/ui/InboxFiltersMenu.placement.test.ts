@@ -12,6 +12,7 @@ it("opens a repository flyout sideways and keeps the parent open after selection
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

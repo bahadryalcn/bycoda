@@ -31,17 +31,16 @@ export function TextField({
   inputMode,
   ...props
 }: TextFieldProps) {
+  const joined = [monospace && styles.monospace, numeric && styles.numeric, className]
+    .filter(Boolean)
+    .join(" ");
   return (
     <ArcInput
       {...props}
       inputMode={inputMode ?? (numeric ? "numeric" : undefined)}
       data-monospace={monospace ? "" : undefined}
       data-numeric={numeric ? "" : undefined}
-      className={
-        [monospace && styles.monospace, numeric && styles.numeric, className]
-          .filter(Boolean)
-          .join(" ") || undefined
-      }
+      className={joined === "" ? undefined : joined}
       fieldClassName={["bycoda-arc bycoda-arc-field", fieldClassName].filter(Boolean).join(" ")}
     />
   );

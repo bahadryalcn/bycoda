@@ -75,7 +75,7 @@ export function useTabActivation(deps: TabActivationDeps): TabActivation {
           .then(setRecents)
           .catch((error: unknown) => console.error("Could not remember project", error));
     },
-    [],
+    [projectCwdRef, setProjectCwd, setRecents],
   );
 
   const activateTab = useCallback(
@@ -132,14 +132,14 @@ export function useTabActivation(deps: TabActivationDeps): TabActivation {
   const insertBesideActive = useCallback(
     (prev: WorkspaceTab[], tab: WorkspaceTab, cwd?: string) =>
       insertBeside(prev, tab, activeTabIdRef.current, cwd),
-    [insertBeside],
+    [insertBeside, activeTabIdRef],
   );
 
   const appendTab = useCallback(
     (tab: WorkspaceTab, cwd?: string) => {
       setTabs((prev) => insertBesideActive(prev, tab, cwd));
     },
-    [insertBesideActive],
+    [insertBesideActive, setTabs],
   );
 
   return { followProject, activateTab, insertBeside, insertBesideActive, appendTab };

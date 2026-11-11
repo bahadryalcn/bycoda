@@ -1,5 +1,6 @@
 import { t } from "../../../shared/i18n/core";
 import { formatResetDuration } from "../../../shared/i18n/format";
+import type { BoundFormat } from "../../../shared/i18n/boundFormat";
 export { formatResetDuration } from "../../../shared/i18n/format";
 import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
 
@@ -165,9 +166,24 @@ export function formatWindowLabel(windowMinutes: number): string {
   return `${windowMinutes}m`;
 }
 
+type Translate = (message: string, values?: Record<string, unknown>) => string;
+type ResetFormat = Pick<BoundFormat, "formatResetDuration">;
+const moduleFormat: ResetFormat = { formatResetDuration };
+
+/** `formatResetCountdown` with the translator passed in, for render code that reads `useT()`. */
+export function formatResetCountdownWith(
+  ms: number,
+  translate: Translate,
+  format: ResetFormat,
+): string {
+  const duration = format.formatResetDuration(ms);
+  return duration === "now"
+    ? translate("Resets now")
+    : translate("Resets in {p0}", { p0: duration });
+}
+
 export function formatResetCountdown(ms: number): string {
-  const duration = formatResetDuration(ms);
-  return duration === "now" ? t("Resets now") : t("Resets in {p0}", { p0: duration });
+  return formatResetCountdownWith(ms, t, moduleFormat);
 }
 
 /**
@@ -186,12 +202,23 @@ export function rateLimitWindowTooltip(
   now = Date.now(),
   showRemaining = false,
 ): string {
+  return rateLimitWindowTooltipWith(window, now, showRemaining, t, moduleFormat);
+}
+
+/** `rateLimitWindowTooltip` with the clock and translator passed in (no hidden reads). */
+export function rateLimitWindowTooltipWith(
+  window: RateLimitWindow,
+  now: number,
+  showRemaining: boolean,
+  translate: Translate,
+  format: ResetFormat,
+): string {
   const pct = clampUsedPercent(window.usedPercent);
   const usage = `${formatUsagePercent(showRemaining ? 100 - pct : pct)} ${showRemaining ? "remaining" : "used"}`;
   if (window.resetsAt == null) {
     return `${usage} · ${formatWindowLabel(window.windowMinutes)} window`;
   }
-  return `${usage} · ${formatResetCountdown(window.resetsAt - now)}`;
+  return `${usage} · ${formatResetCountdownWith(window.resetsAt - now, translate, format)}`;
 }
 
 /** When a used-up window resets; the later one when several are spent. */

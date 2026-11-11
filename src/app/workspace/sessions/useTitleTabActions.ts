@@ -21,12 +21,15 @@ export function useTitleTabActions(deps: TitleTabActionsDeps) {
     onDeleteHistorySessions,
   } = deps;
 
-  const sessionIdsInTitleTab = useCallback((tabId: string): string[] => {
-    const tab = tabsRef.current.find((entry) => entry.id === tabId);
-    if (!tab) return [];
-    const openSessionIds = new Set(sessionsRef.current.map((session) => session.id));
-    return leafIds(tab.layout).filter((id) => openSessionIds.has(id));
-  }, []);
+  const sessionIdsInTitleTab = useCallback(
+    (tabId: string): string[] => {
+      const tab = tabsRef.current.find((entry) => entry.id === tabId);
+      if (!tab) return [];
+      const openSessionIds = new Set(sessionsRef.current.map((session) => session.id));
+      return leafIds(tab.layout).filter((id) => openSessionIds.has(id));
+    },
+    [sessionsRef, tabsRef],
+  );
 
   const onArchiveTitleTab = useCallback(
     (tabId: string) => {

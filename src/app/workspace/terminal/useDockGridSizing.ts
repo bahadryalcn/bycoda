@@ -17,13 +17,16 @@ export function useDockGridSizing(deps: DockGridSizingDeps) {
   const { projectTerminalsRef, currentProjectDock, dockVisible } = dock;
   const dockGridRef = useRef<HTMLDivElement>(null);
   const dockDragSize = useRef<number | null>(null);
-  const paintDockSize = useCallback((size: number) => {
-    const dock = findProjectTerminal(projectTerminalsRef.current, projectCwdRef.current);
-    const el = dockGridRef.current;
-    if (!dock || !el) return;
-    dockDragSize.current = size;
-    applyDockGridStyle(el, dock.side, size);
-  }, []);
+  const paintDockSize = useCallback(
+    (size: number) => {
+      const dock = findProjectTerminal(projectTerminalsRef.current, projectCwdRef.current);
+      const el = dockGridRef.current;
+      if (!dock || !el) return;
+      dockDragSize.current = size;
+      applyDockGridStyle(el, dock.side, size);
+    },
+    [projectTerminalsRef, projectCwdRef],
+  );
   const commitDockSize = useCallback(
     (size: number) => {
       dockDragSize.current = null;

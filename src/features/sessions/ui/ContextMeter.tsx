@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { useT } from "../../../shared/i18n";
-import { useId, useMemo, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { contextRatio, formatTokens, type ContextUsage } from "../model/contextUsage";
 import { formatApiTime, formatCost, type SessionUsage } from "../model/sessionUsage";
 import { Meter, meterTone } from "../../../shared/ui/Meter";
@@ -69,8 +69,8 @@ export function ContextMeter({
   }
   const ratio = contextRatio(usage);
   // Scans the whole transcript: only redo it when the blocks change, not per keystroke.
-  const speed = useMemo(() => completedResponseSpeed(contextBlocks), [contextBlocks]);
-  const agents = useMemo(() => subagentReadings(contextBlocks), [contextBlocks]);
+  const speed = completedResponseSpeed(contextBlocks);
+  const agents = subagentReadings(contextBlocks);
   if ((!usage || ratio === null) && agents.size === 0 && !speed) {
     return empty && !usage && !sessionUsage ? (
       <span

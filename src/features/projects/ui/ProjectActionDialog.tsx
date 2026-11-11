@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
@@ -80,7 +80,7 @@ export function ProjectActionDialog({
   onDelete: () => void;
   onClose: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const [draft, setDraft] = useState(() => ({
     ...action,
     shortcut: action.shortcut ?? "",

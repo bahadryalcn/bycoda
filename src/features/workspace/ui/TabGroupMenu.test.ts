@@ -11,6 +11,7 @@ vi.mock("../../projects/model/projectLogos", () => ({
   clearProjectLogo: vi.fn(),
   pickAndSetProjectLogo: vi.fn(),
   projectLogoSrc: (path: string) => path,
+  projectLogoSrcAt: (path: string) => path,
 }));
 
 let container: HTMLDivElement;

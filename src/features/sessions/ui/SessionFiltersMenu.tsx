@@ -15,6 +15,7 @@ import { HarnessIcon } from "./HarnessIcon";
 import { useAssistantIdentity } from "../../assistant/model/assistantClient";
 import {
   type SessionListDensity,
+  type SessionListDisplay,
   updateSessionListDisplay,
   useSessionListDisplay,
 } from "../model/sessionListDisplay";
@@ -123,6 +124,7 @@ export function SessionFiltersMenu({
     onClose();
   };
 
+  const onPatchDisplay = (patch: Partial<SessionListDisplay>) => updateSessionListDisplay(patch);
   const managedName = useManagedFilterLabel(local);
   const check = (
     id: string,
@@ -203,14 +205,14 @@ export function SessionFiltersMenu({
       items: [
         ...DENSITY_OPTIONS.map((option) =>
           toggle(radio(`density:${option.id}`, option.label, display.density === option.id), () =>
-            updateSessionListDisplay({ density: option.id }),
+            onPatchDisplay({ density: option.id }),
           ),
         ),
         toggle(check("showModel", t("Show model"), display.showModel), () =>
-          updateSessionListDisplay({ showModel: !display.showModel }),
+          onPatchDisplay({ showModel: !display.showModel }),
         ),
         toggle(check("showBranch", t("Show branch"), display.showBranch), () =>
-          updateSessionListDisplay({ showBranch: !display.showBranch }),
+          onPatchDisplay({ showBranch: !display.showBranch }),
         ),
       ],
     },
@@ -241,6 +243,7 @@ export function SessionFiltersMenu({
 
 /** The managed-sessions row names the assistant when it is local and has a name. */
 function useManagedFilterLabel(local: boolean) {
+  const t = useT();
   const { name } = useAssistantIdentity();
   return local && name ? t("Managed by {p0}", { p0: name }) : t("Managed sessions");
 }

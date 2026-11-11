@@ -127,6 +127,26 @@ function subscribeShellState(id: string, subscriber: ShellSubscriber) {
 
 const PREVIEW_RETENTION_MS = 1500;
 
+function requestSuggestions(id: string, source: RemoteSuggestionSource | undefined) {
+  return invoke<string>("ssh_terminal_suggestions_request", {
+    id,
+    ...(source ? { source } : {}),
+  });
+}
+
+function isInvalidRequestId(requestId: unknown) {
+  return typeof requestId !== "string" || !requestId;
+}
+
+function answersRequest(state: SshShellState | undefined, requestId: string) {
+  return state?.requestId === requestId;
+}
+
+// The compiler cannot lower a `throw` inside the request try/catch; a call can.
+function throwShellUnavailable(): never {
+  throw new Error("Remote shell integration is unavailable");
+}
+
 export function useSshShellIntegration(id: string, enabled: boolean) {
   // A session explicitly launched with shell integration previews safe commands
   // by default. Never inherit a previous session's history/path source.
@@ -317,22 +337,20 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
           });
         }
       }, 2500);
+      // Logical expressions cannot be lowered inside the try block below.
+      const superseded = () => current !== epoch.current || !pending.current;
       try {
-        if (!listenerReady.current) throw new Error("Remote shell integration is unavailable");
+        if (!listenerReady.current) throwShellUnavailable();
         listenerReady.current = ensureShellBridge().ready;
         await listenerReady.current;
-        if (current !== epoch.current || !pending.current) return;
-        const requestId = await invoke<string>("ssh_terminal_suggestions_request", {
-          id,
-          ...(requestedSource ? { source: requestedSource } : {}),
-        });
-        if (current !== epoch.current || !pending.current) return;
-        if (typeof requestId !== "string" || !requestId)
-          throw new Error("Remote shell integration is unavailable");
+        if (superseded()) return;
+        const requestId = await requestSuggestions(id, requestedSource);
+        if (superseded()) return;
+        if (isInvalidRequestId(requestId)) throwShellUnavailable();
         acknowledgement.current = requestId;
         const early = buffered.current as SshShellState | undefined;
         buffered.current = undefined;
-        if (early?.requestId === requestId) {
+        if (answersRequest(early, requestId)) {
           pending.current = false;
           clearTimer();
           setWaitingFor(null);

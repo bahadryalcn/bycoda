@@ -10,8 +10,8 @@
  * This check runs the same guard and compiler as the build over those folders and counts the
  * functions that do not compile, per file, against compiler-coverage-baseline.json. The count
  * may only fall: a new skipped function fails, and a fix lowers the baseline with --ratchet.
- * Rule bycoda/compiler-owns-memo reads the same baseline, so manual memoization is banned only
- * in files where every function compiles.
+ * Rule bycoda/compiler-owns-memo bans manual memoization in the same folders; a skipped function
+ * that still needs it keeps the hook behind a one-line suppression with its reason.
  *
  * Usage:
  *   node scripts/checks/check-compiler-coverage.mjs             compare with the baseline
@@ -30,7 +30,15 @@ export const baselineFile = "scripts/checks/compiler-coverage-baseline.json";
 /** The one rule of this baseline, as check-baselines.mjs totals it. */
 export const rule = "uncompiled-function";
 /** Compiled in full; keep in step with INFERRED in scripts/build/react-compiler.ts. */
-export const compiledFolders = ["src/shared/ui", "src/features/sessions/ui", "src/app/shell"];
+export const compiledFolders = [
+  "src/shared/ui",
+  "src/features/sessions/ui",
+  "src/features/sync",
+  "src/features/terminal",
+  "src/features/projects",
+  "src/features/notifications",
+  "src/app/shell",
+];
 
 const SOURCE = /\.[jt]sx?$/;
 const NOT_SOURCE = /\.(?:test|spec|stories)\.[jt]sx?$|\.d\.ts$|\.worker\.[jt]sx?$/;

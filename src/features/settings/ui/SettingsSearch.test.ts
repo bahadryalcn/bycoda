@@ -11,6 +11,7 @@ it("preserves domain search ranking and reveals only after the launcher has clos
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

@@ -8,7 +8,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { t } from "../i18n/technical";
+import { useT } from "../i18n/technical";
 import {
   fitImageAnnotation,
   imageAnnotationArrowHead,
@@ -86,6 +86,7 @@ export function ImageAnnotationToolbar({
   /** Owner-specific actions (redo, note, finish...) placed after the standard ones in the same toolbar. */
   children?: ReactNode;
 }) {
+  const t = useT();
   const text = {
     toolbar: t("Annotation tools"),
     box: t("Box"),
@@ -155,6 +156,7 @@ export function ImageAnnotationCanvas({
   className,
   onDraftingChange,
 }: Props) {
+  const t = useT();
   const container = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
   const [natural, setNatural] = useState({ width: 0, height: 0 });

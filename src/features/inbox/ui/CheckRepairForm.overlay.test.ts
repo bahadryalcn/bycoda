@@ -12,6 +12,7 @@ it("the repair popover keeps the existing overlay policy and the top window cons
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

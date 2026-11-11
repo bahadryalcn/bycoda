@@ -1,13 +1,10 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
-import {
-  providerAccounts,
-  subscribeProviderAccounts,
-  type ProviderAccountProvider,
-} from "../../providers/model/providerAccounts";
+import { type ProviderAccountProvider } from "../../providers/model/providerAccounts";
+import { useProviderAccounts } from "../../providers/public/useProviderAccounts";
 import { AccountColorDot } from "../../providers/ui/AccountColorDot";
 
 /** Recover an existing conversation without silently choosing a different identity. */
@@ -23,36 +20,27 @@ export function ProviderAccountRecoveryDialog({
   onClose: () => void;
 }) {
   const t = useT();
-  const [, refresh] = useState(0);
+  const accounts = useProviderAccounts(provider);
   const [busy, setBusy] = useState(false);
   const [pendingAccount, setPendingAccount] = useState<string | null>(null);
   const selecting = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => subscribeProviderAccounts(() => refresh((n) => n + 1)), []);
-  const select = async (accountId: string) => {
-    if (selecting.current) return;
-    selecting.current = true;
-    setPendingAccount(accountId);
-    setBusy(true);
-    setError(null);
-    try {
-      if (await onSelect(accountId)) onClose();
-      else
-        setError(
-          t("The account could not be switched. The conversation shows the reason; try again."),
-        );
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      selecting.current = false;
-      setPendingAccount(null);
-      setBusy(false);
-    }
-  };
+  const select = (accountId: string) =>
+    selectAccount(accountId, {
+      onSelect,
+      onClose,
+      selecting,
+      setPendingAccount,
+      setBusy,
+      setError,
+      failure: t(
+        "The account could not be switched. The conversation shows the reason; try again.",
+      ),
+    });
   return (
     <Modal title={t("Continue with another account")} size="sm" onClose={onClose}>
       <div className="space-y-2">
-        {providerAccounts(provider).map((account) => (
+        {accounts.map((account) => (
           <Button
             fullWidth
             variant="item"
@@ -80,4 +68,34 @@ export function ProviderAccountRecoveryDialog({
       </div>
     </Modal>
   );
+}
+
+type SelectAccountDeps = {
+  onSelect: (accountId: string) => Promise<boolean>;
+  onClose: () => void;
+  selecting: { current: boolean };
+  setPendingAccount: (accountId: string | null) => void;
+  setBusy: (busy: boolean) => void;
+  setError: (error: string | null) => void;
+  failure: string;
+};
+
+// Module level: the compiler cannot lower a try/finally inside a component.
+async function selectAccount(accountId: string, deps: SelectAccountDeps) {
+  const { onSelect, onClose, selecting, setPendingAccount, setBusy, setError, failure } = deps;
+  if (selecting.current) return;
+  selecting.current = true;
+  setPendingAccount(accountId);
+  setBusy(true);
+  setError(null);
+  try {
+    if (await onSelect(accountId)) onClose();
+    else setError(failure);
+  } catch (reason) {
+    setError(reason instanceof Error ? reason.message : String(reason));
+  } finally {
+    selecting.current = false;
+    setPendingAccount(null);
+    setBusy(false);
+  }
 }

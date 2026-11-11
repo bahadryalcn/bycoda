@@ -71,7 +71,8 @@ async function setup(
     | "workmode"
     | "cost"
     | "presence"
-    | "identity" = "jobs",
+    | "identity"
+    | "personality" = "jobs",
 ) {
   observed.patches = [];
   observed.resolvedDefault = "catalog-default";

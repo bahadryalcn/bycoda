@@ -300,7 +300,7 @@ it("expires a danger notice after ten seconds by default", async () => {
   }
 });
 
-it("places the action under the message and blocks a second activation while pending", () => {
+it("places the action after the message and blocks a second activation while pending", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);

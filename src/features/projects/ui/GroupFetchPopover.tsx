@@ -1,5 +1,5 @@
 import { Progress } from "../../../shared/ui/Progress";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { basename, gitFetch, gitRemotes, notifyGitChanged } from "../../../platform/tauri/fs";
 import { Popover } from "../../../shared/ui/Popover";
@@ -27,15 +27,17 @@ export function GroupFetchPopover({
   paths: readonly string[];
   onClose: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const [results, setResults] = useState<readonly FetchAllResult[]>([]);
   const [current, setCurrent] = useState(0);
   const [done, setDone] = useState(false);
+  // Runs once per open; the list is fixed when the popover is created.
+  const [fetchPaths] = useState(paths);
 
   useEffect(() => {
     let cancelled = false;
     void fetchAllProjects(
-      paths,
+      fetchPaths,
       {
         hasRemote: async (path) => {
           await requireRemoteSupport(path, GIT_ACTIONS);
@@ -57,9 +59,7 @@ export function GroupFetchPopover({
     return () => {
       cancelled = true;
     };
-    // Runs once per open; the list is fixed when the popover is created.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchPaths]);
 
   return (
     <Popover

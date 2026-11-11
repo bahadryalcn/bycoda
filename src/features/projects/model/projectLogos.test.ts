@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { projectKey } from "../../../shared/lib/paths";
-import { clearProjectLogo, droppableLogoFile, pickAndSetProjectLogo } from "./projectLogos";
+import {
+  clearProjectLogo,
+  droppableLogoFile,
+  pickAndSetProjectLogo,
+  projectLogoSrc,
+  projectLogoSrcAt,
+} from "./projectLogos";
+import { tabGroupLogoDisplayRevision } from "../../workspace/model/tabGroups";
 import { loadTabGroupLogos, saveTabGroupLogo } from "../../workspace/model/tabGroups";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn() }));
@@ -133,5 +140,16 @@ describe("clearProjectLogo", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("forget_logo_file", {
       path: SHARED,
     });
+  });
+});
+
+describe("projectLogoSrcAt", () => {
+  it("returns what projectLogoSrc returns for the current revision", () => {
+    mockLocalStorage();
+    expect(projectLogoSrcAt("/a.png", tabGroupLogoDisplayRevision())).toBe(
+      projectLogoSrc("/a.png"),
+    );
+    expect(projectLogoSrcAt("/a.png", 7)).toBe("/a.png?v=7");
+    expect(projectLogoSrcAt(null, 7)).toBeNull();
   });
 });

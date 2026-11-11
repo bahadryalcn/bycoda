@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useSyncExternalStore } from "react";
 
 export const TAB_GROUP_LOGOS_CHANGED = "bycoda:tab-group-logos-changed";
 
@@ -69,17 +70,53 @@ function pump(): void {
   }
 }
 
+function detectable(project: string): boolean {
+  return typeof window !== "undefined" && !!project && !project.startsWith("remote://");
+}
+
+function requestDetection(project: string): void {
+  if (!detectable(project) || checked.has(project)) return;
+  checked.add(project);
+  queue.push(project);
+  queueMicrotask(pump);
+}
+
+/** What is known about the shipped logo right now; never starts a detection. */
+function peekDetectedProjectLogo(project: string): string | null {
+  if (!detectable(project)) return null;
+  detected ??= readDetected();
+  return detected[project] || null;
+}
+
 /**
  * The logo a local project ships (favicon, app icon), detected once per launch
  * and remembered across launches so the rail does not flash its mascot first.
  */
 export function detectedProjectLogo(project: string): string | null {
-  if (typeof window === "undefined" || !project || project.startsWith("remote://")) return null;
-  detected ??= readDetected();
-  if (!checked.has(project)) {
-    checked.add(project);
-    queue.push(project);
-    queueMicrotask(pump);
-  }
-  return detected[project] || null;
+  if (!detectable(project)) return null;
+  requestDetection(project);
+  return peekDetectedProjectLogo(project);
+}
+
+export function subscribeTabGroupLogos(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(TAB_GROUP_LOGOS_CHANGED, onChange);
+  return () => window.removeEventListener(TAB_GROUP_LOGOS_CHANGED, onChange);
+}
+
+/**
+ * Reactive `detectedProjectLogo`: starts the detection once per launch and re-renders
+ * the caller when the answer arrives. An empty project is never detected.
+ */
+export function useDetectedProjectLogo(project: string): string | null {
+  const logo = useSyncExternalStore(
+    subscribeTabGroupLogos,
+    () => peekDetectedProjectLogo(project),
+    () => null,
+  );
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- starts the native logo detection for this project and queues it once per launch
+  useEffect(() => {
+    requestDetection(project);
+  }, [project]);
+  return logo;
 }

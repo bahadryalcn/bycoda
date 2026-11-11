@@ -183,6 +183,7 @@ it("reports its run with the session and whether its message box is on screen", 
         observed = callback;
       }
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

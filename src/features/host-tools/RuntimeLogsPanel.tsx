@@ -49,6 +49,7 @@ import {
 } from "./runtimeLogsModel";
 import type { RuntimeLogEntry, RuntimeLogSnapshot } from "./runtimeLogTypes";
 import {
+  patchToolsDraftPart,
   peekToolsDraftPart,
   subscribeToolsDraftTransfer,
   writeToolsDraftPart,
@@ -156,7 +157,6 @@ function ScopedRuntimeLogsPanel({
   const [grouped, setGrouped] = useRetainedState(`${stateKey}:grouped`, saved?.grouped ?? true);
   const [follow, setFollow] = useRetainedState(`${stateKey}:follow`, saved?.follow ?? true);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(saved?.selected));
-  const [scrollTop, setScrollTop] = useState(saved?.scrollTop ?? 0);
   const restoreScroll = useRef<number | undefined>(saved?.scrollTop);
   useLayoutEffect(() => {
     if (!saved) return;
@@ -178,7 +178,6 @@ function ScopedRuntimeLogsPanel({
       pausedRef.current = logs.paused;
       setPaused(logs.paused);
       restoreScroll.current = logs.scrollTop;
-      setScrollTop(logs.scrollTop ?? 0);
       setStarted(logs.started);
       setMonitorUrl(logs.monitorUrl);
       setSearch(logs.search);
@@ -204,7 +203,8 @@ function ScopedRuntimeLogsPanel({
         started,
         monitorUrl,
         selected: [...selected],
-        scrollTop,
+        // Scrolling patches the snapshot directly; keep its latest value on full rewrites.
+        scrollTop: peekToolsDraftPart(transferScope, "logs")?.scrollTop,
       });
   }, [
     active,
@@ -222,7 +222,6 @@ function ScopedRuntimeLogsPanel({
     started,
     monitorUrl,
     selected,
-    scrollTop,
   ]);
   const alive = useRef(false);
   const visible = useRef(active);
@@ -972,7 +971,7 @@ function ScopedRuntimeLogsPanel({
         tabIndex={0}
         onScroll={(event) => {
           const area = event.currentTarget;
-          setScrollTop(area.scrollTop);
+          patchToolsDraftPart(transferScope, "logs", { scrollTop: area.scrollTop });
           const atEnd = area.scrollHeight - area.scrollTop - area.clientHeight < 32;
           if (atEnd !== follow) setFollow(atEnd);
         }}

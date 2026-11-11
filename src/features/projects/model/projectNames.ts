@@ -1,5 +1,10 @@
+import { useSyncExternalStore } from "react";
 import { projectKey, projectName } from "../../../shared/lib/paths";
-import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
+import {
+  loadTabGroupLabels,
+  resolveTabGroupLabel,
+  subscribeTabGroupLabels,
+} from "../../workspace/model/tabGroups";
 import { collectRailProjects, loadRecents } from "./recents";
 
 /** The name a project's rail row shows: its label, else its folder name. */
@@ -7,7 +12,29 @@ export function projectDisplayName(
   path: string,
   labels: Record<string, string> = loadTabGroupLabels(),
 ): string {
+  return projectDisplayNameFrom(path, labels);
+}
+
+/** `projectDisplayName` with the labels given (see `useProjectLabels`), so render reads no store. */
+export function projectDisplayNameFrom(path: string, labels: Record<string, string>): string {
   return resolveTabGroupLabel(projectKey(path), labels, projectName(path));
+}
+
+let labelsCache: { json: string; labels: Record<string, string> } | null = null;
+
+/** The labels, with one object identity for as long as their content is unchanged. */
+function labelsSnapshot(): Record<string, string> {
+  const labels = loadTabGroupLabels();
+  const json = JSON.stringify(labels);
+  if (labelsCache?.json !== json) labelsCache = { json, labels };
+  return labelsCache.labels;
+}
+
+const NO_LABELS: Record<string, string> = {};
+
+/** The project labels for render: re-renders the caller when any label changes. */
+export function useProjectLabels(): Record<string, string> {
+  return useSyncExternalStore(subscribeTabGroupLabels, labelsSnapshot, () => NO_LABELS);
 }
 
 const nameKey = (name: string) => name.trim().toLowerCase();

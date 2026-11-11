@@ -1,5 +1,5 @@
 import { OverflowTooltip } from "./Tooltip";
-import { t, useT } from "../i18n";
+import { useT } from "../i18n";
 import {
   useEffect,
   useId,
@@ -333,9 +333,9 @@ function SearchableSelectMenu({
   options,
   onPick,
   onClear,
-  placeholder = t("Choose an option…"),
-  searchPlaceholder = t("Search options…"),
-  emptyLabel = t("No matching options"),
+  placeholder: placeholderOption,
+  searchPlaceholder: searchPlaceholderOption,
+  emptyLabel: emptyLabelOption,
   disabled = false,
   layer,
   variant = "field",
@@ -386,6 +386,9 @@ function SearchableSelectMenu({
   groupFilter?: boolean;
 } & SelectionOptions) {
   const t = useT();
+  const placeholder = placeholderOption ?? t("Choose an option…");
+  const searchPlaceholder = searchPlaceholderOption ?? t("Search options…");
+  const emptyLabel = emptyLabelOption ?? t("No matching options");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -421,8 +424,8 @@ function SearchableSelectMenu({
         : (optionLookup.get(values[0])?.label ?? (values[0] || undefined));
   const normalizedQuery = query.trim().toLocaleLowerCase(searchLocale);
   const groupSegments = useMemo(
-    () => (groupFilter ? groupFilterSegments(options) : []),
-    [groupFilter, options],
+    () => (groupFilter ? groupFilterSegments(options, t) : []),
+    [groupFilter, options, t],
   );
   // A group that vanished from the options falls back to "All".
   const scoped = useMemo(

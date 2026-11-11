@@ -12,7 +12,8 @@ use unicode_normalization::UnicodeNormalization;
 use crate::dirs_home;
 
 // `cedar_ember=1` adds the account's banked limit resets to the usage body.
-const OAUTH_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1";
+const OAUTH_USAGE_URL: &str =
+    "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
 // The server lists banked resets only for a Claude Code CLI surface at or above
 // a minimum version. shortcut: pinned version, read the installed CLI version

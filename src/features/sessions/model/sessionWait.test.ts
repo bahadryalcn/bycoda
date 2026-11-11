@@ -4,7 +4,12 @@ import {
   type DelegationParent,
 } from "../../../shared/model/host-contracts/delegation";
 import { newSession, type Session } from "./session";
-import { sessionWait, sessionWaitReason, sessionWaitsEqual } from "./sessionWait";
+import {
+  sessionWait,
+  sessionWaitReason,
+  sessionWaitReasonWith,
+  sessionWaitsEqual,
+} from "./sessionWait";
 import { applyBackgroundUpdate } from "../../../integrations/harness/core/backgroundWait";
 import { stopStreaming } from "../../../integrations/harness/core/apply";
 
@@ -70,6 +75,12 @@ describe("sessionWait", () => {
 
   it("describes the reason and compares by value", () => {
     expect(sessionWaitReason({ kind: "delegated", count: 2 })).toContain("2");
+    const tagged = ((key: string) => `x:${key}`) as unknown as Parameters<
+      typeof sessionWaitReasonWith
+    >[0];
+    expect(sessionWaitReasonWith(tagged, { kind: "agents", count: 1 })).toBe(
+      "x:Waiting on subagents: {p0}",
+    );
     expect(sessionWaitsEqual({ kind: "agents", count: 1 }, { kind: "agents", count: 1 })).toBe(
       true,
     );

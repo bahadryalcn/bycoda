@@ -3,6 +3,7 @@ import { loadAppearancePreferences } from "../../settings/model/appearancePrefer
 import { Terminal } from "@xterm/xterm";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { invoke } from "@tauri-apps/api/core";
 import { getPtyStatus } from "../../../platform/tauri/pty";
 import { shouldPollTerminalMeta } from "../model/terminalMetaPolling";
@@ -20,7 +21,7 @@ import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { t } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { bindTerminalDomInput } from "../runtime/terminalDomInput";
 import { createTerminalFitting } from "../runtime/terminalFitting";
 import {
@@ -84,6 +85,20 @@ type Props = {
 // no terminal asks again.
 let metaSupported = true;
 
+async function reconnectTerminal(
+  reconnect: () => unknown,
+  fail: (reason: unknown) => void,
+  settle: () => void,
+) {
+  try {
+    await reconnect();
+  } catch (reason) {
+    fail(reason);
+  } finally {
+    settle();
+  }
+}
+
 export function TerminalView({
   fontSize,
   onFontSizeChange,
@@ -109,6 +124,7 @@ export function TerminalView({
   onReconnect,
   onMetaChange,
 }: Props) {
+  const t = useT();
   const typographyRef = useRef({ fontSize, lineHeight });
   const lifecycleRef = useRef(onLifecycle);
   const canStartRef = useRef(canStart);
@@ -161,10 +177,8 @@ export function TerminalView({
       promptCallback.current?.();
     }
   }, [id, integrated, remoteShell.state]);
-  const remoteShellRef = useRef(remoteShell);
-  remoteShellRef.current = remoteShell;
-  const activeRef = useRef(active);
-  activeRef.current = active;
+  const getRemoteShell = useStableCallback(() => remoteShell);
+  const isActive = useStableCallback(() => active);
   const composingRef = useRef(false);
   const editRevisionRef = useRef(0);
   const invalidateRemoteShell = remoteShell.invalidate;
@@ -172,12 +186,9 @@ export function TerminalView({
   // Same signal as the WebGL addon: the terminal is actually on screen. Without
   // IntersectionObserver there is no signal, so assume visible.
   const [onScreen, setOnScreen] = useState(typeof IntersectionObserver === "undefined");
-  const onScreenRef = useRef(onScreen);
-  onScreenRef.current = onScreen;
-  const profileRef = useRef(profile);
-  profileRef.current = profile;
-  const cwdRef = useRef(cwd);
-  cwdRef.current = cwd;
+  const isOnScreen = useStableCallback(() => onScreen);
+  const getProfile = useStableCallback(() => profile);
+  const getCwd = useStableCallback(() => cwd);
   const outerRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -198,8 +209,7 @@ export function TerminalView({
   const resumeInputRef = useRef<() => void>(() => {});
   const ptyRuntimeRef = useRef<TerminalPtyRuntime | null>(null);
   const applySizeRef = useRef<() => void>(() => {});
-  const onMetaChangeRef = useRef(onMetaChange);
-  onMetaChangeRef.current = onMetaChange;
+  const getOnMetaChange = useStableCallback(() => onMetaChange);
   const runningProcessRef = useRef<string | null>(null);
   /** Refreshes the foreground-process title now (set by the status poll). */
   const metaPokeRef = useRef<() => void>(() => {});
@@ -265,7 +275,7 @@ export function TerminalView({
         expectedConfigurationDigest,
         httpProxyTicketId,
         cwd,
-        profile: () => profileRef.current,
+        profile: () => getProfile(),
       }),
       dimensions: () => ({ cols: term.cols, rows: term.rows }),
       writeOutput: (data, consumed) => term.write(data, consumed),
@@ -275,15 +285,15 @@ export function TerminalView({
       lifecycle: (state) => lifecycleRef.current?.(state),
       onExit: (code) => {
         ++editRevisionRef.current;
-        remoteShellRef.current.suspendAutomatic();
+        getRemoteShell().suspendAutomatic();
         setTool(null);
         setShellReady(false);
         setExitCode(code ?? null);
         term.options.disableStdin = true;
         runningProcessRef.current = null;
         if (!privateTerminal) {
-          onMetaChangeRef.current?.({
-            title: defaultTerminalTitle(cwdRef.current),
+          getOnMetaChange()?.({
+            title: defaultTerminalTitle(getCwd()),
             foreground: null,
           });
         }
@@ -291,7 +301,7 @@ export function TerminalView({
       onSpawned: () => setShellReady(true),
       onStartFailed: (message) => {
         term.options.disableStdin = true;
-        remoteShellRef.current.suspendAutomatic();
+        getRemoteShell().suspendAutomatic();
         setShellReady(false);
         setExitCode(null);
         setInputError(message);
@@ -299,7 +309,7 @@ export function TerminalView({
       },
       onInputFailure: (message) => {
         term.options.disableStdin = true;
-        remoteShellRef.current.suspendAutomatic();
+        getRemoteShell().suspendAutomatic();
         setTool(null);
         setInputError(message);
       },
@@ -313,7 +323,7 @@ export function TerminalView({
       onCompositionStart: () => {
         ++editRevisionRef.current;
         composingRef.current = true;
-        remoteShellRef.current.suspendAutomatic();
+        getRemoteShell().suspendAutomatic();
       },
       onCompositionEnd: () => {
         composingRef.current = false;
@@ -346,13 +356,13 @@ export function TerminalView({
           textEdit &&
           pty.live &&
           revision === editRevisionRef.current &&
-          activeRef.current &&
-          onScreenRef.current &&
+          isActive() &&
+          isOnScreen() &&
           !composingInput &&
           !composingRef.current &&
           term.buffer.active.type !== "alternate"
         )
-          remoteShellRef.current.notifyInput();
+          getRemoteShell().notifyInput();
       });
     });
 
@@ -362,7 +372,7 @@ export function TerminalView({
     const oscCwd = term.parser.registerOscHandler(7, (data) => {
       if (privateTerminal) return false;
       const cwd = parseOsc7Cwd(data);
-      const onMeta = onMetaChangeRef.current;
+      const onMeta = getOnMetaChange();
       if (cwd && onMeta && !pty.detached) {
         const patch: TerminalMetaPatch = { cwd };
         if (!runningProcessRef.current) patch.title = defaultTerminalTitle(cwd);
@@ -403,7 +413,7 @@ export function TerminalView({
       isSpawned: () => pty.spawned,
       onEnterAlternateScreen: () => {
         ++editRevisionRef.current;
-        remoteShellRef.current.suspendAutomatic();
+        getRemoteShell().suspendAutomatic();
       },
     });
     applySizeRef.current = fitting.applySize;
@@ -426,7 +436,7 @@ export function TerminalView({
     return () => {
       // View-driven work stops first; the process is untouched until retire().
       pty.detach();
-      remoteShellRef.current.suspendAutomatic();
+      getRemoteShell().suspendAutomatic();
       fitting.dispose();
       visibility?.dispose();
       webgl.dispose();
@@ -459,14 +469,20 @@ export function TerminalView({
     keyGenerationPath,
     privateTerminal,
     invalidateRemoteShell,
+    getRemoteShell,
+    isActive,
+    isOnScreen,
+    getProfile,
+    getCwd,
+    getOnMetaChange,
   ]);
 
   useEffect(() => {
     if (!active || !onScreen) {
       ++editRevisionRef.current;
-      remoteShellRef.current.suspendAutomatic();
+      getRemoteShell().suspendAutomatic();
     }
-  }, [active, onScreen]);
+  }, [active, onScreen, getRemoteShell]);
 
   // Identity-stable: the callers pass an inline arrow, so depending on the
   // prop itself would tear down and re-arm the poll — and repeat lookup — on
@@ -513,7 +529,7 @@ export function TerminalView({
           }
           unchanged = 0;
           lastForeground = fg;
-          onMetaChangeRef.current?.(
+          getOnMetaChange()?.(
             fg
               ? { title: fg, foreground: fg }
               : { title: defaultTerminalTitle(cwd), foreground: null },
@@ -551,7 +567,7 @@ export function TerminalView({
       document.removeEventListener("visibilitychange", poke);
       window.removeEventListener("focus", poke);
     };
-  }, [id, cwd, wantsMeta, onScreen, privateTerminal]);
+  }, [id, cwd, wantsMeta, onScreen, privateTerminal, getOnMetaChange]);
 
   useEffect(() => {
     if (!active) return;
@@ -708,14 +724,14 @@ export function TerminalView({
                     if (reconnectPending.current) return;
                     reconnectPending.current = true;
                     setReconnecting(true);
-                    try {
-                      await onReconnect();
-                    } catch (reason) {
-                      setInputError(String(reason));
-                    } finally {
-                      reconnectPending.current = false;
-                      setReconnecting(false);
-                    }
+                    await reconnectTerminal(
+                      onReconnect,
+                      (reason) => setInputError(String(reason)),
+                      () => {
+                        reconnectPending.current = false;
+                        setReconnecting(false);
+                      },
+                    );
                   }}
                 >
                   {t("Reconnect")}

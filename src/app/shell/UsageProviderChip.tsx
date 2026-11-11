@@ -1,8 +1,7 @@
 import { Progress } from "../../shared/ui/Progress";
 import { TextField } from "../../shared/ui/TextField";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
-import { t, useLocale, getLocale, useT } from "../../shared/i18n";
-import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
+import { t, useFormat, useLocale, useT } from "../../shared/i18n";
 import {
   Fragment,
   useEffect,
@@ -15,16 +14,23 @@ import {
 } from "react";
 import {
   clampUsedPercent,
-  formatResetCountdown,
+  formatResetCountdownWith,
   formatResetDuration,
   formatUsagePercent,
   formatWindowLabel,
-  rateLimitWindowTooltip,
+  rateLimitWindowTooltipWith,
   type ProviderRateLimits,
   type RateLimitResetCredit,
   type RateLimitWindow,
 } from "../../features/providers/model/rateLimits";
 import type { CodexRateLimitResetOutcome } from "../../features/providers/model/rateLimitsFetch";
+import {
+  FULL_DATE_TIME,
+  isResetOutcome,
+  resetOutcomeLabel,
+  type ResetActionState,
+} from "./usageResetModel";
+import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { projectMascot } from "../../features/projects/model/projectMascots";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { HARNESS_TITLE, type HarnessId } from "../../features/sessions/model/session";
@@ -63,7 +69,7 @@ import {
 } from "../../features/providers/model/accountUsage";
 import {
   AccountStatusLabel,
-  meterWindows,
+  meterWindowsWith,
   UsageMeter,
 } from "../../features/providers/ui/ProviderAccountUsage";
 import {
@@ -85,8 +91,6 @@ type UsageWindowEntry = {
   window: RateLimitWindow;
 };
 
-type ResetActionState = "idle" | "confirming" | "using" | CodexRateLimitResetOutcome | "error";
-
 type UsageProviderChipProps = {
   limits: ProviderRateLimits;
   usageOnly?: boolean;
@@ -106,6 +110,7 @@ type UsageProviderChipProps = {
 export function UsageProviderChip(props: UsageProviderChipProps) {
   const { limits, now, accounts = [], accountId, presentation } = props;
   const t = useT();
+  const format = useFormat();
   const showRemaining = useShowRemainingUsage();
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -117,7 +122,7 @@ export function UsageProviderChip(props: UsageProviderChipProps) {
   const disconnected = limits.status === "unavailable";
   const windows = usageWindows(limits);
   const tooltip = windows
-    .map((entry) => rateLimitWindowTooltip(entry.window, now, showRemaining))
+    .map((entry) => rateLimitWindowTooltipWith(entry.window, now, showRemaining, t, format))
     .join(" · ");
   const providerLabel = presentation?.label ?? HARNESS_TITLE[limits.provider];
   const iconHarness = presentation?.harness ?? limits.provider;
@@ -599,7 +604,7 @@ function ProviderAccountPicker({
           const identity = identities[identityKey(account)];
           const orgTag = identityOrganizationTag(identity);
           const usage = usageFor(account);
-          const meters = meterWindows(usage);
+          const meters = meterWindowsWith(usage, t);
           return (
             <div
               key={account.id}
@@ -828,6 +833,7 @@ function UsageWindowCard({
   now: number;
 }) {
   const t = useT();
+  const format = useFormat();
   const showRemaining = useShowRemainingUsage();
   const pct = clampUsedPercent(window.usedPercent);
   const remaining = 100 - pct;
@@ -863,19 +869,109 @@ function UsageWindowCard({
         </span>
         <Tooltip
           label={
-            window.resetsAt == null
-              ? undefined
-              : new Date(window.resetsAt).toLocaleString(getLocale())
+            window.resetsAt == null ? undefined : format.formatDate(window.resetsAt, FULL_DATE_TIME)
           }
         >
           <span className="truncate text-right tabular-nums">
             {window.resetsAt == null
               ? t("{p0} window", { p0: formatWindowLabel(window.windowMinutes) })
-              : formatResetCountdown(window.resetsAt - now)}
+              : formatResetCountdownWith(window.resetsAt - now, t, format)}
           </span>
         </Tooltip>
       </div>
     </section>
+  );
+}
+
+function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; loading: boolean }) {
+  const t = useT();
+  return (
+    <Surface variant="outline" className="flex flex-col gap-2" role="status">
+      <span className="text-ui-micro font-medium">
+        {loading
+          ? t("Loading usage…")
+          : limits.status === "unavailable"
+            ? t("Not connected")
+            : t("Usage unavailable")}
+      </span>
+      <UnknownUsageBar
+        label={loading ? t("Loading usage…") : t("Usage unavailable")}
+        loading={loading}
+      />
+      {limits.error ? <InlineError live="off">{limits.error}</InlineError> : null}
+    </Surface>
+  );
+}
+
+function updatedLabel(limits: ProviderRateLimits, now: number): string {
+  if (limits.updatedAt <= 0) return t("Rate-limit details");
+  const elapsedMinutes = Math.max(0, Math.floor((now - limits.updatedAt) / 60_000));
+  // Without any windows, the time is the last check rather than data age.
+  if (!limits.session && !limits.weekly && !limits.monthly && !limits.resetCredits) {
+    if (elapsedMinutes === 0) return t("Checked just now");
+    if (elapsedMinutes < 60) return t("Checked {p0}m ago", { p0: elapsedMinutes });
+    return t("Checked {p0}h ago", { p0: Math.floor(elapsedMinutes / 60) });
+  }
+  if (elapsedMinutes === 0) return t("Updated just now");
+  if (elapsedMinutes < 60) return t("Updated {p0}m ago", { p0: elapsedMinutes });
+  return t("Updated {p0}h ago", { p0: Math.floor(elapsedMinutes / 60) });
+}
+
+function UnknownUsageBar({ label, loading = false }: { label: string; loading?: boolean }) {
+  return (
+    <Tooltip label={label}>
+      <span
+        aria-label={label}
+        className="inline-flex h-4 min-w-12 items-center justify-center rounded-sm border border-dashed border-(--color-stroke) bg-(--ui-surface-muted) px-1 text-ui-caption text-(--ui-text-secondary)"
+      >
+        {loading ? "···" : "?"}
+      </span>
+    </Tooltip>
+  );
+}
+
+function UsageWindowStat({ window, now }: { window: RateLimitWindow; now: number }) {
+  const t = useT();
+  const format = useFormat();
+  const showRemaining = useShowRemainingUsage();
+  const pct = clampUsedPercent(window.usedPercent);
+  const shown = showRemaining ? 100 - pct : pct;
+  const label = `${formatWindowLabel(window.windowMinutes)} · ${rateLimitWindowTooltipWith(window, now, showRemaining, t, format)}`;
+  const tone = pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral";
+  // The compact meter keeps the value inside; at rest its fill is a quiet selection tone
+  // instead of the solid content colour, so ambient usage never outshines the workspace.
+  const quiet =
+    tone === "neutral"
+      ? ({
+          "--progress-fill": "var(--ui-surface-selected)",
+          "--progress-ink": "var(--color-content)",
+        } as CSSProperties)
+      : undefined;
+  return (
+    <Tooltip label={label}>
+      <span className="inline-flex items-center gap-1.5 tabular-nums">
+        <span aria-hidden="true" className="text-ui-micro text-(--ui-text-secondary)">
+          {formatWindowLabel(window.windowMinutes)}
+        </span>
+        <Progress
+          compact
+          showValue
+          valuePlacement="inside"
+          valueLabel={formatUsagePercent(shown)}
+          aria-label={label}
+          aria-valuetext={label}
+          className="w-11 shrink-0"
+          style={quiet}
+          value={shown}
+          tone={tone}
+        />
+        {window.resetsAt != null ? (
+          <span className="text-(--ui-text-secondary)">
+            {formatResetDuration(window.resetsAt - now)}
+          </span>
+        ) : null}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -1027,6 +1123,7 @@ function BankedResetRow({
   onUse: () => void;
 }) {
   const t = useT();
+  const format = useFormat();
   const outcome = isResetOutcome(action) || action === "error";
   const retryable = action === "error";
   return (
@@ -1037,7 +1134,7 @@ function BankedResetRow({
           label={
             credit?.expiresAt == null
               ? undefined
-              : new Date(credit.expiresAt).toLocaleString(getLocale())
+              : format.formatDate(credit.expiresAt, FULL_DATE_TIME)
           }
         >
           <p className="min-w-0 truncate text-ui-caption tabular-nums text-(--ui-text-secondary)">
@@ -1073,7 +1170,7 @@ function BankedResetRow({
           }`}
           role="status"
         >
-          {action === "error" ? error : resetOutcomeLabel(action)}
+          {action === "error" ? error : resetOutcomeLabel(action, t)}
         </p>
       ) : null}
       {action === "confirming" ? (
@@ -1092,111 +1189,5 @@ function BankedResetRow({
         </div>
       ) : null}
     </article>
-  );
-}
-
-function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; loading: boolean }) {
-  const t = useT();
-  return (
-    <Surface variant="outline" className="flex flex-col gap-2" role="status">
-      <span className="text-ui-micro font-medium">
-        {loading
-          ? t("Loading usage…")
-          : limits.status === "unavailable"
-            ? t("Not connected")
-            : t("Usage unavailable")}
-      </span>
-      <UnknownUsageBar
-        label={loading ? t("Loading usage…") : t("Usage unavailable")}
-        loading={loading}
-      />
-      {limits.error ? <InlineError live="off">{limits.error}</InlineError> : null}
-    </Surface>
-  );
-}
-
-function updatedLabel(limits: ProviderRateLimits, now: number): string {
-  if (limits.updatedAt <= 0) return t("Rate-limit details");
-  const elapsedMinutes = Math.max(0, Math.floor((now - limits.updatedAt) / 60_000));
-  // Without any windows, the time is the last check rather than data age.
-  if (!limits.session && !limits.weekly && !limits.monthly && !limits.resetCredits) {
-    if (elapsedMinutes === 0) return t("Checked just now");
-    if (elapsedMinutes < 60) return t("Checked {p0}m ago", { p0: elapsedMinutes });
-    return t("Checked {p0}h ago", { p0: Math.floor(elapsedMinutes / 60) });
-  }
-  if (elapsedMinutes === 0) return t("Updated just now");
-  if (elapsedMinutes < 60) return t("Updated {p0}m ago", { p0: elapsedMinutes });
-  return t("Updated {p0}h ago", { p0: Math.floor(elapsedMinutes / 60) });
-}
-
-function resetOutcomeLabel(outcome: CodexRateLimitResetOutcome): string {
-  if (outcome === "reset") return t("Codex usage was reset.");
-  if (outcome === "nothingToReset") return t("There’s no active usage to reset.");
-  if (outcome === "noCredit") return t("No banked resets are available.");
-  return t("That reset was already used.");
-}
-
-function isResetOutcome(value: ResetActionState): value is CodexRateLimitResetOutcome {
-  return (
-    value === "reset" ||
-    value === "nothingToReset" ||
-    value === "noCredit" ||
-    value === "alreadyRedeemed"
-  );
-}
-
-function UnknownUsageBar({ label, loading = false }: { label: string; loading?: boolean }) {
-  return (
-    <Tooltip label={label}>
-      <span
-        aria-label={label}
-        className="inline-flex h-4 min-w-12 items-center justify-center rounded-sm border border-dashed border-(--color-stroke) bg-(--ui-surface-muted) px-1 text-ui-caption text-(--ui-text-secondary)"
-      >
-        {loading ? "···" : "?"}
-      </span>
-    </Tooltip>
-  );
-}
-
-function UsageWindowStat({ window, now }: { window: RateLimitWindow; now: number }) {
-  const showRemaining = useShowRemainingUsage();
-  const pct = clampUsedPercent(window.usedPercent);
-  const shown = showRemaining ? 100 - pct : pct;
-  const label = `${formatWindowLabel(window.windowMinutes)} · ${rateLimitWindowTooltip(window, now, showRemaining)}`;
-  const tone = pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral";
-  // The compact meter keeps the value inside; at rest its fill is a quiet selection tone
-  // instead of the solid content colour, so ambient usage never outshines the workspace.
-  const quiet =
-    tone === "neutral"
-      ? ({
-          "--progress-fill": "var(--ui-surface-selected)",
-          "--progress-ink": "var(--color-content)",
-        } as CSSProperties)
-      : undefined;
-  return (
-    <Tooltip label={label}>
-      <span className="inline-flex items-center gap-1.5 tabular-nums">
-        <span aria-hidden="true" className="text-ui-micro text-(--ui-text-secondary)">
-          {formatWindowLabel(window.windowMinutes)}
-        </span>
-        <Progress
-          compact
-          showValue
-          valuePlacement="inside"
-          valueLabel={formatUsagePercent(shown)}
-          aria-label={label}
-          aria-valuetext={label}
-          className="w-11 shrink-0"
-          style={quiet}
-          value={shown}
-          tone={tone}
-        />
-        {window.resetsAt != null ? (
-          <span className="text-(--ui-text-secondary)">
-            {formatResetDuration(window.resetsAt - now)}
-          </span>
-        ) : null}
-      </span>
-    </Tooltip>
   );
 }

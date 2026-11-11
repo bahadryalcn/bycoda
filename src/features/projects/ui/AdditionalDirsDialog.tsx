@@ -2,16 +2,18 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useState } from "react";
 import { basename } from "../../../platform/tauri/fs";
 import { pathKey, prettyCwd } from "../../../shared/lib/paths";
 import { Modal } from "../../../shared/ui/Modal";
 import {
-  additionalDirCandidates,
+  additionalDirCandidatesFrom,
   loadAdditionalDirs,
   saveAdditionalDirs,
 } from "../model/additionalDirs";
+import { useProjectGroupAssignments } from "../model/projectGroups";
+import { useRecents } from "../model/recents";
 
 type Props = {
   project: string;
@@ -24,13 +26,18 @@ type Props = {
  * project may also read and edit.
  */
 export function AdditionalDirsDialog({ project, name, onClose }: Props) {
-  useLocale();
+  const t = useT();
+  const recents = useRecents();
+  const assignments = useProjectGroupAssignments();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(() => loadAdditionalDirs(project));
   const selectedKeys = new Set(selected.map(pathKey));
   // A folder picked earlier stays listed after it leaves the group, so it can
   // still be turned off.
-  const candidates = [...additionalDirCandidates(project), ...selected].filter(
+  const candidates = [
+    ...additionalDirCandidatesFrom(project, recents, assignments),
+    ...selected,
+  ].filter(
     (path, index, all) => all.findIndex((other) => pathKey(other) === pathKey(path)) === index,
   );
 

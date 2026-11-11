@@ -23,6 +23,7 @@ import {
   possessiveName,
   assistantIdentity,
   refreshAssistant,
+  refreshAssistantQuietly,
   useAssistantSnapshot,
 } from "./assistantClient";
 
@@ -69,7 +70,7 @@ it("does not re-notify consumers for an unchanged 15 s poll, and notifies once f
   const container = document.createElement("div");
   const root = createRoot(container);
   let renders = 0;
-  let latest: ReturnType<typeof useAssistantSnapshot> | undefined;
+  let latest: { snapshot?: { profile?: { name?: string } } | null; loading?: boolean } | undefined;
   function Consumer() {
     renders++;
     latest = useAssistantSnapshot();
@@ -96,6 +97,56 @@ it("does not re-notify consumers for an unchanged 15 s poll, and notifies once f
   } finally {
     await act(async () => root.unmount());
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("selected consumers skip heartbeat-only changes and background refreshes, and the plain form sees every change", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  let selectedRenders = 0;
+  let plainRenders = 0;
+  let selected: string | null | undefined;
+  function Selected() {
+    selectedRenders++;
+    selected = useAssistantSnapshot((state) => state.environmentId);
+    return null;
+  }
+  function Plain() {
+    plainRenders++;
+    useAssistantSnapshot();
+    return null;
+  }
+  const reply = (heartbeat: number) => ({
+    snapshot: { profile: { name: "A" }, lastHeartbeatAt: heartbeat },
+  });
+  try {
+    vi.mocked(hostToolRequest).mockResolvedValue(reply(1) as never);
+    await act(async () =>
+      root.render(createElement("div", null, createElement(Selected), createElement(Plain))),
+    );
+    await act(() => refreshAssistant());
+    expect(selected).toBe("env");
+    const selectedBase = selectedRenders;
+    const plainBase = plainRenders;
+
+    await act(() => refreshAssistantQuietly());
+    expect(selectedRenders).toBe(selectedBase);
+    expect(plainRenders).toBe(plainBase);
+
+    vi.mocked(hostToolRequest).mockResolvedValue(reply(2) as never);
+    await act(() => refreshAssistantQuietly());
+    expect(selectedRenders).toBe(selectedBase);
+    expect(plainRenders).toBe(plainBase + 1);
+
+    const { captureAssistantHostRead } = await import("./assistantHostRead");
+    vi.mocked(captureAssistantHostRead).mockResolvedValueOnce({ environmentId: "env-2" } as never);
+    await act(() => refreshAssistantQuietly());
+    expect(selected).toBe("env-2");
+    expect(selectedRenders).toBe(selectedBase + 1);
+  } finally {
+    await act(async () => root.unmount());
     vi.unstubAllGlobals();
   }
 });

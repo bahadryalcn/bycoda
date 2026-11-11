@@ -88,14 +88,14 @@ export function useOrchestrationWorkerPanes({
         return false;
       }
     },
-    [ensureOpenSession, focusOpenSession, onSelectHistorySession],
+    [ensureOpenSession, focusOpenSession, onSelectHistorySession, setWorkerDetailRequest],
   );
   const onOpenWorkerDetails = useCallback(
     (worker: OrchestrationWorkerDetail) => {
       setInspectedWorkerId(worker.sessionId);
       void queueWorkerPanes([worker]);
     },
-    [queueWorkerPanes],
+    [queueWorkerPanes, setInspectedWorkerId],
   );
   useEffect(() => {
     if (!workerDetailRequest) return;
@@ -147,7 +147,7 @@ export function useOrchestrationWorkerPanes({
       inspect: setInspectedWorkerId,
       openDetails: onOpenWorkerDetails,
     }),
-    [inspectedWorkerId, onOpenWorkerDetails],
+    [inspectedWorkerId, onOpenWorkerDetails, setInspectedWorkerId],
   );
   return { queueWorkerPanes, orchestrationWorkers };
 }

@@ -1,4 +1,6 @@
-import { translateAt, useLocale, type LanguageDomain } from "../i18n";
+import { useLocale, useT, type LanguageDomain } from "../i18n";
+import { useT as useGitT } from "../i18n/git";
+import { useT as useTechnicalT } from "../i18n/technical";
 import { NativePopupHost } from "./NativePopupHost";
 import { PanelHeader } from "./PanelHeader";
 import {
@@ -172,8 +174,11 @@ export function ModalPanel({
   padding,
   children,
 }: Props) {
-  const locale = useLocale(languageDomain);
-  const t = (message: string) => translateAt(locale, message);
+  // One bound translator per language domain; all three hooks run every render, the prop picks one.
+  const appT = useT();
+  const gitT = useGitT();
+  const technicalT = useTechnicalT();
+  const t = languageDomain === "git" ? gitT : languageDomain === "technical" ? technicalT : appT;
   const popupHost = useContext(NativePopupHost);
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);

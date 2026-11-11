@@ -45,7 +45,7 @@ export function useRepositoryReviewOpen(deps: RepositoryReviewOpenDeps): {
         });
       } else onOpenAllChanges(request.kind, request.cwd);
     },
-    [lockSnapshot, onOpenFile, onOpenCommit, onOpenDiff, onOpenAllChanges],
+    [lockSnapshot, onOpenFile, onOpenCommit, onOpenDiff, onOpenAllChanges, sidebarCwdRef],
   );
 
   return { onOpenRepository };

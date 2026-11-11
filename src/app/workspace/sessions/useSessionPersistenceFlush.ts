@@ -106,5 +106,16 @@ export function useSessionPersistenceFlush({
       releaseQuit();
       releaseClose?.();
     };
-  }, [flushHarnessEvents, readProjectReturnMemory, windowTransfer, toolWindow]);
+  }, [
+    flushHarnessEvents,
+    readProjectReturnMemory,
+    windowTransfer,
+    toolWindow,
+    keepWorkspaceTab,
+    activeTabIdRef,
+    projectTerminalsRef,
+    lastDockSideRef,
+    tabsRef,
+    projectCwdRef,
+  ]);
 }

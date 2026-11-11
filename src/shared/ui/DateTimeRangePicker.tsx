@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from "react";
-import { t, useLocale, useT } from "../i18n";
+import { useLocale, useT } from "../i18n";
 import { Button } from "./Button";
 import { Popover } from "./Popover";
 import { TextField } from "./TextField";
@@ -19,7 +19,7 @@ export type DateTimeRange = { start: Date; end: Date };
 export function DateTimeRangePicker({
   value,
   onChange,
-  label = t("Date and time range"),
+  label: labelOption,
   minDate,
   maxDate,
   disabled = false,
@@ -32,6 +32,7 @@ export function DateTimeRangePicker({
   disabled?: boolean;
 }) {
   const t = useT();
+  const label = labelOption ?? t("Date and time range");
   const locale = useLocale();
   const anchor = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);

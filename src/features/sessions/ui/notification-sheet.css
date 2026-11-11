@@ -5,7 +5,7 @@
   pointer-events: none;
 }
 
-/* The sheet frame, placement, header, tabs and entrance are the shared Sheet and Tabs; this class
+/* The sheet frame, placement, header and entrance are the shared Sheet; this class
    only scopes the flat row anatomy below. */
 .notification-sheet-list {
   min-block-size: 0;
@@ -63,8 +63,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.notification-request-meta,
-.notification-history-meta {
+.notification-request-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -109,42 +108,53 @@
   flex: 1;
   min-inline-size: 0;
 }
+.notification-section-label {
+  padding-inline: 10px;
+  padding-block: 8px 4px;
+}
+/* Pending requests live in one shared card; the request cards inside stay flat. */
+.notification-pending-card {
+  margin-block-end: 8px;
+  overflow: clip;
+}
 .notification-history-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
   border-radius: var(--ui-radius-card);
 }
-/* A row that cannot open its conversation keeps the body's box without its action. */
-.notification-history-static {
+/* Icon, text and time on one line; the whole row is the expand toggle. */
+.notification-row-toggle {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: start;
+  justify-content: stretch;
+  gap: 10px;
+  block-size: auto;
+  padding: 8px 10px;
+  text-align: start;
+  white-space: normal;
+}
+.notification-history-icon {
+  justify-self: center;
+}
+.notification-history-text {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 12px 4px;
+  min-inline-size: 0;
 }
 .notification-history-head {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   min-inline-size: 0;
 }
-.notification-history-title {
-  flex: 1;
-  min-inline-size: 0;
-  overflow: clip;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-.notification-history-time {
+.notification-new-dot {
   flex: none;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-variant-numeric: tabular-nums;
 }
 .notification-history-preview,
 .notification-history-label {
   overflow-wrap: anywhere;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
   white-space: pre-wrap;
 }
 .notification-history-preview {
@@ -153,30 +163,41 @@
   -webkit-line-clamp: 2;
   overflow: clip;
 }
-/* One line: the source name gives way first, state and actions never wrap under it. */
 .notification-history-meta {
-  flex-wrap: nowrap;
-  padding: 0 12px 8px;
-}
-.notification-history-meta .notification-project {
-  flex: 1 1 0;
-}
-.notification-history-meta > :not(.notification-project) {
-  flex: none;
-}
-.notification-history-actions {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-inline-start: auto;
+  min-inline-size: 0;
+}
+.notification-history-meta .notification-project {
+  flex: 0 1 auto;
+}
+.notification-history-kind {
+  flex: none;
+  white-space: nowrap;
+}
+.notification-history-time {
+  white-space: nowrap;
+}
+/* Same columns as the row, so the details line up under the text, past the icon. */
+.notification-history-details {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 8px 10px;
+  padding: 0 10px 8px;
+}
+.notification-history-details > * {
+  grid-column: 2;
+  margin: 0;
 }
 .notification-history-path {
-  margin: 0;
-  padding: 0 12px 8px;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
-  color: var(--ui-text-secondary);
+}
+.notification-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
 }
 .notification-options {
   display: flex;

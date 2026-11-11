@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { parseAnsi, type AnsiStyle } from "../lib/ansi";
 
 // Terminal colors map to theme tones so output follows light and dark themes.
@@ -45,19 +44,15 @@ function styleClass(style: AnsiStyle): string {
  * @avoid Interactive terminals: TerminalView. Search excerpts: terminalText. Copy text: stripAnsi.
  */
 export function AnsiText({ text }: { text: string }) {
-  const parts = useMemo(
-    () =>
-      parseAnsi(text).map((segment, index) => {
-        const className = styleClass(segment.style);
-        return className ? (
-          <span key={index} className={className}>
-            {segment.text}
-          </span>
-        ) : (
-          segment.text
-        );
-      }),
-    [text],
-  );
+  const parts = parseAnsi(text).map((segment, index) => {
+    const className = styleClass(segment.style);
+    return className ? (
+      <span key={index} className={className}>
+        {segment.text}
+      </span>
+    ) : (
+      segment.text
+    );
+  });
   return <>{parts}</>;
 }

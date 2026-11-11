@@ -12,7 +12,8 @@ vi.mock("../../assistant/model/assistantClient", () => ({
 vi.mock("../../../shared/i18n", () => ({
   t: (key: string, values?: Record<string, string>) =>
     key.replace(/\{(p\d+)\}/g, (_, key) => values?.[key] ?? ""),
-  useT: () => (key: string) => key,
+  useT: () => (key: string, values?: Record<string, string>) =>
+    key.replace(/\{(p\d+)\}/g, (_, key) => values?.[key] ?? ""),
   useLocale: () => "en",
 }));
 import { AssistantManagedBadge } from "./AssistantManagedBadge";

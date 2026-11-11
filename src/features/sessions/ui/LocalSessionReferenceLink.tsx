@@ -11,6 +11,20 @@ import {
   type LocalSessionReferenceMetadata,
 } from "./LocalSessionReferenceContext";
 
+/** Awaits `run` and hands its value, failure and end to the caller; each callback checks its own request. */
+async function settleRequest<T>(
+  run: () => Promise<T>,
+  on: { value: (value: T) => void; error: (cause: unknown) => void; done: () => void },
+): Promise<void> {
+  try {
+    on.value(await run());
+  } catch (cause) {
+    on.error(cause);
+  } finally {
+    on.done();
+  }
+}
+
 export function LocalSessionReferenceLink({
   href,
   reference,
@@ -63,16 +77,24 @@ export function LocalSessionReferenceLink({
     setReading(true);
     setResolved(undefined);
     setError(undefined);
-    try {
-      if (!navigation) throw new Error(unavailable);
-      const next = await navigation.resolve(reference);
-      if (sequence.current === request) setResolved({ owner: navigation, value: next });
-    } catch (cause) {
-      if (sequence.current === request)
-        setError(cause instanceof Error ? cause.message : unavailable);
-    } finally {
-      if (sequence.current === request) setReading(false);
-    }
+    await settleRequest(
+      async () => {
+        if (!navigation) throw new Error(unavailable);
+        return navigation.resolve(reference);
+      },
+      {
+        value: (next) => {
+          if (sequence.current === request) setResolved({ owner: navigation, value: next });
+        },
+        error: (cause) => {
+          if (sequence.current === request)
+            setError(cause instanceof Error ? cause.message : unavailable);
+        },
+        done: () => {
+          if (sequence.current === request) setReading(false);
+        },
+      },
+    );
   }
 
   async function open(beside = false, withoutTurn = false) {
@@ -83,17 +105,25 @@ export function LocalSessionReferenceLink({
     setOpening(beside ? "beside" : "session");
     setReading(false);
     setError(undefined);
-    try {
-      if (!navigation) throw new Error(unavailable);
-      await navigation.open(withoutTurn ? { locator: reference.locator } : reference, { beside });
-      if (sequence.current === request) setDetails(false);
-    } catch (cause) {
-      if (sequence.current === request)
-        setError(cause instanceof Error ? cause.message : unavailable);
-    } finally {
-      if (activeOpen.current === operation) activeOpen.current = null;
-      if (sequence.current === request) setOpening(undefined);
-    }
+    await settleRequest(
+      async () => {
+        if (!navigation) throw new Error(unavailable);
+        await navigation.open(withoutTurn ? { locator: reference.locator } : reference, { beside });
+      },
+      {
+        value: () => {
+          if (sequence.current === request) setDetails(false);
+        },
+        error: (cause) => {
+          if (sequence.current === request)
+            setError(cause instanceof Error ? cause.message : unavailable);
+        },
+        done: () => {
+          if (activeOpen.current === operation) activeOpen.current = null;
+          if (sequence.current === request) setOpening(undefined);
+        },
+      },
+    );
   }
 
   return (

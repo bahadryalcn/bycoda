@@ -6,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   createPath,
@@ -29,8 +29,23 @@ type Props = {
   onClose: () => void;
 };
 
+async function settleAction(
+  action: () => Promise<void>,
+  mounted: { current: boolean },
+  setError: (message: string) => void,
+  setBusy: (busy: boolean) => void,
+) {
+  try {
+    await action();
+  } catch (reason) {
+    if (mounted.current) setError(String(reason));
+  } finally {
+    if (mounted.current) setBusy(false);
+  }
+}
+
 export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
-  useLocale();
+  const t = useT();
   const [directory, setDirectory] = useState("");
   const [home, setHome] = useState("");
   const [roots, setRoots] = useState<string[]>(IS_WIN ? [] : ["/"]);
@@ -135,13 +150,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
     if (busy) return;
     setBusy(true);
     setError(undefined);
-    try {
-      await action();
-    } catch (reason) {
-      if (mounted.current) setError(String(reason));
-    } finally {
-      if (mounted.current) setBusy(false);
-    }
+    await settleAction(action, mounted, setError, setBusy);
   }
 
   async function createFolder() {

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Render budget: shell</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      localStorage.setItem("bycoda.language", "en");
+      window.__fixtureNativeCalls = {};
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+        transformCallback: () => 1,
+        unregisterCallback: () => {},
+        invoke: async (command) => {
+          window.__fixtureNativeCalls[command] = (window.__fixtureNativeCalls[command] ?? 0) + 1;
+          if (command === "plugin:event|listen") return 1;
+          if (command === "plugin:event|unlisten") return;
+          if (command === "session_checkpoint_status") return { files: [] };
+          if (command === "list_project_files" || command === "list_claude_commands") return [];
+          if (["control_load", "native_language_set", "plugin:window|set_title"].includes(command))
+            return null;
+          throw new Error(`No native host in render-budget fixture: ${command}`);
+        },
+      };
+    </script>
+    <script type="module" src="./shell.tsx"></script>
+  </body>
+</html>

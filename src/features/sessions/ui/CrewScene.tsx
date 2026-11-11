@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { valueHash } from "../../../shared/lib/valueHash";
-import { t, useT } from "../../../shared/i18n";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useT } from "../../../shared/i18n";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { shouldRunLoop } from "../../../shared/lib/animationGate";
 import {
   useDecorativeMotionEnabled,
@@ -102,7 +102,7 @@ export function labelLift(anchorY: number, withSign: boolean): string {
   return `max(-100%, ${room.toFixed(3)}cqh)`;
 }
 
-function roleText(role: CrewRole): string {
+function roleText(role: CrewRole, t: ReturnType<typeof useT>): string {
   return role === "lead" ? t("Main agent") : role === "advisor" ? t("Advisor") : t("Subagent");
 }
 
@@ -152,9 +152,12 @@ function CrewStage({
     })
     .join(";");
   const crewRef = useRef(crew);
-  crewRef.current = crew;
   const ageOfRef = useRef(ageOf);
-  ageOfRef.current = ageOf;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the latest seats and age rule in refs for the painter loop, which runs outside render
+  useLayoutEffect(() => {
+    crewRef.current = crew;
+    ageOfRef.current = ageOf;
+  });
   /** Last drawn stage per seat and when it changed, for the growth cross-fade. */
   const ages = useRef<{ stage: number; from?: number; changedAt: number }[]>([]);
   const [artStatus, setArtStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -375,7 +378,7 @@ function CrewStage({
       paint(0);
       return () => draw.dispose?.();
     }
-    startedAt.current ??= performance.now();
+    startedAt.current = startedAt.current ?? performance.now();
     const start = startedAt.current;
     // Behind a conversation, idle life only plays while someone works: an idle crew
     // finishes sitting down, draws its still pose and keeps no timer until the crew
@@ -467,7 +470,7 @@ function CrewStage({
             const charge = crewCharge(crew[label.id]?.context, growthEnabled);
             const percent = charge === undefined ? undefined : Math.round(charge * 100);
             const displayName =
-              crew[label.id]?.name || (character ? character.name : roleText(label.role));
+              crew[label.id]?.name || (character ? character.name : roleText(label.role, t));
             return (
               <span
                 key={label.id}
@@ -479,7 +482,7 @@ function CrewStage({
                 data-charge={rigged && growthEnabled ? (percent ?? "unknown") : undefined}
                 title={
                   character
-                    ? `${displayName} · ${character.name} · ${roleText(label.role)}${growthEnabled ? ` · ${percent === undefined ? t("Context unknown") : t("Context: {p0}%", { p0: percent })}` : ""}`
+                    ? `${displayName} · ${character.name} · ${roleText(label.role, t)}${growthEnabled ? ` · ${percent === undefined ? t("Context unknown") : t("Context: {p0}%", { p0: percent })}` : ""}`
                     : displayName
                 }
                 style={{
@@ -494,7 +497,7 @@ function CrewStage({
                   <>
                     <span className="crew-scene__name">{displayName}</span>
                     <span className="crew-scene__detail">
-                      {roleText(label.role)}
+                      {roleText(label.role, t)}
                       {growthEnabled ? ` · ${percent === undefined ? "—" : `${percent}%`}` : ""}
                     </span>
                     {growthEnabled && (

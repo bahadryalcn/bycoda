@@ -63,7 +63,7 @@ export function usePaneDetachActions({
       setProjectTerminalFocused(false);
       activateTab(result.activeTabId, result.focusedId);
     },
-    [activateTab],
+    [activateTab, tabsRef, movingTabIds, setTabs, isMovingPane, setProjectTerminalFocused],
   );
 
   const onPopOutPane = useCallback(
@@ -144,7 +144,7 @@ export function usePaneDetachActions({
         publishWindowTransferNotice("info", restoredSplitMessage());
       });
     },
-    [activateTab, onMoveTabsToNewWindow],
+    [activateTab, onMoveTabsToNewWindow, setTabs, movingTabIds, dirtyFilesRef, tabsRef],
   );
 
   return { onDetachPane, onPopOutPane };

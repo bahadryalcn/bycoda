@@ -333,6 +333,13 @@ not a new product build or UI test suite.
   with projects uses the existing saved-conversation confirmation and keeps
   project folders on disk.
 
+- `Toast`, `ToastCard` and the imperative `toast` queue render through the adapted free Arc
+  toast stack (`arc/toast-stack`). `ToastRegion` keeps the four corners, the body-level portals,
+  the queue and auto-dismiss; a component-owned toast therefore keeps its React context while it
+  joins the stack. The card has one anatomy for every caller: tone glyph, title, description,
+  optional body, one pill action and dismiss. Feature cards in `ToastSlot` share the corner but
+  not the stack, so an approval or reminder card is never tucked behind a toast.
+
 Shared primitives added in the 2026-11-01 UI standards round (Tabs, PaneHeader, SectionLabel,
 Surface, Divider, Sash, Meter, ToastRegion, Sheet, InlineError, Spinner/LoadingText, ModalActions,
 PromptField, PopoverSearchHeader, the picker kit, HoverCard and the shared Tooltip) are Bycoda-owned
@@ -412,6 +419,7 @@ Preserve these changes when updating Arc registry source:
 | Slider            | `hideLabel` retains the accessible label while a settings row owns the visible label.                                      |
 | Input             | `fieldClassName` themes the complete field; `hideLabel` preserves the associated accessible label.                         |
 | Motion tokens     | The local re-export module owns bycoda timing and blur policy.                                                             |
+| Toast stack       | Exports stack geometry (mirrored top edge), item and card for ToastRegion; no store or viewport, no swipe or hotkey.       |
 | Select / Combobox | Export composable native presentation parts for existing overlays.                                                         |
 | Morph Select      | Controlled open state, localized labels, short springs and shared overlay registration.                                    |
 | Expandable Card   | Existing icon set and guarded ResizeObserver setup.                                                                        |

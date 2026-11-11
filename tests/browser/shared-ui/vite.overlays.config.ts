@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { overlayFixture } from "./overlay-fixtures";
 
 const fixture = overlayFixture();
-const inputs = fixture.names.map((name) => `tests/browser/overlay-${name}.html`);
+const inputs = fixture.names.map((name) => `tests/browser/shared-ui/overlay-${name}.html`);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

@@ -9,7 +9,9 @@ let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.spyOn(Date, "now").mockReturnValue(new Date(2028, 1, 20, 10).getTime());
+  // The shared day clock reads `new Date()`, so only a faked Date moves "today".
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2028, 1, 20, 10));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -17,6 +19,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });

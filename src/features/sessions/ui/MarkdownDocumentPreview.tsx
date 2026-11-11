@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo } from "react";
 import { splitMarkdownFrontmatter } from "../../../shared/lib/markdownFrontmatter";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import type { OpenFileFn } from "../../search/model/search";
@@ -18,7 +18,7 @@ export const MarkdownDocumentPreview = memo(function MarkdownDocumentPreview({
   /** The Markdown file shown, whose images load from the project, `cwd`. */
   documentPath?: string;
 }) {
-  const document = useMemo(() => splitMarkdownFrontmatter(text), [text]);
+  const document = splitMarkdownFrontmatter(text);
 
   return (
     <MarkdownPreview

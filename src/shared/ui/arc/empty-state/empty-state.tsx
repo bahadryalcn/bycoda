@@ -23,6 +23,7 @@ import {
   type Transition,
 } from "motion/react";
 import { Folder } from "../../icons";
+import { observeResize } from "../../../lib/observeResize";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./empty-state.module.css";
 
@@ -103,15 +104,14 @@ function HeightFrame({
   }, [morphKey]);
   useEffect(() => {
     const node = content.current;
-    if (!node || typeof ResizeObserver === "undefined") return;
+    if (!node) return;
     let last: number | undefined;
     let controls: AnimationPlaybackControls | undefined;
     const settle = () => {
       height.jump("auto");
       if (frame.current) Object.assign(frame.current.style, { overflow: "", height: "auto" });
     };
-    const observer = new ResizeObserver(([entry]) => {
-      if (!entry) return;
+    const unobserve = observeResize(node, (entry) => {
       const next = entry.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight;
       const current = height.get();
       const from = typeof current === "number" ? current : last;
@@ -132,9 +132,8 @@ function HeightFrame({
         onComplete: settle,
       });
     });
-    observer.observe(node);
     return () => {
-      observer.disconnect();
+      unobserve();
       controls?.stop();
     };
   }, [height, reduce]);

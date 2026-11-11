@@ -12,6 +12,25 @@ import {
 } from "../../features/workspace/model/sessionRecovery";
 import "./session-recovery.css";
 
+/** Whether the clear failed; never rejects. */
+async function clearFailed(onClear: () => Promise<void>): Promise<boolean> {
+  try {
+    await onClear();
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** Runs `task`, then `settle` even when the task rejects; the rejection still propagates. */
+async function settleAfter(task: () => Promise<void>, settle: () => void): Promise<void> {
+  try {
+    await task();
+  } finally {
+    settle();
+  }
+}
+
 export function SessionRecoveryControl({
   count,
   onOpen,
@@ -42,14 +61,9 @@ export function SessionRecoveryControl({
     pendingRef.current = true;
     setPending(true);
     setError(false);
-    try {
-      await onClear();
-    } catch {
-      setError(true);
-    } finally {
-      pendingRef.current = false;
-      setPending(false);
-    }
+    if (await clearFailed(onClear)) setError(true);
+    pendingRef.current = false;
+    setPending(false);
   };
   return (
     <ActionHost
@@ -133,12 +147,13 @@ export function SessionRecoveryControl({
               if (pendingRef.current) return;
               pendingRef.current = true;
               setPending(true);
-              try {
-                await saveFailure.retry();
-              } finally {
-                pendingRef.current = false;
-                setPending(false);
-              }
+              await settleAfter(
+                () => saveFailure.retry(),
+                () => {
+                  pendingRef.current = false;
+                  setPending(false);
+                },
+              );
             },
           }}
         >

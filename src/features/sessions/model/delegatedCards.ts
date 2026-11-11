@@ -5,6 +5,7 @@ import {
   delegationParentOf,
 } from "./delegatedAgents";
 import type { Block, Session } from "./session";
+import { registerStreamingTextUpdate, streamingTextUpdate } from "./stableBlocks";
 
 /**
  * Crew member asks as inline transcript cards. Each child session becomes one
@@ -20,8 +21,20 @@ export function crewMemberChildren(children: readonly Session[]): Session[] {
   return children.filter((child) => !!crewMemberOf(child));
 }
 
-/** The member's run as a card block: its steps, and its last message as the report. */
+const cardBlocks = new WeakMap<Session, Block>();
+
+/** The member's run as a card block: its steps, and its last message as the report.
+ * One block per session object, so an unchanged child keeps its card's identity. */
 export function delegatedCardBlock(child: Session): Block {
+  let card = cardBlocks.get(child);
+  if (!card) {
+    card = buildCardBlock(child);
+    cardBlocks.set(child, card);
+  }
+  return card;
+}
+
+function buildCardBlock(child: Session): Block {
   const block = delegatedAgentBlock(child);
   const status = delegatedStatus(child);
   const steps = block.agentRun?.steps ?? [];
@@ -71,4 +84,40 @@ export function placeDelegatedCards(blocks: Block[], children: readonly Session[
   }
   if (!after.size) return blocks;
   return blocks.flatMap((block, index) => [block, ...(after.get(index) ?? [])]);
+}
+
+/**
+ * `placeDelegatedCards` for a stream of frames. When the children are unchanged and
+ * `blocks` differs from the previous input only by the streamed text of a non-user
+ * block, the previous result is copied with that block swapped and the text-only
+ * update is registered on it, so the transcript keeps its fast path and every card
+ * and older block keeps its identity.
+ */
+export function createCardPlacer(): (blocks: Block[], children: readonly Session[]) => Block[] {
+  let last: { blocks: Block[]; children: readonly Session[]; output: Block[] } | undefined;
+  return (blocks, children) => {
+    if (last && last.children === children) {
+      const index = streamingTextUpdate(last.blocks, blocks);
+      const from = index === undefined ? undefined : last.blocks[index];
+      const to = index === undefined ? undefined : blocks[index];
+      // A user block's text can change which turn a card belongs to, so it re-places.
+      if (from && to && from.role !== "user" && to.role !== "user") {
+        if (last.output === last.blocks) {
+          last = { blocks, children, output: blocks };
+          return blocks;
+        }
+        const at = last.output.lastIndexOf(from);
+        if (at >= 0) {
+          const output = last.output.slice();
+          output[at] = to;
+          registerStreamingTextUpdate(last.output, output, at);
+          last = { blocks, children, output };
+          return output;
+        }
+      }
+    }
+    const output = placeDelegatedCards(blocks, children);
+    last = { blocks, children, output };
+    return output;
+  };
 }

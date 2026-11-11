@@ -15,35 +15,44 @@ export interface TurnCardActions {
 export function useTurnCardActions(deps: TurnCardActionDeps): TurnCardActions {
   const { setSessions } = deps;
 
-  const onInboxCardDismiss = useCallback((sessionId: string) => {
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId && session.inboxCard
-          ? { ...session, inboxCard: undefined }
-          : session,
-      ),
-    );
-  }, []);
+  const onInboxCardDismiss = useCallback(
+    (sessionId: string) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId && session.inboxCard
+            ? { ...session, inboxCard: undefined }
+            : session,
+        ),
+      );
+    },
+    [setSessions],
+  );
 
-  const onNoteCardDismiss = useCallback((sessionId: string) => {
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId && session.noteCard
-          ? { ...session, noteCard: undefined }
-          : session,
-      ),
-    );
-  }, []);
+  const onNoteCardDismiss = useCallback(
+    (sessionId: string) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId && session.noteCard
+            ? { ...session, noteCard: undefined }
+            : session,
+        ),
+      );
+    },
+    [setSessions],
+  );
 
-  const onHandoffCardDismiss = useCallback((sessionId: string) => {
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId && session.handoffCard
-          ? { ...session, handoffCard: undefined }
-          : session,
-      ),
-    );
-  }, []);
+  const onHandoffCardDismiss = useCallback(
+    (sessionId: string) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId && session.handoffCard
+            ? { ...session, handoffCard: undefined }
+            : session,
+        ),
+      );
+    },
+    [setSessions],
+  );
 
   return { onInboxCardDismiss, onNoteCardDismiss, onHandoffCardDismiss };
 }

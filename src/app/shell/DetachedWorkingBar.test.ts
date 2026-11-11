@@ -208,12 +208,15 @@ describe("detached working header", () => {
 });
 
 describe("detachedAgentStatus", () => {
+  const t = (text: string) => text;
   it("ranks issue, done, needs input, waiting, then working", () => {
     const waiting = { kind: "tasks", count: 1 } as const;
-    expect(detachedAgentStatus(agent("a", { waiting }))).toBe("Waiting");
-    expect(detachedAgentStatus(agent("a"))).toBe("Working");
-    expect(detachedAgentStatus(agent("a", { waiting, needsApproval: true }))).toBe("Needs input");
-    expect(detachedAgentStatus(agent("a", { waiting, done: true }))).toBe("Done");
-    expect(detachedAgentStatus(agent("a", { waiting, issue: "failed" }))).toBe("Failed");
+    expect(detachedAgentStatus(agent("a", { waiting }), t)).toBe("Waiting");
+    expect(detachedAgentStatus(agent("a"), t)).toBe("Working");
+    expect(detachedAgentStatus(agent("a", { waiting, needsApproval: true }), t)).toBe(
+      "Needs input",
+    );
+    expect(detachedAgentStatus(agent("a", { waiting, done: true }), t)).toBe("Done");
+    expect(detachedAgentStatus(agent("a", { waiting, issue: "failed" }), t)).toBe("Failed");
   });
 });

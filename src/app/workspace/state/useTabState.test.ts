@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, type SetStateAction } from "react";
+import { act, createElement, memo, type SetStateAction } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { useActiveTabSetter, useTabState } from "./useTabState";
@@ -104,5 +104,37 @@ it("requests composer focus and leaves the terminal on every explicit session ac
   } finally {
     act(() => root.unmount());
     vi.unstubAllGlobals();
+  }
+});
+
+it("keeps the tabs array and a memoized consumer when an update changes nothing", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  const session = { ...newSession("codex", "/repo"), id: "only" };
+  setSessions([session]);
+  const seed = { session, tab: newTab(session.id) };
+  let state!: ReturnType<typeof useTabState>;
+  let consumerRenders = 0;
+  const Consumer = memo(function Consumer({ tabs }: { tabs: unknown }) {
+    void tabs;
+    consumerRenders += 1;
+    return null;
+  });
+  function Harness() {
+    state = useTabState({ seed, windowTransfer: null, resumed: null });
+    return createElement(Consumer, { tabs: state.tabs });
+  }
+  try {
+    act(() => root.render(createElement(Harness)));
+    const before = state.tabs;
+    const rendersBefore = consumerRenders;
+    act(() => state.setTabs((prev) => prev.map((tab) => tab)));
+    expect(state.tabs).toBe(before);
+    expect(consumerRenders).toBe(rendersBefore);
+    act(() => state.setTabs((prev) => prev.map((tab) => ({ ...tab }))));
+    expect(state.tabs).not.toBe(before);
+    expect(consumerRenders).toBe(rendersBefore + 1);
+  } finally {
+    act(() => root.unmount());
   }
 });

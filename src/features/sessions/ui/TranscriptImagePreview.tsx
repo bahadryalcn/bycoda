@@ -12,7 +12,7 @@ import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { basename, readBinaryFile, revealPath } from "../../../platform/tauri/fs";
-import { localExplorerPath } from "../../../shared/lib/remoteExplorerPaths";
+import { useLocalExplorerPath } from "../../../shared/hooks/useLocalExplorerPath";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { resolveFileOpenRequest } from "../../files/public/fileIndex";
 import { sniffDocumentImageMime } from "../../files/public/filePreviewMetadata";
@@ -45,25 +45,22 @@ export function useTranscriptImageOpen(
 ) {
   const [path, setPath] = useState<string | null>(null);
   const directUntil = useRef(0);
-  const open = useStableCallback(
-    onOpenFile
-      ? (target: string, ...rest: unknown[]) => {
-          if (
-            (!isTranscriptImagePath(target) && mediaKind(target) !== "video") ||
-            performance.now() < directUntil.current
-          ) {
-            // Markdown links also pass editor navigation: forward everything unchanged.
-            (onOpenFile as (...args: unknown[]) => void)(target, ...rest);
-            return;
-          }
-          setPath(target);
-        }
-      : undefined,
-  );
-  const noteClick = (event: { ctrlKey: boolean; metaKey: boolean }) => {
+  const openTarget = useStableCallback((target: string, ...rest: unknown[]) => {
+    if (
+      (!isTranscriptImagePath(target) && mediaKind(target) !== "video") ||
+      performance.now() < directUntil.current
+    ) {
+      // Markdown links also pass editor navigation: forward everything unchanged.
+      (onOpenFile as (...args: unknown[]) => void)(target, ...rest);
+      return;
+    }
+    setPath(target);
+  });
+  const open = onOpenFile ? openTarget : undefined;
+  const noteClick = useStableCallback((event: { ctrlKey: boolean; metaKey: boolean }) => {
     // Markdown links resolve their path asynchronously, so the modifier stays valid for a moment.
     directUntil.current = event.ctrlKey || event.metaKey ? performance.now() + 1000 : 0;
-  };
+  });
   const preview: ReactNode =
     path !== null && onOpenFile ? (
       <TranscriptMediaPreview
@@ -162,6 +159,36 @@ type LoadState =
   | { status: "ready"; url: string }
   | { status: "error"; detail?: string; file: string };
 
+type ImageLoad = { cancelled: boolean; created?: string };
+
+/** Reads and decodes the image; lives outside the component so its `try` stays out of render code. */
+async function loadTranscriptImage(
+  load: ImageLoad,
+  path: string,
+  cwd: string | undefined,
+  setResolved: (file: string) => void,
+  setState: (state: LoadState) => void,
+): Promise<void> {
+  let file = path;
+  try {
+    file = cwd ? await resolveFileOpenRequest(cwd, path) : path;
+    if (!load.cancelled) setResolved(file);
+    const bytes = await readBinaryFile(file);
+    if (load.cancelled) return;
+    const mime = sniffDocumentImageMime(file, bytes);
+    if (!mime) {
+      setState({ status: "error", file });
+      return;
+    }
+    load.created = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    setState({ status: "ready", url: load.created });
+  } catch (reason) {
+    if (load.cancelled) return;
+    const detail = reason instanceof Error ? reason.message : String(reason);
+    setState({ status: "error", file, detail });
+  }
+}
+
 /**
  * The shared image dialog for one transcript file: zoom and pan come from `ImageLightbox`;
  * this adds the file actions (reveal, open in a tab, copy path) and the honest unreadable state.
@@ -185,37 +212,17 @@ export function TranscriptImagePreview({
   const copied = useCopyFeedback({ resetKeys: [path] });
 
   useEffect(() => {
-    let cancelled = false;
-    let created: string | undefined;
-    void (async () => {
-      let file = path;
-      try {
-        file = cwd ? await resolveFileOpenRequest(cwd, path) : path;
-        if (!cancelled) setResolved(file);
-        const bytes = await readBinaryFile(file);
-        if (cancelled) return;
-        const mime = sniffDocumentImageMime(file, bytes);
-        if (!mime) {
-          setState({ status: "error", file });
-          return;
-        }
-        created = URL.createObjectURL(new Blob([bytes], { type: mime }));
-        setState({ status: "ready", url: created });
-      } catch (reason) {
-        if (cancelled) return;
-        const detail = reason instanceof Error ? reason.message : String(reason);
-        setState({ status: "error", file, detail });
-      }
-    })();
+    const load: ImageLoad = { cancelled: false };
+    void loadTranscriptImage(load, path, cwd, setResolved, setState);
     return () => {
-      cancelled = true;
-      if (created) URL.revokeObjectURL(created);
+      load.cancelled = true;
+      if (load.created) URL.revokeObjectURL(load.created);
     };
   }, [cwd, path, attempt]);
 
   const remote = resolved.startsWith(REMOTE_PATH_PREFIX) || !!cwd?.startsWith(REMOTE_PATH_PREFIX);
-  const canReveal =
-    !remote || (resolved.startsWith(REMOTE_PATH_PREFIX) && !!localExplorerPath(resolved));
+  const localRevealPath = useLocalExplorerPath(resolved);
+  const canReveal = !remote || (resolved.startsWith(REMOTE_PATH_PREFIX) && !!localRevealPath);
   const revealLabel = t(REVEAL_LABEL);
   const name = basename(path);
 

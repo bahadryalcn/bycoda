@@ -413,7 +413,7 @@ export function applyHarnessEvent(
       const index = lastMatchingBlock(session.blocks, (block) => block.role === "user");
       if (index < 0) return session;
       const block = session.blocks[index];
-      if (block.providerTurnId === event.providerTurnId) return session;
+      if (!event.providerTurnId || block.providerTurnId === event.providerTurnId) return session;
       const blocks = session.blocks.slice();
       blocks[index] = { ...block, providerTurnId: event.providerTurnId };
       return { ...session, blocks };

@@ -48,8 +48,7 @@ import type { QueuedMessage } from "../model/session";
 import { steerAppliesModelSettings } from "../../../integrations/harness/core/registry";
 import { accountChoicesSnapshot, accountDisplayLabel } from "../model/accountModelChoices";
 import {
-  providerAccounts,
-  providerAccountLabel,
+  DEFAULT_PROVIDER_ACCOUNT_ID,
   subscribeProviderAccounts,
   supportsProviderAccounts,
 } from "../../providers/public/providerAccounts";
@@ -62,6 +61,44 @@ import { announceDrag } from "../../../shared/lib/drag";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
 import { Button } from "../../../shared/ui/Button";
 import { QueueRemovalNotice } from "./QueueRemovalNotice";
+type QueueActionContext = {
+  actionRef: { current: boolean };
+  setPendingAction: (id: string | undefined) => void;
+  setFeedback: (feedback: QueueFeedback) => void;
+  t: ReturnType<typeof useT>;
+};
+
+// Module level: React Compiler cannot lower try/finally inside a component.
+async function runQueueAction(
+  id: string,
+  action: (() => QueueAction) | undefined,
+  { actionRef, setPendingAction, setFeedback, t }: QueueActionContext,
+): Promise<boolean> {
+  try {
+    if (!action)
+      throw new Error(
+        t("This queue action is unavailable. Reopen the conversation and try again."),
+      );
+    const result = await action();
+    if (result === false) return false;
+    if (id === "takeover" && typeof result === "object" && result?.message)
+      setFeedback({ error: false, actionId: id, text: t(result.message) });
+    return true;
+  } catch (error) {
+    setFeedback({
+      error: true,
+      actionId: id,
+      text: t(String(error).replace(/^Error: /, "")),
+    });
+    return false;
+  } finally {
+    actionRef.current = false;
+    setPendingAction(undefined);
+  }
+}
+
+type AccountList = { id: string; label: string }[];
+
 export function MessageQueue({
   sessionId,
   parentSessionId,
@@ -80,7 +117,13 @@ export function MessageQueue({
   onResume,
 }: MessageQueueProps) {
   const t = useT();
-  useSyncExternalStore(subscribeProviderAccounts, accountChoicesSnapshot, accountChoicesSnapshot);
+  // The account lists live in storage; the string snapshot keeps the subscription value-stable.
+  const accountListsJson = useSyncExternalStore(
+    subscribeProviderAccounts,
+    accountChoicesSnapshot,
+    accountChoicesSnapshot,
+  );
+  const accountLists: [AccountList, AccountList] = JSON.parse(accountListsJson);
   const delivery = useDeliveryProgress(sessionId);
   const pendingDelivery = deliveryIsPending(delivery?.stage);
   const departing = useAcceptedQueueDeparture(messages, delivery);
@@ -148,27 +191,7 @@ export function MessageQueue({
       actionRef.current = true;
       setPendingAction(id);
       setFeedback(undefined);
-      try {
-        if (!action)
-          throw new Error(
-            t("This queue action is unavailable. Reopen the conversation and try again."),
-          );
-        const result = await action();
-        if (result === false) return false;
-        if (id === "takeover" && typeof result === "object" && result?.message)
-          setFeedback({ error: false, actionId: id, text: t(result.message) });
-        return true;
-      } catch (error) {
-        setFeedback({
-          error: true,
-          actionId: id,
-          text: t(String(error).replace(/^Error: /, "")),
-        });
-        return false;
-      } finally {
-        actionRef.current = false;
-        setPendingAction(undefined);
-      }
+      return runQueueAction(id, action, { actionRef, setPendingAction, setFeedback, t });
     });
   };
   const trigger = (id: string, action: (() => QueueAction) | undefined) => {
@@ -462,7 +485,7 @@ export function MessageQueue({
             const summary = target ? targetSummary(target) : undefined;
             const accounts =
               target && supportsProviderAccounts(target.harness)
-                ? providerAccounts(target.harness)
+                ? accountLists[target.harness === "claude" ? 0 : 1]
                 : [];
             const account = accounts.find(
               (account) => account.id === (target?.providerAccountId ?? "default"),
@@ -471,7 +494,10 @@ export function MessageQueue({
               target && supportsProviderAccounts(target.harness)
                 ? account
                   ? accountDisplayLabel(accounts, account)
-                  : providerAccountLabel(target.harness, target.providerAccountId)
+                  : target.providerAccountId &&
+                      target.providerAccountId !== DEFAULT_PROVIDER_ACCOUNT_ID
+                    ? t("Removed account")
+                    : t("Default account")
                 : undefined;
             const targetLabel =
               target && summary

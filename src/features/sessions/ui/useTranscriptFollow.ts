@@ -476,24 +476,24 @@ export function useTranscriptCheckpointRestore(
   lastUserId: string | undefined,
 ) {
   const {
-    scroller,
+    scroller: scrollerRef,
     scrollerEl,
-    stickToBottom,
-    distanceFromBottom,
+    stickToBottom: stickToBottomRef,
+    distanceFromBottom: distanceFromBottomRef,
     rememberScroll,
     setShowJump,
-    restoreCheckpoint,
-    restoringCheckpoint,
+    restoreCheckpoint: restoreCheckpointRef,
+    restoringCheckpoint: restoringCheckpointRef,
   } = follow;
   useLayoutEffect(() => {
-    const checkpoint = restoreCheckpoint.current;
-    const el = scroller.current;
+    const checkpoint = restoreCheckpointRef.current;
+    const el = scrollerRef.current;
     if (!visible || !el || !checkpoint) return;
     let frame = 0;
     const restore = () => {
       if (!el.clientHeight) return;
-      stickToBottom.current = checkpoint.bottomFollow ?? true;
-      if (stickToBottom.current) pinToBottom(el);
+      stickToBottomRef.current = checkpoint.bottomFollow ?? true;
+      if (stickToBottomRef.current) pinToBottom(el);
       else {
         const row = checkpoint.virtualAnchorBlockId
           ? [...el.querySelectorAll<HTMLElement>("[data-transcript-virtual-block-id]")].find(
@@ -512,10 +512,10 @@ export function useTranscriptCheckpointRestore(
             (row ? (checkpoint.virtualAnchorOffset ?? 0) : (checkpoint.anchorOffset ?? 0))
           : (checkpoint.scrollTop ?? 0);
       }
-      distanceFromBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight;
-      setShowJump(!stickToBottom.current);
+      distanceFromBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setShowJump(!stickToBottomRef.current);
       // Save geometry only after the checkpoint has been applied.
-      restoringCheckpoint.current = false;
+      restoringCheckpointRef.current = false;
       rememberScroll(el);
     };
     restore();
@@ -528,8 +528,8 @@ export function useTranscriptCheckpointRestore(
       cancelAnimationFrame(frame);
     };
     const finish = () => {
-      restoreCheckpoint.current = undefined;
-      restoringCheckpoint.current = false;
+      restoreCheckpointRef.current = undefined;
+      restoringCheckpointRef.current = false;
       stop();
     };
     // Compensate delayed markdown/highlight layout, until the reader takes over.
@@ -549,13 +549,13 @@ export function useTranscriptCheckpointRestore(
   }, [
     lastUserId,
     rememberScroll,
-    scroller,
+    scrollerRef,
     scrollerEl,
     setShowJump,
-    stickToBottom,
-    distanceFromBottom,
-    restoreCheckpoint,
-    restoringCheckpoint,
+    stickToBottomRef,
+    distanceFromBottomRef,
+    restoreCheckpointRef,
+    restoringCheckpointRef,
     visible,
   ]);
 }

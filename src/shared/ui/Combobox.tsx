@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 import { Combobox as ArcCombobox, type ComboboxProps } from "./arc/combobox/combobox";
 
 export type { ComboboxProps, ComboboxOption } from "./arc/combobox/combobox";
@@ -13,7 +13,7 @@ export type { ComboboxProps, ComboboxOption } from "./arc/combobox/combobox";
  * @arc combobox
  */
 export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Combobox(props, ref) {
-  useLocale();
+  const t = useT();
   return (
     <div className="bycoda-arc min-w-0">
       <ArcCombobox placeholder={t("Search…")} emptyMessage={t("No results")} {...props} ref={ref} />

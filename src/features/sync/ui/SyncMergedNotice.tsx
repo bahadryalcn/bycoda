@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { SYNC_MERGED_MESSAGE, subscribeSyncMerged } from "../model/syncClient";
 import { TransientNotice } from "../../../shared/ui/TransientNotice";
@@ -6,7 +6,7 @@ import { TransientNotice } from "../../../shared/ui/TransientNotice";
 const VISIBLE_MS = 5000;
 
 export function SyncMergedNotice() {
-  useLocale();
+  const t = useT();
   // Each merge restarts the notice: a new key remounts it and resets its timer.
   const [shown, setShown] = useState<number | null>(null);
 

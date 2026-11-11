@@ -30,7 +30,8 @@ export type HarnessEvent =
   | { type: "session.ended"; code?: number | null }
   | { type: "session.error"; message: string }
   | { type: "session.providerBound"; providerSessionId: string }
-  | { type: "turn.started"; providerTurnId: string }
+  /** The provider accepted the turn; `providerTurnId` only where it names turns. */
+  | { type: "turn.started"; providerTurnId?: string }
   | {
       type: "session.configChanged";
       model?: string;

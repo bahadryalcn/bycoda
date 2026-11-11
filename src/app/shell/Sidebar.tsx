@@ -304,9 +304,9 @@ import {
   type RepositoryReviewRequest,
 } from "../../features/source-control/model/workspaceRepositories";
 import {
-  collectRailProjects,
   looksLikeProject,
   isRemoteProjectPath,
+  normalizeProjectPath,
   sameProjectPath,
   type RecentProject,
 } from "../../features/projects/model/recents";
@@ -345,18 +345,16 @@ import {
 import { SessionsEmpty } from "../../features/sessions/ui/SessionsEmpty";
 import { SessionsNoMatch } from "../../features/sessions/ui/SessionsNoMatch";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
+import { useRemoteProject } from "./useRemoteProject";
+import { useRemoteSessionBindings } from "../../features/connections/model/useRemoteSessionBinding";
+import { pathKey } from "../../shared/lib/paths";
 import {
   refreshRemoteProjectSessions,
   sessionAccessForMachine,
-  remotePendingWorktree,
   remoteSessionFor,
   useRemoteProjectSessions,
 } from "../../features/connections/model/connections";
-import {
-  parseRemotePath,
-  remotePath,
-  remoteProjectFor,
-} from "../../features/connections/model/remoteProjects";
+import { parseRemotePath, remotePath } from "../../features/connections/model/remoteProjects";
 import { newRequestId } from "../../shared/lib/id/requestId";
 import { requestOpenCrewsPage } from "../../features/crews/model/crewsPage";
 
@@ -552,6 +550,16 @@ type Props = {
 };
 
 const recentPath = (project: RecentProject) => project.path;
+
+/** The keys `collectRailProjects(recents, cwd)` yields, without its `Date.now()` timestamp. */
+function railProjectKeys(recents: RecentProject[], cwd: string): string[] {
+  const keys = new Set<string>();
+  for (const item of recents) {
+    if (looksLikeProject(item.path)) keys.add(pathKey(normalizeProjectPath(item.path)));
+  }
+  if (cwd && looksLikeProject(cwd)) keys.add(pathKey(normalizeProjectPath(cwd)));
+  return [...keys];
+}
 const GLOBAL_SESSION_FILTERS = { ...DEFAULT_SESSION_SIDEBAR_FILTERS, time: "7d" } as const;
 const GLOBAL_SESSION_TIME_FILTERS = ["today", "7d"] as const;
 
@@ -688,7 +696,8 @@ function SidebarComponent({
     (remoteConnection.status !== "connected" &&
       (remoteConnection.status !== "connecting" || remoteConnection.reconnecting)) ||
     (!!remote.dataState.error && isConnectionFailure(classifyRemoteError(remote.dataState.error)));
-  const hostProject = remoteProject ? remoteProjectFor(cwd) : undefined;
+  const hostProject = useRemoteProject(cwd);
+  const remoteBindings = useRemoteSessionBindings();
   const remoteChange = async (
     sessionId: string,
     patch: {
@@ -797,7 +806,7 @@ function SidebarComponent({
         void remoteChange(sessionId, { linkedWorkItem: item ?? null });
       }
     : onSetLocalSessionLinkedWorkItem;
-  const activeRemoteId = activeSessionId ? remoteSessionFor(activeSessionId) : undefined;
+  const activeRemoteId = activeSessionId ? remoteBindings.sessionFor(activeSessionId) : undefined;
   const activeListedSessionId = remoteProject ? activeRemoteId : activeSessionId;
   const listedBusySessionIds = remoteProject
     ? new Set(
@@ -831,7 +840,7 @@ function SidebarComponent({
               liveAgents.some(
                 (agent) =>
                   sameProjectPath(agent.cwd, session.cwd) &&
-                  (agent.id === session.id || remoteSessionFor(agent.id) === session.id) &&
+                  (agent.id === session.id || remoteBindings.sessionFor(agent.id) === session.id) &&
                   !agent.done &&
                   !agent.needsApproval,
               )
@@ -862,7 +871,7 @@ function SidebarComponent({
     ) : null;
   const remoteExecutionCwd =
     remote.sessions.find((session) => session.id === activeRemoteId)?.cwd ??
-    (activeSessionId ? remotePendingWorktree(activeSessionId) : undefined) ??
+    (activeSessionId ? remoteBindings.pendingWorktree(activeSessionId) : undefined) ??
     (remoteProject && gitCwd && gitCwd !== cwd
       ? (parseRemotePath(gitCwd)?.hostPath ?? gitCwd)
       : undefined) ??
@@ -886,12 +895,13 @@ function SidebarComponent({
   );
   const gitRoot = workspaceSourceControlRoot(cwd, executionGitRoot, workspacePaths);
   const repositoryPaths = sameProjectPath(gitRoot, cwd) ? workspacePaths : undefined;
+  const [initialWidth] = useState(loadSessionSidebarWidth);
   const resize = useDragResize({
     min: MIN_WIDTH,
     max: () => sidePaneMaxWidth("workspace", MAX_WIDTH, 0.5, MIN_WIDTH),
     defaultWidth: DEFAULT_WIDTH,
-    initial: loadSessionSidebarWidth(),
-    onCommit: saveSessionSidebarWidth,
+    initial: initialWidth,
+    onCommit: (value) => saveSessionSidebarWidth(value),
   });
   const [tabOrder, setTabOrder] = useState<SidebarTabId[]>(loadSidebarTabOrder);
 
@@ -1282,18 +1292,15 @@ function SidebarComponent({
   );
   const narrowedByUser = searchNarrowed || filtersActive;
   const visibleTabs = tabOrder.filter((itemId) => itemId !== "inbox");
-  const sortable = useAnimatedReorder(
-    visibleTabs,
-    (ids) => {
-      let index = 0;
-      const next = tabOrder.map((itemId) => (itemId === "inbox" ? itemId : ids[index++]));
-      setTabOrder(next);
-      saveSidebarTabOrder(next);
-    },
-    "x",
-    undefined,
-    { label: (itemId) => t(TAB_LABELS[itemId]) },
-  );
+  const onTabsReorder = (ids: SidebarTabId[]) => {
+    let index = 0;
+    const next = tabOrder.map((itemId) => (itemId === "inbox" ? itemId : ids[index++]));
+    setTabOrder(next);
+    saveSidebarTabOrder(next);
+  };
+  const sortable = useAnimatedReorder(visibleTabs, onTabsReorder, "x", undefined, {
+    label: (itemId) => t(TAB_LABELS[itemId]),
+  });
   const [viewTabMenu, setViewTabMenu] = useState<{
     x: number;
     y: number;
@@ -4568,7 +4575,7 @@ function SidebarProjectPicker({
       {inboxMenu ? (
         <InboxNotificationMenu
           {...inboxMenu}
-          projectPaths={[...collectRailProjects(recents, cwd).keys()]}
+          projectPaths={railProjectKeys(recents, cwd)}
           onOpenSettings={onOpenNotificationSettings}
           onClose={() => {
             setInboxMenu(null);
@@ -4804,7 +4811,7 @@ function CompactProjectRail({
       {inboxMenu ? (
         <InboxNotificationMenu
           {...inboxMenu}
-          projectPaths={[...collectRailProjects(recents, cwd).keys()]}
+          projectPaths={railProjectKeys(recents, cwd)}
           onOpenSettings={onOpenNotificationSettings}
           onClose={() => {
             setInboxMenu(null);
@@ -5243,7 +5250,6 @@ const SessionCard = memo(function SessionCard({
   renameEditor?: ReactNode;
   titleFeedback?: ReactNode;
 }) {
-  "use memo";
   const t = useT();
   const project = useSessionProjectAppearance(session.cwd);
   const providerHistory = sessionProviderHistory(session);

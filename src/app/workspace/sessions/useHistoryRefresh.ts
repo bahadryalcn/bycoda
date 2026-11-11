@@ -78,6 +78,6 @@ export function useHistoryRefresh({
     };
     window.addEventListener(ADOPTED_SESSION_ADDED, onAdded);
     return () => window.removeEventListener(ADOPTED_SESSION_ADDED, onAdded);
-  }, [refreshHistory]);
+  }, [refreshHistory, sidebarCwdRef]);
   return { refreshHistory };
 }

@@ -56,3 +56,24 @@ it("reveals the mapped original through the local OS rather than the remote host
   });
   expect(remote).not.toHaveBeenCalled();
 });
+
+it("useLocalExplorerPath re-renders when a mapping is saved and matches localExplorerPath", async () => {
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const { useLocalExplorerPath } = await import("../hooks/useLocalExplorerPath");
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const remote = "remote://mac/Users/me/app/a.png";
+  const seen: Array<string | undefined> = [];
+  function Probe() {
+    seen.push(useLocalExplorerPath(remote));
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  act(() => root.render(createElement(Probe)));
+  expect(seen.at(-1)).toBeUndefined();
+  act(() => saveExplorerMapping("remote://mac/Users/me", "//mac/share"));
+  expect(seen.at(-1)).toBe(localExplorerPath(remote));
+  expect(seen.at(-1)).toBeDefined();
+  act(() => root.unmount());
+  vi.unstubAllGlobals();
+});

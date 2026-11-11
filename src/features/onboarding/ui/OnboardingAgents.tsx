@@ -164,7 +164,9 @@ export function OnboardingAgents({
     <>
       <div className="onboarding-provider-heading">
         <div className="onboarding-heading">
-          <Heading size="page" level={3}>{t("Connect your agents")}</Heading>
+          <Heading size="page" level={3}>
+            {t("Connect your agents")}
+          </Heading>
           <p>{t("Use the providers found on this computer, or add one from another location.")}</p>
         </div>
         <Button

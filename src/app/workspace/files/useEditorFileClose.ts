@@ -217,7 +217,21 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
         finishClose();
       })();
     },
-    [activeTabId, onCloseTab, projectCwd, tabCloseScope],
+    [
+      activeTabId,
+      onCloseTab,
+      projectCwd,
+      tabCloseScope,
+      dirtyFilesRef,
+      tabWorktreeOf,
+      setTabs,
+      setSessions,
+      setDirtyFiles,
+      tabsRef,
+      sessionsRef,
+      setComposerFocused,
+      isMovingPane,
+    ],
   );
 
   const onCloseOtherFiles = useCallback(
@@ -344,7 +358,7 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
         await finishClose();
       })();
     },
-    [],
+    [dirtyFilesRef, setTabs, setDirtyFiles, tabsRef, isMovingPane],
   );
 
   return { onCloseFile, onCloseOtherFiles };

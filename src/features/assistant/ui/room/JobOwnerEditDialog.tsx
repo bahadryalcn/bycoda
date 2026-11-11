@@ -4,6 +4,7 @@ import type {
   AssistantRequest,
 } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
+import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { Button } from "../../../../shared/ui/Button";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import { Select } from "../../../../shared/ui/Select";
@@ -72,10 +73,7 @@ export function JobOwnerEditDialog({
       alive.current = false;
     };
   }, []);
-  const live = useRef(current);
-  useEffect(() => {
-    live.current = current;
-  });
+  const live = useStableCallback(current);
   function retain(next: typeof draft, requirePersistence = false) {
     if (!requirePersistence) setDraft(next);
     try {
@@ -93,7 +91,7 @@ export function JobOwnerEditDialog({
   function verify(next: AssistantJob | undefined) {
     if (
       !alive.current ||
-      !live.current() ||
+      !live() ||
       !next ||
       next.id !== job.id ||
       next.kind === "quick" ||
@@ -109,7 +107,7 @@ export function JobOwnerEditDialog({
     setPending(true);
     setError("");
     try {
-      if (!live.current()) throw new Error("The selected project is no longer visible.");
+      if (!live()) throw new Error("The selected project is no longer visible.");
       if (draft.intent) {
         const next = verify((await request({ op: "jobs.get", id: job.id }, environmentId)).job);
         if (
@@ -162,7 +160,7 @@ export function JobOwnerEditDialog({
       localStorage.removeItem(key);
       onSaved();
     } catch (cause) {
-      if (alive.current && live.current())
+      if (alive.current && live())
         setError(cause instanceof Error ? t(cause.message) : String(cause));
     } finally {
       busy.current = false;

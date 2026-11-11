@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { t } from "../../../shared/i18n";
+import type { t as Translate } from "../../../shared/i18n";
 import { isRunningCompaction } from "./compactionStatus";
 import type { Block } from "./session";
 import { sessionRetryNotice } from "./sessionIssue";
@@ -37,6 +37,8 @@ export type TurnActivity = {
 };
 
 export type TurnActivityInput = {
+  /** The bound translator (`useT()`), so the labels follow the app language. */
+  t: typeof Translate;
   /** The live turn's blocks, user prompt first. */
   turn: readonly Block[];
   /** The provider has answered this run at least once (its clock started). */
@@ -52,6 +54,7 @@ export type TurnActivityInput = {
 
 /** The live phase for the turn's activity line, or null when visible rows already say it. */
 export function deriveTurnActivity({
+  t,
   turn,
   responded,
   provider,
@@ -152,6 +155,15 @@ export function turnClockOrigin(owner: Block | undefined): number | undefined {
   }
   const startedAt = finished ? undefined : owner.startedAt;
   return startedAt === undefined ? seen : Math.min(seen, startedAt);
+}
+
+/**
+ * `turnClockOrigin` for render. The first sighting is recorded once per turn
+ * and every later call returns the same value, so the result is stable for a
+ * given owner; this hook is the render-time entry point the compiler can see.
+ */
+export function useTurnClockOrigin(owner: Block | undefined): number | undefined {
+  return turnClockOrigin(owner);
 }
 
 /**

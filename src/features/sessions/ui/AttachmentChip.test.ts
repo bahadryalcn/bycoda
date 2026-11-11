@@ -38,6 +38,7 @@ beforeEach(() => {
         intersect = callback;
       }
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

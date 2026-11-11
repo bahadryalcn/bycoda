@@ -1,9 +1,11 @@
+import { useSyncExternalStore } from "react";
 import { getName } from "@tauri-apps/api/app";
 import { PRODUCT_IDENTITY } from "./productIdentity";
 
 export const FALLBACK_APP_NAME: string = PRODUCT_IDENTITY.displayName;
 
 let cachedName = FALLBACK_APP_NAME;
+const listeners = new Set<() => void>();
 
 // Native builds may have distinct product names. Warm the cache once at
 // startup; callers that cannot await read it through appName().
@@ -21,12 +23,25 @@ const resolved: Promise<string> = (async () => {
   } catch {
     // Outside Tauri (tests, browser preview) the fallback stays.
   }
+  for (const notify of listeners) notify();
   return cachedName;
 })();
 
 /** Runtime product name, using the frontend brand default until known. */
 export function appName(): string {
   return cachedName;
+}
+
+function subscribeAppName(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** `appName()` for render: re-renders the caller when the runtime lookup settles. */
+export function useAppName(): string {
+  return useSyncExternalStore(subscribeAppName, appName, appName);
 }
 
 /** Resolves once the runtime lookup has settled. */

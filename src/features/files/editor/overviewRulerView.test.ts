@@ -126,6 +126,7 @@ describe("retained editor overview ownership", () => {
           observers.push(callback);
         }
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );

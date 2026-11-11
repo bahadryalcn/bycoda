@@ -1,4 +1,4 @@
-import { useCrewManagedSessionsFeed } from "../features/crews/public/managed";
+import { CrewManagedSessionsFeed } from "../features/crews/public/managed";
 import { parseRemotePath } from "../features/connections/model/remoteProjects";
 import {
   configureSessionWindowFocus,
@@ -1789,7 +1789,7 @@ function Workspace({
 
   // Groups linked to a workspace file follow it; new folders land on the rail
   // without moving focus.
-  useLinkedWorkspaceGroups(useCallback(() => setRecents(loadRecents()), []));
+  useLinkedWorkspaceGroups(useCallback(() => setRecents(loadRecents()), [setRecents]));
 
   useOpenProjectChangesListener({ onSelectProject, setSidebarTab });
 
@@ -2251,7 +2251,6 @@ function Workspace({
     ],
     [sidebarCwd, sessions, history],
   );
-  useCrewManagedSessionsFeed(crewFeedCwds);
 
   // `history` now spans every visited project; consumers that expect the
   // current project only get this slice.
@@ -3138,6 +3137,7 @@ function Workspace({
             <div className="app-canvas flex h-full flex-col text-content">
               {compactTitleBar ? workspaceTitleBar : null}
               <RemoteConnectionNotices />
+              <CrewManagedSessionsFeed cwds={crewFeedCwds} />
               {!detachedSessionWindow && <AssistantNotifications />}
               {!detachedSessionWindow && !toolWindow && !windowTransfer && (
                 <AssistantBackgroundRoom />

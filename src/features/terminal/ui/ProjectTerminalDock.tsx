@@ -2,7 +2,7 @@ import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { TabList, Tab, Tabs } from "../../../shared/ui/Tabs";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Sash, type SashEndInfo } from "../../../shared/ui/Sash";
-import { t, useLocale } from "../../../shared/i18n/technical";
+import { t, useT } from "../../../shared/i18n/technical";
 import {
   ChevronDown,
   MoreHorizontal,
@@ -20,6 +20,7 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import { memo, useEffect, useRef, useState } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
@@ -130,7 +131,7 @@ function ProjectTerminalDockComponent({
   onReorderTerminals,
   onTerminalMetaChange,
 }: Props) {
-  useLocale();
+  const t = useT();
   const vertical = isVerticalDock(dock.side);
   const bodyRef = useRef<HTMLDivElement>(null);
   const sidebarResize = useDragResize({
@@ -140,6 +141,7 @@ function ProjectTerminalDockComponent({
     defaultWidth: 200,
     initial: 200,
   });
+  const { setPaneRef: attachSidebarPane } = sidebarResize;
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const [profileMenu, setProfileMenu] = useState<HTMLElement | null>(null);
   const [terminalMenu, setTerminalMenu] = useState<{
@@ -167,8 +169,6 @@ function ProjectTerminalDockComponent({
   const chosenProfile = useTerminalProfile();
   const defaultProfile = effectiveProfileId(profiles, chosenProfile);
   const dragStart = useRef(dock.size);
-  const sizeRef = useRef(dock.size);
-  sizeRef.current = dock.size;
   const pending = useRef(dock.size);
   const frame = useRef<number | null>(null);
   const visibleIds = dockTerminalGroup(dock, dock.pane.activeFileId);
@@ -207,10 +207,10 @@ function ProjectTerminalDockComponent({
 
   // The Sash owns pointer capture, the body cursor, Escape/blur cancel and the arrow keys; it
   // reports a signed delta, which the dock turns into a clamped size for its side.
-  const startResize = () => {
-    dragStart.current = sizeRef.current;
-    pending.current = sizeRef.current;
-  };
+  const startResize = useStableCallback(() => {
+    dragStart.current = dock.size;
+    pending.current = dock.size;
+  });
   const resizeBy = (delta: number) => {
     const signed = dock.side === "bottom" || dock.side === "right" ? -delta : delta;
     paint(clampDockSize(dock.side, dragStart.current + signed, viewport()));
@@ -324,7 +324,7 @@ function ProjectTerminalDockComponent({
       />
       <div className="terminal-body" ref={bodyRef}>
         <aside
-          ref={sidebarResize.setPaneRef}
+          ref={attachSidebarPane}
           className="terminal-sidebar"
           aria-label={t("Terminal controls")}
         >

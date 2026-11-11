@@ -5,7 +5,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Slider } from "../../../shared/ui/Slider";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { t } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import type { RailBackgrounds } from "../../workspace/model/tabGroups";
 
 function ColorSwatchButton({
@@ -71,6 +71,7 @@ export function RailBackgroundControls({
   group: boolean;
   onChange: (value: RailBackgrounds) => void;
 }) {
+  const t = useT();
   const parts = group ? (["header", "body"] as const) : (["header"] as const);
   return (
     <div className="flex flex-col gap-1 border-t border-(--ui-pane-border) pt-2">

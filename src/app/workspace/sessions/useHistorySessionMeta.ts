@@ -277,7 +277,18 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
         });
       });
     },
-    [history, invalidateLoadedSession, refreshHistory, sidebarCwd],
+    [
+      history,
+      invalidateLoadedSession,
+      refreshHistory,
+      sidebarCwd,
+      loadedSessionCache,
+      sessionsRef,
+      setHistory,
+      setLinkedWorkItemPanels,
+      setStoredLinkedSessions,
+      setSessions,
+    ],
   );
 
   const onPinHistorySessions = useCallback(

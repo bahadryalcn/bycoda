@@ -82,7 +82,15 @@ export const lint = {
       },
     },
     {
-      files: ["src/shared/ui/**", "src/features/sessions/ui/**", "src/app/shell/**"],
+      files: [
+        "src/shared/ui/**",
+        "src/features/sessions/ui/**",
+        "src/features/sync/**",
+        "src/features/terminal/**",
+        "src/features/projects/**",
+        "src/features/notifications/**",
+        "src/app/shell/**",
+      ],
       rules: {
         "react-hooks-js/refs": "warn",
       },

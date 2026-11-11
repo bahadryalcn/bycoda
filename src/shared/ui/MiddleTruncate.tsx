@@ -26,10 +26,11 @@ const UNITS_PER_CLUSTER = 8;
 type GraphemeSegmenter = {
   segment(value: string): Iterable<{ segment: string }>;
 };
-let segmenter: GraphemeSegmenter | null | undefined;
+/** Lazy cache of the one default-locale segmenter; filling it never changes any result. */
+const segmenterCache: { value?: GraphemeSegmenter | null } = {};
 
 function graphemes(value: string): string[] {
-  if (segmenter === undefined) {
+  if (segmenterCache.value === undefined) {
     const Segmenter = (
       Intl as unknown as {
         Segmenter?: new (
@@ -38,8 +39,9 @@ function graphemes(value: string): string[] {
         ) => GraphemeSegmenter;
       }
     ).Segmenter;
-    segmenter = Segmenter ? new Segmenter(undefined, { granularity: "grapheme" }) : null;
+    segmenterCache.value = Segmenter ? new Segmenter(undefined, { granularity: "grapheme" }) : null;
   }
+  const segmenter = segmenterCache.value;
   return segmenter
     ? Array.from(segmenter.segment(value), (part) => part.segment)
     : Array.from(value);

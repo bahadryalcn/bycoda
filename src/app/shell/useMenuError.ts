@@ -14,15 +14,16 @@ export function useMenuError(menuPath: string | undefined, menuOpen: boolean) {
   });
   // An error belongs to the menu it was raised for; it never carries over to another one.
   if (state && state.path !== menuPath) setState(null);
-  const setMenuError = (message: string | null) => {
+  const handleMenuError = (message: string | null) => {
     if (message !== null && !openRef.current) toast.show({ tone: "danger", message });
     else setState(message === null ? null : { path: menuPath, message });
   };
+  const handleFailMenuError = (error: unknown) =>
+    handleMenuError(error instanceof Error ? error.message : String(error));
   return {
     menuError: state ? state.message : null,
-    setMenuError,
-    failMenuError: (error: unknown) =>
-      setMenuError(error instanceof Error ? error.message : String(error)),
+    setMenuError: handleMenuError,
+    failMenuError: handleFailMenuError,
     clearMenuError: () => setState(null),
   };
 }

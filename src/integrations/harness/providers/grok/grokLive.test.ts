@@ -206,6 +206,7 @@ describe("grok live turn sequence", () => {
 
   it("authenticates, selects the model, and prompts", async () => {
     const events: HarnessEvent[] = [];
+    const onAccepted = vi.fn();
     const turn = sendGrokTurn({
       sessionId: "t1",
       cwd: "/repo",
@@ -223,6 +224,7 @@ describe("grok live turn sequence", () => {
           data: "YWJj",
         },
       ],
+      onAccepted,
       onEvent: (e) => events.push(e),
     });
     await handshake();
@@ -237,6 +239,9 @@ describe("grok live turn sequence", () => {
       },
       { type: "image", mimeType: "image/png", data: "YWJj" },
     ]);
+    // Grok answers the prompt only when the turn ends, so the prompt being
+    // sent is the only sign that it has the turn.
+    expect(onAccepted).toHaveBeenCalledOnce();
     reply(promptRequest.id, {
       stopReason: "end_turn",
     });

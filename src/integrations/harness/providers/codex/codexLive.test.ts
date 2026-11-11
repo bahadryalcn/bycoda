@@ -158,17 +158,20 @@ async function startTurn(
     reply(parse().find((m) => m.method === "config/read")!.id as number, {
       config: { skills: { config: [{ path: "/skills/owner-off/SKILL.md", enabled: false }] } },
     });
-    await waitFor(() => parse().some((m) => m.method === "skills/list"), "policy skill list");
-    reply(parse().find((m) => m.method === "skills/list")!.id as number, {
-      data: [
-        {
-          skills: [
-            { name: "good-css", path: "/skills/good-css/SKILL.md", enabled: true },
-            { name: "review", path: "/skills/review/SKILL.md", enabled: true },
-          ],
-        },
-      ],
-    });
+    // The inventory is only read when the policy disables something.
+    if (options.skillPolicy.disabledNames.length || options.skillPolicy.disabledPaths.length) {
+      await waitFor(() => parse().some((m) => m.method === "skills/list"), "policy skill list");
+      reply(parse().find((m) => m.method === "skills/list")!.id as number, {
+        data: [
+          {
+            skills: [
+              { name: "good-css", path: "/skills/good-css/SKILL.md", enabled: true },
+              { name: "review", path: "/skills/review/SKILL.md", enabled: true },
+            ],
+          },
+        ],
+      });
+    }
   }
   const threadMethod = (options.expectResume ?? options.resume) ? "thread/resume" : "thread/start";
   await waitFor(() => parse().some((m) => m.method === threadMethod), threadMethod);
@@ -645,8 +648,38 @@ describe("codex live turn sequence", () => {
     });
     await next;
   });
+  it("reads skill configuration and inventory together, and no inventory when nothing is disabled", async () => {
+    const coldStart = async (sessionId: string, disabledNames: string[]) => {
+      const skillPolicy = { disabledNames, disabledPaths: [] };
+      const input = { cwd: "/repo", model: "codex:test", runtimeMode: "supervised" as const };
+      const onEvent = () => undefined;
+      const sentFrom = parse().length;
+      const sent = () => parse().slice(sentFrom);
+      const turn = sendCodexTurn({ ...input, sessionId, skillPolicy, text: "hi", onEvent });
+      await waitFor(() => has(sent, "initialize"), "initialize");
+      reply(sent().find((m) => m.method === "initialize")!.id as number, {});
+      return { sent, turn: turn.catch(() => undefined) };
+    };
+    const has = (sent: () => ReturnType<typeof parse>, method: string) =>
+      sent().some((m) => m.method === method);
+    // Neither read needs the other's answer.
+    const both = await coldStart("policy-reads", ["review"]);
+    await waitFor(() => has(both.sent, "config/read") && has(both.sent, "skills/list"), "reads");
+    await stopCodexSession("policy-reads");
+    await both.turn;
+
+    const none = await coldStart("policy-empty", []);
+    await waitFor(() => has(none.sent, "config/read"), "skill configuration");
+    reply(none.sent().find((m) => m.method === "config/read")!.id as number, {});
+    await waitFor(() => has(none.sent, "thread/start"), "thread/start");
+    expect(has(none.sent, "skills/list")).toBe(false);
+    await stopCodexSession("policy-empty");
+    await none.turn;
+  });
+
   it("fails an unanswered startup instead of holding the session queue forever", async () => {
     vi.useFakeTimers();
+    const events: HarnessEvent[] = [];
     try {
       const turn = sendCodexTurn({
         sessionId: "unanswered",
@@ -655,11 +688,17 @@ describe("codex live turn sequence", () => {
         runtimeMode: "supervised",
         text: "hello",
         attachments: [],
-        onEvent: () => undefined,
+        onEvent: (event) => events.push(event),
       });
       const outcome = turn.catch((error: Error) => error.message);
       await vi.advanceTimersByTimeAsync(60_001);
       expect(await outcome).toContain("initialize response timed out");
+      // A slow start says so instead of leaving "Waiting for Codex" unexplained.
+      expect(
+        events.flatMap((event) =>
+          event.type === "status" && event.key === "provider-starting" ? [event.text] : [],
+        ),
+      ).toEqual(["Starting Codex…", ""]);
     } finally {
       vi.useRealTimers();
     }

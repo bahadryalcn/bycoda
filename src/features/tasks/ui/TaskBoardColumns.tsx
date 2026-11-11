@@ -2,7 +2,7 @@ import type { BadgeTone } from "../../../shared/ui/Badge";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { StatusDot } from "../../../shared/ui/StatusDot";
-import type { BoardTask } from "../model/taskClient";
+import { type BoardTask, taskTimeLabel } from "../model/taskClient";
 import { canMoveTask, TASK_COLUMNS, taskColumn, type TaskColumn } from "../model/hostTasks";
 import { t, useLocale } from "../../../shared/i18n";
 import { type ComponentProps, type ReactNode, useState } from "react";
@@ -257,7 +257,7 @@ export function TaskBoardColumns({
                     >
                       <TaskCard
                         task={task}
-                        now={now}
+                        timeLabel={taskTimeLabel(task, now)}
                         project={taskContext(task).project}
                         goal={taskContext(task).goal}
                         planning={planningLabel(task)}

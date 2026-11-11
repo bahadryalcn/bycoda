@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { gitDiffIndex } from "../../../platform/tauri/fs";
 import { basename } from "../../../platform/tauri/fs";
@@ -20,6 +20,29 @@ type Detail =
       hasUpstream: boolean;
     };
 
+/** One project's detail; `null` when `isCancelled` turned true while the index was read. */
+async function loadDetail(path: string, isCancelled: () => boolean): Promise<Detail | null> {
+  try {
+    const index = await gitDiffIndex(path);
+    if (isCancelled()) return null;
+    applyProjectDiffStats(path, {
+      files: index.files.length + (index.conflicts?.length ?? 0),
+      additions: index.additions,
+      deletions: index.deletions,
+    });
+    return {
+      state: "ready",
+      branch: index.branch,
+      files: index.files.length + (index.conflicts?.length ?? 0),
+      ahead: index.ahead,
+      behind: index.behind,
+      hasUpstream: index.upstream != null,
+    };
+  } catch (error) {
+    return { state: "error", message: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 /**
  * Per-project branch, changed files and ahead/behind for a group. The sync
  * numbers need a full git index per project, so they are read only while this
@@ -38,48 +61,24 @@ export function GroupGitPopover({
   onSelect: (path: string) => void;
   onDismiss: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const [details, setDetails] = useState<Record<string, Detail>>({});
   const key = paths.join("\0");
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      for (const path of paths) {
+      for (const path of key ? key.split("\0") : []) {
         if (cancelled) return;
         if (!isLocalProject(path)) continue;
-        let detail: Detail;
-        try {
-          const index = await gitDiffIndex(path);
-          if (cancelled) return;
-          applyProjectDiffStats(path, {
-            files: index.files.length + (index.conflicts?.length ?? 0),
-            additions: index.additions,
-            deletions: index.deletions,
-          });
-          detail = {
-            state: "ready",
-            branch: index.branch,
-            files: index.files.length + (index.conflicts?.length ?? 0),
-            ahead: index.ahead,
-            behind: index.behind,
-            hasUpstream: index.upstream != null,
-          };
-        } catch (error) {
-          detail = {
-            state: "error",
-            message: error instanceof Error ? error.message : String(error),
-          };
-        }
-        if (cancelled) return;
+        const detail = await loadDetail(path, () => cancelled);
+        if (!detail || cancelled) return;
         setDetails((current) => ({ ...current, [path]: detail }));
       }
     })();
     return () => {
       cancelled = true;
     };
-    // `key` stands in for `paths`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
   const summary = summarizeGroupGit(

@@ -199,7 +199,7 @@ export function useCloseTabActions({
         });
       })();
     },
-    [commitClose],
+    [commitClose, movingTabIds, tabsRef, sessionsRef, dirtyFilesRef, windowTransferPendingRef],
   );
 
   const onCloseTabs = useCallback(
@@ -344,7 +344,7 @@ export function useCloseTabActions({
         await finishClose();
       })().catch(console.error);
     },
-    [commitClose],
+    [commitClose, movingTabIds, tabsRef, dirtyFilesRef, windowTransferPendingRef],
   );
 
   const onCloseOtherTabs = useCallback(() => {
@@ -355,7 +355,7 @@ export function useCloseTabActions({
       current.filter((tab) => tab.id !== activeId).map((tab) => tab.id),
       activeId,
     );
-  }, [onCloseTabs]);
+  }, [onCloseTabs, activeTabIdRef, tabsRef]);
 
   return { onCloseTab, onCloseTabs, onCloseOtherTabs };
 }

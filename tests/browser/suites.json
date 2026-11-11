@@ -1093,6 +1093,23 @@
       ]
     },
     {
+      "id": "render-budget",
+      "config": "tests/browser/render-budget/playwright.render-budget.config.ts",
+      "files": ["render-budget.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/render-budget/vite.render-budget.config.ts",
+        "mode": "dev",
+        "path": "/tests/browser/render-budget/shell.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["render-budget.spec.ts"]
+        }
+      ]
+    },
+    {
       "id": "subagent-relay",
       "config": "tests/browser/chat/playwright.subagent-relay.config.ts",
       "files": ["subagent-relay.spec.ts"],

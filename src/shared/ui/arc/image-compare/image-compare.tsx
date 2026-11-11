@@ -294,14 +294,14 @@ export function ImageCompare({
     else animate(pos, current, moveSpring);
   });
 
-  function commit(next: number, live = false) {
+  const commit = (next: number, live = false) => {
     if (live && Math.round(next) === Math.round(latest.current)) return;
     const value = Number(next.toFixed(2));
     if (value === latest.current) return;
     latest.current = value;
     if (position === undefined) setInternal(value);
     onPositionChange?.(value);
-  }
+  };
 
   const percentAt = (event: PointerEvent<HTMLDivElement>) => {
     const rect = rootRef.current!.getBoundingClientRect();
@@ -314,25 +314,15 @@ export function ImageCompare({
     return (vertical ? rect?.height : rect?.width) || 1;
   };
   /** Focus that follows a pointer keeps the handle quiet: no ring until a key is pressed. */
-  function focusQuietly() {
+  const focusQuietly = () => {
     const node = handleRef.current;
     if (!node || document.activeElement === node) return;
     setQuiet(true);
     node.focus({ preventScroll: true });
-  }
+  };
 
-  function start(state: Drag, at: number) {
-    const from = pos.get() + lag.get();
-    state.started = true;
-    state.grab = state.press ? 0 : at - from;
-    lag.jump(0);
-    pos.jump(from);
-    setDragging(true);
-    focusQuietly();
-    follow(state, at, true);
-  }
   /** Puts the line under the pointer, with resistance past the edges, and commits the position once per whole percent. */
-  function follow(state: Drag, at: number, first = false) {
+  const follow = (state: Drag, at: number, first = false) => {
     const raw = at - state.grab,
       size = axisSize();
     const edge = clamp(raw, 0, 100);
@@ -345,9 +335,19 @@ export function ImageCompare({
       animate(lag, 0, moveSpring);
     } else pos.set(placed);
     commit(edge, true);
-  }
+  };
 
-  function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+  const start = (state: Drag, at: number) => {
+    const from = pos.get() + lag.get();
+    state.started = true;
+    state.grab = state.press ? 0 : at - from;
+    lag.jump(0);
+    pos.jump(from);
+    setDragging(true);
+    focusQuietly();
+    follow(state, at, true);
+  };
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !event.isPrimary || !rootRef.current) return;
     const onHandle = !!(event.target as HTMLElement).closest("[data-handle]");
     pressedHandle.current = onHandle;
@@ -364,8 +364,8 @@ export function ImageCompare({
     drag.current = state;
     // A finger on the photo might be scrolling the page, so it waits for a sideways drag; a mouse or the handle answers at once.
     if (event.pointerType !== "touch" || onHandle) start(state, percentAt(event));
-  }
-  function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+  };
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const state = drag.current;
     if (!state || state.pointer !== event.pointerId) return;
     if (!state.started) {
@@ -380,8 +380,8 @@ export function ImageCompare({
       return;
     }
     follow(state, percentAt(event));
-  }
-  function onPointerEnd(event: PointerEvent<HTMLDivElement>) {
+  };
+  const onPointerEnd = (event: PointerEvent<HTMLDivElement>) => {
     const state = drag.current;
     if (!state || state.pointer !== event.pointerId) return;
     drag.current = null;
@@ -406,9 +406,9 @@ export function ImageCompare({
     }
     commit(target);
     setDragging(false);
-  }
+  };
 
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const large = event.shiftKey ? 10 : 1;
     // Keys move the divider the way they point along its axis; the other two follow the value, where up and right mean more of the after image.
     const toward: Record<string, number> = vertical
@@ -445,7 +445,7 @@ export function ImageCompare({
       return;
     }
     commit(clamped);
-  }
+  };
 
   const capsule = dragging
     ? vertical

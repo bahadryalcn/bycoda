@@ -192,7 +192,17 @@ export function useSessionLoading({
       }
       return restored;
     },
-    [loadStoredSession, refreshHistory, sidebarCwd],
+    [
+      loadStoredSession,
+      refreshHistory,
+      sidebarCwd,
+      loadedSessionCache,
+      openingSessionIds,
+      sessionsRef,
+      removingSessionIds,
+      setSessions,
+      lastPersisted,
+    ],
   );
 
   const onPopOutSession = useCallback(

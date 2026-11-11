@@ -131,6 +131,7 @@ const LIFT = 4,
   GAP = 3,
   CORNER = 4;
 const grouped = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+const formatGrouped = (value: number) => grouped.format(value);
 const percent = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 0 });
 const shareText = (share: number) => (share > 0 && share < 0.01 ? "<1%" : percent.format(share));
 
@@ -323,7 +324,7 @@ export function DonutChart({
   data,
   label,
   unit = "",
-  formatValue = (value) => grouped.format(value),
+  formatValue = formatGrouped,
   totalLabel = "Total",
   size = 208,
   thickness = 24,

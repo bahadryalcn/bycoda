@@ -136,7 +136,7 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
     () => () => {
       deleteConfirmationPendingRef.current = false;
     },
-    [],
+    [deleteConfirmationPendingRef],
   );
 
   const onRemoveHistorySession = useCallback(

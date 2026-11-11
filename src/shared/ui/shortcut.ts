@@ -1,6 +1,9 @@
 import { useSyncExternalStore } from "react";
 import { t as translate } from "../i18n";
 
+/** The bound translator from `useT()`; the module `t` is for code outside render. */
+type Translate = typeof translate;
+
 /* ================================================================================================
  * The one shortcut model and formatter. Button and Tooltip hints, DropdownMenu shortcut slots,
  * ShortcutKeys/ShortcutKbd and the Arc shortcut recorder all read shortcuts through this file.
@@ -175,29 +178,28 @@ function chordTokens(
   mods: ReadonlySet<string>,
   key: string,
   platform: Platform,
+  t: Translate,
   raw?: string,
 ): ShortcutToken[] {
   const tokens: ShortcutToken[] = [];
   if (platform === "mac") {
-    if (mods.has("ctrl")) tokens.push({ label: "⌃", id: "ctrl", spoken: translate("Control") });
-    if (mods.has("alt")) tokens.push({ label: "⌥", id: "alt", spoken: translate("Option") });
-    if (mods.has("shift")) tokens.push({ label: "⇧", id: "shift", spoken: translate("Shift") });
+    if (mods.has("ctrl")) tokens.push({ label: "⌃", id: "ctrl", spoken: t("Control") });
+    if (mods.has("alt")) tokens.push({ label: "⌥", id: "alt", spoken: t("Option") });
+    if (mods.has("shift")) tokens.push({ label: "⇧", id: "shift", spoken: t("Shift") });
     if (mods.has("mod") || mods.has("meta"))
-      tokens.push({ label: "⌘", id: "meta", spoken: translate("Command") });
+      tokens.push({ label: "⌘", id: "meta", spoken: t("Command") });
   } else {
     if (mods.has("mod") || mods.has("ctrl"))
-      tokens.push({ label: "Ctrl", id: "ctrl", spoken: translate("Control") });
-    if (mods.has("alt")) tokens.push({ label: "Alt", id: "alt", spoken: translate("Alt") });
-    if (mods.has("shift")) tokens.push({ label: "Shift", id: "shift", spoken: translate("Shift") });
-    if (mods.has("meta")) tokens.push({ label: "Win", id: "meta", spoken: translate("Windows") });
+      tokens.push({ label: "Ctrl", id: "ctrl", spoken: t("Control") });
+    if (mods.has("alt")) tokens.push({ label: "Alt", id: "alt", spoken: t("Alt") });
+    if (mods.has("shift")) tokens.push({ label: "Shift", id: "shift", spoken: t("Shift") });
+    if (mods.has("meta")) tokens.push({ label: "Win", id: "meta", spoken: t("Windows") });
   }
   if (key) {
     const named = (platform === "mac" ? MAC_KEYS[key] : undefined) ?? SHARED_KEYS[key];
     const label = raw && raw.length > 1 && !/^f\d{1,2}$/.test(key) ? raw : key.toUpperCase();
     tokens.push(
-      named
-        ? { label: named[0], id: key, spoken: translate(named[1]) }
-        : { label, id: key, spoken: label },
+      named ? { label: named[0], id: key, spoken: t(named[1]) } : { label, id: key, spoken: label },
     );
   }
   return tokens;
@@ -205,8 +207,17 @@ function chordTokens(
 
 /** Key caps for a canonical shortcut in platform order: ⌃ ⌥ ⇧ ⌘ on a Mac, Ctrl Alt Shift Win elsewhere. */
 export function shortcutTokens(shortcut: string, platform: Platform): ShortcutToken[] {
+  return shortcutTokensWith(shortcut, platform, translate);
+}
+
+/** {@link shortcutTokens} with a bound translator, safe to call during render. */
+export function shortcutTokensWith(
+  shortcut: string,
+  platform: Platform,
+  t: Translate,
+): ShortcutToken[] {
   const { mods, key } = splitShortcut(normalizeShortcut(shortcut, platform));
-  return chordTokens(mods, key, platform);
+  return chordTokens(mods, key, platform, t);
 }
 
 /** "⌘⇧K" on a Mac, "Ctrl+Shift+K" elsewhere, plus a spoken form for assistive technology. */
@@ -271,7 +282,7 @@ const PART_ALIASES: Record<string, string> = {
   plus: "+",
 };
 
-function parseChord(text: string, platform: Platform): ShortcutToken[] {
+function parseChord(text: string, platform: Platform, t: Translate): ShortcutToken[] {
   const mods = new Set<string>();
   let parts: string[];
   if (text.length > 1 && text.includes("+")) {
@@ -298,7 +309,7 @@ function parseChord(text: string, platform: Platform): ShortcutToken[] {
       raw = part;
     }
   }
-  return chordTokens(normalizeMods(mods, platform), key, platform, raw);
+  return chordTokens(normalizeMods(mods, platform), key, platform, t, raw);
 }
 
 /**
@@ -306,6 +317,15 @@ function parseChord(text: string, platform: Platform): ShortcutToken[] {
  * chords (space separated). Unknown key names keep their spelling.
  */
 export function parseShortcutLabel(label: string, platform: Platform): ShortcutSequence[] {
+  return parseShortcutLabelWith(label, platform, translate);
+}
+
+/** {@link parseShortcutLabel} with a bound translator, safe to call during render. */
+export function parseShortcutLabelWith(
+  label: string,
+  platform: Platform,
+  t: Translate,
+): ShortcutSequence[] {
   return label
     .replace(/\s*\+\s*(?=\S)/g, "+")
     .split(/\s+\/\s+/)
@@ -314,7 +334,7 @@ export function parseShortcutLabel(label: string, platform: Platform): ShortcutS
         .trim()
         .split(/\s+/)
         .filter(Boolean)
-        .map((chord) => parseChord(chord, platform))
+        .map((chord) => parseChord(chord, platform, t))
         .filter((chord) => chord.length > 0),
     )
     .filter((sequence) => sequence.length > 0);
@@ -322,7 +342,12 @@ export function parseShortcutLabel(label: string, platform: Platform): ShortcutS
 
 /** A display label in the platform's spelling: "⌘⇧K" / "Ctrl+Shift+K", sequences and alternatives kept. */
 export function formatShortcutLabel(label: string, platform: Platform) {
-  const alternatives = parseShortcutLabel(label, platform);
+  return formatShortcutLabelWith(label, platform, translate);
+}
+
+/** {@link formatShortcutLabel} with a bound translator, safe to call during render. */
+export function formatShortcutLabelWith(label: string, platform: Platform, t: Translate) {
+  const alternatives = parseShortcutLabelWith(label, platform, t);
   const join = platform === "mac" ? "" : "+";
   return {
     alternatives,
@@ -335,7 +360,7 @@ export function formatShortcutLabel(label: string, platform: Platform) {
       .map((sequence) =>
         sequence.map((chord) => chord.map((token) => token.spoken).join(" ")).join(", "),
       )
-      .join(` ${translate("or")} `),
+      .join(` ${t("or")} `),
   };
 }
 

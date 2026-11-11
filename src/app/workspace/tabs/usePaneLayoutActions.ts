@@ -74,7 +74,17 @@ export function usePaneLayoutActions({
       );
       setComposerFocused(true);
     },
-    [activeTab, sidebarCwd, sessionDefaults?.runtimeMode],
+    [
+      activeTab,
+      sidebarCwd,
+      sessionDefaults?.runtimeMode,
+      setTabs,
+      setSessions,
+      setComposerFocused,
+      windowTransferPendingRef,
+      setMaximizedPane,
+      movingTabIds,
+    ],
   );
 
   const activeTabLayoutPreset = useMemo(
@@ -120,7 +130,18 @@ export function usePaneLayoutActions({
       tabsRef.current = next;
       setTabs(next);
     },
-    [activeTab, sidebarCwd, sessionDefaults?.runtimeMode],
+    [
+      activeTab,
+      sidebarCwd,
+      sessionDefaults?.runtimeMode,
+      tabsRef,
+      sessionsRef,
+      setMaximizedPane,
+      windowTransferPendingRef,
+      movingTabIds,
+      setTabs,
+      setSessions,
+    ],
   );
 
   return { onSplit, activeTabLayoutPreset, onArrangeActiveTab };

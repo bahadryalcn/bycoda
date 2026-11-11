@@ -1,4 +1,5 @@
 /** Local opt-in diagnostics. Never accepts content, paths or application IDs. */
+import { useSyncExternalStore } from "react";
 export type PerformanceStage =
   | "window-move"
   | "startup"
@@ -106,6 +107,16 @@ let records: PerformanceTraceRecord[] = [];
 let sequence = 0;
 const sessionTraces = new Map<string, string>();
 const SESSION_TRACE_LIMIT = 128;
+const traceListeners = new Set<() => void>();
+function sessionTracesChanged(): void {
+  for (const listener of traceListeners) listener();
+}
+function subscribeSessionPerformanceTraces(listener: () => void): () => void {
+  traceListeners.add(listener);
+  return () => {
+    traceListeners.delete(listener);
+  };
+}
 /** Raw session keys stay local and are never included in exported records. */
 export function beginSessionPerformanceTrace(sessionId: string): string | undefined {
   if (!enabled) return undefined;
@@ -114,14 +125,25 @@ export function beginSessionPerformanceTrace(sessionId: string): string | undefi
   sessionTraces.set(sessionId, traceId);
   while (sessionTraces.size > SESSION_TRACE_LIMIT)
     sessionTraces.delete(sessionTraces.keys().next().value!);
+  sessionTracesChanged();
   return traceId;
 }
 export function sessionPerformanceTrace(sessionId: string): string | undefined {
   return enabled ? sessionTraces.get(sessionId) : undefined;
 }
+/** Reactive `sessionPerformanceTrace`: re-renders the caller when its session's trace starts or ends. */
+export function useSessionPerformanceTrace(sessionId: string): string | undefined {
+  return useSyncExternalStore(
+    subscribeSessionPerformanceTraces,
+    () => sessionPerformanceTrace(sessionId),
+    () => undefined,
+  );
+}
 export function endSessionPerformanceTrace(sessionId: string, traceId?: string): void {
-  if (traceId === undefined || sessionTraces.get(sessionId) === traceId)
+  if (traceId === undefined || sessionTraces.get(sessionId) === traceId) {
     sessionTraces.delete(sessionId);
+    sessionTracesChanged();
+  }
 }
 export function isPerformanceTracingEnabled(): boolean {
   return enabled;
@@ -142,12 +164,14 @@ export function configurePerformanceTracing(options: {
 }): void {
   enabled = options.enabled;
   if (!enabled) sessionTraces.clear();
+  sessionTracesChanged();
   capacity = Math.max(1, Math.min(10000, Math.floor(options.capacity ?? 2048) || 2048));
   records = records.slice(-capacity);
 }
 export function clearPerformanceTrace(): void {
   records = [];
   sessionTraces.clear();
+  sessionTracesChanged();
 }
 export function getPerformanceTrace(): PerformanceTraceRecord[] {
   return records.map((record) => ({ ...record, metrics: { ...record.metrics } }));

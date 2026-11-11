@@ -17,17 +17,14 @@ import {
 } from "../../../integrations/harness/core/availability";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
 import {
-  getModelSnapshot,
   getPickerVisibilitySnapshot,
-  hasLiveCatalog,
   isPickerProviderVisible,
   mergeModelSettings,
   modelEffortSetting,
-  modelsFor,
   preferredModelId,
-  subscribeModels,
   subscribePickerVisibility,
 } from "../model/models";
+import { useModelCatalog } from "../model/modelHooks";
 import { secondOpinionTargets } from "../model/secondOpinion";
 import { HARNESS_TITLE, type HarnessId, type ModelTarget } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
@@ -145,11 +142,16 @@ export function SecondOpinionButton({
     getPickerVisibilitySnapshot,
     getPickerVisibilitySnapshot,
   );
-  const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
+  const catalog = useModelCatalog();
   const [open, setOpen] = useState(false);
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
 
-  const probed = hasProbedHarnessAvailability();
+  // The first probe finishing flips this once; `emitHarnessAvailability` follows the mark.
+  const probed = useSyncExternalStore(
+    subscribeHarnessAvailability,
+    hasProbedHarnessAvailability,
+    hasProbedHarnessAvailability,
+  );
   const targets = useMemo(() => {
     void availabilityVersion;
     void visibilityVersion;
@@ -188,8 +190,8 @@ export function SecondOpinionButton({
     !excludeFromModel || !fromModel
       ? true
       : targets.some((harness) => {
-          if (!hasLiveCatalog(harness)) return true;
-          const list = modelsFor(harness);
+          if (!catalog.hasLiveCatalog(harness)) return true;
+          const list = catalog.modelsFor(harness);
           return harness === from ? list.some((model) => model.id !== fromModel) : list.length > 0;
         });
   const noTargets = targets.length === 0 || !hasSelectableModel;
@@ -197,8 +199,7 @@ export function SecondOpinionButton({
   const label = noTargets ? disabledTitle : title;
 
   const modelsOf = (harness: HarnessId) => {
-    void catalogVersion;
-    const list = modelsFor(harness);
+    const list = catalog.modelsFor(harness);
     // The current model is not a second opinion on itself, so it is not an
     // option once the picker lets the turn's own harness back in.
     return excludeFromModel && harness === from && fromModel

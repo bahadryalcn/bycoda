@@ -1,64 +1,25 @@
 {
   "note": "Components and hooks the React Compiler does not compile in the folders it compiles in full, counted per file by scripts/checks/check-compiler-coverage.mjs. Counts may only fall; lower them with --ratchet after a fix. Rule bycoda/compiler-owns-memo allows manual memoization only in the files listed here.",
   "counts": {
-    "src/app/shell/AppConfirmHost.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/app/shell/ClosingTab.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/app/shell/DetachedWorkingBar.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/app/shell/FullscreenButton.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/app/shell/GithubStarPrompt.tsx": {
-      "uncompiled-function": 1
-    },
     "src/app/shell/LastSessionsSection.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/app/shell/MenuBar.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/app/shell/ProjectRail.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/app/shell/SessionDetailTimes.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/app/shell/SessionRecoveryControl.tsx": {
       "uncompiled-function": 1
     },
     "src/app/shell/SessionRecoveryPanel.tsx": {
       "uncompiled-function": 1
     },
     "src/app/shell/Sidebar.tsx": {
-      "uncompiled-function": 3
-    },
-    "src/app/shell/SidebarUpdate.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/app/shell/TitleBarActionsSlot.tsx": {
       "uncompiled-function": 1
     },
     "src/app/shell/ToolNavigation.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/app/shell/UsageFooter.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/app/shell/UsageProviderChip.tsx": {
-      "uncompiled-function": 6
-    },
-    "src/app/shell/WhatsNewDialog.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/app/shell/WindowControls.tsx": {
       "uncompiled-function": 1
     },
-    "src/app/shell/WorkspaceControls.tsx": {
+    "src/app/shell/UsageFooter.tsx": {
+      "uncompiled-function": 1
+    },
+    "src/app/shell/UsageProviderChip.tsx": {
+      "uncompiled-function": 1
+    },
+    "src/app/shell/WhatsNewDialog.tsx": {
       "uncompiled-function": 1
     },
     "src/app/shell/sessionListWindow.tsx": {
@@ -67,157 +28,46 @@
     "src/app/shell/useCheckoutChangeStats.ts": {
       "uncompiled-function": 1
     },
-    "src/app/shell/useMenuError.ts": {
-      "uncompiled-function": 1
-    },
     "src/app/shell/useMuteStatuses.ts": {
-      "uncompiled-function": 1
-    },
-    "src/app/shell/useProjectLogoPath.ts": {
       "uncompiled-function": 1
     },
     "src/app/shell/useProjectMenu.tsx": {
       "uncompiled-function": 1
     },
-    "src/app/shell/useRailSections.tsx": {
+    "src/features/notifications/hooks/useSessionReminders.ts": {
       "uncompiled-function": 1
     },
-    "src/app/shell/useSessionBulkDelete.ts": {
+    "src/features/notifications/ui/NotificationMuteControl.tsx": {
       "uncompiled-function": 1
     },
-    "src/app/shell/useSessionListMotion.ts": {
+    "src/features/notifications/ui/NotificationMuteDatePicker.tsx": {
       "uncompiled-function": 1
     },
-    "src/app/shell/useSessionProjectAppearance.tsx": {
+    "src/features/projects/ui/ProjectActionDialog.tsx": {
       "uncompiled-function": 1
     },
-    "src/app/shell/useTabStripScroll.ts": {
+    "src/features/projects/ui/ProjectBackgroundDialog.tsx": {
       "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ActivityDock.tsx": {
-      "uncompiled-function": 3
     },
     "src/features/sessions/ui/AgentClock.tsx": {
       "uncompiled-function": 1
     },
-    "src/features/sessions/ui/AgentMarkdown.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/features/sessions/ui/AgentTabView.tsx": {
-      "uncompiled-function": 2
-    },
     "src/features/sessions/ui/AgentTranscript.tsx": {
-      "uncompiled-function": 6
+      "uncompiled-function": 1
     },
     "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
-      "uncompiled-function": 3
-    },
-    "src/features/sessions/ui/ApprovalDecisionContext.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ApprovalToasts.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/AssistantManagedBadge.tsx": {
       "uncompiled-function": 2
     },
-    "src/features/sessions/ui/AssistantSessionControl.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/AttachmentFilePreview.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/BtwQuestionBurst.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/BtwSheet.tsx": {
+    "src/features/sessions/ui/ApprovalDecisionContext.tsx": {
       "uncompiled-function": 1
     },
     "src/features/sessions/ui/ClaudeSessionPicker.tsx": {
       "uncompiled-function": 1
     },
-    "src/features/sessions/ui/Composer.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ComposerCitations.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/CrewScene.tsx": {
-      "uncompiled-function": 1
-    },
     "src/features/sessions/ui/DeleteSessionDialog.tsx": {
       "uncompiled-function": 1
     },
-    "src/features/sessions/ui/DeliveryProgressNotice.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/EmptySession.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/GeneratedImage.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/HighlightedCodeBlock.tsx": {
-      "uncompiled-function": 1
-    },
     "src/features/sessions/ui/LiveAgentsPreview.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/features/sessions/ui/LocalMedia.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/LocalSessionReferenceLink.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/MessageQueue.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ModelAccountSwitcher.tsx": {
-      "uncompiled-function": 4
-    },
-    "src/features/sessions/ui/ModelExtras.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ModelPanel.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ModelPicker.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ModelSettingsColumn.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/NotificationHistoryItem.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/PromptOutline.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ProviderAccountMenu.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ProviderAccountRecoveryDialog.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ProviderRetryNotice.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/QuestionFields.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/QuestionForm.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/QueuedMessageEditDialog.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ReminderNotices.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/RemoteOriginMark.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/RetryFailedTurn.tsx": {
       "uncompiled-function": 1
     },
     "src/features/sessions/ui/SecondOpinionButton.tsx": {
@@ -226,28 +76,7 @@
     "src/features/sessions/ui/SessionAgentIdentity.tsx": {
       "uncompiled-function": 1
     },
-    "src/features/sessions/ui/SessionDeletionNotice.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/SessionDirsPicker.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/SessionFiltersMenu.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/features/sessions/ui/SessionImportDialog.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/features/sessions/ui/SessionImportResult.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/features/sessions/ui/SessionLifecycleControl.tsx": {
-      "uncompiled-function": 1
-    },
     "src/features/sessions/ui/SessionPane.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/features/sessions/ui/SessionReview.tsx": {
       "uncompiled-function": 1
     },
     "src/features/sessions/ui/SessionSubagentSheet.tsx": {
@@ -256,131 +85,23 @@
     "src/features/sessions/ui/SessionWorkingStatus.tsx": {
       "uncompiled-function": 1
     },
-    "src/features/sessions/ui/SubagentAnatomy.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/features/sessions/ui/SubagentCards.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/SubagentSheet.tsx": {
-      "uncompiled-function": 4
-    },
-    "src/features/sessions/ui/SurfaceSelection.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/ToolInspectionPanel.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/TranscriptImagePreview.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/features/sessions/ui/TranscriptMessageActions.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/TranscriptSelectionMenu.tsx": {
-      "uncompiled-function": 1
-    },
     "src/features/sessions/ui/TranscriptVirtualRows.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/features/sessions/ui/UserLinkPreview.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/UserTextPreview.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/useApprovalDecisionControl.ts": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/useAttachmentPreview.ts": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/useComposerAttachments.ts": {
       "uncompiled-function": 1
     },
     "src/features/sessions/ui/useComposerSkills.ts": {
       "uncompiled-function": 1
     },
-    "src/features/sessions/ui/useDelegatedMessage.ts": {
-      "uncompiled-function": 1
-    },
     "src/features/sessions/ui/useElapsedFrom.ts": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/useMessageRewind.ts": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/useNativeSkillWarmup.ts": {
       "uncompiled-function": 1
     },
     "src/features/sessions/ui/useParsedMarkdown.ts": {
       "uncompiled-function": 1
     },
-    "src/features/sessions/ui/useQuestionAttachmentReader.ts": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/useQuestionAttachmentRecovery.ts": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/useQuoteRequests.ts": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/useReadOnlyHostSession.ts": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/useSubagentRelay.ts": {
-      "uncompiled-function": 1
-    },
     "src/features/sessions/ui/useTranscriptFollow.ts": {
-      "uncompiled-function": 2
-    },
-    "src/features/sessions/ui/useTranscriptPaging.ts": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/useTranscriptSearch.ts": {
       "uncompiled-function": 1
     },
     "src/features/sessions/ui/wordFade.tsx": {
       "uncompiled-function": 3
-    },
-    "src/shared/ui/Combobox.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/ConfirmDialog.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/DateRangePicker.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/DateTimePicker.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/shared/ui/DateTimeRangePicker.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/DropdownMenu.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/FailureState.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/HoverCard.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/ImageAnnotationCanvas.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/shared/ui/LoadingCard.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/MiddleTruncate.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/Modal.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/NativeSearchableSelect.tsx": {
-      "uncompiled-function": 1
     },
     "src/shared/ui/Popover.tsx": {
       "uncompiled-function": 1
@@ -388,82 +109,25 @@
     "src/shared/ui/SearchableSelect.tsx": {
       "uncompiled-function": 1
     },
-    "src/shared/ui/SearchableSelectGroupFilter.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/Select.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/Sheet.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/SortableDataTable.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/TextField.tsx": {
-      "uncompiled-function": 1
-    },
     "src/shared/ui/Timestamp.tsx": {
       "uncompiled-function": 1
     },
     "src/shared/ui/ToastRegion.tsx": {
-      "uncompiled-function": 5
-    },
-    "src/shared/ui/Tooltip.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/shared/ui/arc/bar-chart/bar-chart.tsx": {
       "uncompiled-function": 1
-    },
-    "src/shared/ui/arc/combobox/combobox.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/arc/confirm-morph/confirm-morph.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/arc/donut-chart/donut-chart.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/arc/expanding-button-group/expanding-button-group.tsx": {
-      "uncompiled-function": 2
     },
     "src/shared/ui/arc/expanding-search/expanding-search.tsx": {
       "uncompiled-function": 1
     },
-    "src/shared/ui/arc/image-compare/image-compare.tsx": {
-      "uncompiled-function": 1
-    },
     "src/shared/ui/arc/inline-edit/inline-edit.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/shared/ui/arc/json-viewer/json-viewer.tsx": {
       "uncompiled-function": 1
     },
     "src/shared/ui/arc/line-chart/line-chart.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/arc/morph-select/morph-select.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/arc/shortcut-recorder/shortcut-keys.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/arc/shortcut-recorder/shortcut-recorder.tsx": {
-      "uncompiled-function": 2
-    },
-    "src/shared/ui/arc/sortable-data-table/sortable-data-table.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/arc/stepper/stepper.tsx": {
       "uncompiled-function": 1
     },
     "src/shared/ui/arc/tag-input/tag-input.tsx": {
       "uncompiled-function": 2
     },
     "src/shared/ui/arc/usage-meter/usage-meter.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/shared/ui/overlay.ts": {
       "uncompiled-function": 1
     },
     "src/shared/ui/picker/PickerList.tsx": {

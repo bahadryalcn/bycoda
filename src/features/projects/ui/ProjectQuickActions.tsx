@@ -3,7 +3,8 @@ import {
   ExpandingButtonGroup,
   type ExpandingButtonGroupItem,
 } from "../../../shared/ui/ExpandingButtonGroup";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -87,7 +88,7 @@ function ProjectQuickActionsFor({
   additionalItems = [],
   trailing,
 }: ProjectQuickActionsProps) {
-  useLocale();
+  const t = useT();
   const [menu, setMenu] = useState<{
     kind: "open" | "actions";
     anchor: HTMLElement;
@@ -144,10 +145,9 @@ function ProjectQuickActionsFor({
   }, [menu?.kind]);
 
   // The parent passes a new `onRun` as its own state changes (every streamed frame
-  // for a session pane); reading it through a ref keeps `run` and the keyboard
+  // for a session pane); a stable wrapper keeps `run` and the keyboard
   // listener below from being rebuilt for it.
-  const onRunRef = useRef(onRun);
-  onRunRef.current = onRun;
+  const onRunLatest = useStableCallback(onRun);
   const canRun = !!onRun;
   const run = useCallback(
     (action: ProjectAction) => {
@@ -181,11 +181,11 @@ function ProjectQuickActionsFor({
           });
         return;
       }
-      if (action.command.trim()) onRunRef.current?.(action);
+      if (action.command.trim()) onRunLatest?.(action);
       if (action.url.trim() && action.openUrlOnRun !== false)
         void openUrl(action.url.trim()).catch((reason: unknown) => setError(String(reason)));
     },
-    [cwd],
+    [cwd, onRunLatest],
   );
 
   useEffect(() => {
@@ -229,9 +229,7 @@ function ProjectQuickActionsFor({
           {
             kind: "item" as const,
             id: "loading",
-            get label() {
-              return t("Finding installed editors…");
-            },
+            label: t("Finding installed editors…"),
             disabled: true,
           },
         ]
@@ -258,17 +256,13 @@ function ProjectQuickActionsFor({
           {
             kind: "item" as const,
             id: `run:${action.id}`,
-            get label() {
-              return t("Run action");
-            },
+            label: t("Run action"),
             disabled: Boolean(action.command.trim() && !action.devServer && !onRun),
           },
           {
             kind: "item" as const,
             id: `edit:${action.id}`,
-            get label() {
-              return t("Edit action");
-            },
+            label: t("Edit action"),
           },
         ],
       };
@@ -277,9 +271,7 @@ function ProjectQuickActionsFor({
     {
       kind: "item",
       id: "add",
-      get label() {
-        return t("Add action…");
-      },
+      label: t("Add action…"),
       icon: <Plus className="icon-md" />,
     },
   ];

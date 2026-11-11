@@ -14,6 +14,7 @@ import { Progress } from "../../../src/shared/ui/Progress";
 import { RecoveryBoundary } from "../../../src/shared/ui/RecoveryBoundary";
 import { Shimmer } from "../../../src/shared/ui/Shimmer";
 import { Skeleton } from "../../../src/shared/ui/Skeleton";
+import { toast, ToastRegion, type ToastOptions } from "../../../src/shared/ui/ToastRegion";
 import { TransientNotice } from "../../../src/shared/ui/TransientNotice";
 import { WorkingIndicator } from "../../../src/shared/ui/WorkingIndicator";
 import "../../../src/styles/index.css";
@@ -216,6 +217,34 @@ function StatusSection() {
   );
 }
 
+/** Toasts for the corner stack, added one per press so the newest sits in front. */
+const STACK_SAMPLES: ToastOptions[] = [
+  { tone: "success", title: "Changes saved", message: "Synced to all devices." },
+  {
+    tone: "info",
+    message: "Archived 3 sessions",
+    action: { label: "Undo", onClick: () => count("stack-undo") },
+  },
+  {
+    tone: "warning",
+    title: "Sync is slow",
+    message: "Changes may take a minute to appear on your other devices.",
+  },
+  {
+    tone: "danger",
+    title: "Update failed",
+    message: "The release feed returned 503. Nothing was changed.",
+    action: { label: "Retry", onClick: () => count("stack-retry") },
+  },
+];
+let stackSample = 0;
+const addToast = () =>
+  toast.show({
+    ...STACK_SAMPLES[stackSample++ % STACK_SAMPLES.length],
+    durationMs: null,
+    onDismiss: () => count("stack-dismiss"),
+  });
+
 function NoticesSection() {
   const [pending, setPending] = useState(false);
   const [showFileError, setShowFileError] = useState(false);
@@ -279,7 +308,9 @@ function NoticesSection() {
       </div>
       <div className="flex items-center gap-2">
         <Button onClick={() => setShowFileError(true)}>Show file action error</Button>
+        <Button onClick={addToast}>Add toast</Button>
       </div>
+      <ToastRegion />
       {showFileError ? (
         <FileActionError
           message="Could not rename the file."

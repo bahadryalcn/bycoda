@@ -70,5 +70,5 @@ export function useTabVisitRecorder({
       next = recordTabVisit(next, activeTabId);
     }
     commitTabVisit(pruneTabVisitHistory(next, openIds, activeTabId));
-  }, [activeTabId, commitTabVisit, tabs]);
+  }, [activeTabId, commitTabVisit, tabs, tabVisitRef, tabVisitFromHistoryRef]);
 }

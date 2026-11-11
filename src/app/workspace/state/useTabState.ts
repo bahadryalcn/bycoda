@@ -49,7 +49,13 @@ export function useTabState({ seed, windowTransfer, resumed }: TabStateDeps) {
           getSessions(),
         );
         if (next === previous) return previous;
-        return next.map((tab) => normalizeSessionPreview(isolateTerminalPanes(tab)));
+        const normalized = next.map((tab) => normalizeSessionPreview(isolateTerminalPanes(tab)));
+        // An update that changed nothing must not commit a new array: every
+        // consumer of `tabs` would re-render (a shell prompt sends one per line).
+        return normalized.length === previous.length &&
+          normalized.every((tab, index) => tab === previous[index])
+          ? previous
+          : normalized;
       });
     },
     [],

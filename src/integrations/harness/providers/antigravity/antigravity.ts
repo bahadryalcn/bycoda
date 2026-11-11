@@ -13,7 +13,10 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
-import { PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
+import {
+  PROVIDER_STARTUP_TIMEOUT_MS,
+  withSlowStartupNotice,
+} from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   settleProviderRetirements,
@@ -205,7 +208,9 @@ export async function sendAntigravityTurn(input: SendTurnInput): Promise<void> {
     try {
       // Eager prewarm only starts a child when none exists — it never tears down
       // a parked transport, so a queued send can never interrupt a running turn.
-      const prewarmed = await ensureLive(input, false);
+      const prewarmed = await withSlowStartupNotice(input.onEvent, "Antigravity", () =>
+        ensureLive(input, false),
+      );
       observeProviderProcess(input, prewarmed.handle);
     } catch (error) {
       if (cancelled()) {
@@ -819,7 +824,7 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
       if (blocks.length === 0) return;
       live.promptInFlight = true;
       nativeOutputSink(responseScope.work, noteActivity)(live);
-      const result = await acp.request(
+      const response = acp.request(
         "session/prompt",
         {
           sessionId: live.acpSessionId,
@@ -832,6 +837,8 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
           return value;
         },
       );
+      input.onAccepted?.();
+      const result = await response;
       const stopReason = asRecord(result)?.stopReason;
       if (live.cancelled || stopReason === "cancelled") return;
       // A fulfilled request is not necessarily a normal end: refusals,

@@ -19,6 +19,23 @@ import {
 /** The feed is fetched on focus and this often while the app is open. */
 export const SERVER_POLL_MS = 3 * 60_000;
 
+type RefreshState = { cancelled: boolean; refreshing: boolean };
+
+async function refreshServerSync(state: RefreshState, sync: ReturnType<typeof createServerSync>) {
+  if (state.refreshing) return;
+  state.refreshing = true;
+  try {
+    await sync.syncSettings();
+    // One window announces; every window keeps its settings in step and can report events.
+    if (!state.cancelled && (await isLeadWindow())) await sync.poll();
+    if (!state.cancelled) await sync.flushRead();
+  } catch {
+    // Offline or signed out remotely: the next poll tries again.
+  } finally {
+    state.refreshing = false;
+  }
+}
+
 /**
  * Connects the desktop to the signed-in account's notifications: keeps the preferences in step,
  * announces server items (new device, announcements) as OS notifications, syncs read state and
@@ -48,28 +65,14 @@ export function useServerNotifications(): void {
       },
     });
     activateServerSync(sync);
-    let cancelled = false;
-    let refreshing = false;
-    const refresh = async () => {
-      if (refreshing) return;
-      refreshing = true;
-      try {
-        await sync.syncSettings();
-        // One window announces; every window keeps its settings in step and can report events.
-        if (!cancelled && (await isLeadWindow())) await sync.poll();
-        if (!cancelled) await sync.flushRead();
-      } catch {
-        // Offline or signed out remotely: the next poll tries again.
-      } finally {
-        refreshing = false;
-      }
-    };
+    const state: RefreshState = { cancelled: false, refreshing: false };
+    const refresh = () => refreshServerSync(state, sync);
     const onFocus = () => refresh().catch(() => undefined);
     refresh().catch(() => undefined);
     const timer = setInterval(() => refresh().catch(() => undefined), SERVER_POLL_MS);
     window.addEventListener("focus", onFocus);
     return () => {
-      cancelled = true;
+      state.cancelled = true;
       clearInterval(timer);
       window.removeEventListener("focus", onFocus);
       activateServerSync(null);

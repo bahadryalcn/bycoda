@@ -120,6 +120,8 @@ export function Select({
   ...triggerProps
 }: SelectProps) {
   const [open, setOpen] = useState(false);
+  // The list is as wide as the trigger was when it opened.
+  const [listWidth, setListWidth] = useState(200);
   // A disabled select cannot stay open: close during render so re-enabling does not reopen it.
   if (disabled && open) setOpen(false);
   const expanded = open && !disabled;
@@ -142,6 +144,11 @@ export function Select({
     if (!open) return;
     activeOption.current?.scrollIntoView({ block: "nearest" });
   }, [active, open]);
+
+  const openList = () => {
+    setListWidth(Math.max(200, trigger.current?.getBoundingClientRect().width ?? 0));
+    setOpen(true);
+  };
 
   const pick = (next: string) => {
     if (disabled || trigger.current?.matches(":disabled")) return;
@@ -239,14 +246,15 @@ export function Select({
             if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
             event.preventDefault();
             if (!open) onOpen?.();
-            setOpen(true);
+            openList();
           }}
           onClick={(event) => {
             if (disabled || trigger.current?.matches(":disabled")) return;
             onClick?.(event);
             if (event.defaultPrevented) return;
             if (!open) onOpen?.();
-            setOpen(!open);
+            if (open) setOpen(false);
+            else openList();
           }}
           className={["bycoda-arc bycoda-arc-select", className].filter(Boolean).join(" ")}
         >
@@ -271,7 +279,7 @@ export function Select({
           anchor={root}
           side="bottom"
           align="start"
-          width={Math.max(200, trigger.current?.getBoundingClientRect().width ?? 0)}
+          width={listWidth}
           maxHeight={320}
           autoFocus
           onDismiss={(reason) => {

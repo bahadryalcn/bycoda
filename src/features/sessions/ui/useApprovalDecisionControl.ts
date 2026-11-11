@@ -17,6 +17,54 @@ import {
 import type { Block, Session } from "../model/session";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 
+type LocalDecision = {
+  occurrence: Block["approval"];
+  decision: ApprovalDecision;
+  pending: boolean;
+  unconfirmed: boolean;
+  error: string | null;
+};
+
+// Module-level so the try/finally stays out of the hook the React Compiler compiles.
+async function runApprovalDecision({
+  running,
+  setLocal,
+  occurrence,
+  decision,
+  dispatch,
+  read,
+  refusal,
+}: {
+  running: { current: boolean };
+  setLocal: (value: LocalDecision) => void;
+  occurrence: Block["approval"];
+  decision: ApprovalDecision;
+  dispatch: () => ReturnType<ApprovalDispatch>;
+  read: () => ReturnType<typeof readApprovalIntent>;
+  refusal: () => string | null | undefined;
+}) {
+  try {
+    const result = await dispatch();
+    const actual = read();
+    setLocal({
+      occurrence,
+      decision,
+      pending: false,
+      unconfirmed: !!actual?.repeatBlocked || (result !== false && !actual),
+      error:
+        result === false && !actual
+          ? (refusal() ?? "Decision was not sent. Check the request and try again.")
+          : null,
+    });
+  } catch {
+    // A thrown callback may already have dispatched. Keep the original choice
+    // and never present that ambiguity as permission to repeat the decision.
+    setLocal({ occurrence, decision, pending: false, unconfirmed: true, error: null });
+  } finally {
+    running.current = false;
+  }
+}
+
 export function useApprovalDecisionControl(
   session: Session,
   requestId: number,
@@ -49,13 +97,7 @@ export function useApprovalDecisionControl(
       (block) => block.approval?.requestId === requestId && !block.approval.decided,
     )?.approval;
   const running = useRef(false);
-  const [local, setLocal] = useState<{
-    occurrence: typeof occurrence;
-    decision: ApprovalDecision;
-    pending: boolean;
-    unconfirmed: boolean;
-    error: string | null;
-  } | null>(null);
+  const [local, setLocal] = useState<LocalDecision | null>(null);
   const current = local?.occurrence === occurrence ? local : null;
   const pending = intent?.phase === "pending" || !!current?.pending;
   const repeatBlocked = retainedRequestBlocked || !!intent?.repeatBlocked || !!current?.unconfirmed;
@@ -85,27 +127,15 @@ export function useApprovalDecisionControl(
     }
     running.current = true;
     setLocal({ occurrence, decision, pending: true, unconfirmed: false, error: null });
-    try {
-      const result = await dispatch(session.id, requestId, decision, expected);
-      const actual = readApprovalIntent(session, requestId);
-      setLocal({
-        occurrence,
-        decision,
-        pending: false,
-        unconfirmed: !!actual?.repeatBlocked || (result !== false && !actual),
-        error:
-          result === false && !actual
-            ? (readApprovalRefusal(expected) ??
-              "Decision was not sent. Check the request and try again.")
-            : null,
-      });
-    } catch {
-      // A thrown callback may already have dispatched. Keep the original choice
-      // and never present that ambiguity as permission to repeat the decision.
-      setLocal({ occurrence, decision, pending: false, unconfirmed: true, error: null });
-    } finally {
-      running.current = false;
-    }
+    await runApprovalDecision({
+      running,
+      setLocal,
+      occurrence,
+      decision,
+      dispatch: () => dispatch(session.id, requestId, decision, expected),
+      read: () => readApprovalIntent(session, requestId),
+      refusal: () => readApprovalRefusal(expected),
+    });
   };
   return {
     pending,

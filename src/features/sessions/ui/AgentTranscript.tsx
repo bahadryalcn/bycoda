@@ -1,3 +1,6 @@
+import { JumpRelay } from "./transcriptJumpRelay";
+import { FrameMemory } from "./transcriptFrameMemory";
+import { SeenOutput } from "./transcriptSeenOutput";
 import { OwnerApprovalChat } from "../../notifications";
 import {
   captureCodeDisclosure,
@@ -34,8 +37,7 @@ import type { TranscriptSelection } from "../model/transcriptSelection";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
-import { useLocale, useT } from "../../../shared/i18n";
-import { formatCompactCount as formatMetricCount } from "../../../shared/i18n/format";
+import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import {
   ArrowUp,
   Check,
@@ -64,6 +66,8 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
+  type ContextType,
   type ReactNode,
 } from "react";
 import { TranscriptRetentionContext } from "./TranscriptPool";
@@ -112,7 +116,7 @@ import { visibleUserPrompt } from "../../orchestration/model/orchestration";
 import { playCue } from "../../settings/public/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
 import { useResolvedModelName } from "../model/reactiveReads";
-import { harnessesForTurns } from "../model/secondOpinion";
+import { BlockScanCache } from "../model/blockScanCache";
 import { sameBlocksIgnoringStreamingText, streamingTextUpdate } from "../model/stableBlocks";
 import {
   projectTranslatedBlocks,
@@ -133,7 +137,6 @@ import {
 import { HarnessIcon } from "./HarnessIcon";
 import { useElapsedFrom } from "./useElapsedFrom";
 import { isBackgroundOnly } from "../model/activityDock";
-import { executionUserIndex } from "../model/executionTurn";
 import { deriveTurnActivity, turnClockOrigin, type TurnActivityPhase } from "../model/turnActivity";
 import { TurnActivityLine } from "./TurnActivityLine";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -307,10 +310,8 @@ function AgentTranscriptComponent({
   managed = false,
 }: Props) {
   const t = useT();
-  const translationContext = useMemo(
-    () => (cwd && harness ? { cwd, harness, model, modelSettings, providerAccountId } : undefined),
-    [cwd, harness, model, modelSettings, providerAccountId],
-  );
+  const translationContext =
+    cwd && harness ? { cwd, harness, model, modelSettings, providerAccountId } : undefined;
   const [translationRequest, setTranslationRequest] = useState<{
     selection: TranscriptSelection;
     target: TextActionTarget;
@@ -324,14 +325,14 @@ function AgentTranscriptComponent({
   const translationCopy = useCopyFeedback({
     resetKeys: [activeTranslation, translations[activeTranslation ?? ""]?.translatedVisible],
   });
-  const translationProjection = useRef<TranslationProjection | null>(null);
+  const [translationProjection] = useState(() => new FrameMemory<TranslationProjection>());
   const sourceBlocks = useMemo(
-    () => projectTranslatedBlocks(persistedBlocks, translations, translationProjection.current),
-    [persistedBlocks, translations],
+    () => projectTranslatedBlocks(persistedBlocks, translations, translationProjection.read()),
+    [persistedBlocks, translations, translationProjection],
   );
   useLayoutEffect(() => {
-    translationProjection.current = { source: persistedBlocks, translations, blocks: sourceBlocks };
-  }, [persistedBlocks, translations, sourceBlocks]);
+    translationProjection.write({ source: persistedBlocks, translations, blocks: sourceBlocks });
+  }, [persistedBlocks, translations, sourceBlocks, translationProjection]);
   const translateSelection = useStableCallback(
     canOfferTranslation(translationContext)
       ? (selection: TranscriptSelection, target: TextActionTarget) => {
@@ -358,13 +359,16 @@ function AgentTranscriptComponent({
       [activeTranslation]: { ...current[activeTranslation], translatedVisible },
     }));
   };
-  const authFilterPrev = useRef<{
-    harness: typeof harness;
-    source: Block[];
-    result: Block[];
-  } | null>(null);
+  const [authFilterPrev] = useState(
+    () =>
+      new FrameMemory<{
+        harness: typeof harness;
+        source: Block[];
+        result: Block[];
+      }>(),
+  );
   const blocks = useMemo(() => {
-    const prev = authFilterPrev.current;
+    const prev = authFilterPrev.read();
     // A text-only streaming frame changes no block's role or notice, so a
     // previously unfiltered transcript stays unfiltered: skip the scan.
     if (
@@ -376,34 +380,22 @@ function AgentTranscriptComponent({
       return sourceBlocks;
     }
     return filterAuthErrors(harness, sourceBlocks);
-  }, [harness, sourceBlocks]);
+  }, [harness, sourceBlocks, authFilterPrev]);
   // Remember what each committed frame filtered, never from inside the memo:
   // a render that React discards must not move the baseline.
   useLayoutEffect(() => {
-    authFilterPrev.current = { harness, source: sourceBlocks, result: blocks };
-  }, [harness, sourceBlocks, blocks]);
-  const editableUserBlockId = useMemo(() => lastUserTurnBlock(blocks)?.id, [blocks]);
+    authFilterPrev.write({ harness, source: sourceBlocks, result: blocks });
+  }, [harness, sourceBlocks, blocks, authFilterPrev]);
+  const editableUserBlockId = lastUserTurnBlock(blocks)?.id;
   const retention = useContext(TranscriptRetentionContext);
   const retained = retention?.read();
   const virtualization = useContext(TranscriptVirtualizationContext)!;
   useTranscriptActiveBlocksVersion();
-  const seenOutput = useRef<Set<string> | null>(null);
-  const seenBlocks = useRef<Block[] | null>(null);
-  if (!seenOutput.current)
-    seenOutput.current = new Set(blocks.filter((block) => block.text).map((block) => block.id));
+  const [seenOutput] = useState(() => new SeenOutput(blocks));
+  // Records the committed frame's output ids; the set belongs to no render.
   useLayoutEffect(() => {
-    const previous = seenBlocks.current;
-    seenBlocks.current = blocks;
-    const update = previous ? streamingTextUpdate(previous, blocks) : undefined;
-    if (update !== undefined && blocks[update]) {
-      // A text-only streaming frame can only add the streamed block's id.
-      if (blocks[update].text) seenOutput.current!.add(blocks[update].id);
-      return;
-    }
-    // Keep only the loaded page's ids: paging must not create an unbounded cache.
-    seenOutput.current!.clear();
-    for (const block of blocks) if (block.text) seenOutput.current!.add(block.id);
-  }, [blocks]);
+    seenOutput.update(blocks);
+  }, [seenOutput, blocks]);
   const [turnCache] = useState(() => new TranscriptTurnCache());
   const turns = turnCache.group(blocks, managed);
   // Turns whose folded work the reader has opened, by turn id.
@@ -430,12 +422,12 @@ function AgentTranscriptComponent({
   }
   const currentModelName = useResolvedModelName(harness, model);
   const blockingQuestion = pendingQuestion && questionBehavior === "blocking";
-  const waitingForApproval = hasPendingApproval(blocks) || blockingQuestion;
-  const preparingHandoff = blocks.some(
-    (block) => block.role === "handoff" && block.handoff?.status === "preparing",
-  );
+  const [scanCache] = useState(() => new BlockScanCache());
+  const scan = scanCache.scan(blocks);
+  const waitingForApproval = scan.pendingApproval || blockingQuestion;
+  const preparingHandoff = scan.preparingHandoff;
   // The prompt whose run is in flight; a mid-turn message continues its clock.
-  const runOwner = busy ? blocks[executionUserIndex(blocks)] : undefined;
+  const runOwner = busy ? blocks[scan.executionUser] : undefined;
   // In the chat layout a sent prompt rises from the upper screen into its
   // anchored spot at the top. On mount this only plays for a session's first
   // send.
@@ -445,18 +437,14 @@ function AgentTranscriptComponent({
     if (mounting && !(busy && userTurnCount(blocks, managed) === 1)) return;
     return riseIntoAnchor(el, lastUserId);
   });
-  const pagingJumpRef = useRef<(() => void) | null>(null);
-  const followJumpRef = useRef<(() => void) | null>(null);
-  const jumpToLatest = useCallback(() => {
-    pagingJumpRef.current?.();
-    followJumpRef.current?.();
-  }, []);
+  const [jumps] = useState(() => new JumpRelay());
+  const jumpToLatest = jumps.jump;
   const registerBottomJump = useCallback(
     (jump: (() => void) | null) => {
-      followJumpRef.current = jump;
+      jumps.setFollow(jump);
       onJumpToBottomReady?.(jump ? jumpToLatest : null);
     },
-    [onJumpToBottomReady, jumpToLatest],
+    [onJumpToBottomReady, jumpToLatest, jumps],
   );
   const follow = useTranscriptFollow({
     visible,
@@ -493,9 +481,18 @@ function AgentTranscriptComponent({
     remoteHistoryHasMore,
     onLoadRemoteHistory,
   });
-  virtualization.adjusted = (element) => {
+  // The paging window is the other half of the jump; hand it to the relay.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers the paging jump with the relay that the follow hook's jump also uses
+  useLayoutEffect(() => jumps.setPaging(jumpLatest), [jumps, jumpLatest]);
+  const anchorAdjusted = useStableCallback((element: HTMLElement) => {
     if (element === scroller.current) follow.rememberScroll(element);
-  };
+  });
+  // The virtualization owner outlives renders and calls back when anchoring moves the scroller.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers the anchoring callback with the external virtualization owner and unregisters it on unmount
+  useLayoutEffect(() => {
+    virtualization.setAdjusted(anchorAdjusted);
+    return () => virtualization.setAdjusted(undefined);
+  }, [virtualization, anchorAdjusted]);
   const revealBlock = useCallback(
     (blockId: string) => {
       if (!findTurn(blockId)) return false;
@@ -521,7 +518,6 @@ function AgentTranscriptComponent({
     },
     [onNavigateReady, virtualization],
   );
-  pagingJumpRef.current = jumpLatest;
   const renderedTurns = visibleTurns.map((turn, index) => ({
     turn,
     index: firstVisibleTurn + index,
@@ -564,7 +560,7 @@ function AgentTranscriptComponent({
     findTurn,
     onNavigateReady: registerNavigate,
   });
-  const turnHarnesses = harness ? harnessesForTurns(blocks, renderTurns, harness) : undefined;
+  const turnHarnesses = harness ? scanCache.harnesses(blocks, renderTurns, harness) : undefined;
   const stableLoadRemoteBlock = useStableCallback(onLoadRemoteBlock);
   const stableApproval = useStableCallback(onApproval);
   const stableSaveNote = useStableCallback(onSaveNote);
@@ -764,6 +760,7 @@ function AgentTranscriptComponent({
             const runHarness = turnHarnesses?.[turnIndex] ?? harness;
             const activity = live
               ? deriveTurnActivity({
+                  t,
                   turn,
                   responded:
                     !!runOwner?.continuationOf ||
@@ -779,7 +776,7 @@ function AgentTranscriptComponent({
               <Turn
                 key={turnId}
                 turn={turn}
-                seenOutput={seenOutput.current!}
+                seenOutput={seenOutput}
                 allowMountReveal={
                   visible && wasVisible.current && !historyLoading && !remoteHistoryLoading
                 }
@@ -789,7 +786,9 @@ function AgentTranscriptComponent({
                 visible={visible}
                 isLastTurn={isLastTurn}
                 turnHarness={turnHarnesses?.[turnIndex]}
-                clockStart={live ? turnClockStart(blocks, turnUserBlock(turn, managed)) : undefined}
+                clockStart={
+                  live ? scanCache.clockStart(blocks, turnUserBlock(turn, managed)) : undefined
+                }
                 currentModelName={live ? currentModelName : undefined}
                 waitingForApproval={live && waitingForApproval}
                 pendingQuestion={live && blockingQuestion}
@@ -799,7 +798,7 @@ function AgentTranscriptComponent({
                 activityPhase={activity?.phase}
                 activityLabel={activity?.label}
                 activityAfterSilence={activity?.afterSilence}
-                activityOrigin={activityOwnsClock ? turnClockOrigin(runOwner) : undefined}
+                activityOwner={activityOwnsClock ? runOwner : undefined}
                 activitySessionId={activityOwnsClock ? sessionId : undefined}
                 anchorPrompt={promptAnchor && anchorTurn && isLastTurn}
                 latestTurnAccessory={isLastTurn && !parked ? latestTurnAccessory : undefined}
@@ -956,7 +955,7 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
 });
 type TurnProps = {
   turn: Block[];
-  seenOutput: ReadonlySet<string>;
+  seenOutput: SeenOutput;
   allowMountReveal: boolean;
   managed: boolean;
   settled: boolean;
@@ -977,7 +976,8 @@ type TurnProps = {
   activityPhase?: TurnActivityPhase;
   activityLabel?: string;
   activityAfterSilence?: boolean;
-  activityOrigin?: number;
+  /** The run owner when this line shows the turn clock; its origin is read by the line. */
+  activityOwner?: Block;
   activitySessionId?: string;
   anchorPrompt: boolean;
   latestTurnAccessory?: ReactNode;
@@ -1009,6 +1009,19 @@ type TurnProps = {
   onRewindMessage?: (block: Block, action: "edit" | "return") => void;
 };
 /**
+ * The activity line with the turn clock's origin. `turnClockOrigin` keeps a
+ * first-seen time per run, which React cannot see, so the read lives in this
+ * small component and the transcript and its turns stay compiled.
+ */
+function OriginTurnActivityLine({
+  owner,
+  ...line
+}: Omit<ComponentProps<typeof TurnActivityLine>, "origin" | "ownsClock"> & { owner?: Block }) {
+  const origin = turnClockOrigin(owner);
+  return <TurnActivityLine {...line} origin={origin} ownsClock={origin !== undefined} />;
+}
+
+/**
  * One turn of the transcript. For a settled turn every prop is a primitive or
  * a stable reference and `turn` is compared block by block, so a streamed
  * token re-renders only the live turn. The parent hands settled turns
@@ -1034,7 +1047,7 @@ const Turn = memo(function Turn({
   activityPhase,
   activityLabel,
   activityAfterSilence = false,
-  activityOrigin,
+  activityOwner,
   activitySessionId,
   anchorPrompt,
   latestTurnAccessory,
@@ -1065,6 +1078,8 @@ const Turn = memo(function Turn({
   canRewindMessage,
   onRewindMessage,
 }: TurnProps) {
+  const t = useT();
+  const format = useFormat();
   const userBlock = turnUserBlock(turn, managed);
   const durationMs = userBlock?.durationMs;
   const proposals = turn.filter((block) => block.orchestration);
@@ -1118,7 +1133,7 @@ const Turn = memo(function Turn({
         modelName={turnModelName}
       />
     ) : durationMs != null ? (
-      formatWorkingDuration(durationMs, turnModelName, true)
+      formatWorkingDuration(t, format, durationMs, turnModelName, true)
     ) : (
       workSummaryLine(folded)
     );
@@ -1318,13 +1333,12 @@ const Turn = memo(function Turn({
         <TranscriptVirtualRows rows={virtualRows} listId={`turn:${turnId}:items`} />
       </RunHarness.Provider>
       {activityPhase && activityLabel ? (
-        <TurnActivityLine
+        <OriginTurnActivityLine
           phase={activityPhase}
           label={activityLabel}
           afterSilence={activityAfterSilence}
           activityKey={turn}
-          origin={activityOrigin}
-          ownsClock={activityOrigin !== undefined}
+          owner={activityOwner}
           sessionId={activitySessionId}
         />
       ) : null}
@@ -1418,6 +1432,7 @@ function LiveFoldTitle({
   modelName?: string;
 }) {
   const t = useT();
+  const format = useFormat();
   const elapsedMs = useElapsedFrom(startedAt, paused);
   // Only commands are left (a dev server, a watcher): the agent is done, so
   // the line stops shimmering and counting rather than looking busy forever.
@@ -1442,8 +1457,8 @@ function LiveFoldTitle({
         ? t("Waiting for answers")
         : t("Waiting for approval")
     : background?.length
-      ? `${formatWorkingDuration(elapsedMs, modelName)} · ${background.length === 1 ? t("running in background") : t("{p0} tasks running in background", { p0: background.length })}`
-      : formatWorkingDuration(elapsedMs, modelName);
+      ? `${formatWorkingDuration(t, format, elapsedMs, modelName)} · ${background.length === 1 ? t("running in background") : t("{p0} tasks running in background", { p0: background.length })}`
+      : formatWorkingDuration(t, format, elapsedMs, modelName);
   const shimmer = (
     <Shimmer className="min-w-0 truncate font-sans text-ui-body" duration={1}>
       {text}
@@ -1462,6 +1477,40 @@ function LiveFoldTitle({
  * when it landed. The clock lives on the fold line above, from the first token
  * to the last, so it is not repeated here.
  */
+type RemoteLoadState = "idle" | "pending" | "failed";
+
+/** The load itself, outside the component: the compiler cannot lower try/finally. */
+async function loadRemoteBlock({
+  owner,
+  key,
+  blockId,
+  revision,
+  onLoad,
+  mounted,
+  setState,
+}: {
+  owner: ContextType<typeof TranscriptVirtualizationContext>;
+  key: string;
+  blockId: string;
+  revision: number;
+  onLoad: (blockId: string, revision: number) => Promise<void> | void;
+  mounted: { current: boolean };
+  setState: (state: RemoteLoadState) => void;
+}) {
+  owner?.remoteLoads.set(key, "pending");
+  const release = owner?.holdBlock(blockId);
+  try {
+    await onLoad(blockId, revision);
+    owner?.remoteLoads.set(key, "idle");
+    if (mounted.current) setState("idle");
+  } catch {
+    owner?.remoteLoads.set(key, "failed");
+    if (mounted.current) setState("failed");
+  } finally {
+    release?.();
+  }
+}
+
 /** Explicit "load full output" control with pending, failure and retry states. */
 function RemoteBlockLoad({
   blockId,
@@ -1491,18 +1540,7 @@ function RemoteBlockLoad({
   const load = async () => {
     if (state === "pending") return;
     setState("pending");
-    owner?.remoteLoads.set(key, "pending");
-    const release = owner?.holdBlock(blockId);
-    try {
-      await onLoad(blockId, revision);
-      owner?.remoteLoads.set(key, "idle");
-      if (mounted.current) setState("idle");
-    } catch {
-      owner?.remoteLoads.set(key, "failed");
-      if (mounted.current) setState("failed");
-    } finally {
-      release?.();
-    }
+    await loadRemoteBlock({ owner, key, blockId, revision, onLoad, mounted, setState });
   };
   return (
     <div className="mx-4 mb-1 flex items-center gap-2">
@@ -1557,7 +1595,8 @@ function TurnDuration({
   onHandoff?: (target: ModelTarget) => void;
 }) {
   const t = useT();
-  const label = formatWorkingDuration(elapsedMs, modelName, true);
+  const format = useFormat();
+  const label = formatWorkingDuration(t, format, elapsedMs, modelName, true);
   const hasOutput = hasTurnCopyText(turn);
   const getText = useCallback(() => turnCopyText(turn), [turn]);
   const dot = (
@@ -1664,33 +1703,34 @@ function TurnMetricsBadge({
   renderTrigger?: (props: FloatingButtonGroupTriggerProps) => ReactNode;
 }) {
   const t = useT();
+  const format = useFormat();
   const root = useRef<HTMLDivElement>(null);
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
   const [hovered, setHovered] = useState(false);
   const [open, setOpen] = useState(false);
   if (!metrics || !hasTurnMetrics(metrics)) return null;
-  const outputRate =
-    metrics.outputTokens != null && elapsedMs != null && elapsedMs > 0
-      ? metrics.outputTokens / (elapsedMs / 1000)
-      : undefined;
-  const headline =
-    [
-      metrics.cacheHitPercent != null
-        ? t("Cache hit {p0}%", { p0: Math.round(metrics.cacheHitPercent) })
-        : null,
-      outputRate != null ? t("Output {p0} tok/s", { p0: formatMetricCount(outputRate) }) : null,
-    ]
-      .filter(Boolean)
-      .join(" · ") || t("Turn tokens");
+  let outputRate: number | undefined;
+  if (metrics.outputTokens != null && elapsedMs != null && elapsedMs > 0) {
+    outputRate = metrics.outputTokens / (elapsedMs / 1000);
+  }
+  const cacheHit =
+    metrics.cacheHitPercent != null
+      ? t("Cache hit {p0}%", { p0: Math.round(metrics.cacheHitPercent) })
+      : null;
+  const outputSpeed =
+    outputRate != null
+      ? t("Output {p0} tok/s", { p0: format.formatCompactCount(outputRate) })
+      : null;
+  const headline = [cacheHit, outputSpeed].filter(Boolean).join(" · ") || t("Turn tokens");
   const detail = [
     metrics.inputTokens != null
-      ? t("{p0} input", { p0: formatMetricCount(metrics.inputTokens) })
+      ? t("{p0} input", { p0: format.formatCompactCount(metrics.inputTokens) })
       : null,
     metrics.outputTokens != null
-      ? t("{p0} output", { p0: formatMetricCount(metrics.outputTokens) })
+      ? t("{p0} output", { p0: format.formatCompactCount(metrics.outputTokens) })
       : null,
     metrics.cacheReadTokens != null
-      ? t("{p0} cached", { p0: formatMetricCount(metrics.cacheReadTokens) })
+      ? t("{p0} cached", { p0: format.formatCompactCount(metrics.cacheReadTokens) })
       : null,
   ]
     .filter(Boolean)
@@ -2303,20 +2343,19 @@ function UserMessageBlock({
     card && card.kind !== "handoff"
       ? ""
       : visibleUserPrompt(bycoda ? operatorUserPrompt(block) : block.text);
-  const { text, citations } = useMemo(() => extractChatCitations(rawText), [rawText]);
+  const { text, citations } = extractChatCitations(rawText);
   const messageLink = text ? parseUserMessageLink(text) : null;
   const displayText = messageLink ? `${messageLink.beforeText}${messageLink.afterText}` : text;
   const chat = layout === "chat";
-  const previewParts = useMemo(() => userTextParts(text), [text]);
+  const previewParts = userTextParts(text);
   const compactText = previewParts.some((part) => part.compact);
   // A chip carries its token's label only when the message mentions it, so
   // messages sent before tokens existed look as they always did.
-  const referencedTokens = useMemo(() => {
-    const files = block.attachments ?? [];
-    const tokens = attachmentTokens(files);
-    const used = new Set(findTokens(text, files).map((match) => match.index));
-    return tokens.map((token, index) => (used.has(index) ? token : undefined));
-  }, [block.attachments, text]);
+  const attachmentFiles = block.attachments ?? [];
+  const usedTokenIndexes = new Set(findTokens(text, attachmentFiles).map((match) => match.index));
+  const referencedTokens = attachmentTokens(attachmentFiles).map((token, index) =>
+    usedTokenIndexes.has(index) ? token : undefined,
+  );
   const overflows = useClampOverflow(
     textRef,
     Boolean(text),
@@ -2735,24 +2774,6 @@ function turnUserBlock(blocks: Block[], managed = false): Block | undefined {
   for (let i = blocks.length - 1; i >= 0; i--) {
     const block = blocks[i];
     if (block.role === "user" && (managed || !block.internal)) return block;
-  }
-  return undefined;
-}
-
-/**
- * When the live turn's clock started. A message sent while the agent is still
- * going (a steer, or a reply while background work runs) joins that run and
- * carries no clock of its own, so the clock keeps the time of the prompt that
- * started it. Without that the clock falls back to when it was drawn, and
- * starts over every time the transcript is shown again.
- */
-function turnClockStart(blocks: Block[], userBlock: Block | undefined): number | undefined {
-  if (!userBlock || userBlock.startedAt != null) return userBlock?.startedAt;
-  for (let i = blocks.indexOf(userBlock) - 1; i >= 0; i--) {
-    const block = blocks[i];
-    if (block.role === "user" && block.startedAt != null) {
-      return block.startedAt;
-    }
   }
   return undefined;
 }

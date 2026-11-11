@@ -48,8 +48,23 @@ type Props = {
   onInteraction?: (requestId: number) => void;
 };
 
+// One shared empty list keeps `files` stable while a question has no attachments.
+const NO_FILES: NonNullable<QuestionDraft["attachments"]>[string] = [];
+
 export function QuestionForm(props: Props) {
   return <QuestionFormContent key={questionDraftKey(props.draftScope, props.prompt)} {...props} />;
+}
+
+/** Runs `run` under an admitted parent change and always releases the admission. */
+function applyAdmitted(
+  admitted: { apply: (run: () => void) => unknown; finish: () => void },
+  run: () => void,
+) {
+  try {
+    admitted.apply(run);
+  } finally {
+    admitted.finish();
+  }
 }
 
 function QuestionFormContent({
@@ -127,7 +142,7 @@ function QuestionFormContent({
   const question = questions[index];
   const canAttach =
     attachmentsSupported && !!question?.allowCustom && !question.preserveCustomWhitespace;
-  const files = draft.attachments?.[question?.id ?? ""] ?? [];
+  const files = draft.attachments?.[question?.id ?? ""] ?? NO_FILES;
   const filesRef = useRef(files);
   useLayoutEffect(() => {
     filesRef.current = files;
@@ -183,46 +198,42 @@ function QuestionFormContent({
     if (!originalReservation?.current()) return;
     const admitted = parentChanged.admit();
     if (!admitted) return;
-    try {
-      admitted.apply(() => {
-        if (
-          !updateDraft((current) => ({
-            ...current,
-            delivery: "sending",
-            pendingAction,
-          }))
-        )
-          return;
-        submitted.current = true;
-        setSubmitting(true);
-        setLocalUnknown(false);
-        parentChanged();
-        try {
-          onReply(prompt.requestId, reply);
-        } catch {
-          if (mounted.current) setSubmitting(false);
-          // A callback can throw after dispatch. Only an authoritative failed
-          // transport update can establish that sending again is safe.
-          if (mounted.current) setLocalUnknown(true);
-          // This is the original synchronous admitted continuation, including
-          // when dispatch retired the view. It records uncertainty, never retries.
-          const original = originalReservation.read();
-          if (original) {
-            const retained = originalReservation.write({
-              ...original,
-              delivery: "unknown",
-            });
-            if (retained.ok && mounted.current && reservation.current === originalReservation) {
-              draftRef.current = retained.value;
-              setDraft(retained.value);
-              parentChanged();
-            }
+    applyAdmitted(admitted, () => {
+      if (
+        !updateDraft((current) => ({
+          ...current,
+          delivery: "sending",
+          pendingAction,
+        }))
+      )
+        return;
+      submitted.current = true;
+      setSubmitting(true);
+      setLocalUnknown(false);
+      parentChanged();
+      try {
+        onReply(prompt.requestId, reply);
+      } catch {
+        if (mounted.current) setSubmitting(false);
+        // A callback can throw after dispatch. Only an authoritative failed
+        // transport update can establish that sending again is safe.
+        if (mounted.current) setLocalUnknown(true);
+        // This is the original synchronous admitted continuation, including
+        // when dispatch retired the view. It records uncertainty, never retries.
+        const original = originalReservation.read();
+        if (original) {
+          const retained = originalReservation.write({
+            ...original,
+            delivery: "unknown",
+          });
+          if (retained.ok && mounted.current && reservation.current === originalReservation) {
+            draftRef.current = retained.value;
+            setDraft(retained.value);
+            parentChanged();
           }
         }
-      });
-    } finally {
-      admitted.finish();
-    }
+      }
+    });
   };
   const send = (reply: UserQuestionReply, action: QuestionDraft["pendingAction"] = "answer") => {
     const all = Object.values(draftRef.current.attachments ?? {}).flat();

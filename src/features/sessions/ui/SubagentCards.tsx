@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo } from "react";
+import { createContext, useContext, useEffect } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
@@ -192,11 +192,11 @@ function SubagentPanel({
   const state = toolCallState(block);
   const active = live && state === "pending";
   const runSteps = block.agentRun?.steps;
-  const steps = useMemo(() => runSteps ?? [], [runSteps]);
+  const steps = runSteps ?? [];
   // The run's trail as transcript blocks, so the panel groups it the way the
   // main transcript groups the agent's own work: what it said, then the calls
   // that line introduced, folding behind it once it moves on.
-  const stepBlocks = useMemo(() => steps.map(blockForStep), [steps]);
+  const stepBlocks = steps.map(blockForStep);
   const report = subagentReport(block);
   const openPanel = delegated?.onOpen ?? (() => requestViewSubagent(block.id));
 

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { t } from "../../../shared/i18n";
 import type { QuestionDraft } from "../model/questionDrafts";
 import type { UserQuestionPrompt } from "../model/userQuestion";
@@ -38,21 +39,24 @@ export function useQuestionAttachmentRecovery(
         ),
       );
   }, [foreignCustody, setError]);
-  const callbacks = useRef({ update, setError, prompt, setBusy });
-  callbacks.current = { update, setError, prompt, setBusy };
+  // Effects read the latest callbacks and prompt without re-running when they change.
+  const latestUpdate = useStableCallback(update);
+  const latestSetError = useStableCallback(setError);
+  const latestSetBusy = useStableCallback(setBusy);
+  const latestPrompt = useStableCallback(() => prompt);
   useEffect(() => {
     if (!sessionId) return;
     let current = true;
     setBlocked(true);
-    callbacks.current.setBusy(true);
-    void listQuestionAttachmentDrafts(sessionId, scope, callbacks.current.prompt)
+    latestSetBusy(true);
+    void listQuestionAttachmentDrafts(sessionId, scope, latestPrompt())
       .then((found) => {
         if (!current) return;
         if (found.length === 0) {
           setBlocked(false);
           return;
         }
-        const saved = callbacks.current.update((latest) => {
+        const saved = latestUpdate((latest) => {
           const attachments = { ...latest.attachments };
           for (const item of found) {
             const files = attachments[item.questionId] ?? [];
@@ -71,18 +75,17 @@ export function useQuestionAttachmentRecovery(
         setBlocked(false);
       })
       .catch((reason: unknown) => {
-        if (current)
-          callbacks.current.setError(String(reason instanceof Error ? reason.message : reason));
+        if (current) latestSetError(String(reason instanceof Error ? reason.message : reason));
       })
       .finally(() => {
-        if (current) callbacks.current.setBusy(false);
+        if (current) latestSetBusy(false);
       })
       .catch(() => {});
     return () => {
       current = false;
-      callbacks.current.setBusy(false);
+      latestSetBusy(false);
     };
-  }, [sessionId, scope, attempt]);
+  }, [sessionId, scope, attempt, latestPrompt, latestSetBusy, latestUpdate, latestSetError]);
   useEffect(() => {
     if (
       busy ||
@@ -94,7 +97,7 @@ export function useQuestionAttachmentRecovery(
     let current = true;
     void Promise.all(
       Object.entries(draft.attachments ?? {}).map(async ([questionId, files]) => {
-        const expected = questionAttachmentIdentity(callbacks.current.prompt, questionId);
+        const expected = questionAttachmentIdentity(latestPrompt(), questionId);
         const resolved = await Promise.all(
           files.map((file) => {
             if (
@@ -119,7 +122,7 @@ export function useQuestionAttachmentRecovery(
           )
         )
           return;
-        callbacks.current.update((latest) => ({
+        latestUpdate((latest) => ({
           ...latest,
           attachments: Object.fromEntries(
             entries.map(([id, original, resolved]) => [
@@ -133,13 +136,12 @@ export function useQuestionAttachmentRecovery(
         }));
       })
       .catch((reason: unknown) => {
-        if (current)
-          callbacks.current.setError(String(reason instanceof Error ? reason.message : reason));
+        if (current) latestSetError(String(reason instanceof Error ? reason.message : reason));
       });
     return () => {
       current = false;
     };
-  }, [draft.attachments, busy]);
+  }, [draft.attachments, busy, latestPrompt, latestUpdate, latestSetError]);
   return {
     blocked: (!!sessionId && blocked) || foreignCustody,
     retry: () => setAttempt((value) => value + 1),

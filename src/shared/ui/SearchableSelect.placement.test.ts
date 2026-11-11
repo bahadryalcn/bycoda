@@ -18,6 +18,7 @@ it.each([
       "ResizeObserver",
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );
@@ -72,6 +73,7 @@ it.each(
       "ResizeObserver",
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );

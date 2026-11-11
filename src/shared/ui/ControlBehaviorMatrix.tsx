@@ -1,5 +1,5 @@
 import { useT } from "../i18n";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { MatrixGroup, MatrixSection } from "./MatrixPartsSpecimen";
 import { ActionHost, InlineAction } from "./ActionHost";
 import { Button } from "./Button";
@@ -525,14 +525,10 @@ function ChoicesMatrix() {
     { value: "feature/login", label: "feature/login" },
     { value: "feature/search", label: "feature/search" },
   ];
-  const bigList = useMemo(
-    () =>
-      Array.from({ length: 500 }, (_, index) => ({
-        value: `v${index}`,
-        label: `refs/heads/feature/branch-${index}`,
-      })),
-    [],
-  );
+  const bigList = Array.from({ length: 500 }, (_, index) => ({
+    value: `v${index}`,
+    label: `refs/heads/feature/branch-${index}`,
+  }));
   const longOption = t("Project with a very long descriptive name that exceeds the field width");
   const short = [
     { value: "compact", label: t("Compact") },

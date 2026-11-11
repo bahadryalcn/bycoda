@@ -17,6 +17,7 @@ it("stops following when the reader scrolls up, keeps position on growth and cle
         resize = callback;
       }
       observe() {}
+      unobserve() {}
       disconnect = disconnect;
     },
   );
@@ -66,6 +67,7 @@ it("the 32 px distance policy applies regardless of scroll direction", () => {
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

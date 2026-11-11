@@ -65,6 +65,18 @@ export function AccountUsageRefresh({ usage }: { usage: AccountUsage }) {
   );
 }
 
+/** Titled 5h / weekly / monthly windows an account has data for, titled with `translate`. */
+export function meterWindowsWith(
+  limits: ProviderRateLimits | undefined,
+  translate: (message: string, values?: Record<string, unknown>) => string,
+): { title: string; window: RateLimitWindow }[] {
+  return [
+    limits?.session ? { title: "5h", window: limits.session } : null,
+    limits?.weekly ? { title: translate("Weekly"), window: limits.weekly } : null,
+    limits?.monthly ? { title: translate("Monthly"), window: limits.monthly } : null,
+  ].filter((entry) => entry != null);
+}
+
 /** Titled 5h / weekly / monthly windows an account has data for. */
 export function meterWindows(
   limits: ProviderRateLimits | undefined,

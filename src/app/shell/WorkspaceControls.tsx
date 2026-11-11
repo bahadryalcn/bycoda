@@ -26,25 +26,19 @@ export function WorkspaceControls({
   const actions = [
     {
       id: "pullRequests",
-      get label() {
-        return t("Pull requests");
-      },
+      label: t("Pull requests"),
       icon: GitPullRequest,
       onClick: onPullRequests,
     },
     {
       id: "usage",
-      get label() {
-        return t("Provider usage");
-      },
+      label: t("Provider usage"),
       icon: UsageIcon,
       onClick: onUsage,
     },
     {
       id: "hiddenGroups",
-      get label() {
-        return t("Manage hidden groups");
-      },
+      label: t("Manage hidden groups"),
       icon: EyeOff,
       onClick: onHiddenGroups,
     },

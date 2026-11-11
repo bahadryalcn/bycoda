@@ -12,6 +12,7 @@ import type { Block, ComposerTurnOptions } from "../model/session";
 import { getSessions, useSession, useSessionsSelector } from "../model/sessionsStore";
 import { DelegatedSessionRequests } from "../../connections/public/DelegatedSessionRequests";
 import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
+import { useHostSessionBindingReader } from "../../connections/public/useHostSessionBinding";
 import { remoteSessionFor } from "../../connections/public/connections";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
 import {
@@ -263,10 +264,11 @@ export function SessionSubagentSheet({
     (sessions) => sessions.filter((session) => stopping.has(session.id)),
     (a, b) => a.length === b.length && a.every((entry, index) => entry === b[index]),
   );
+  const readHostBinding = useHostSessionBindingReader();
   const canOwn = (session: NonNullable<typeof child>) => {
     try {
       return (
-        !!hostSessionBinding(session) ||
+        !!readHostBinding(session) ||
         (!!parseRemotePath(session.cwd) && !!remoteSessionFor(session.id))
       );
     } catch {

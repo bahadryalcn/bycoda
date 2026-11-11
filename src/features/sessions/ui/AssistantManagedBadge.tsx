@@ -1,6 +1,6 @@
 import type { AssistantSessionManagement } from "../model/session";
 import { useAssistantIdentity } from "../../assistant/model/assistantClient";
-import { t } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Bot } from "../../../shared/ui/icons";
@@ -15,6 +15,7 @@ export function AssistantManagedBadge({
   compact?: boolean;
   local?: boolean;
 }) {
+  const t = useT();
   return management?.assistant && management.detachedAt === undefined ? (
     local ? (
       <ManagedBadge compact={compact} manual={"supervisionId" in management} />
@@ -27,6 +28,7 @@ export function AssistantManagedBadge({
   ) : null;
 }
 function ManagedBadge({ compact, manual }: { compact: boolean; manual: boolean }) {
+  const t = useT();
   const { name } = useAssistantIdentity();
   const label = manual
     ? t("Supervision recorded")

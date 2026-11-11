@@ -26,7 +26,7 @@ import type { UserQuestionReply } from "../../../features/sessions/model/userQue
 import type { NativeCommandProvider } from "./nativeCommands";
 import { loadSkillRestrictions } from "../../../features/skills/model/skillPreferences";
 import { withInstalledSkillScope } from "../../../features/skills/model/skillProviderScope";
-import { listSkills } from "../../../platform/tauri/fs";
+import { loadProviderSkillCandidates } from "./skillCandidates";
 import { withSkillPolicy } from "./skillPolicy";
 import {
   captureChildProcess,
@@ -57,11 +57,11 @@ async function operationSkillPolicy(cwd: string, provider: string) {
   const policy = await loadSkillRestrictions(cwd);
   // Unit/fixture callers outside native desktop have no filesystem bridge.
   if (!cwd.startsWith("remote://") && !(typeof isTauri === "function" && isTauri())) return policy;
-  const [inventory, eligible] = await Promise.all([
-    listSkills(cwd),
-    listSkills(cwd, null, provider),
-  ]);
-  return withInstalledSkillScope(policy, provider, [...inventory, ...eligible]);
+  return withInstalledSkillScope(
+    policy,
+    provider,
+    await loadProviderSkillCandidates(cwd, provider),
+  );
 }
 import type {
   ApprovalDecision,
@@ -735,6 +735,15 @@ export function sendHarnessTurn(
           owner.entered = true;
           const watchdog = createTurnWatchdog(input.harness, input.onEvent);
           watchdog.arm();
+          let started = false;
+          const deliver = (event: HarnessEvent) => {
+            if (event.type === "turn.started") {
+              started = true;
+              accepted();
+            }
+            watchdog.observe(event);
+            input.onEvent(event);
+          };
           try {
             await adapter.sendTurn(
               operationInput(
@@ -743,12 +752,12 @@ export function sendHarnessTurn(
                   onAccepted: () => {
                     accepted();
                     input.onAccepted?.();
+                    // Most providers say nothing more until the model's first
+                    // output, which withheld thinking can delay for a long
+                    // time; the acceptance is what ends the wait for them.
+                    if (!started) deliver({ type: "turn.started" });
                   },
-                  onEvent: (event) => {
-                    if (event.type === "turn.started") accepted();
-                    watchdog.observe(event);
-                    input.onEvent(event);
-                  },
+                  onEvent: deliver,
                 },
                 owner,
               ),

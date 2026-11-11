@@ -29,19 +29,20 @@ export function useProjectGroupMembers(
     pendingOrder ?? group.memberOrder,
   );
   const byId = new Map(members.map((member) => [member.id, member]));
+  const handleReorder = (ids: string[]) => {
+    const next = ids.flatMap((id) => byId.get(id) ?? []);
+    const save = ++latestSave.current;
+    const settle = () => {
+      if (save === latestSave.current) setPendingOrder(null);
+    };
+    setPendingOrder(next.map(memberKey));
+    onReorderProjects(next.filter((member) => member.kind === "project").map((m) => m.id));
+    // A refused save (locked room) returns the workspaces to their saved slots.
+    saveProjectGroupMemberOrder(group.id, next).then(settle, settle);
+  };
   const sortable = useAnimatedReorder(
     members.map((member) => member.id),
-    (ids) => {
-      const next = ids.flatMap((id) => byId.get(id) ?? []);
-      const save = ++latestSave.current;
-      const settle = () => {
-        if (save === latestSave.current) setPendingOrder(null);
-      };
-      setPendingOrder(next.map(memberKey));
-      onReorderProjects(next.filter((member) => member.kind === "project").map((m) => m.id));
-      // A refused save (locked room) returns the workspaces to their saved slots.
-      saveProjectGroupMemberOrder(group.id, next).then(settle, settle);
-    },
+    handleReorder,
     "y",
     undefined,
     {

@@ -53,11 +53,6 @@ function fixtureRoot(t) {
     join(repoRoot, "scripts", "checks", "privacy-writer-exceptions.json"),
     join(root, "scripts", "checks", "privacy-writer-exceptions.json"),
   );
-  // compiler-owns-memo reads the files the compiler skips; the fixture has one.
-  writeFileSync(
-    join(root, "scripts", "checks", "compiler-coverage-baseline.json"),
-    JSON.stringify({ counts: { "src/shared/ui/Skipped.tsx": { "uncompiled-function": 1 } } }),
-  );
   symlinkSync(
     join(repoRoot, "node_modules"),
     join(root, "node_modules"),
@@ -361,7 +356,7 @@ const performanceRules = (root) =>
     .filter(({ rule }) => /^bycoda\/(compiler|effect|shared-resize)/.test(rule))
     .map(({ file, rule, line }) => [file, rule, line]);
 
-test("compiler-owns-memo rejects manual memoization only where the compiler compiles in full", (t) => {
+test("compiler-owns-memo rejects manual memoization in every folder the compiler compiles in full", (t) => {
   const root = fixtureRoot(t);
   const source = [
     "function Row() {",
@@ -381,8 +376,6 @@ test("compiler-owns-memo rejects manual memoization only where the compiler comp
     "src/app/shell/row.ts",
     "src/features/demo/ui/Row.tsx",
     "src/shared/ui/Row.test.tsx",
-    // The compiler skips a function of this file, so its manual memoization stays.
-    "src/shared/ui/Skipped.tsx",
   ]) {
     write(root, file, source);
   }

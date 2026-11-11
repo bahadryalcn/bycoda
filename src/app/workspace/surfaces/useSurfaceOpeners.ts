@@ -43,7 +43,15 @@ export function useSurfaceOpeners({
       setAutomationsViewOpen(false);
       setServersViewOpen?.(true);
     });
-  }, [setServersViewOpen]);
+  }, [
+    setServersViewOpen,
+    setAutomationsViewOpen,
+    setSearchViewOpen,
+    setSettingsOpen,
+    setInboxViewOpen,
+    setFilePickerOpen,
+    setNotesViewOpen,
+  ]);
   const onOpenCrews = useCallback(() => {
     startTransition(() => {
       setFilePickerOpen(false);
@@ -85,24 +93,35 @@ export function useSurfaceOpeners({
 
   const onLeaveInbox = useCallback(() => {
     setInboxViewOpen(false);
-  }, []);
+  }, [setInboxViewOpen]);
 
-  const onOpenNotes = useCallback(async (_routed = false) => {
-    if (!loadNotesEnabled()) return;
-    startTransition(() => {
-      setFilePickerOpen(false);
-      setSettingsOpen(false);
-      setSearchViewOpen(false);
-      setInboxViewOpen(false);
-      setAutomationsViewOpen(false);
-      setServersViewOpen?.(false);
-      setNotesViewOpen(true);
-    });
-  }, []);
+  const onOpenNotes = useCallback(
+    async (_routed = false) => {
+      if (!loadNotesEnabled()) return;
+      startTransition(() => {
+        setFilePickerOpen(false);
+        setSettingsOpen(false);
+        setSearchViewOpen(false);
+        setInboxViewOpen(false);
+        setAutomationsViewOpen(false);
+        setServersViewOpen?.(false);
+        setNotesViewOpen(true);
+      });
+    },
+    [
+      setServersViewOpen,
+      setAutomationsViewOpen,
+      setSearchViewOpen,
+      setSettingsOpen,
+      setInboxViewOpen,
+      setFilePickerOpen,
+      setNotesViewOpen,
+    ],
+  );
 
   const onLeaveNotes = useCallback(() => {
     setNotesViewOpen(false);
-  }, []);
+  }, [setNotesViewOpen]);
 
   useEffect(() => {
     const open = () => {
@@ -142,7 +161,7 @@ export function useSurfaceOpeners({
 
   const onLeaveAutomations = useCallback(() => {
     setAutomationsViewOpen(false);
-  }, []);
+  }, [setAutomationsViewOpen]);
 
   // Usage guide reveals the workspace: close every tool surface and settings.
   useEffect(() => {
@@ -161,7 +180,14 @@ export function useSurfaceOpeners({
       window.removeEventListener(OPEN_USAGE_GUIDE_EVENT, revealWorkspace);
       window.removeEventListener(START_TOUR_EVENT, revealWorkspace);
     };
-  }, []);
+  }, [
+    setServersViewOpen,
+    setAutomationsViewOpen,
+    setSearchViewOpen,
+    setInboxViewOpen,
+    setSettingsOpen,
+    setNotesViewOpen,
+  ]);
 
   return {
     onOpenServers,

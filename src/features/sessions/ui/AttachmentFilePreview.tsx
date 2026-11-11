@@ -106,19 +106,16 @@ export function AttachmentFilePreview({
     attachment.path && attachment.hostEnvironmentId && !parseRemotePath(attachment.path)
       ? remotePath(attachment.hostEnvironmentId, attachment.path)
       : attachment.path;
+  const { size, loadPreview, data } = attachment;
   const readBytes = useCallback(async () => {
-    if (
-      !Number.isSafeInteger(attachment.size) ||
-      attachment.size < 0 ||
-      attachment.size > MAX_DOCUMENT_BYTES
-    )
+    if (!Number.isSafeInteger(size) || size < 0 || size > MAX_DOCUMENT_BYTES)
       throw new Error("File is too large to preview (maximum 25 MB).");
-    const data = attachment.loadPreview ? await attachment.loadPreview() : attachment.data;
-    if (data !== undefined && data.length > Math.ceil(MAX_DOCUMENT_BYTES / 3) * 4)
+    const bytesData = loadPreview ? await loadPreview() : data;
+    if (bytesData !== undefined && bytesData.length > Math.ceil(MAX_DOCUMENT_BYTES / 3) * 4)
       throw new Error("File is too large to preview (maximum 25 MB).");
     const bytes =
-      data !== undefined
-        ? Uint8Array.from(atob(data), (value) => value.charCodeAt(0))
+      bytesData !== undefined
+        ? Uint8Array.from(atob(bytesData), (value) => value.charCodeAt(0))
         : path
           ? await readBinaryFile(path)
           : undefined;
@@ -126,7 +123,7 @@ export function AttachmentFilePreview({
     if (bytes.byteLength > MAX_DOCUMENT_BYTES)
       throw new Error("File is too large to preview (maximum 25 MB).");
     return bytes;
-  }, [attachment.size, attachment.loadPreview, attachment.data, path]);
+  }, [size, loadPreview, data, path]);
   // Session-only remote attachments use their authorized reader; never send their raw host path to an OS opener.
   const externalPath = attachment.loadPreview ? null : (path ?? null);
   const kind = documentKind(attachment.name);

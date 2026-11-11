@@ -4,7 +4,7 @@ import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Link } from "../../../shared/ui/Link";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, useT } from "../../../shared/i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CircleDot,
   CircleX,
@@ -140,7 +140,7 @@ function GithubWorkItemPreview({
     };
   }, []);
 
-  const load = useCallback(() => {
+  const load = () => {
     if (requestStarted.current) return;
     requestStarted.current = true;
     const cachedItem =
@@ -172,7 +172,7 @@ function GithubWorkItemPreview({
           : "unavailable",
       );
     });
-  }, [cwd, details, item, workItem]);
+  };
 
   // Rested hover or keyboard focus previews the item; opening starts its (cached) load.
   const hover = useHoverCard({
@@ -251,7 +251,7 @@ function GithubWorkItemCard({
   loadState: "idle" | "loading" | "ready" | "unavailable";
 }) {
   const t = useT();
-  const status = workItemStatus(parsed.kind, item);
+  const status = workItemStatus(parsed.kind, item, t);
   const summary = plainTextSummary(details?.body ?? "");
   const updated = item?.updatedAt ? formatRelativeTime(item.updatedAt) : "";
   const assignees = item?.assignees ?? [];
@@ -428,9 +428,12 @@ function GithubAvatar({
   );
 }
 
+type Translate = typeof t;
+
 function workItemStatus(
   kind: GithubWorkItemLink["kind"],
   item: GithubWorkItem | null,
+  t: Translate,
 ): { Icon: IconComponent; label: string; className: string } {
   if (!item) {
     return {
@@ -442,35 +445,27 @@ function workItemStatus(
   if (item?.draft) {
     return {
       Icon: GitPullRequestDraft,
-      get label() {
-        return t("Draft");
-      },
+      label: t("Draft"),
       className: "text-(--ui-text-secondary)",
     };
   }
   if (item?.state === "merged") {
     return {
       Icon: GitMerge,
-      get label() {
-        return t("Merged");
-      },
+      label: t("Merged"),
       className: "text-(--ui-tone-accent-fg)",
     };
   }
   if (item?.state === "closed") {
     return {
       Icon: kind === "pr" ? GitPullRequestClosed : CircleX,
-      get label() {
-        return t("Closed");
-      },
+      label: t("Closed"),
       className: "text-(--ui-tone-danger-fg)",
     };
   }
   return {
     Icon: kind === "pr" ? GitPullRequest : CircleDot,
-    get label() {
-      return t("Open");
-    },
+    label: t("Open"),
     className: "text-(--ui-tone-success-fg)",
   };
 }

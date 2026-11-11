@@ -26,7 +26,7 @@ export function useSessionMoveGuards({ windowTransferPendingRef, tabsRef }: Sess
       tabsRef.current.some(
         (tab) => movingTabIds.current.has(tab.id) && leafIds(tab.layout).includes(paneId),
       ),
-    [],
+    [windowTransferPendingRef, tabsRef],
   );
 
   return { skipForgetSessionIds, movingTabIds, movingSessionIds, isMovingPane };
@@ -65,7 +65,7 @@ export function useStopSessionForRemoval({
       flushHarnessEvents();
       return sessionsRef.current.find((session) => session.id === sessionId);
     },
-    [flushHarnessEvents],
+    [flushHarnessEvents, turnGen],
   );
 
   return stopSessionForRemoval;

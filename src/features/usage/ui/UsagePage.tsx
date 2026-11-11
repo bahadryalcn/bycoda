@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
@@ -101,9 +102,9 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                 <GrokLimits refresh={refresh} />
               ) : null}
               {!accounts.length ? (
-                <p className="text-ui-caption text-(--ui-text-secondary)">
+                <Text as="p">
                   {t("No accounts on this machine. Add an account in Providers settings.")}
-                </p>
+                </Text>
               ) : null}
             </Surface>
             <UsageBudgets refresh={refresh} />
@@ -288,12 +289,12 @@ function AccountLimits({
         </LoadingText>
       ) : null}
       {!windows.length && !limits.error ? (
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted">
           {label}:{" "}
           {limits.status === "fetching" || limits.status === "idle"
             ? t("Loading account limits…")
             : t("Account limits unavailable.")}
-        </p>
+        </Text>
       ) : null}
     </section>
   );

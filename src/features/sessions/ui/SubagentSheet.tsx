@@ -3,11 +3,10 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useFollowBottom } from "../hooks/useFollowBottom";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
-  memo,
   useCallback,
+  memo,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -23,7 +22,7 @@ import { commandCopyText, emptyOutputReason, inspectCommand } from "../model/com
 import type { AgentStep, Block } from "../model/session";
 import type { DelegationKind } from "../../../shared/model/host-contracts/delegation";
 import { isSubagentBlock, subagentName, subagentReport } from "../model/transcriptActivity";
-import { SubagentReport, SubagentStateLine, runLabel } from "./SubagentAnatomy";
+import { SubagentReport, SubagentStateLine, runLabelWith } from "./SubagentAnatomy";
 import { ActivityRow } from "./AgentTranscriptActivity";
 import { blockForStep } from "./agentStepBlocks";
 import { AgentMarkdown } from "./AgentMarkdown";
@@ -64,7 +63,7 @@ export function useSubagentSheet(blocks: Block[], visible: boolean) {
     });
   }, []);
 
-  const close = useCallback(() => {
+  const close = () => {
     setOpenId((current) => {
       if (current === null) return null;
       const target = returnFocus.current;
@@ -75,7 +74,7 @@ export function useSubagentSheet(blocks: Block[], visible: boolean) {
       });
       return null;
     });
-  }, []);
+  };
 
   useEffect(() => {
     if (!visible) return;
@@ -101,6 +100,11 @@ export function useSubagentSheet(blocks: Block[], visible: boolean) {
   }, [openId]);
 
   return { block, open, close };
+}
+
+/** The follow flag is a ref that `useFollowBottom` owns; writes go through here. */
+function setFollowing(following: { current: boolean }, value: boolean) {
+  following.current = value;
 }
 
 /** Steps shown at first, and added by each "Show earlier steps". */
@@ -182,7 +186,7 @@ export function SubagentSheet({
       onClose={onClose}
       headerActions={
         <>
-          <CopyTranscriptButton block={block} busy={busy} status={runLabel(block, busy)} />
+          <CopyTranscriptButton block={block} busy={busy} status={runLabelWith(block, busy, t)} />
           {onStop && running ? (
             <Button
               className="shrink-0"
@@ -316,7 +320,7 @@ function CommandDetails({
   onLoadRemoteBlock?: (blockId: string, revision: number) => Promise<void> | void;
 }) {
   const t = useT();
-  const inspection = useMemo(() => inspectCommand(block, busy), [block, busy]);
+  const inspection = inspectCommand(block, busy);
   const { command, error, output, remote } = inspection;
   const reason = emptyOutputReason(inspection);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -368,7 +372,7 @@ function CommandDetails({
         selection.anchorNode &&
         el.contains(selection.anchorNode)
       ) {
-        following.current = false;
+        setFollowing(following, false);
         setBehind(true);
       }
     };
@@ -389,7 +393,7 @@ function CommandDetails({
   const jumpToLatest = () => {
     const el = scroller.current;
     if (!el) return;
-    following.current = true;
+    setFollowing(following, true);
     el.scrollTop = el.scrollHeight;
     setBehind(false);
   };
@@ -692,7 +696,7 @@ function SubagentTrail({
             variant="ghost"
             type="button"
             onClick={() => {
-              following.current = false;
+              setFollowing(following, false);
               setShown((count) => count + STEP_PAGE);
             }}
             className="self-start"

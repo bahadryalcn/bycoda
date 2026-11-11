@@ -27,6 +27,7 @@ export type * as modelRemoteProjectsApi from "./public/remoteProjects";
 export type * as modelRemoteSessionActionsApi from "./public/remoteSessionActions";
 export type * as modelServerTerminalRestoreStateApi from "./public/serverTerminalRestoreState";
 export type * as modelSessionExecutionBindingApi from "./public/sessionExecutionBinding";
+export type * as modelUseHostSessionBindingApi from "./public/useHostSessionBinding";
 export type * as modelSessionExecutionClientApi from "./public/sessionExecutionClient";
 export type * as modelUseSharedLocalQueuesApi from "./public/useSharedLocalQueues";
 export type * as modelWorkspaceUrlsApi from "./public/workspaceUrls";

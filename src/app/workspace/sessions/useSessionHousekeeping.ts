@@ -42,7 +42,7 @@ export function useSessionHousekeeping({
       request.controller.abort();
       btwRequestsRef.current.delete(key);
     }
-  }, [sessions]);
+  }, [sessions, btwRequestsRef]);
 
   useEffect(
     () => () => {
@@ -54,7 +54,7 @@ export function useSessionHousekeeping({
         console.warn("Stopping text prompts failed", error),
       );
     },
-    [],
+    [btwRequestsRef],
   );
 
   useEffect(

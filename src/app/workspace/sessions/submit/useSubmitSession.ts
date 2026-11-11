@@ -28,7 +28,7 @@ import { gateUsageBudget, isUsageBudgetChecking } from "./submitUsageBudget";
  */
 export function useSubmitSession(deps: SubmitDeps) {
   const {
-    workspaceNavigation,
+    workspaceNavigation: { isSwitching },
     applyProjectLocationChange,
     dismissNoticesForContinuedSession,
     enqueueHarnessEvent,
@@ -117,7 +117,7 @@ export function useSubmitSession(deps: SubmitDeps) {
   const onSubmit = useCallback(
     (...args: Parameters<Submit>): boolean => {
       // Reject before async preparation can make the composer clear its draft.
-      if (workspaceNavigation.isSwitching(args[0])) {
+      if (isSwitching(args[0])) {
         showSubmitNotice(args[0], "The workspace is switching. Send again in a moment.");
         return false;
       }
@@ -129,7 +129,7 @@ export function useSubmitSession(deps: SubmitDeps) {
       });
       return true;
     },
-    [submitSession, workspaceNavigation],
+    [submitSession, isSwitching],
   );
 
   return { submitSession, onSubmit };

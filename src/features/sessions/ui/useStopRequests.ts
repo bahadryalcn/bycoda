@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { STOPPING_TIMEOUT_MS } from "../model/backgroundStop";
 
 /**
@@ -18,28 +18,25 @@ export function useStopRequests() {
     return () => pending.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
-  const settle = useCallback((key: string) => {
+  const settle = (key: string) => {
     window.clearTimeout(timers.current.get(key));
     timers.current.delete(key);
     setStopping((current) => without(current, key));
-  }, []);
+  };
 
-  const request = useCallback(
-    (key: string, run: () => Promise<void>) => {
+  const request = (key: string, run: () => Promise<void>) => {
+    settle(key);
+    setFailed((current) => without(current, key));
+    setStopping((current) => new Set(current).add(key));
+    timers.current.set(
+      key,
+      window.setTimeout(() => settle(key), STOPPING_TIMEOUT_MS),
+    );
+    run().catch(() => {
       settle(key);
-      setFailed((current) => without(current, key));
-      setStopping((current) => new Set(current).add(key));
-      timers.current.set(
-        key,
-        window.setTimeout(() => settle(key), STOPPING_TIMEOUT_MS),
-      );
-      run().catch(() => {
-        settle(key);
-        setFailed((current) => new Set(current).add(key));
-      });
-    },
-    [settle],
-  );
+      setFailed((current) => new Set(current).add(key));
+    });
+  };
 
   return { stopping, failed, request };
 }

@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode, type Ref } from "react";
+import { useEffect, type ReactNode, type Ref } from "react";
 import { IS_MAC } from "../../../../platform/tauri/platform";
+import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { t } from "../../../../shared/i18n";
 import { AssistantAvatarMark } from "../../../assistant/public/avatar";
 import { Button } from "../../../../shared/ui/Button";
@@ -91,19 +92,16 @@ export function VoiceLauncher({
   onOpen: () => void;
 }) {
   const shortcut = useKeybindingShortcut(VOICE_OPEN_COMPANION);
-  const latest = useRef(onOpen);
-  useLayoutEffect(() => {
-    latest.current = onOpen;
-  });
+  const open = useStableCallback(onOpen);
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
       if (!voiceOpenShortcutPressed(event)) return;
       event.preventDefault();
-      latest.current();
+      open();
     };
     window.addEventListener("keydown", down);
     return () => window.removeEventListener("keydown", down);
-  }, []);
+  }, [open]);
   const slot = useVoiceLauncherSlot();
   const compact = slot?.hasAttribute("data-compact") === true;
   const label = name ? t("Talk to {p0}", { p0: name }) : t("Voice companion");

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
 afterEach(() => {
@@ -56,4 +57,30 @@ it.each([
   const { appName, loadAppName } = await import("./appName");
   expect(await loadAppName()).toBe(displayName);
   expect(appName()).toBe(displayName);
+});
+
+it("useAppName re-renders with the runtime name once it resolves", async () => {
+  let resolveName: (name: string) => void = () => {};
+  vi.doMock("@tauri-apps/api/app", () => ({
+    getName: () => new Promise<string>((resolve) => (resolveName = resolve)),
+  }));
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const { useAppName, loadAppName, FALLBACK_APP_NAME } = await import("./appName");
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const seen: string[] = [];
+  function Probe() {
+    seen.push(useAppName());
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  act(() => root.render(createElement(Probe)));
+  expect(seen.at(-1)).toBe(FALLBACK_APP_NAME);
+  await act(async () => {
+    resolveName("Runtime Name");
+    await loadAppName();
+  });
+  expect(seen.at(-1)).toBe("Runtime Name");
+  act(() => root.unmount());
+  vi.unstubAllGlobals();
 });

@@ -230,7 +230,13 @@ export function useSessionModelActions({
         promptProviderAccountSignIn(sessionId, harness, accountId);
       }
     },
-    [enqueueHarnessEvent, flushHarnessEvents, promptProviderAccountSignIn],
+    [
+      enqueueHarnessEvent,
+      flushHarnessEvents,
+      promptProviderAccountSignIn,
+      isMovingPane,
+      removingSessionIds,
+    ],
   );
 
   latestModelChange.current = onModelChange;
@@ -266,7 +272,7 @@ export function useSessionModelActions({
         ),
       );
     },
-    [enqueueHarnessEvent, flushHarnessEvents],
+    [enqueueHarnessEvent, flushHarnessEvents, isMovingPane],
   );
 
   const onRuntimeModeChange = useCallback(
@@ -278,7 +284,7 @@ export function useSessionModelActions({
       }
       setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, runtimeMode } : s)));
     },
-    [enqueueHarnessEvent, flushHarnessEvents],
+    [enqueueHarnessEvent, flushHarnessEvents, isMovingPane],
   );
 
   return { onModelChange, onModelSettingsChange, onRuntimeModeChange };

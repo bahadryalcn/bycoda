@@ -6,6 +6,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
+import { useStableCallback } from "../hooks/useStableCallback";
 import type { PopoverAlign, PopoverSide } from "../lib/popover";
 import { Popover } from "./Popover";
 import {
@@ -81,14 +82,13 @@ export function useHoverCard({
   const anchor = intent.anchor;
   const open = !!anchor && !disabled;
 
-  const changed = useRef(onOpenChange);
-  changed.current = onOpenChange;
+  const changed = useStableCallback(onOpenChange);
   const wasOpen = useRef(false);
   useEffect(() => {
     if (wasOpen.current === open) return;
     wasOpen.current = open;
-    changed.current?.(open);
-  }, [open]);
+    changed?.(open);
+  }, [open, changed]);
 
   const inside = (node: EventTarget | null) =>
     node instanceof Node && (!!surface.current?.contains(node) || !!anchor?.contains(node));

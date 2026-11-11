@@ -7,5 +7,5 @@ export {
   useCrewManagedSession,
   type CrewManagedSession,
 } from "../model/crewManagedSessions";
-export { useCrewManagedSessionsFeed } from "../model/crewManagedFeed";
+export { CrewManagedSessionsFeed } from "../model/crewManagedFeed";
 export { CrewManagedBar, openCrewManagedSessionInCrews } from "../ui/CrewManagedBar";

@@ -57,6 +57,12 @@ export function TagInput(props: TagInputProps) {
   return <TagInputControl key={nativeInputControlKey(props.inputObserver)} {...props} />;
 }
 
+const defaultRemoveLabel = (tag: string) => `Remove ${tag}`;
+const defaultSelectedAnnouncement = (tag: string) =>
+  `${tag} selected. Press Backspace to remove it.`;
+const defaultRemovedAnnouncement = (tag: string) => `Removed ${tag}`;
+const defaultFormatTag = (tag: string) => tag;
+
 function TagInputControl({
   label,
   value,
@@ -71,10 +77,10 @@ function TagInputControl({
   normalize,
   maxTags = Infinity,
   backspaceBehavior = "select",
-  removeLabel = (tag) => `Remove ${tag}`,
-  selectedAnnouncement = (tag) => `${tag} selected. Press Backspace to remove it.`,
-  removedAnnouncement = (tag) => `Removed ${tag}`,
-  formatTag = (tag) => tag,
+  removeLabel = defaultRemoveLabel,
+  selectedAnnouncement = defaultSelectedAnnouncement,
+  removedAnnouncement = defaultRemovedAnnouncement,
+  formatTag = defaultFormatTag,
   hideLabel = false,
   inputObserver,
   inputPublication,

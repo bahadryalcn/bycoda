@@ -1,13 +1,15 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { ChevronDown } from "../../../shared/ui/icons";
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { basename } from "../../../platform/tauri/fs";
 import { prettyCwd, prettyParent } from "../../../shared/lib/paths";
 import {
   looksLikeProject,
-  projectRailItems,
+  projectRailItemsFrom,
   sameProjectPath,
+  useProjectRailLayout,
   type RecentProject,
 } from "../model/recents";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
@@ -60,18 +62,19 @@ export function CwdPicker({
   onNewTerminal,
   onClose,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const root = useRef<HTMLDivElement>(null);
   const escaped = useRef(false);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const restoreFocus = useStableCallback(onClose);
 
   const inProject = looksLikeProject(cwd);
   const label = prettyCwd(cwd);
   // Read the saved rail order on opening, including changes made while Notes is open.
-  const projects = mode === "move" ? projectRailItems(recents, activeCwd ?? "") : recents;
+  const railLayout = useProjectRailLayout();
+  const projects =
+    mode === "move" ? projectRailItemsFrom(recents, activeCwd ?? "", railLayout) : recents;
   const otherRecents = projects.filter(
     (item) =>
       (!inProject || !sameProjectPath(item.path, cwd)) &&
@@ -87,7 +90,7 @@ export function CwdPicker({
   const dismiss = (restore = false) => {
     setOpen(false);
     setQuery("");
-    if (restore) onCloseRef.current?.();
+    if (restore) restoreFocus?.();
   };
 
   const projectItem = (item: RecentProject): DropdownMenuItem & { kind: "item" } => ({
@@ -172,7 +175,7 @@ export function CwdPicker({
     );
 
   const pick = (id: string) => {
-    onCloseRef.current?.();
+    restoreFocus?.();
     if (id === NEW_TERMINAL_ID) onNewTerminal?.();
     else if (id.startsWith(RECENT_PREFIX)) onCwdChange(id.slice(RECENT_PREFIX.length));
   };

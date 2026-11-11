@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import { useLocale } from "../../shared/i18n";
@@ -30,13 +30,10 @@ export function SessionListItem({
   useLocale();
   const ref = useRef<HTMLLIElement>(null);
   const virtualRef = virtual?.ref;
-  const setRef = useCallback(
-    (element: HTMLLIElement | null) => {
-      ref.current = element;
-      virtualRef?.(element);
-    },
-    [virtualRef],
-  );
+  const setRef = (element: HTMLLIElement | null) => {
+    ref.current = element;
+    virtualRef?.(element);
+  };
   const played = useRef(false);
   useLayoutEffect(() => {
     if (played.current) return;

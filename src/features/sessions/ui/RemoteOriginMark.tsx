@@ -1,5 +1,5 @@
 import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { MonitorSmartphone } from "../../../shared/ui/icons";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -29,7 +29,7 @@ export function RemoteOriginMark({
   origin: "running" | "idle" | undefined;
   labelled?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   if (!origin) return null;
   const running = origin === "running";
   const label = t(STARTED);

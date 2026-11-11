@@ -1,4 +1,5 @@
-import { createElement, useRef, type ReactNode } from "react";
+import { createElement, type ReactNode } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { ConfirmDialog, type ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
 
 /**
@@ -8,12 +9,11 @@ import { ConfirmDialog, type ConfirmRequest } from "../../../shared/ui/ConfirmDi
  * runs through `request.onConfirm`; the owner closes the dialog afterwards as before.
  */
 export function useProjectConfirmDialog(request: ConfirmRequest, onCancel: () => void): ReactNode {
-  const cancel = useRef(onCancel);
-  cancel.current = onCancel;
+  const cancel = useStableCallback(onCancel);
   return createElement(ConfirmDialog, {
     request,
     onSettle: (value: boolean) => {
-      if (!value) cancel.current();
+      if (!value) cancel();
     },
   });
 }

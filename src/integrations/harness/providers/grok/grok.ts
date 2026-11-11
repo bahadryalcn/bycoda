@@ -669,7 +669,7 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
     try {
       const blocks = grokPromptBlocks(input.text, input.attachments);
       if (blocks.length === 0) return;
-      const result = await acp.request(
+      const response = acp.request(
         "session/prompt",
         {
           sessionId: live.acpSessionId,
@@ -682,6 +682,8 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
           return value;
         },
       );
+      input.onAccepted?.();
+      const result = await response;
       if (live.cancelled) return;
       emitNative({ type: "message.completed" });
       emitNative({ type: "reasoning.completed" });

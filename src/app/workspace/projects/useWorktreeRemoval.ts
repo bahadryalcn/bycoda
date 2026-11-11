@@ -78,12 +78,15 @@ export function useWorktreeRemoval({
   setProjectCwd,
   setRecents,
 }: WorktreeRemovalDeps) {
-  const checkOpenWorktreeFiles = useCallback((path: string) => {
-    assertWorktreeFilesClosed(path, [
-      ...filesInWorkspaceTabs(tabsRef.current),
-      ...projectTerminalsRef.current.flatMap((dock) => dock.pane.files),
-    ]);
-  }, []);
+  const checkOpenWorktreeFiles = useCallback(
+    (path: string) => {
+      assertWorktreeFilesClosed(path, [
+        ...filesInWorkspaceTabs(tabsRef.current),
+        ...projectTerminalsRef.current.flatMap((dock) => dock.pane.files),
+      ]);
+    },
+    [projectTerminalsRef, tabsRef],
+  );
 
   const onCheckWorktreeRemoval = useCallback(
     async (cwd: string, path: string, force: boolean) => {
@@ -238,6 +241,18 @@ export function useWorktreeRemoval({
       invalidateLoadedSession,
       onCheckWorktreeRemoval,
       stopSessionForRemoval,
+      removingWorktreePaths,
+      lastPersisted,
+      pendingPersist,
+      setProjectCwd,
+      sessionsRef,
+      setHistory,
+      projectCwdRef,
+      switchingWorktrees,
+      setStoredLinkedSessions,
+      removingSessionIds,
+      setSessions,
+      setRecents,
     ],
   );
 
@@ -292,7 +307,14 @@ export function useWorktreeRemoval({
         remove: (cwd, path, expected, valid) =>
           onRemoveWorktree(cwd, path, false, true, expected, valid),
       }),
-    [checkOpenWorktreeFiles, onRemoveWorktree],
+    [
+      checkOpenWorktreeFiles,
+      onRemoveWorktree,
+      switchingWorktrees,
+      sessionsRef,
+      removingWorktreePaths,
+      removingSessionIds,
+    ],
   );
 
   return { checkOpenWorktreeFiles, onCheckWorktreeRemoval, onRemoveWorktree };

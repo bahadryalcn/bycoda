@@ -62,7 +62,7 @@ export function useRunningOnHostLoader({
         });
       }
     },
-    [loadStoredSession],
+    [loadStoredSession, removingSessionIds, loadedSessionCache, lastPersisted, openingSessionIds],
   );
   loadRunningOnHostRef.current = loadRunningOnHost;
 }

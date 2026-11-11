@@ -1,19 +1,16 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { useRef, useState } from "react";
-import { useProjectNotificationPreferences } from "../hooks/useProjectNotificationPreferences";
-import {
-  notificationMuteActions,
-  notificationMuteDeadline,
-  notificationMuteStatus,
-} from "./notificationMuteActions";
+import { useNotificationPreferencesView } from "../hooks/useProjectNotificationPreferences";
+import { notificationMuteActions, notificationMuteDeadline } from "./notificationMuteActions";
+import { notificationMuteLabel } from "./notificationMuteLabel";
 import { NotificationMuteDatePicker } from "./NotificationMuteDatePicker";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
 import { Popover } from "../../../shared/ui/Popover";
 import { BellOff, ChevronDown } from "../../../shared/ui/icons";
-import { isProjectMuted, updateNotificationPreferences } from "../model/notificationPreferences";
+import { updateNotificationPreferences } from "../model/notificationPreferences";
 
 type Props = {
   projectIds: readonly string[];
@@ -23,18 +20,18 @@ type Props = {
 };
 
 export function NotificationMuteControl({ projectIds, onChanged, compact = false }: Props) {
-  useLocale();
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<"menu" | "custom" | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const preferences = useProjectNotificationPreferences();
-  const muted = projectIds.filter((id) => isProjectMuted(preferences[id] ?? { disabled: [] }));
+  const { preferences, muted: mutedIds } = useNotificationPreferencesView();
+  const muted = projectIds.filter((id) => mutedIds.has(id));
   const status =
     muted.length === 0
       ? null
       : projectIds.length > 1
         ? t("{p0} of {p1} projects muted", { p0: muted.length, p1: projectIds.length })
-        : notificationMuteStatus(preferences[projectIds[0]]);
+        : notificationMuteLabel(preferences[projectIds[0]], t);
 
   const close = (restoreFocus = true) => {
     setOpen(null);

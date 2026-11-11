@@ -165,8 +165,8 @@
       "baseline": "invariants-baseline.json",
       "rule": "bycoda/compiler-owns-memo",
       "from": 0,
-      "to": 405,
-      "reason": "New rule compiler-owns-memo recorded with its existing debt."
+      "to": 419,
+      "reason": "New rule compiler-owns-memo recorded with its existing debt; widened to the sync, terminal, projects and notifications features when the React Compiler began compiling them in full."
     },
     {
       "baseline": "invariants-baseline.json",

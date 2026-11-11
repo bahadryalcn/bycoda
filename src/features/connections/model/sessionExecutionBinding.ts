@@ -33,6 +33,30 @@ const writes: Array<{ previous: StoredBindingEvidence | undefined; next: StoredB
 let saving: Promise<void> | undefined;
 let canonicalEpoch = false;
 let migrationOperationId: string | undefined;
+const bindingListeners = new Set<() => void>();
+/** Bumped whenever the stored owners a read depends on change; reads cached under an older one are stale. */
+let bindingRevision = 0;
+/** Current stored-owner revision, the snapshot for `useHostSessionBindingReader`. */
+export function hostSessionBindingRevision(): number {
+  return bindingRevision;
+}
+function bindingsChanged(): void {
+  bindingRevision += 1;
+  for (const listener of bindingListeners) listener();
+}
+/** Subscribe to stored-owner changes (also other windows), for the binding hooks. */
+export function subscribeHostSessionBindings(listener: () => void): () => void {
+  bindingListeners.add(listener);
+  // Another window's legacy write changes what `read` returns in this one.
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === null || event.key.startsWith(PREFIX)) listener();
+  };
+  if (typeof window !== "undefined") window.addEventListener("storage", onStorage);
+  return () => {
+    bindingListeners.delete(listener);
+    if (typeof window !== "undefined") window.removeEventListener("storage", onStorage);
+  };
+}
 const MIGRATION_SCOPE = "host-session-bindings-migration.v1";
 const MIGRATION_KEY = "legacy-import";
 
@@ -159,6 +183,7 @@ export function hydrateHostSessionBindings(): Promise<void> {
     for (const [id, row] of loaded) canonical.set(id, row);
     canonicalEpoch = epoch.active;
     hydrated = true;
+    bindingsChanged();
   })().finally(() => {
     hydrating = undefined;
   });
@@ -175,6 +200,7 @@ export async function flushHostSessionBindings(shellId?: string): Promise<void> 
       if (writes.length) continue;
       if (latest) canonical.set(shellId, latest);
       else canonical.delete(shellId);
+      bindingsChanged();
     } else {
       // Canonical-only writers no longer emit localStorage change fences. Read
       // every owner before a caller uses this window's synchronous projection.
@@ -189,6 +215,7 @@ export async function flushHostSessionBindings(shellId?: string): Promise<void> 
       if (writes.length) continue;
       canonical.clear();
       for (const [id, row] of latest) canonical.set(id, row);
+      bindingsChanged();
     }
   } while (writes.length);
 }
@@ -221,10 +248,14 @@ function publish(shellId: string, raw: string): void {
   // Keep the old routing fence until every admission reads native authority.
   if (!canonicalEpoch && !sameLegacyRaw(PREFIX + shellId, raw))
     localStorage.setItem(PREFIX + shellId, raw);
-  if (!hydrated) return;
+  if (!hydrated) {
+    bindingsChanged();
+    return;
+  }
   const previous = canonical.get(shellId);
   const next = { shellId, raw, legacyRaw: canonicalEpoch ? (previous?.legacyRaw ?? null) : raw };
   canonical.set(shellId, next);
+  bindingsChanged();
   writes.push({ previous, next });
   void drain().catch(() => {});
 }
@@ -293,6 +324,28 @@ export function hostSessionBinding(
   if (hydrated && !stored && session.hostBinding)
     throw new Error("The session owner has no durable record. Reconnect before sending.");
   return stored?.binding ?? session.hostBinding;
+}
+
+const bindingReads = new Map<
+  string,
+  { hostBinding: HostSessionBinding | undefined; value: HostSessionBinding | undefined }
+>();
+let bindingReadsRevision = -1;
+
+/** `hostSessionBinding` with one result identity per stored state, so a snapshot read stays stable. */
+export function hostSessionBindingSnapshot(
+  session: Pick<Session, "id" | "hostBinding">,
+): HostSessionBinding | undefined {
+  if (bindingReadsRevision !== bindingRevision) {
+    bindingReads.clear();
+    bindingReadsRevision = bindingRevision;
+  }
+  const cached = bindingReads.get(session.id);
+  if (cached && cached.hostBinding === session.hostBinding) return cached.value;
+  // A throw is not cached: the render that read it fails exactly as `hostSessionBinding` does.
+  const value = hostSessionBinding(session);
+  bindingReads.set(session.id, { hostBinding: session.hostBinding, value });
+  return value;
 }
 
 /** Must succeed before making the new tab available. No transcript is written

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useT } from "../../../shared/i18n";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   retainParentInput,
   type ParentAdmission,
@@ -50,6 +51,177 @@ function sameTranscript(current: readonly Block[], opened: readonly Block[]): bo
     current === opened ||
     (current.length === opened.length && current.every((block, index) => block === opened[index]))
   );
+}
+
+type RewindApply = {
+  t: ReturnType<typeof useT>;
+  mode: EditFromHereMode;
+  parent: ParentInputHandle;
+  admitted: ParentAdmission;
+  pendingRewind: PendingRewind;
+  filePlan: SessionFilesRevertPlan | null;
+  onRewindMessage: (sessionId: string, blockId: string) => Promise<boolean>;
+  activeSessionIdRef: RefObject<string>;
+  currentSessionRef: RefObject<Session>;
+  fileRevertResult: RefObject<{ sessionId: string; result: SessionFilesRevertResult } | null>;
+  rewindInFlight: RefObject<boolean>;
+  revertResultFor: (id: string) => SessionFilesRevertResult | null;
+  closeRewind: () => void;
+  setFileRevertNotice: (result: SessionFilesRevertResult) => void;
+  setRewindDraftSignal: (signal: RewindDraftSignal) => void;
+  setRewindError: (error: string | null) => void;
+  setRewindingMessage: (value: boolean) => void;
+  setRewindMode: (mode: EditFromHereMode | null) => void;
+};
+
+type FilePlanRun = {
+  request: PendingRewind;
+  planRun: RefObject<{ cancelled: boolean } | null>;
+  activeSessionIdRef: RefObject<string>;
+  setFilePlan: (plan: SessionFilesRevertPlan | null) => void;
+  setRewindError: (error: string | null) => void;
+  setFilePlanLoading: (loading: boolean) => void;
+  t: ReturnType<typeof useT>;
+};
+
+/** Starts the file-plan preview of a request; module-level so the compiler guard sees no render path to it. */
+function runFilePlan({
+  request,
+  planRun,
+  activeSessionIdRef,
+  setFilePlan,
+  setRewindError,
+  setFilePlanLoading,
+  t,
+}: FilePlanRun) {
+  const run = { cancelled: false };
+  planRun.current = run;
+  const live = () => !run.cancelled && activeSessionIdRef.current === request.sessionId;
+  const preparation = retainParentInput({
+    kind: "session-parent",
+    sessionId: request.sessionId,
+    snapshot: () => ({
+      source: "rewind-file-plan-preparation",
+      blockId: request.block.id,
+      action: request.action,
+      recall: request.recall,
+      authorityGeneration: request.authorityGeneration,
+    }),
+  });
+  void request.planAdmission.run(() =>
+    planSessionFilesRevert(request.source, request.block.id, {
+      authorityGeneration: request.authorityGeneration,
+    })
+      .then((plan) => {
+        if (live()) setFilePlan(plan);
+      })
+      .catch((error: unknown) => {
+        if (!live()) return;
+        const reason =
+          error instanceof Error ? error.message : t("Session file history is unavailable.");
+        setFilePlan({ files: [], unavailable: reason });
+        setRewindError(reason);
+      })
+      .finally(() => {
+        preparation.release();
+        if (!run.cancelled) setFilePlanLoading(false);
+      }),
+  );
+}
+
+/** The apply step of a confirmed rewind. Module-level so its try/finally stays out of the hook
+ *  the React Compiler compiles. */
+async function applyRewind({
+  t,
+  mode,
+  parent,
+  admitted,
+  pendingRewind,
+  filePlan,
+  onRewindMessage,
+  activeSessionIdRef,
+  currentSessionRef,
+  fileRevertResult,
+  rewindInFlight,
+  revertResultFor,
+  closeRewind,
+  setFileRevertNotice,
+  setRewindDraftSignal,
+  setRewindError,
+  setRewindingMessage,
+  setRewindMode,
+}: RewindApply) {
+  const requestedSessionId = pendingRewind.sessionId;
+  const preparation = retainParentInput({
+    kind: "session-parent",
+    sessionId: requestedSessionId,
+    snapshot: () => ({
+      source: "rewind-preparation",
+      blockId: pendingRewind.block.id,
+      action: pendingRewind.action,
+      recall: pendingRewind.recall,
+      authorityGeneration: pendingRewind.authorityGeneration,
+      mode,
+      filePlan,
+    }),
+  });
+  try {
+    if (mode === "files" && !revertResultFor(requestedSessionId)) {
+      const result = await revertSessionFiles(
+        pendingRewind.source,
+        pendingRewind.block.id,
+        filePlan?.planToken,
+        filePlan ?? undefined,
+      );
+      if (activeSessionIdRef.current !== requestedSessionId) return;
+      fileRevertResult.current = { sessionId: requestedSessionId, result };
+      setFileRevertNotice(result);
+    }
+    if (
+      !sameTranscript(currentSessionRef.current.blocks, pendingRewind.source.blocks) ||
+      currentSessionRef.current.adoptedAuthorityGeneration !== pendingRewind.authorityGeneration ||
+      !canRewindConversation(currentSessionRef.current, pendingRewind.block.id)
+    ) {
+      throw new Error(t("This conversation can no longer be rewound."));
+    }
+    const accepted = await admitted.apply(() =>
+      onRewindMessage(requestedSessionId, pendingRewind.block.id),
+    );
+    if (activeSessionIdRef.current !== requestedSessionId) return;
+    if (!accepted) {
+      setRewindError(
+        t(
+          revertResultFor(requestedSessionId)
+            ? "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message."
+            : "The conversation could not be rewound. Try again.",
+        ),
+      );
+      return;
+    }
+    setRewindDraftSignal({
+      sessionId: requestedSessionId,
+      id: crypto.randomUUID(),
+      value: pendingRewind.recall,
+    });
+    closeRewind();
+  } catch (error: unknown) {
+    if (activeSessionIdRef.current !== requestedSessionId) return;
+    setRewindError(
+      revertResultFor(requestedSessionId)
+        ? t(
+            "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
+          )
+        : error instanceof Error
+          ? error.message
+          : t("The conversation could not be rewound. Try again."),
+    );
+  } finally {
+    preparation.release();
+    rewindInFlight.current = false;
+    parent();
+    setRewindingMessage(false);
+    setRewindMode(null);
+  }
 }
 
 /**
@@ -114,43 +286,18 @@ export function useMessageRewind({
     planRun.current = null;
   };
 
-  const startFilePlan = (request: PendingRewind) => {
-    const run = { cancelled: false };
-    planRun.current = run;
-    const live = () => !run.cancelled && activeSessionIdRef.current === request.sessionId;
-    const preparation = retainParentInput({
-      kind: "session-parent",
-      sessionId: request.sessionId,
-      snapshot: () => ({
-        source: "rewind-file-plan-preparation",
-        blockId: request.block.id,
-        action: request.action,
-        recall: request.recall,
-        authorityGeneration: request.authorityGeneration,
-      }),
+  const startFilePlan = (request: PendingRewind) =>
+    runFilePlan({
+      request,
+      planRun,
+      activeSessionIdRef,
+      setFilePlan,
+      setRewindError,
+      setFilePlanLoading,
+      t,
     });
-    void request.planAdmission.run(() =>
-      planSessionFilesRevert(request.source, request.block.id, {
-        authorityGeneration: request.authorityGeneration,
-      })
-        .then((plan) => {
-          if (live()) setFilePlan(plan);
-        })
-        .catch((error: unknown) => {
-          if (!live()) return;
-          const reason =
-            error instanceof Error ? error.message : t("Session file history is unavailable.");
-          setFilePlan({ files: [], unavailable: reason });
-          setRewindError(reason);
-        })
-        .finally(() => {
-          preparation.release();
-          if (!run.cancelled) setFilePlanLoading(false);
-        }),
-    );
-  };
 
-  const requestMessageRewind = useCallback(
+  const requestMessageRewind = useStableCallback(
     (block: Block, action: "edit" | "return", recall?: LastTurnRecall) => {
       if (!canRewindConversation(session, block.id)) return;
       const admitted = rootParentRef.current?.admit();
@@ -176,15 +323,11 @@ export function useMessageRewind({
       // The preview starts with the request, not after the dialog commits.
       startFilePlan(request);
     },
-    [session],
   );
 
-  const rewindLastTurnToDraft = useCallback(
-    (recall: LastTurnRecall) => {
-      if (lastUserMessage) requestMessageRewind(lastUserMessage, "edit", recall);
-    },
-    [lastUserMessage, requestMessageRewind],
-  );
+  const rewindLastTurnToDraft = (recall: LastTurnRecall) => {
+    if (lastUserMessage) requestMessageRewind(lastUserMessage, "edit", recall);
+  };
 
   const closeRewind = () => {
     cancelFilePlan();
@@ -196,121 +339,59 @@ export function useMessageRewind({
     if (!rewindInFlight.current) closeRewind();
   };
 
-  const confirmMessageRewind = useCallback(
-    async (mode: EditFromHereMode) => {
-      if (!pendingRewind || rewindInFlight.current || !onRewindMessage) return;
-      const requestedSessionId = pendingRewind.sessionId;
-      if (requestedSessionId !== session.id) return;
-      if (
-        !canRewindConversation(session, pendingRewind.block.id) ||
-        !sameTranscript(session.blocks, pendingRewind.source.blocks) ||
-        session.adoptedAuthorityGeneration !== pendingRewind.authorityGeneration ||
-        managed ||
-        session.inboxAsk ||
-        session.worktreeRemoved ||
-        sendBlockedReason
-      ) {
-        setRewindError(t("This conversation can no longer be rewound."));
-        return;
-      }
-      if (mode === "files" && (filePlanLoading || !filePlan || filePlan.unavailable)) return;
-      const parent = rootParentRef.current;
-      const admitted = parent?.admit();
-      if (!parent || !admitted) return;
-      return admitted.run(async () => {
-        rewindInFlight.current = true;
-        parent();
-        setRewindingMessage(true);
-        setRewindMode(mode);
-        setRewindError(null);
-        const preparation = retainParentInput({
-          kind: "session-parent",
-          sessionId: requestedSessionId,
-          snapshot: () => ({
-            source: "rewind-preparation",
-            blockId: pendingRewind.block.id,
-            action: pendingRewind.action,
-            recall: pendingRewind.recall,
-            authorityGeneration: pendingRewind.authorityGeneration,
-            mode,
-            filePlan,
-          }),
-        });
-        try {
-          if (mode === "files" && !revertResultFor(requestedSessionId)) {
-            const result = await revertSessionFiles(
-              pendingRewind.source,
-              pendingRewind.block.id,
-              filePlan?.planToken,
-              filePlan ?? undefined,
-            );
-            if (activeSessionIdRef.current !== requestedSessionId) return;
-            fileRevertResult.current = { sessionId: requestedSessionId, result };
-            setFileRevertNotice(result);
-          }
-          if (
-            !sameTranscript(currentSessionRef.current.blocks, pendingRewind.source.blocks) ||
-            currentSessionRef.current.adoptedAuthorityGeneration !==
-              pendingRewind.authorityGeneration ||
-            !canRewindConversation(currentSessionRef.current, pendingRewind.block.id)
-          ) {
-            throw new Error(t("This conversation can no longer be rewound."));
-          }
-          const accepted = await admitted.apply(() =>
-            onRewindMessage(requestedSessionId, pendingRewind.block.id),
-          );
-          if (activeSessionIdRef.current !== requestedSessionId) return;
-          if (!accepted) {
-            setRewindError(
-              t(
-                revertResultFor(requestedSessionId)
-                  ? "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message."
-                  : "The conversation could not be rewound. Try again.",
-              ),
-            );
-            return;
-          }
-          setRewindDraftSignal({
-            sessionId: requestedSessionId,
-            id: crypto.randomUUID(),
-            value: pendingRewind.recall,
-          });
-          closeRewind();
-        } catch (error: unknown) {
-          if (activeSessionIdRef.current !== requestedSessionId) return;
-          setRewindError(
-            revertResultFor(requestedSessionId)
-              ? t(
-                  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
-                )
-              : error instanceof Error
-                ? error.message
-                : t("The conversation could not be rewound. Try again."),
-          );
-        } finally {
-          preparation.release();
-          rewindInFlight.current = false;
-          parent();
-          setRewindingMessage(false);
-          setRewindMode(null);
-        }
+  const confirmMessageRewind = async (mode: EditFromHereMode) => {
+    if (!pendingRewind || rewindInFlight.current || !onRewindMessage) return;
+    const requestedSessionId = pendingRewind.sessionId;
+    if (requestedSessionId !== session.id) return;
+    if (
+      !canRewindConversation(session, pendingRewind.block.id) ||
+      !sameTranscript(session.blocks, pendingRewind.source.blocks) ||
+      session.adoptedAuthorityGeneration !== pendingRewind.authorityGeneration ||
+      managed ||
+      session.inboxAsk ||
+      session.worktreeRemoved ||
+      sendBlockedReason
+    ) {
+      setRewindError(t("This conversation can no longer be rewound."));
+      return;
+    }
+    if (mode === "files" && (filePlanLoading || !filePlan || filePlan.unavailable)) return;
+    const parent = rootParentRef.current;
+    const admitted = parent?.admit();
+    if (!parent || !admitted) return;
+    return admitted.run(async () => {
+      rewindInFlight.current = true;
+      parent();
+      setRewindingMessage(true);
+      setRewindMode(mode);
+      setRewindError(null);
+      await applyRewind({
+        t,
+        mode,
+        parent,
+        admitted,
+        pendingRewind,
+        filePlan,
+        onRewindMessage,
+        activeSessionIdRef,
+        currentSessionRef,
+        fileRevertResult,
+        rewindInFlight,
+        revertResultFor,
+        closeRewind,
+        setFileRevertNotice,
+        setRewindDraftSignal,
+        setRewindError,
+        setRewindingMessage,
+        setRewindMode,
       });
-    },
-    [
-      filePlan,
-      filePlanLoading,
-      managed,
-      onRewindMessage,
-      pendingRewind,
-      sendBlockedReason,
-      session,
-    ],
-  );
+    });
+  };
 
   /** The Composer applied the recalled draft: the signal has done its job. */
-  const acknowledgeDraftSignal = useCallback((id: string) => {
+  const acknowledgeDraftSignal = (id: string) => {
     setRewindDraftSignal((current) => (current?.id === id ? null : current));
-  }, []);
+  };
 
   /** Parent-input checkpoint view of the controller; read lazily, never during render. */
   const snapshot = () => ({

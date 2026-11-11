@@ -307,7 +307,6 @@
       "rust-command-output-without-timeout": 1
     },
     "src-tauri/src/worktrees.rs": {
-      "rust-command-output-without-timeout": 1,
       "rust-rename-without-fsync": 1
     },
     "src/app/App.tsx": {
@@ -381,9 +380,8 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/ProjectRail.tsx": {
-      "bycoda/compiler-owns-memo": 13,
-      "bycoda/effect-names-its-sync": 6,
-      "bycoda/suppression-has-reason": 2
+      "bycoda/compiler-owns-memo": 12,
+      "bycoda/effect-names-its-sync": 6
     },
     "src/app/shell/SessionDetailTimes.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -403,11 +401,9 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/Sidebar.tsx": {
-      "bycoda/compiler-owns-memo": 16,
+      "bycoda/compiler-owns-memo": 15,
       "bycoda/effect-names-its-sync": 18,
-      "jsx-a11y/click-events-have-key-events": 1,
       "jsx-a11y/no-noninteractive-element-interactions": 1,
-      "jsx-a11y/no-static-element-interactions": 1,
       "oxlint/no-restricted-imports": 2,
       "oxlint/no-restricted-properties": 4
     },
@@ -424,10 +420,9 @@
     },
     "src/app/shell/UsageFooter.tsx": {
       "bycoda/compiler-owns-memo": 7,
-      "bycoda/effect-names-its-sync": 2
+      "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/UsageProviderChip.tsx": {
-      "bycoda/app-locale-formatting": 2,
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/sessionListWindow.tsx": {
@@ -459,8 +454,7 @@
     },
     "src/app/shell/useSessionBulkDelete.ts": {
       "bycoda/compiler-owns-memo": 1,
-      "bycoda/effect-names-its-sync": 2,
-      "oxlint/no-restricted-properties": 1
+      "bycoda/effect-names-its-sync": 2
     },
     "src/app/shell/useSessionListMotion.ts": {
       "bycoda/effect-names-its-sync": 2
@@ -469,7 +463,6 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/useTabStripScroll.ts": {
-      "bycoda/compiler-owns-memo": 2,
       "bycoda/effect-names-its-sync": 3,
       "bycoda/shared-resize-observer": 1
     },
@@ -843,7 +836,6 @@
       "bycoda/safe-timestamp-render": 1
     },
     "src/features/automations/ui/TriggerEditor.tsx": {
-      "bycoda/app-locale-formatting": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/connections/model/bundledHostStatus.ts": {
@@ -1034,9 +1026,6 @@
     "src/features/crews/ui/CrewEditor.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/crews/ui/CrewLibrary.tsx": {
-      "jsx-a11y/no-noninteractive-tabindex": 1
-    },
     "src/features/crews/ui/CrewRailSection.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -1051,9 +1040,6 @@
     },
     "src/features/crews/ui/CrewWorkSessions.tsx": {
       "jsx-a11y/aria-role": 2
-    },
-    "src/features/crews/ui/CrewsSettings.tsx": {
-      "jsx-a11y/no-noninteractive-tabindex": 1
     },
     "src/features/crews/ui/page/CrewsActive.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -1152,9 +1138,6 @@
     "src/features/files/ui/FilePicker.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
-    "src/features/files/ui/FilePickerError.tsx": {
-      "jsx-a11y/no-noninteractive-tabindex": 1
-    },
     "src/features/files/ui/FilePickerLists.tsx": {
       "bycoda/effect-names-its-sync": 3
     },
@@ -1228,7 +1211,7 @@
     },
     "src/features/host-tools/BrowserPanel.tsx": {
       "bycoda/effect-names-its-sync": 9,
-      "bycoda/suppression-has-reason": 5,
+      "bycoda/suppression-has-reason": 4,
       "jsx-a11y/no-noninteractive-element-interactions": 1
     },
     "src/features/host-tools/DesktopControlIndicatorStrip.tsx": {
@@ -1420,9 +1403,11 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/notifications/hooks/useInputNotifications.ts": {
+      "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/notifications/hooks/useNotificationHistory.ts": {
+      "bycoda/compiler-owns-memo": 3,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/notifications/hooks/useOwnerApprovalMirror.ts": {
@@ -1432,6 +1417,7 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/notifications/hooks/useSessionReminders.ts": {
+      "bycoda/compiler-owns-memo": 8,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/notifications/ui/OwnerApprovalRequests.tsx": {
@@ -1441,7 +1427,7 @@
       "bycoda/effect-names-its-sync": 1,
       "jsx-a11y/no-noninteractive-tabindex": 1
     },
-    "src/features/notifications/ui/notificationMuteActions.ts": {
+    "src/features/notifications/ui/notificationMuteLabel.ts": {
       "bycoda/app-locale-formatting": 1
     },
     "src/features/onboarding/ui/FeatureHighlightMarkers.tsx": {
@@ -1491,6 +1477,12 @@
     "src/features/projects/hooks/useTabGroupLogos.ts": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/projects/model/additionalDirs.ts": {
+      "bycoda/compiler-owns-memo": 1
+    },
+    "src/features/projects/model/recents.ts": {
+      "bycoda/compiler-owns-memo": 1
+    },
     "src/features/projects/ui/ContributePrompt.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -1499,12 +1491,10 @@
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/features/projects/ui/GroupFetchPopover.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/suppression-has-reason": 1
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/projects/ui/GroupGitPopover.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/suppression-has-reason": 1
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/projects/ui/ProjectActionDialog.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -1512,14 +1502,19 @@
     "src/features/projects/ui/ProjectLogoIcon.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/projects/ui/ProjectMascot.tsx": {
+      "bycoda/compiler-owns-memo": 1
+    },
     "src/features/projects/ui/ProjectNameConflictDialog.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/projects/ui/ProjectQuickActions.tsx": {
+      "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 3,
       "oxlint/no-restricted-imports": 1
     },
     "src/features/projects/ui/ProjectSearch.tsx": {
+      "bycoda/compiler-owns-memo": 2,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/projects/ui/RemoveProjectDialog.tsx": {
@@ -1688,11 +1683,11 @@
       "jsx-a11y/no-noninteractive-tabindex": 3
     },
     "src/features/sessions/ui/AgentTabView.tsx": {
-      "bycoda/compiler-owns-memo": 4,
+      "bycoda/compiler-owns-memo": 2,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/AgentTranscript.tsx": {
-      "bycoda/compiler-owns-memo": 17,
+      "bycoda/compiler-owns-memo": 16,
       "bycoda/effect-names-its-sync": 7,
       "jsx-a11y/no-static-element-interactions": 1
     },
@@ -1717,8 +1712,7 @@
       "jsx-a11y/no-noninteractive-tabindex": 1
     },
     "src/features/sessions/ui/BtwQuestionBurst.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/suppression-has-reason": 1
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/BtwSheet.tsx": {
       "bycoda/compiler-owns-memo": 8,
@@ -1732,7 +1726,7 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/Composer.tsx": {
-      "bycoda/compiler-owns-memo": 29,
+      "bycoda/compiler-owns-memo": 28,
       "bycoda/effect-names-its-sync": 28,
       "bycoda/whole-sentence-translation": 1,
       "jsx-a11y/no-static-element-interactions": 1
@@ -1784,7 +1778,7 @@
       "bycoda/shared-resize-observer": 1
     },
     "src/features/sessions/ui/HighlightedCodeBlock.tsx": {
-      "bycoda/compiler-owns-memo": 5,
+      "bycoda/compiler-owns-memo": 4,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/InlineVisual.tsx": {
@@ -1847,9 +1841,6 @@
     "src/features/sessions/ui/ProviderAccountMenu.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/sessions/ui/ProviderAccountRecoveryDialog.tsx": {
-      "bycoda/effect-names-its-sync": 1
-    },
     "src/features/sessions/ui/ProviderSignInDialog.tsx": {
       "bycoda/compiler-owns-memo": 1
     },
@@ -1863,7 +1854,6 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/QueuedMessageEditDialog.tsx": {
-      "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 4
     },
     "src/features/sessions/ui/ResumeTurnRow.tsx": {
@@ -1947,7 +1937,7 @@
     },
     "src/features/sessions/ui/TranscriptVirtualRows.tsx": {
       "bycoda/compiler-owns-memo": 3,
-      "bycoda/effect-names-its-sync": 7,
+      "bycoda/effect-names-its-sync": 6,
       "bycoda/shared-resize-observer": 1
     },
     "src/features/sessions/ui/TranslationResultDialog.tsx": {
@@ -1982,7 +1972,7 @@
       "bycoda/compiler-owns-memo": 2
     },
     "src/features/sessions/ui/useAttachmentPreview.ts": {
-      "bycoda/compiler-owns-memo": 4,
+      "bycoda/compiler-owns-memo": 3,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/sessions/ui/useCitedTurnHistory.ts": {
@@ -2041,11 +2031,10 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/useMessageRewind.ts": {
-      "bycoda/compiler-owns-memo": 4,
+      "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/useNativeSkillWarmup.ts": {
-      "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/useNearViewport.ts": {
@@ -2094,7 +2083,6 @@
       "bycoda/effect-names-its-sync": 5
     },
     "src/features/sessions/ui/useTranscriptSearch.ts": {
-      "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/sessions/ui/useTurnScrollAnchor.ts": {
@@ -2547,6 +2535,7 @@
       "bycoda/effect-names-its-sync": 5
     },
     "src/features/terminal/model/sshShellIntegration.ts": {
+      "bycoda/compiler-owns-memo": 11,
       "bycoda/effect-names-its-sync": 4
     },
     "src/features/terminal/model/terminalLinks.ts": {
@@ -2562,6 +2551,7 @@
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/terminal/ui/ProjectTerminalDock.tsx": {
+      "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 1,
       "jsx-a11y/no-noninteractive-element-interactions": 1,
       "jsx-a11y/no-static-element-interactions": 1
@@ -2614,7 +2604,6 @@
       "bycoda/effect-names-its-sync": 4
     },
     "src/features/usage/ui/UsageQuotaHistory.tsx": {
-      "bycoda/app-locale-formatting": 5,
       "jsx-a11y/no-noninteractive-tabindex": 1
     },
     "src/features/usage/ui/UsageVisualizations.tsx": {
@@ -2969,12 +2958,10 @@
       "jsx-a11y/no-noninteractive-element-interactions": 1
     },
     "src/shared/ui/arc/alert/alert.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-resize-observer": 1
+      "bycoda/effect-names-its-sync": 2
     },
     "src/shared/ui/arc/badge/badge.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-resize-observer": 1
+      "bycoda/effect-names-its-sync": 2
     },
     "src/shared/ui/arc/bar-chart/bar-chart.tsx": {
       "bycoda/compiler-owns-memo": 5,
@@ -3021,12 +3008,11 @@
       "jsx-a11y/no-static-element-interactions": 2
     },
     "src/shared/ui/arc/empty-state/empty-state.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-resize-observer": 1
+      "bycoda/effect-names-its-sync": 2
     },
     "src/shared/ui/arc/expanding-button-group/expanding-button-group.tsx": {
       "bycoda/compiler-owns-memo": 2,
-      "bycoda/effect-names-its-sync": 3
+      "bycoda/effect-names-its-sync": 2
     },
     "src/shared/ui/arc/expanding-search/expanding-search.tsx": {
       "bycoda/compiler-owns-memo": 3,

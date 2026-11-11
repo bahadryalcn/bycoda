@@ -55,7 +55,8 @@ async function render() {
 }
 
 const poll = () => act(async () => void (await vi.advanceTimersByTimeAsync(15_000)));
-const notice = () => document.body.querySelector('[role="status"]');
+// Scoped to the pending card: the sheet's summary line is a status region too.
+const notice = () => document.body.querySelector('.notification-pending-card [role="status"]');
 const openNotifications = () =>
   act(async () => {
     document.body.querySelector<HTMLButtonElement>('button[aria-label="Notifications"]')!.click();
@@ -165,5 +166,5 @@ it("removes recovered hosts and only restores a dismissed notice after another o
   host.state = "running";
   await poll();
   expect(notice()).toBeNull();
-  expect(document.body.textContent).toContain("No pending requests");
+  expect(document.body.textContent).toContain("All clear");
 });

@@ -291,7 +291,14 @@ export function useCompactAndRewind({
         editedResends.finish(sessionId, editToken);
       }
     },
-    [editedResends, reconcileManaged],
+    [
+      editedResends,
+      reconcileManaged,
+      retiringTurns,
+      windowTransferPendingRef,
+      movingSessionIds,
+      sessionsRef,
+    ],
   );
   useEffect(() => registerWorkspaceRewindUndoHandler("*", undoManaged), [undoManaged]);
 

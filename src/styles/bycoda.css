@@ -151,19 +151,6 @@
   flex: none;
   object-fit: cover;
 }
-/* The 56px collapsed rail stacks a smaller mark over the wordmark inside its header row. */
-.bycoda-rail-lockup--stacked {
-  flex-direction: column;
-  gap: 2px;
-}
-.bycoda-rail-lockup--stacked .bycoda-rail-mark {
-  width: 20px;
-  height: 20px;
-}
-.bycoda-rail-lockup--stacked .bycoda-rail-wordmark {
-  width: 44px;
-  height: 11px;
-}
 /* Windows: the column copy only fills in what the title row drops at narrow widths. */
 @container rail (width >= 200px) {
   .bycoda-rail-brand--narrow-only {
@@ -200,26 +187,19 @@
   .bycoda-rail-brand--title {
     display: none;
   }
-  /* Icon-only rail: a centered stacked lockup above an icon-only Search. */
+  /* Icon-only rail: the centered mark alone above an icon-only Search. */
   .bycoda-rail-brand--column {
     flex-direction: column;
     justify-content: center;
     gap: 6px;
     padding-inline: 4px;
   }
-  .bycoda-rail-brand--column .bycoda-rail-lockup {
-    flex-direction: column;
-    gap: 3px;
+  .bycoda-rail-brand--column .bycoda-rail-wordmark {
+    display: none;
   }
   .bycoda-rail-brand--column .bycoda-rail-search-slot {
     width: 100%;
     flex: none;
-  }
-}
-@container rail (width < 80px) {
-  .bycoda-rail-brand--column .bycoda-rail-wordmark {
-    width: 44px;
-    height: 11px;
   }
 }
 .bycoda-rail-brand button > svg {

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Settings } from "../../../shared/ui/icons";
@@ -6,12 +6,22 @@ import { Popover } from "../../../shared/ui/Popover";
 import {
   providerAccountLabel,
   providerAccounts,
+  subscribeProviderAccounts,
   supportsProviderAccounts,
 } from "../../providers/public/providerAccounts";
 import { openProviderSettings } from "../../providers/public/providerSettingsLink";
-import { hasProjectDefaults, isModelDefault, modelDefault } from "../model/modelDefaultMark";
-import type { AgentModel, ModelSetting } from "../model/models";
-import { clearProjectDefault, pinProjectDefault } from "../model/projectProviders";
+import {
+  hasProjectDefaults,
+  isModelDefault,
+  modelDefault,
+  type ModelDefault,
+} from "../model/modelDefaultMark";
+import { subscribeModels, type AgentModel, type ModelSetting } from "../model/models";
+import {
+  clearProjectDefault,
+  pinProjectDefault,
+  subscribeProjectProviders,
+} from "../model/projectProviders";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import { ModelAccountControl, ModelAccountList, usePanelAccounts } from "./ModelAccountSwitcher";
 import { ModelBrowser, type ModelBrowserProps, type ModelDefaultMark } from "./ModelBrowser";
@@ -175,6 +185,26 @@ export function ModelPanel({
   );
 }
 
+function subscribeDefaultMark(onChange: () => void): () => void {
+  const unsubscribe = [subscribeModels, subscribeProjectProviders, subscribeProviderAccounts].map(
+    (subscribe) => subscribe(onChange),
+  );
+  return () => unsubscribe.forEach((off) => off());
+}
+
+/** The project's default and its account label, read from browser storage as one comparable string. */
+function readDefaultMark(project: string | undefined, local: boolean): string {
+  if (!hasProjectDefaults(project)) return "";
+  const value = modelDefault(project, !local);
+  const { harness, accountId } = value;
+  // The account joins the path only when the provider has more than one to choose from.
+  const accountName =
+    local && accountId && supportsProviderAccounts(harness) && providerAccounts(harness).length > 1
+      ? providerAccountLabel(harness, accountId)
+      : undefined;
+  return JSON.stringify({ value, accountName });
+}
+
 /**
  * The project's default as rail, account and row marks. `accountId` is the account the browsed
  * provider's rows run on, when the panel offers a choice of accounts.
@@ -183,20 +213,20 @@ function useDefaultMark(
   project: string | undefined,
   tab: ModelBrowserProps["tab"],
   accountId: string | undefined,
-): { value: ReturnType<typeof modelDefault>; mark: ModelDefaultMark } | undefined {
+): { value: ModelDefault; mark: ModelDefaultMark } | undefined {
   const source = useModelSource();
-  if (!hasProjectDefaults(project)) return undefined;
   const local = source.accounts === undefined;
-  const value = modelDefault(project, !local);
-  const { harness, accountId: defaultAccount } = value;
-  // The account joins the path only when the provider has more than one to choose from.
-  const accountName =
-    local &&
-    defaultAccount &&
-    supportsProviderAccounts(harness) &&
-    providerAccounts(harness).length > 1
-      ? providerAccountLabel(harness, defaultAccount)
-      : undefined;
+  const snapshot = useSyncExternalStore(
+    subscribeDefaultMark,
+    () => readDefaultMark(project, local),
+    () => readDefaultMark(project, local),
+  );
+  if (!hasProjectDefaults(project) || !snapshot) return undefined;
+  const { value, accountName } = JSON.parse(snapshot) as {
+    value: ModelDefault;
+    accountName?: string;
+  };
+  const { harness } = value;
   const path = [HARNESS_TITLE[harness], accountName, source.resolve(harness, value.model).name]
     .filter(Boolean)
     .join(" › ");

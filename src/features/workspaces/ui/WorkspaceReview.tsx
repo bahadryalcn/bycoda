@@ -495,7 +495,9 @@ export function WorkspaceReview({
             )}
             {plan.artifacts && (
               <section>
-                <Heading size="item" level={3}>{t("Additional delivery files")}</Heading>
+                <Heading size="item" level={3}>
+                  {t("Additional delivery files")}
+                </Heading>
                 <DescriptionList size="sm">
                   {plan.artifacts.paths.map((path) => (
                     <DescriptionItem key={path} term={path} monospace>
@@ -509,7 +511,9 @@ export function WorkspaceReview({
               </section>
             )}
             <section>
-              <Heading size="item" level={3}>{t("Checks")}</Heading>
+              <Heading size="item" level={3}>
+                {t("Checks")}
+              </Heading>
               {plan.checks.length ? (
                 <ul>
                   {plan.checks.map((check) => (
@@ -523,7 +527,9 @@ export function WorkspaceReview({
               )}
             </section>
             <section>
-              <Heading size="item" level={3}>{t("Visual evidence")}</Heading>
+              <Heading size="item" level={3}>
+                {t("Visual evidence")}
+              </Heading>
               {plan.visualEvidence.length ? (
                 <ul>
                   {plan.visualEvidence.map((evidence) => (

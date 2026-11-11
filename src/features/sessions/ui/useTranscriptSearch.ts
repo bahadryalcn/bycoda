@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -16,6 +15,7 @@ import {
   transcriptWordRanges,
 } from "../model/transcriptHighlights";
 import type { Block } from "../model/session";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 
 type Options = {
@@ -35,6 +35,21 @@ type Options = {
     navigate: ((blockId: string | null, query?: string) => boolean) | null,
   ) => void;
 };
+
+/** Scrolls the current result (or its turn) to just below the scroller's top edge. */
+function alignSearchTarget(el: HTMLDivElement, turnId: string, query: string) {
+  const target =
+    el.querySelector<HTMLElement>('[data-transcript-search-current="true"]') ??
+    el.querySelector<HTMLElement>(`[data-transcript-turn="${CSS.escape(turnId)}"]`);
+  if (!target) return;
+  const wordRect = query
+    ? transcriptWordRanges(el, query).current?.getBoundingClientRect?.()
+    : null;
+  const targetTop =
+    wordRect && wordRect.height > 0 ? wordRect.top : target.getBoundingClientRect().top;
+  const delta = targetTop - el.getBoundingClientRect().top - 42;
+  if (Math.abs(delta) > 2) el.scrollTop += delta;
+}
 
 /**
  * Find-in-conversation for the transcript: scrolls a result into view (opening
@@ -76,8 +91,8 @@ export function useTranscriptSearch({
 
   const alignFrame = useRef(0);
   useEffect(() => () => cancelAnimationFrame(alignFrame.current), []);
-  const navigateToBlock = useCallback(
-    (blockId: string | null, query = ""): boolean => {
+  const navigateToBlock = useStableCallback(
+    (blockId: string | null, query: string = ""): boolean => {
       if (!blockId) {
         setSearchCurrent(null);
         setSearchQuery("");
@@ -95,25 +110,12 @@ export function useTranscriptSearch({
       const el = scroller.current;
       if (!el) return false;
       el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
-      const align = () => {
-        const target =
-          el.querySelector<HTMLElement>('[data-transcript-search-current="true"]') ??
-          el.querySelector<HTMLElement>(`[data-transcript-turn="${CSS.escape(turnId)}"]`);
-        if (!target) return;
-        const wordRect = query
-          ? transcriptWordRanges(el, query).current?.getBoundingClientRect?.()
-          : null;
-        const targetTop =
-          wordRect && wordRect.height > 0 ? wordRect.top : target.getBoundingClientRect().top;
-        const delta = targetTop - el.getBoundingClientRect().top - 42;
-        if (Math.abs(delta) > 2) el.scrollTop += delta;
-      };
+      const align = () => alignSearchTarget(el, turnId, query);
       align();
       cancelAnimationFrame(alignFrame.current);
       alignFrame.current = requestAnimationFrame(align);
       return true;
     },
-    [findTurn, revealBlock, scroller, setOpenWork],
   );
 
   useEffect(() => {

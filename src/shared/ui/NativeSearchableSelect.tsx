@@ -109,6 +109,14 @@ export function NativeSearchableSelect({
     };
   }, [nativeProps.form, nativeProps.value]);
 
+  const describedBy = [
+    triggerProps?.["aria-describedby"] ?? nativeProps["aria-describedby"],
+    error ? errorId : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const invalid = nativeProps["aria-invalid"] ?? (error ? true : undefined);
+
   return (
     <div className={[styles.root, className].filter(Boolean).join(" ")}>
       <select
@@ -170,15 +178,9 @@ export function NativeSearchableSelect({
           "aria-label": nativeProps["aria-label"],
           "aria-labelledby": nativeProps["aria-labelledby"],
           "aria-required": nativeProps.required,
-          "aria-invalid": nativeProps["aria-invalid"] ?? (!!error || undefined),
+          "aria-invalid": invalid,
           ...triggerProps,
-          "aria-describedby":
-            [
-              triggerProps?.["aria-describedby"] ?? nativeProps["aria-describedby"],
-              error ? errorId : undefined,
-            ]
-              .filter(Boolean)
-              .join(" ") || undefined,
+          "aria-describedby": describedBy === "" ? undefined : describedBy,
           ref: trigger,
         }}
         onChange={(next) => {

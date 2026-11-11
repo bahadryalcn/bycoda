@@ -77,37 +77,51 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
     );
     if (nextOpen) focusProjectTerminal();
     else setProjectTerminalFocused(false);
-  }, [terminalCwd, focusProjectTerminal, openProjectTerminal, projectCwd]);
+  }, [
+    terminalCwd,
+    focusProjectTerminal,
+    openProjectTerminal,
+    projectCwd,
+    setProjectTerminalFocused,
+    setProjectTerminals,
+    projectTerminalsRef,
+  ]);
 
   const onHideProjectTerminal = useCallback(() => {
     setProjectTerminals((prev) =>
       mapProjectTerminal(prev, projectCwdRef.current, (dock) => withDockOpen(dock, false)),
     );
     setProjectTerminalFocused(false);
-  }, []);
+  }, [setProjectTerminals, setProjectTerminalFocused, projectCwdRef]);
 
-  const onProjectTerminalSide = useCallback((side: DockSide) => {
-    setLastDockSide(side);
-    setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
-        withDockSide(dock, side, {
-          width: window.innerWidth,
-          height: window.innerHeight,
-        }),
-      ),
-    );
-  }, []);
+  const onProjectTerminalSide = useCallback(
+    (side: DockSide) => {
+      setLastDockSide(side);
+      setProjectTerminals((prev) =>
+        mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+          withDockSide(dock, side, {
+            width: window.innerWidth,
+            height: window.innerHeight,
+          }),
+        ),
+      );
+    },
+    [setProjectTerminals, projectCwdRef, setLastDockSide],
+  );
 
-  const onProjectTerminalSize = useCallback((size: number) => {
-    setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
-        withDockSize(dock, size, {
-          width: window.innerWidth,
-          height: window.innerHeight,
-        }),
-      ),
-    );
-  }, []);
+  const onProjectTerminalSize = useCallback(
+    (size: number) => {
+      setProjectTerminals((prev) =>
+        mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+          withDockSize(dock, size, {
+            width: window.innerWidth,
+            height: window.innerHeight,
+          }),
+        ),
+      );
+    },
+    [setProjectTerminals, projectCwdRef],
+  );
 
   const onSelectProjectTerminal = useCallback(
     (fileId: string) => {
@@ -116,63 +130,78 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
       );
       focusProjectTerminal();
     },
-    [focusProjectTerminal],
+    [focusProjectTerminal, setProjectTerminals, projectCwdRef],
   );
 
-  const onReorderProjectTerminals = useCallback((ids: string[]) => {
-    setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
-        reorderDockTerminals(dock, orderByIds(dock.pane.files, ids)),
-      ),
-    );
-  }, []);
-
-  const onCloseProjectTerminal = useCallback((fileId: string) => {
-    const projectPath = projectCwdRef.current;
-    const dock = findProjectTerminal(projectTerminalsRef.current, projectPath);
-    const file = dock?.pane.files.find((entry) => entry.id === fileId);
-    if (!file) return;
-    const finishClose = () => {
+  const onReorderProjectTerminals = useCallback(
+    (ids: string[]) => {
       setProjectTerminals((prev) =>
-        mapProjectTerminal(prev, projectPath, (entry) => closeTerminalInDock(entry, fileId)),
+        mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+          reorderDockTerminals(dock, orderByIds(dock.pane.files, ids)),
+        ),
       );
-    };
-    // The last terminal takes the panel with it, so it asks even when idle.
-    const last = dock?.pane.files.length === 1;
-    void confirmCloseTerminal(file, { last }).then((ok) => ok && finishClose());
-  }, []);
+    },
+    [setProjectTerminals, projectCwdRef],
+  );
+
+  const onCloseProjectTerminal = useCallback(
+    (fileId: string) => {
+      const projectPath = projectCwdRef.current;
+      const dock = findProjectTerminal(projectTerminalsRef.current, projectPath);
+      const file = dock?.pane.files.find((entry) => entry.id === fileId);
+      if (!file) return;
+      const finishClose = () => {
+        setProjectTerminals((prev) =>
+          mapProjectTerminal(prev, projectPath, (entry) => closeTerminalInDock(entry, fileId)),
+        );
+      };
+      // The last terminal takes the panel with it, so it asks even when idle.
+      const last = dock?.pane.files.length === 1;
+      void confirmCloseTerminal(file, { last }).then((ok) => ok && finishClose());
+    },
+    [setProjectTerminals, projectCwdRef, projectTerminalsRef],
+  );
 
   /** Closes every terminal but `keepId`; without it, every terminal and the panel. */
-  const onCloseProjectTerminals = useCallback((keepId?: string) => {
-    const projectPath = projectCwdRef.current;
-    const dock = findProjectTerminal(projectTerminalsRef.current, projectPath);
-    if (!dock) return;
-    if (keepId !== undefined && !dock.pane.files.some((file) => file.id === keepId)) return;
-    const closingFiles = dock.pane.files.filter((file) => file.id !== keepId);
-    if (closingFiles.length === 0) return;
-    const closingIds = new Set(closingFiles.map((file) => file.id));
+  const onCloseProjectTerminals = useCallback(
+    (keepId?: string) => {
+      const projectPath = projectCwdRef.current;
+      const dock = findProjectTerminal(projectTerminalsRef.current, projectPath);
+      if (!dock) return;
+      if (keepId !== undefined && !dock.pane.files.some((file) => file.id === keepId)) return;
+      const closingFiles = dock.pane.files.filter((file) => file.id !== keepId);
+      if (closingFiles.length === 0) return;
+      const closingIds = new Set(closingFiles.map((file) => file.id));
 
-    const finishClose = () => {
-      setProjectTerminals((prev) =>
-        mapProjectTerminal(prev, projectPath, (entry) => {
-          if (keepId !== undefined && !entry.pane.files.some((file) => file.id === keepId)) {
-            return entry;
-          }
-          // A terminal opened while the dialog was up stays.
-          let next: typeof entry | null = entry;
-          for (const id of closingIds) next = next && closeTerminalInDock(next, id);
-          return next && keepId !== undefined ? selectDockTerminal(next, keepId) : next;
-        }),
-      );
-    };
+      const finishClose = () => {
+        setProjectTerminals((prev) =>
+          mapProjectTerminal(prev, projectPath, (entry) => {
+            if (keepId !== undefined && !entry.pane.files.some((file) => file.id === keepId)) {
+              return entry;
+            }
+            // A terminal opened while the dialog was up stays.
+            let next: typeof entry | null = entry;
+            for (const id of closingIds) next = next && closeTerminalInDock(next, id);
+            return next && keepId !== undefined ? selectDockTerminal(next, keepId) : next;
+          }),
+        );
+      };
 
-    void confirmCloseTerminals(closingFiles).then((ok) => ok && finishClose());
-  }, []);
+      void confirmCloseTerminals(closingFiles).then((ok) => ok && finishClose());
+    },
+    [setProjectTerminals, projectCwdRef, projectTerminalsRef],
+  );
 
-  const onTerminalMetaChange = useCallback((fileId: string, patch: TerminalMetaPatch) => {
-    setProjectTerminals((prev) => patchProjectTerminals(prev, fileId, patch));
-    setTabs((prev) => prev.map((tab) => updateTerminalTab(tab, fileId, patch)));
-  }, []);
+  const onTerminalMetaChange = useCallback(
+    (fileId: string, patch: TerminalMetaPatch) => {
+      setProjectTerminals((prev) => patchProjectTerminals(prev, fileId, patch));
+      setTabs((prev) => {
+        const next = prev.map((tab) => updateTerminalTab(tab, fileId, patch));
+        return next.every((tab, index) => tab === prev[index]) ? prev : next;
+      });
+    },
+    [setProjectTerminals, setTabs],
+  );
 
   const onToggleRunningTerminal = useCallback(
     (fileId: string) => {

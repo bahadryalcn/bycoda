@@ -30,7 +30,7 @@ export function useHistorySync({
     return () => {
       cancelled = true;
     };
-  }, [inboxViewOpen]);
+  }, [inboxViewOpen, setStoredLinkedSessions]);
 
   useEffect(() => {
     prefetchProjectFiles(gitCwd);

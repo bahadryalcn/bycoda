@@ -1,42 +1,69 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useSyncExternalStore,
-  type CSSProperties,
-  type ReactNode,
-  type Ref,
-} from "react";
+import { useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useT } from "../i18n";
 import { LAYER } from "../lib/layers";
-import { elapsedSince, monotonicNow } from "../lib/time/timestamps";
-import { Alert } from "./Alert";
-import { Button } from "./Button";
-import { Info, X } from "./icons";
+import {
+  layoutStack,
+  TOAST_STACK_VISIBLE,
+  ToastStackItem,
+  toastStackClassName,
+  type ToastStackTarget,
+} from "./arc/toast-stack/toast-stack";
 import { OverlayMenuLayer } from "./overlay";
-import { Progress } from "./Progress";
+import { ToastCard, type ToastContentProps } from "./ToastCard";
+
+export {
+  ToastCard,
+  TOAST_VISIBLE_MS,
+  useAutoDismiss,
+  type ToastAction,
+  type ToastContentProps,
+  type ToastTone,
+} from "./ToastCard";
 
 /** The corner a toast stacks in. One stack per corner; `bottom-end` is the default. */
 export type ToastPlacement = "bottom-end" | "top-end" | "bottom-start" | "top-start";
-export type ToastTone = "neutral" | "info" | "success" | "warning" | "danger";
 
-/** Ten seconds of focused window time to read a sentence and reach its action. */
-export const TOAST_VISIBLE_MS = 10_000;
 const DEFAULT_INSET = 12;
+/** Keeps the toast stack on the inner side of every feature card in its corner. */
+const STACK_ORDER = 1000;
 
 /* ---------------------------------------------------------------------------------------------
  * Corner stacks
  *
- * Each corner is one fixed, body-level column at `LAYER.toast`. Every toast (a standard card or a
- * feature's own card through ToastSlot) portals into its corner, so the stack offsets itself by
- * layout: no height reporting and no `offset` arithmetic between siblings. The column is created
- * on first use and leaves the DOM when its last toast unmounts.
+ * Each corner is one fixed, body-level column at `LAYER.toast`. It holds the corner's toast stack
+ * and, nearer the window edge, the feature cards placed through ToastSlot. Toasts portal into the
+ * stack: the newest sits in front, older ones tuck behind it, and hovering or focusing the stack
+ * fans it out and holds every toast's expiry. The column is created on first use and leaves the
+ * DOM when its last toast unmounts.
  * ------------------------------------------------------------------------------------------- */
 
-type Corner = { node: HTMLDivElement; users: number };
+type Pile = {
+  /** Toast keys from the front (newest) back. */
+  keys: readonly number[];
+  targets: readonly ToastStackTarget[];
+  expanded: boolean;
+};
+const EMPTY_PILE: Pile = { keys: [], targets: [], expanded: false };
+
+type Corner = {
+  node: HTMLDivElement;
+  stack: HTMLDivElement;
+  top: boolean;
+  users: number;
+  keys: number[];
+  heights: Map<number, number>;
+  hovered: boolean;
+  focused: boolean;
+  tapped: boolean;
+  pile: Pile;
+  listeners: Set<() => void>;
+  subscribe: (listener: () => void) => () => void;
+};
 const corners = new Map<ToastPlacement, Corner>();
 const insets: Partial<Record<ToastPlacement, number>> = {};
+let toastSeq = 0;
+/** Keys count up, so a newer toast sorts and stacks above an older one. */
+const nextToastKey = () => (toastSeq += 1);
 
 function applyInset(placement: ToastPlacement, node: HTMLDivElement) {
   const inset = insets[placement] ?? DEFAULT_INSET;
@@ -47,6 +74,66 @@ function applyInset(placement: ToastPlacement, node: HTMLDivElement) {
   node.style.paddingBlockEnd = `${top ? DEFAULT_INSET : inset}px`;
 }
 
+/** Recomputes where every toast of the corner sits and tells the toasts. */
+function syncPile(entry: Corner) {
+  // An emptied stack gets no leave or blur event, so nothing may keep it open.
+  if (!entry.keys.length) entry.hovered = entry.focused = entry.tapped = false;
+  const expanded = entry.keys.length > 0 && (entry.hovered || entry.focused || entry.tapped);
+  const { targets, listHeight } = layoutStack(
+    entry.keys.map((key) => entry.heights.get(key) ?? 0),
+    expanded,
+    entry.top ? "top" : "bottom",
+  );
+  entry.pile = { keys: [...entry.keys], targets, expanded };
+  entry.stack.style.blockSize = `${listHeight}px`;
+  entry.stack.toggleAttribute("data-empty", entry.keys.length === 0);
+  for (const listener of entry.listeners) listener();
+}
+
+function setOpen(entry: Corner, flag: "hovered" | "focused" | "tapped", value: boolean) {
+  if (entry[flag] === value) return;
+  entry[flag] = value;
+  syncPile(entry);
+}
+
+const focusVisible = (element: Element) => {
+  try {
+    return element.matches(":focus-visible");
+  } catch {
+    return true;
+  }
+};
+
+/** Hover, keyboard focus or a tap opens the stack; leaving it closes it again. */
+function watchStack(entry: Corner) {
+  const { stack } = entry;
+  const mouse = (open: boolean) => (event: PointerEvent) => {
+    if (event.pointerType === "mouse") setOpen(entry, "hovered", open);
+  };
+  stack.addEventListener("pointerenter", mouse(true));
+  stack.addEventListener("pointermove", mouse(true));
+  stack.addEventListener("pointerleave", mouse(false));
+  // Only keyboard focus opens the stack; a mouse click on a button should not pin it open.
+  stack.addEventListener("focusin", (event) => {
+    if (event.target instanceof Element && focusVisible(event.target))
+      setOpen(entry, "focused", true);
+  });
+  stack.addEventListener("focusout", (event) => {
+    if (!(event.relatedTarget instanceof Node) || !stack.contains(event.relatedTarget))
+      setOpen(entry, "focused", false);
+  });
+  // Touch has no hover, so a tap on a card opens or closes the stack instead.
+  stack.addEventListener("pointerup", (event) => {
+    if (event.pointerType === "mouse") return;
+    if (event.target instanceof Element && !event.target.closest("button, a"))
+      setOpen(entry, "tapped", !entry.tapped);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (entry.tapped && !(event.target instanceof Node && stack.contains(event.target)))
+      setOpen(entry, "tapped", false);
+  });
+}
+
 function corner(placement: ToastPlacement): Corner {
   let entry = corners.get(placement);
   if (!entry) {
@@ -55,17 +142,55 @@ function corner(placement: ToastPlacement): Corner {
     const end = placement.endsWith("end");
     node.dataset.toastRegion = placement;
     node.setAttribute("aria-live", "polite");
+    // A bottom column grows upward: what leaves through the window edge then never scrolls it.
     node.className = [
-      "pointer-events-none fixed flex max-h-dvh flex-col gap-2 overflow-y-auto overscroll-contain px-3",
-      top ? "top-0" : "bottom-0",
+      "pointer-events-none fixed flex max-h-dvh gap-2 overflow-y-auto overscroll-contain px-3",
+      top ? "top-0 flex-col" : "bottom-0 flex-col-reverse",
       end ? "end-0 items-end" : "start-0 items-start",
     ].join(" ");
     node.style.zIndex = String(LAYER.toast);
     applyInset(placement, node);
-    entry = { node, users: 0 };
-    corners.set(placement, entry);
+    const stack = document.createElement("div");
+    stack.dataset.toastStack = "";
+    stack.dataset.empty = "";
+    stack.className = toastStackClassName;
+    stack.style.order = String(STACK_ORDER);
+    node.append(stack);
+    const listeners = new Set<() => void>();
+    const created: Corner = {
+      node,
+      stack,
+      top,
+      users: 0,
+      keys: [],
+      heights: new Map(),
+      hovered: false,
+      focused: false,
+      tapped: false,
+      pile: EMPTY_PILE,
+      listeners,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    };
+    watchStack(created);
+    corners.set(placement, created);
+    entry = created;
   }
   return entry;
+}
+
+function joinCorner(entry: Corner) {
+  entry.users += 1;
+  if (!entry.node.isConnected) document.body.append(entry.node);
+}
+
+function leaveCorner(entry: Corner) {
+  entry.users -= 1;
+  if (entry.users <= 0) entry.node.remove();
 }
 
 /** Joins the corner column for the lifetime of the caller; the column leaves with its last user. */
@@ -73,367 +198,128 @@ function useCorner(placement: ToastPlacement) {
   const entry = typeof document === "undefined" ? null : corner(placement);
   useLayoutEffect(() => {
     if (!entry) return;
-    entry.users += 1;
-    if (!entry.node.isConnected) document.body.append(entry.node);
-    return () => {
-      entry.users -= 1;
-      if (entry.users <= 0) entry.node.remove();
-    };
+    joinCorner(entry);
+    return () => leaveCorner(entry);
   }, [entry]);
-  return entry?.node ?? null;
+  return entry;
+}
+
+function measureToast(entry: Corner, key: number, height: number) {
+  if (entry.heights.get(key) === height) return;
+  entry.heights.set(key, height);
+  if (entry.keys.includes(key)) syncPile(entry);
+}
+
+const subscribeNothing = () => () => {};
+const emptyPile = () => EMPTY_PILE;
+
+/** Puts one toast card in its corner's stack: newest in front, older ones tucked behind. */
+function StackedToast({ placement, children }: { placement: ToastPlacement; children: ReactNode }) {
+  const entry = useCorner(placement);
+  const [key] = useState(nextToastKey);
+  const pile = useSyncExternalStore(
+    entry ? entry.subscribe : subscribeNothing,
+    entry ? () => entry.pile : emptyPile,
+    emptyPile,
+  );
+  // The toast is in the stack for as long as it is mounted, in front of the ones before it.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers the toast with its corner stack, outside React, until unmount
+  useLayoutEffect(() => {
+    if (!entry) return;
+    entry.keys.unshift(key);
+    syncPile(entry);
+    return () => {
+      entry.keys.splice(entry.keys.indexOf(key), 1);
+      entry.heights.delete(key);
+      syncPile(entry);
+      // Removing the focused toast fires no blur, so check where focus went once it is gone.
+      queueMicrotask(() => {
+        if (!entry.stack.contains(document.activeElement)) setOpen(entry, "focused", false);
+      });
+    };
+  }, [entry, key]);
+  if (!entry) return null;
+  const index = pile.keys.indexOf(key);
+  return createPortal(
+    <ToastStackItem
+      target={pile.targets[index] ?? null}
+      expanded={pile.expanded}
+      front={index === 0}
+      hidden={index >= TOAST_STACK_VISIBLE}
+      edge={entry.top ? "top" : "bottom"}
+      zIndex={key}
+      onMeasure={(height) => measureToast(entry, key, height)}
+      retain={() => {
+        joinCorner(entry);
+        return () => leaveCorner(entry);
+      }}
+    >
+      <OverlayMenuLayer.Provider value={LAYER.toastPopover}>{children}</OverlayMenuLayer.Provider>
+    </ToastStackItem>,
+    entry.stack,
+  );
 }
 
 export type ToastSlotProps = {
   placement?: ToastPlacement;
   /**
-   * Position in the stack: lower first (the top of a column). Equal values keep mount order.
-   * Use it to keep a persistent panel (due reminders) above transient cards.
+   * Position among the corner's feature cards: lower sits higher on screen. Equal values keep
+   * mount order. Use it to keep a persistent panel (due reminders) above other cards.
    */
   order?: number;
   children: ReactNode;
 };
 
 /**
- * Puts a feature's own card (a reminder panel, an approval request) into a corner stack. The
- * card owns its surface, roles and actions; the slot owns placement, offset and the layer.
+ * Puts a feature's own card (a reminder panel, an approval request) into a corner. The card owns
+ * its surface, roles and actions; the slot owns placement, offset and the layer. Feature cards
+ * stay fully visible next to the window edge and never tuck into the toast stack beside them.
  * Menus opened from inside open above the stack.
  * @group feedback
- * @use Put a feature's own card (reminder panel, approval request) in the shared corner toast stack.
+ * @use Put a feature's own card (reminder panel, approval request) in the shared toast corner.
  * @avoid Plain messages: Toast or useToast. Never position a notice with fixed and an offset.
  */
 export function ToastSlot({ placement = "bottom-end", order, children }: ToastSlotProps) {
-  const node = useCorner(placement);
-  if (!node) return null;
+  const entry = useCorner(placement);
+  if (!entry) return null;
   return createPortal(
     <div
       data-toast-slot=""
       className="pointer-events-auto flex max-w-full min-w-0 flex-col"
-      style={order === undefined ? undefined : { order }}
+      // A bottom column is laid out from the window edge up, so its order runs the other way.
+      style={order === undefined ? undefined : { order: entry.top ? order : -order }}
     >
       <OverlayMenuLayer.Provider value={LAYER.toastPopover}>{children}</OverlayMenuLayer.Provider>
     </div>,
-    node,
-  );
-}
-
-/* ---------------------------------------------------------------------------------------------
- * Auto-dismiss
- * ------------------------------------------------------------------------------------------- */
-
-/**
- * Expires after `durationMs` of visible, unattended time: hover, focus inside and a hidden
- * document or unfocused window pause the timer and resume only the remaining time.
- * `null` never expires.
- */
-export function useAutoDismiss(
-  surface: { current: HTMLElement | null },
-  {
-    durationMs,
-    paused,
-    onExpire,
-    resetKey,
-  }: {
-    durationMs: number | null;
-    /** An operation that cannot be interrupted; the notice waits. */
-    paused?: boolean;
-    onExpire: () => void;
-    /** A new message restarts the timer; parent rerenders do not. */
-    resetKey?: unknown;
-  },
-) {
-  const expire = useRef(onExpire);
-  expire.current = onExpire;
-  useEffect(() => {
-    const node = surface.current;
-    if (!node || durationMs === null || paused) return;
-    let remaining = durationMs;
-    let started = 0;
-    let timer: number | undefined;
-    let hovered = node.matches(":hover");
-    let focused = node.contains(document.activeElement);
-    let windowFocused = document.hasFocus();
-    const pause = () => {
-      if (timer === undefined) return;
-      window.clearTimeout(timer);
-      timer = undefined;
-      remaining = Math.max(0, remaining - elapsedSince(started));
-    };
-    const resume = () => {
-      if (timer !== undefined || hovered || focused || document.hidden || !windowFocused) return;
-      started = monotonicNow();
-      timer = window.setTimeout(() => {
-        timer = undefined;
-        expire.current();
-      }, remaining);
-    };
-    const enter = () => {
-      hovered = true;
-      pause();
-    };
-    const leave = () => {
-      hovered = false;
-      resume();
-    };
-    const focus = () => {
-      focused = true;
-      pause();
-    };
-    const blur = (event: FocusEvent) => {
-      if (event.relatedTarget instanceof Node && node.contains(event.relatedTarget)) return;
-      focused = false;
-      resume();
-    };
-    const visibility = () => {
-      windowFocused = document.hasFocus();
-      if (document.hidden) pause();
-      else resume();
-    };
-    const windowFocus = () => {
-      windowFocused = true;
-      resume();
-    };
-    const windowBlur = () => {
-      windowFocused = false;
-      pause();
-    };
-    node.addEventListener("pointerenter", enter);
-    node.addEventListener("pointerleave", leave);
-    node.addEventListener("focusin", focus);
-    node.addEventListener("focusout", blur);
-    document.addEventListener("visibilitychange", visibility);
-    window.addEventListener("focus", windowFocus);
-    window.addEventListener("blur", windowBlur);
-    resume();
-    return () => {
-      pause();
-      node.removeEventListener("pointerenter", enter);
-      node.removeEventListener("pointerleave", leave);
-      node.removeEventListener("focusin", focus);
-      node.removeEventListener("focusout", blur);
-      document.removeEventListener("visibilitychange", visibility);
-      window.removeEventListener("focus", windowFocus);
-      window.removeEventListener("blur", windowBlur);
-    };
-  }, [surface, durationMs, paused, resetKey]);
-}
-
-/* ---------------------------------------------------------------------------------------------
- * The standard card
- * ------------------------------------------------------------------------------------------- */
-
-export type ToastAction = {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  /** Shows progress and blocks a second activation; the caller owns the operation. */
-  pending?: boolean;
-};
-
-export type ToastContentProps = {
-  /** Primary text. With `title`, it is the body under the heading. */
-  message?: ReactNode;
-  title?: string;
-  /** Tone drives the glyph and role (danger announces assertively); never colour alone. */
-  tone?: ToastTone;
-  /** Extra body, such as a list of rows. Rendered below the message. */
-  children?: ReactNode;
-  /** One secondary action (Undo, Retry, Open), under the message. */
-  action?: ToastAction;
-  /** Additional actions in the header row, such as "Update all". Use shared Button. */
-  actions?: ReactNode;
-  /**
-   * Where `actions` sit. `"header"` (default) for actions about a list below, such as
-   * "Update all"; `"footer"` for answers to a question the message asks (Yes / Later / No).
-   */
-  actionsPlacement?: "header" | "footer";
-  /** Determinate progress from 0 to 1, with an accessible label. */
-  progress?: { value: number; label: string };
-  /** Omit for a toast the owner removes itself (no dismiss control, no expiry). */
-  onDismiss?: () => void;
-  /** Disables the dismiss control (and pauses expiry) while an operation cannot be interrupted. */
-  dismissDisabled?: boolean;
-  /**
-   * Auto-dismiss delay; defaults to ten seconds for every tone, including errors.
-   * `null` explicitly keeps the toast until dismissed.
-   */
-  durationMs?: number | null;
-  width?: "md" | "lg";
-  "aria-label"?: string;
-};
-
-const WIDTH = {
-  md: "w-[min(340px,calc(100vw-24px))]",
-  lg: "w-[min(360px,calc(100vw-24px))]",
-} as const;
-
-/**
- * Calm tones sit on the opaque floating surface with the pane border; the attention tones
- * (warning, danger) keep Alert's own tone border and subtle tone surface.
- */
-const FLOATING = {
-  "--alert-border": "var(--ui-pane-border)",
-  "--alert-surface": "var(--ui-surface-floating)",
-} as CSSProperties;
-const CALM: Record<ToastTone, boolean> = {
-  neutral: true,
-  info: true,
-  success: true,
-  warning: false,
-  danger: false,
-};
-
-/**
- * The toast card without placement: floating surface, tone glyph, title, message,
- * actions, progress and dismiss, with auto-dismiss that pauses on hover and focus.
- * `Toast` places it in a corner stack; TransientNotice positions it itself.
- * @group feedback
- * @status internal
- */
-export function ToastCard({
-  message,
-  title,
-  tone = "info",
-  children,
-  action,
-  actions,
-  actionsPlacement = "header",
-  progress,
-  onDismiss,
-  dismissDisabled,
-  durationMs: durationOption,
-  width = "md",
-  position = "relative",
-  className,
-  style,
-  frameRef,
-  "aria-label": ariaLabel,
-}: ToastContentProps & {
-  /** `relative` in a stack; a self-positioned notice passes `fixed` or `absolute`. */
-  position?: "relative" | "fixed" | "absolute";
-  className?: string;
-  style?: CSSProperties;
-  frameRef?: Ref<HTMLDivElement>;
-}) {
-  const t = useT();
-  const durationMs = durationOption === undefined ? TOAST_VISIBLE_MS : durationOption;
-  const surface = useRef<HTMLDivElement>(null);
-  useAutoDismiss(surface, {
-    durationMs: onDismiss ? durationMs : null,
-    paused: dismissDisabled,
-    onExpire: () => onDismiss?.(),
-    resetKey: `${title ?? ""}\n${typeof message === "string" ? message : ""}`,
-  });
-  const actionButton = action ? (
-    <Button
-      variant="secondary"
-      size="sm"
-      disabled={action.disabled}
-      loading={action.pending}
-      onClick={action.onClick}
-    >
-      {action.label}
-    </Button>
-  ) : null;
-  // The Alert is the card itself: role, name, glyph and type on one element, so the
-  // announced region and the hover/focus timer surface are the visible frame.
-  return (
-    <Alert
-      ref={(node) => {
-        surface.current = node;
-        if (typeof frameRef === "function") frameRef(node);
-        else if (frameRef) frameRef.current = node;
-      }}
-      tone={tone === "neutral" ? "info" : tone}
-      icon={
-        tone === "neutral" ? (
-          <Info width={18} height={18} className="text-(--ui-text-secondary)" aria-hidden />
-        ) : undefined
-      }
-      aria-label={ariaLabel}
-      data-toast-tone={tone}
-      style={{ ...(CALM[tone] ? FLOATING : null), ...style }}
-      className={[
-        position,
-        "rounded-(--ui-radius-popup) shadow-(--ui-elevation-floating)",
-        WIDTH[width],
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-w-0 items-start gap-2">
-          <div className="min-w-0 flex-1 select-text self-center break-words">
-            {title ? <strong className="text-ui-secondary font-medium">{title}</strong> : message}
-          </div>
-          {onDismiss ? (
-            <Button
-              type="button"
-              variant="ghost"
-              iconOnly
-              label={t("Dismiss notice")}
-              tooltip={t("Dismiss notice")}
-              disabled={dismissDisabled}
-              onClick={onDismiss}
-            >
-              <X className="icon-sm" aria-hidden />
-            </Button>
-          ) : null}
-        </div>
-        {actions && actionsPlacement === "header" ? (
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            {actions}
-            {actionButton}
-          </div>
-        ) : null}
-        {children || progress || (title && message) ? (
-          <div className="min-w-0 select-text break-words">
-            {title ? message : null}
-            {children}
-            {progress ? (
-              <Progress compact value={progress.value * 100} max={100} label={progress.label} />
-            ) : null}
-          </div>
-        ) : null}
-        {actions && actionsPlacement === "footer" ? (
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            {actions}
-            {actionButton}
-          </div>
-        ) : null}
-        {!actions && actionButton ? (
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            {actionButton}
-          </div>
-        ) : null}
-      </div>
-    </Alert>
+    entry.node,
   );
 }
 
 export type ToastProps = ToastContentProps & {
   placement?: ToastPlacement;
-  /** See {@link ToastSlotProps.order}. */
-  order?: number;
 };
 
 /**
- * A declarative toast owned by a component: it shows while rendered and stacks in its corner.
+ * A declarative toast owned by a component: it shows while rendered and joins its corner's stack.
  *
  * ```tsx
  * {saved ? <Toast tone="success" message={t("Saved")} onDismiss={() => setSaved(false)} /> : null}
  * ```
- * All tones expire after ten seconds by default; expiry pauses on hover, focus inside,
- * and a hidden or unfocused window. Pass `durationMs={null}` for an explicitly persistent notice.
+ * The newest toast sits in front and up to three show at once; hovering or focusing the stack
+ * fans it out. All tones expire after ten seconds by default; expiry pauses on hover, focus
+ * inside, an open stack, while waiting behind the visible three, and in a hidden or unfocused
+ * window. Pass `durationMs={null}` for an
+ * explicitly persistent notice.
  * @group feedback
  * @use Background or nonblocking event owned by a component: result, undo, retry, progress.
- * @avoid Save feedback next to its control: InlineMessage. Page or panel notice: Alert. Code with no component: useToast. Corner notice with legacy API: TransientNotice.
+ * @avoid Save feedback next to its control: InlineMessage. Page or panel notice: Alert. Code with no component: useToast. A feature's own card: ToastSlot.
+ * @arc toast-stack
  */
-export function Toast({ placement = "bottom-end", order, ...props }: ToastProps) {
+export function Toast({ placement = "bottom-end", ...props }: ToastProps) {
   return (
-    <ToastSlot placement={placement} order={order}>
+    <StackedToast placement={placement}>
       <ToastCard {...props} />
-    </ToastSlot>
+    </StackedToast>
   );
 }
 
@@ -445,7 +331,6 @@ export type ToastOptions = Omit<ToastContentProps, "onDismiss"> & {
   /** Reusing an id replaces that toast in place (a retry updates its own failure). */
   id?: string;
   placement?: ToastPlacement;
-  order?: number;
   /** `false` hides the dismiss control; the toast then never expires and needs `dismiss(id)`. */
   dismissible?: boolean;
   /** Runs once when the toast leaves, by expiry, the dismiss control or `dismiss(id)`. */
@@ -518,13 +403,14 @@ export type ToastRegionProps = {
 
 /**
  * Mount once per window (the workspace layout). Renders the imperative `toast` queue and sets
- * the corner insets. Component-owned `<Toast>` and `<ToastSlot>` stack in the same corners
- * whether or not the region is mounted.
+ * the corner insets. Component-owned `<Toast>` and `<ToastSlot>` use the same corners whether
+ * or not the region is mounted.
  * @group feedback
  * @use Mount once per window to render the imperative `toast` queue and set corner insets.
  * @avoid Mounting a second region or a second toast layer. Component-owned messages: Toast.
  */
 export function ToastRegion({ insets: next }: ToastRegionProps) {
+  const handleDismiss = (id: string) => dismiss(id);
   const entries = useSyncExternalStore(
     subscribe,
     () => queue,
@@ -542,17 +428,14 @@ export function ToastRegion({ insets: next }: ToastRegionProps) {
   }, [key]);
   return (
     <>
-      {entries.map(
-        ({ id, placement, order, dismissible = true, onDismiss: _onDismiss, ...props }) => (
-          <Toast
-            key={id}
-            {...props}
-            placement={placement}
-            order={order}
-            onDismiss={dismissible ? () => dismiss(id) : undefined}
-          />
-        ),
-      )}
+      {entries.map(({ id, placement, dismissible = true, onDismiss: _onDismiss, ...props }) => (
+        <Toast
+          key={id}
+          {...props}
+          placement={placement}
+          onDismiss={dismissible ? () => handleDismiss(id) : undefined}
+        />
+      ))}
     </>
   );
 }

@@ -1,7 +1,7 @@
 import { pathKey } from "../../../shared/lib/paths";
 import { looksLikeProject } from "../../projects/model/recents";
 import type { InboxItem } from "../../inbox/model/githubTasks";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom } from "../../projects/model/projectNames";
 import { loadTabGroupLabels, subscribeTabGroupLabels } from "../../workspace/model/tabGroups";
 
 export type NotificationProject = {
@@ -17,10 +17,13 @@ const CATALOG_CHANGE = "bycoda:notification-projects-change";
 let catalogValue: string | null | undefined;
 let catalog: NotificationProject[] = [];
 
-function localNotificationProject(path: string): NotificationProject {
+function localNotificationProject(
+  path: string,
+  labels: Record<string, string>,
+): NotificationProject {
   return {
     id: `local:${pathKey(path)}`,
-    name: projectDisplayName(path),
+    name: projectDisplayNameFrom(path, labels),
     detail: path,
     kind: "local",
     paths: [path],
@@ -28,23 +31,42 @@ function localNotificationProject(path: string): NotificationProject {
 }
 
 export function knownNotificationProject(path: string): NotificationProject | undefined {
+  return knownNotificationProjectFrom(path, loadNotificationProjects(), loadTabGroupLabels());
+}
+
+function knownNotificationProjectFrom(
+  path: string,
+  stored: readonly NotificationProject[],
+  labels: Record<string, string>,
+): NotificationProject | undefined {
   if (!looksLikeProject(path)) return;
   const key = pathKey(path);
   const project =
-    loadNotificationProjects().find((project) =>
-      project.paths.some((entry) => pathKey(entry) === key),
-    ) ?? localNotificationProject(path);
+    stored.find((project) => project.paths.some((entry) => pathKey(entry) === key)) ??
+    localNotificationProject(path, labels);
   return {
     ...project,
-    name: projectDisplayName(path),
+    name: projectDisplayNameFrom(path, labels),
   };
 }
 
 export function knownNotificationProjectSelection(paths: readonly string[]): {
   projects: NotificationProject[];
 } {
+  return knownNotificationProjectSelectionFrom(
+    paths,
+    loadNotificationProjects(),
+    loadTabGroupLabels(),
+  );
+}
+
+/** `knownNotificationProjectSelection` over a given catalog and labels (see `notificationProjectsViewSnapshot`), so render reads no store. */
+export function knownNotificationProjectSelectionFrom(
+  paths: readonly string[],
+  stored: readonly NotificationProject[],
+  labels: Record<string, string>,
+): { projects: NotificationProject[] } {
   const requested = new Map(paths.filter(looksLikeProject).map((path) => [pathKey(path), path]));
-  const stored = loadNotificationProjects();
   const projects = new Map(
     stored
       .filter(
@@ -54,10 +76,25 @@ export function knownNotificationProjectSelection(paths: readonly string[]): {
       .map((project) => [project.id, project]),
   );
   for (const path of requested.values()) {
-    const project = knownNotificationProject(path)!;
+    const project = knownNotificationProjectFrom(path, stored, labels)!;
     projects.set(project.id, project);
   }
   return { projects: [...projects.values()] };
+}
+
+let snapshotCache: {
+  json: string;
+  value: { catalog: NotificationProject[]; labels: Record<string, string> };
+} | null = null;
+
+/** The catalog and labels of the current snapshot, with one identity while the snapshot string is unchanged (for `useSyncExternalStore`). */
+export function notificationProjectsViewSnapshot() {
+  const json = notificationProjectsSnapshot();
+  if (snapshotCache?.json !== json) {
+    const [catalog, labels] = JSON.parse(json) as [NotificationProject[], Record<string, string>];
+    snapshotCache = { json, value: { catalog, labels } };
+  }
+  return snapshotCache.value;
 }
 
 export function loadNotificationProjects(): NotificationProject[] {
@@ -163,7 +200,7 @@ export function inboxNotificationProject(item: NotificationWorkItem): Notificati
   }
   if (item.projectPath && looksLikeProject(item.projectPath)) {
     return {
-      ...localNotificationProject(item.projectPath),
+      ...localNotificationProject(item.projectPath, loadTabGroupLabels()),
       kind: "repository",
     };
   }

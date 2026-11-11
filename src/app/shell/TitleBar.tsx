@@ -380,13 +380,10 @@ function TitleTabItem({
   ].join(" · ");
 
   const setItemRef = sortable.setItemRef;
-  const setNode = useCallback(
-    (el: HTMLDivElement | null) => {
-      setItemRef(tab.id, el);
-      itemRef?.(el);
-    },
-    [tab.id, setItemRef, itemRef],
-  );
+  const setNode = (el: HTMLDivElement | null) => {
+    setItemRef(tab.id, el);
+    itemRef?.(el);
+  };
 
   return (
     <ActionHost
@@ -773,6 +770,22 @@ export function OverlayNav({
   );
 }
 
+function windowTitle(activeTab: Tab | undefined, cwd: string, appName: string): string {
+  const activeName = activeTab
+    ? activeTab.files[0]
+      ? basename(activeTab.files[0])
+      : activeTab.project
+    : "";
+  const project = cwd ? basename(cwd) : "";
+  if (activeName && project && activeName !== project) {
+    return `${activeName} — ${project} — ${appName}`;
+  }
+  if (project) {
+    return `${project} — ${appName}`;
+  }
+  return appName;
+}
+
 function TitleBarComponent({
   detached = false,
   onReturnToMain,
@@ -819,31 +832,27 @@ function TitleBarComponent({
   const maximizeShortcut = useKeybindingShortcut("Pane: Toggle Maximized");
   const closeShortcut = useKeybindingShortcut("Pane: Close");
   const layoutAnchorRef = useRef<HTMLDivElement | null>(null);
-  const layoutMenuItems = useMemo(
-    () =>
-      layout
-        ? [
-            ...buildLayoutMenuItems({
-              current: layout.current,
-              canArrange: layout.canArrange,
-              splitRightShortcut: splitRightShortcut ?? undefined,
-              splitDownShortcut: splitDownShortcut ?? undefined,
-            }),
-            ...(layout.onToggleMaximize
-              ? [
-                  { kind: "sep" as const },
-                  {
-                    kind: "item" as const,
-                    id: "toggle-maximize",
-                    label: t(layout.maximized ? "Restore panel layout" : "Maximize panel"),
-                    shortcut: maximizeShortcut ?? undefined,
-                  },
-                ]
-              : []),
-          ]
-        : [],
-    [layout, splitRightShortcut, splitDownShortcut, maximizeShortcut, t],
-  );
+  const layoutMenuItems = layout
+    ? [
+        ...buildLayoutMenuItems({
+          current: layout.current,
+          canArrange: layout.canArrange,
+          splitRightShortcut: splitRightShortcut ?? undefined,
+          splitDownShortcut: splitDownShortcut ?? undefined,
+        }),
+        ...(layout.onToggleMaximize
+          ? [
+              { kind: "sep" as const },
+              {
+                kind: "item" as const,
+                id: "toggle-maximize",
+                label: t(layout.maximized ? "Restore panel layout" : "Maximize panel"),
+                shortcut: maximizeShortcut ?? undefined,
+              },
+            ]
+          : []),
+      ]
+    : [];
   const onPickLayoutMenu = (id: string) => {
     setLayoutMenu(null);
     if (!layout) return;
@@ -1011,13 +1020,10 @@ function TitleBarComponent({
   });
   const paneToTabDrop = useExternalTitleTabDrop();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
-  const setTabStripRef = useCallback(
-    (el: HTMLDivElement | null) => {
-      tabStripRef.current = el;
-      lockOverscroll(el);
-    },
-    [lockOverscroll],
-  );
+  const setTabStripRef = (el: HTMLDivElement | null) => {
+    tabStripRef.current = el;
+    lockOverscroll(el);
+  };
   const [tabMenu, setTabMenu] = useState<{
     tabId: string;
     x: number;
@@ -1029,15 +1035,12 @@ function TitleBarComponent({
     tabs,
     dragging: Boolean(sortable.draggingId),
   });
-  const setActiveTabNode = useCallback(
-    (node: HTMLDivElement | null) => {
-      activeTabRef.current = node;
-    },
-    [activeTabRef],
-  );
+  const setActiveTabNode = (node: HTMLDivElement | null) => {
+    activeTabRef.current = node;
+  };
   const canDrag = tabs.length > 1 || Boolean(onMoveToNewWindow);
 
-  const activeTab = useMemo(() => tabs.find((t) => t.id === activeId), [activeId, tabs]);
+  const activeTab = tabs.find((t) => t.id === activeId);
   // The product name differs between the official, fork and dev builds.
   const [appName, setAppName] = useState<string>(PRODUCT_IDENTITY.displayName);
   useEffect(() => {
@@ -1049,21 +1052,7 @@ function TitleBarComponent({
       }
     })();
   }, []);
-  const systemTitle = useMemo(() => {
-    const activeName = activeTab
-      ? activeTab.files[0]
-        ? basename(activeTab.files[0])
-        : activeTab.project
-      : "";
-    const project = cwd ? basename(cwd) : "";
-    if (activeName && project && activeName !== project) {
-      return `${activeName} — ${project} — ${appName}`;
-    }
-    if (project) {
-      return `${project} — ${appName}`;
-    }
-    return appName;
-  }, [activeTab, cwd, appName]);
+  const systemTitle = windowTitle(activeTab, cwd, appName);
 
   useEffect(() => {
     document.title = systemTitle;

@@ -26,6 +26,7 @@ beforeEach(() => {
         resized = callback;
       }
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

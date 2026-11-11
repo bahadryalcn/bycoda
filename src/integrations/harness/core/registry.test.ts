@@ -1350,6 +1350,38 @@ describe("harness registry", () => {
     },
   );
 
+  it("reports an accepted turn as started unless the provider already did", async () => {
+    const started = async (sessionId: string, sendTurn: (input: SendTurnInput) => void) => {
+      registerHarness(stub("cursor", { sendTurn: vi.fn(async (input) => sendTurn(input)) }));
+      const events: unknown[] = [];
+      await sendHarnessTurn({
+        harness: "cursor",
+        sessionId,
+        cwd: "/tmp",
+        model: "cursor:test",
+        runtimeMode: "supervised" as const,
+        text: "hi",
+        onEvent: (event) => events.push(event),
+      });
+      return events.filter((event) => (event as { type: string }).type === "turn.started");
+    };
+
+    // A provider that only acknowledges the prompt stays silent while the model
+    // thinks; the acknowledgement is what ends "Waiting for <provider>".
+    expect(
+      await started("accepted-silent", (input) => {
+        input.onAccepted?.();
+        input.onAccepted?.();
+      }),
+    ).toEqual([{ type: "turn.started" }]);
+    expect(
+      await started("accepted-named", (input) => {
+        input.onEvent({ type: "turn.started", providerTurnId: "turn-1" });
+        input.onAccepted?.();
+      }),
+    ).toEqual([{ type: "turn.started", providerTurnId: "turn-1" }]);
+  });
+
   it("holds the next send until the cancelled adapter operation finishes retiring", async () => {
     let finishTurn!: () => void;
     let finishCancel!: () => void;

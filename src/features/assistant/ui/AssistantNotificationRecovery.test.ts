@@ -26,6 +26,7 @@ it("checks only the selected project's original notification status and never re
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

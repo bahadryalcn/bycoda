@@ -78,6 +78,7 @@ import {
   ImagePlus as LucideImagePlus,
   Home as LucideHome,
   Inbox as LucideInbox,
+  Bell as LucideBell,
   BellOff as LucideBellOff,
   Keyboard as LucideKeyboard,
   List as LucideListBullet,
@@ -328,6 +329,7 @@ export const Globe = wrap(LucideGlobe, "Globe");
 export const Internet = wrap(LucideInternet, "Internet");
 export const ImagePlus = wrap(LucideImagePlus, "ImagePlus");
 export const Inbox = wrap(LucideInbox, "Inbox");
+export const Bell = wrap(LucideBell, "Bell");
 export const BellOff = wrap(LucideBellOff, "BellOff");
 export const Keyboard = wrap(LucideKeyboard, "Keyboard");
 export const ListBullet = wrap(LucideListBullet, "ListBullet");

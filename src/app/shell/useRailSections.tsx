@@ -3,7 +3,6 @@ import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { useT } from "../../shared/i18n";
 import {
   useEffect,
-  useMemo,
   useState,
   type KeyboardEvent,
   type MouseEvent,
@@ -216,8 +215,8 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
     x: number;
     y: number;
   } | null>(null);
-  const shownOrder = useMemo(() => order.filter((id) => shown.has(id)), [order, shown]);
-  const commit = (next: RailSectionId[]) => {
+  const shownOrder = order.filter((id) => shown.has(id));
+  const handleCommit = (next: RailSectionId[]) => {
     setOrder(next);
     saveRailSectionOrder(next);
   };
@@ -232,7 +231,7 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
     })[id];
   const sortable = useAnimatedReorder(
     shownOrder,
-    (ids) => commit(applyShownSectionOrder(order, ids)),
+    (ids) => handleCommit(applyShownSectionOrder(order, ids)),
     "y",
     undefined,
     { foldOnDrag: true, label: sectionName },
@@ -286,26 +285,20 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
         {
           kind: "item",
           id: "up",
-          get label() {
-            return t("Move section up");
-          },
+          label: t("Move section up"),
           disabled: position <= 0,
         },
         {
           kind: "item",
           id: "down",
-          get label() {
-            return t("Move section down");
-          },
+          label: t("Move section down"),
           disabled: position < 0 || position >= shownOrder.length - 1,
         },
         { kind: "sep" },
         {
           kind: "item",
           id: "reset",
-          get label() {
-            return t("Reset rail order");
-          },
+          label: t("Reset rail order"),
           disabled: isDefaultRailSectionOrder(order),
         },
       ]}
@@ -319,8 +312,8 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
     />
   ) : null;
 
-  const toggleCollapsed = (id: CollapsibleRailSection) => {
+  const handleToggleCollapsed = (id: CollapsibleRailSection) => {
     setCollapsed(toggleRailSectionCollapse(id, !collapsed[id]));
   };
-  return { order, drag, folded, element, collapsed, toggleCollapsed };
+  return { order, drag, folded, element, collapsed, toggleCollapsed: handleToggleCollapsed };
 }

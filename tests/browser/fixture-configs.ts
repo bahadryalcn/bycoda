@@ -57,6 +57,7 @@ import assistantSettings from "./assistant/playwright.assistant-settings.config.
 import generatedFileLinks from "./chat/generated-file-links.playwright.config.ts";
 import inlineVisuals from "./chat/playwright.inline-visuals.config.ts";
 import chatCitations from "./chat/playwright.chat-citations.config.ts";
+import renderBudget from "./render-budget/playwright.render-budget.config.ts";
 import workingProjectSummary from "./workspace/working-project-summary.playwright.config.ts";
 import assistantRoomRemote from "./assistant/playwright.assistant-room-remote.config.ts";
 import devices from "./devices/playwright.devices.config.ts";
@@ -72,6 +73,7 @@ export const fixtureConfigs = {
   "tests/browser/chat/playwright.inline-visuals.config.ts": inlineVisuals,
   "tests/browser/chat/playwright.chat-citations.config.ts": chatCitations,
   "tests/browser/workspace/working-project-summary.playwright.config.ts": workingProjectSummary,
+  "tests/browser/render-budget/playwright.render-budget.config.ts": renderBudget,
   "tests/browser/chat/attachment-cards.playwright.config.ts": attachmentCards,
   "tests/browser/sessions/session-row-layout.playwright.config.ts": sessionRowLayout,
   "tests/browser/chat/generated-file-links.playwright.config.ts": generatedFileLinks,

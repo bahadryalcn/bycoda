@@ -17,7 +17,12 @@ import {
   sessionProviderAccountId,
   setDefaultProviderAccount,
   setProviderAccountColor,
+  providerAccountExistsIn,
+  defaultProviderAccountIdIn,
+  sessionProviderAccountIdIn,
+  providerAccountLabelIn,
 } from "./providerAccounts";
+import { t as moduleT } from "../../../shared/i18n/core";
 
 beforeEach(() => {
   localStorage.clear();
@@ -400,5 +405,22 @@ it("reports storage quota failure without announcing a successful account rename
   } finally {
     write.mockRestore();
     warn.mockRestore();
+  }
+});
+
+it("list-based variants answer exactly like the store-reading functions", () => {
+  saveProviderAccount({ id: "account-a", provider: "claude", label: "A" });
+  setDefaultProviderAccount("claude", "account-a");
+  const accounts = providerAccounts("claude");
+  const sessions = [{}, { providerAccountId: "x" }, { providerSessionId: "p" }];
+  for (const id of [undefined, DEFAULT_PROVIDER_ACCOUNT_ID, "account-a", "gone"]) {
+    expect(providerAccountExistsIn(accounts, id)).toBe(providerAccountExists("claude", id));
+    expect(providerAccountLabelIn(accounts, id, moduleT)).toBe(providerAccountLabel("claude", id));
+  }
+  expect(defaultProviderAccountIdIn(accounts)).toBe(defaultProviderAccountId("claude"));
+  for (const session of sessions) {
+    expect(sessionProviderAccountIdIn(accounts, session)).toBe(
+      sessionProviderAccountId("claude", session),
+    );
   }
 });

@@ -1,14 +1,14 @@
 import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { t, useT } from "../../../shared/i18n";
+import { t as translate, useT } from "../../../shared/i18n";
 import { createContext, useContext } from "react";
 import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
 import { MemberAvatar, memberTraits } from "../../crews/public/mentions";
 import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import { blockLifecycle, type DockAgentStatus } from "../model/activityDock";
-import { findModelIdentity } from "../model/models";
+import { useModelIdentity } from "../model/modelHooks";
 import type { AgentStep, Block, HarnessId } from "../model/session";
 import {
   subagentReport,
@@ -27,8 +27,10 @@ import { AgentMarkdown } from "./AgentMarkdown";
  * and the report through these two pieces, so a run reads the same in either.
  */
 
+type Translate = ReturnType<typeof useT>;
+
 /** Same lifecycle rule as the dock (`blockLifecycle`), worded for a run. */
-function lifecycleLabel(lifecycle: DockAgentStatus): string {
+function lifecycleLabel(lifecycle: DockAgentStatus, t: Translate): string {
   switch (lifecycle) {
     case "stopped":
       return t("Stopped by you");
@@ -68,8 +70,8 @@ export function SubagentMarks({
   failed?: boolean;
 }) {
   const turnHarness = useContext(RunHarness);
-  const provider =
-    harness ?? (model ? findModelIdentity(model)?.harness : undefined) ?? turnHarness;
+  const modelHarness = useModelIdentity(model)?.harness;
+  const provider = harness ?? modelHarness ?? turnHarness;
   return (
     <span className="flex shrink-0 items-center gap-1" aria-hidden="true">
       {member ? (
@@ -95,7 +97,12 @@ export function SubagentMarks({
 }
 
 export function runLabel(block: Block, busy: boolean): string {
-  return lifecycleLabel(blockLifecycle(block, busy));
+  return lifecycleLabel(blockLifecycle(block, busy), translate);
+}
+
+/** `runLabel` with the caller's bound translator, for components the React Compiler compiles. */
+export function runLabelWith(block: Block, busy: boolean, t: Translate): string {
+  return lifecycleLabel(blockLifecycle(block, busy), t);
 }
 
 export function SubagentStatusSummary({
@@ -162,7 +169,7 @@ export function SubagentStateLine({
         }
         icon={running ? <StatusDot label={t("Running")} aria-hidden /> : undefined}
       >
-        {lifecycleLabel(lifecycle)}
+        {lifecycleLabel(lifecycle, t)}
       </Badge>
       <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
       {identity || visibleSummary ? (

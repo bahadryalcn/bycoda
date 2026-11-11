@@ -124,7 +124,14 @@ export function useSessionDraftActions({
       );
       return true;
     },
-    [invalidateLoadedSession],
+    [
+      invalidateLoadedSession,
+      setHistory,
+      pendingPersist,
+      lastPersisted,
+      setStoredLinkedSessions,
+      lastPersistedUserBlock,
+    ],
   );
 
   return { onSaveDraft, onRemoveDraft };

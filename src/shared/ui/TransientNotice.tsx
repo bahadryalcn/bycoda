@@ -2,7 +2,8 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../lib/layers";
 import type { AlertTone } from "./Alert";
-import { ToastCard, ToastSlot } from "./ToastRegion";
+import { ToastCard } from "./ToastCard";
+import { Toast } from "./ToastRegion";
 
 export type TransientNoticeTone = AlertTone;
 
@@ -30,7 +31,7 @@ export interface TransientNoticeProps {
   durationMs?: number | null;
   /**
    * Corner stack. Viewport notices without `offset`/`onHeightChange` join the shared corner
-   * stack (see `ToastRegion`) and offset themselves by layout.
+   * stack (see `ToastRegion`): newest in front, older ones tucked behind.
    */
   placement?: "bottom-end" | "top-end";
   /**
@@ -65,11 +66,7 @@ export function TransientNotice({
   ...props
 }: TransientNoticeProps) {
   if (anchor === "viewport" && offset === undefined && !onHeightChange)
-    return (
-      <ToastSlot placement={placement}>
-        <ToastCard {...props} />
-      </ToastSlot>
-    );
+    return <Toast placement={placement} {...props} />;
   return (
     <PositionedNotice
       {...props}

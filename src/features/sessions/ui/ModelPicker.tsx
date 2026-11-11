@@ -129,6 +129,24 @@ type RecentMenu = { models: AccountModelChoice[] };
 
 const MENU_WIDTH = 250;
 
+/** Account the provider tab `target` runs on: the one picked while browsing, else the current one, else its default. */
+function accountForTab(
+  target: HarnessId,
+  tabAccounts: Partial<Record<HarnessId, string>>,
+  currentHarness: HarnessId,
+  currentAccountId: string | undefined,
+  hostAccounts: unknown,
+): string {
+  return (
+    tabAccounts[target] ??
+    (target === currentHarness && currentAccountId
+      ? currentAccountId
+      : hostAccounts === undefined && supportsProviderAccounts(target)
+        ? defaultProviderAccountId(target)
+        : "default")
+  );
+}
+
 export function ModelPicker({
   harness,
   model,
@@ -207,16 +225,27 @@ export function ModelPicker({
   const field = presentation === "field";
   const inherit = hideSettings ? undefined : inheritChoice;
   const inheritSelected = inherit?.selected === true;
+  // The local default account lives in browser storage, so React reads it through its store.
+  const localDefaultAccountId = useSyncExternalStore(
+    subscribeProviderAccounts,
+    () => (supportsProviderAccounts(harness) ? defaultProviderAccountId(harness) : undefined),
+    () => (supportsProviderAccounts(harness) ? defaultProviderAccountId(harness) : undefined),
+  );
   const currentAccountId = supportsProviderAccounts(harness)
-    ? (accountId ?? (source.accounts === undefined ? defaultProviderAccountId(harness) : "default"))
+    ? (accountId ?? (source.accounts === undefined ? localDefaultAccountId : "default"))
     : undefined;
   const currentChoiceKey = modelChoiceKey({
     ...current,
     accountId: accountChoices ? currentAccountId : undefined,
   });
-  const currentLabel = accountChoices
-    ? modelAccountLabel(current, currentAccountId, source.accounts)
-    : current.name;
+  // Local account names live in browser storage, so React reads the label through their store.
+  const currentLabel = useSyncExternalStore(
+    subscribeProviderAccounts,
+    () =>
+      accountChoices ? modelAccountLabel(current, currentAccountId, source.accounts) : current.name,
+    () =>
+      accountChoices ? modelAccountLabel(current, currentAccountId, source.accounts) : current.name,
+  );
   // The account is part of the identity only while there is a choice between
   // accounts; a lone default account stays out of the trigger.
   const triggerAccountLabel = useMemo(() => {
@@ -316,6 +345,32 @@ export function ModelPicker({
         .join(" · ");
   const providerKey = pickerHarnesses.join(",");
   const visibleTab = coerceModelPickerTab(tab, (id) => pickerHarnesses.includes(id));
+  const accountFor = (target: HarnessId) =>
+    accountForTab(target, tabAccounts, current.harness, currentAccountId, source.accounts);
+  // The browsed provider's account may be the local default, which lives in browser storage.
+  const browsedAccountId = useSyncExternalStore(
+    subscribeProviderAccounts,
+    () =>
+      visibleTab === "favorites"
+        ? ""
+        : accountForTab(
+            visibleTab,
+            tabAccounts,
+            current.harness,
+            currentAccountId,
+            source.accounts,
+          ),
+    () =>
+      visibleTab === "favorites"
+        ? ""
+        : accountForTab(
+            visibleTab,
+            tabAccounts,
+            current.harness,
+            currentAccountId,
+            source.accounts,
+          ),
+  );
   // Recent models that stopped being offered drop out of the open menu.
   const recentModels = useMemo(() => {
     void catalogVersion;
@@ -356,7 +411,7 @@ export function ModelPicker({
     source,
     catalogVersion,
     favorites,
-    providerKey,
+    pickerHarnesses,
     query,
     visibleTab,
     accountChoices,
@@ -525,14 +580,6 @@ export function ModelPicker({
     if (setting.id === "crossAdvisor" && !value) next.advisor = "off";
     onSettingsChange(next);
   };
-
-  const defaultAccountFor = (target: HarnessId) =>
-    source.accounts === undefined && supportsProviderAccounts(target)
-      ? defaultProviderAccountId(target)
-      : "default";
-  const accountFor = (target: HarnessId) =>
-    tabAccounts[target] ??
-    (target === current.harness && currentAccountId ? currentAccountId : defaultAccountFor(target));
 
   const pickModel = (item: AccountModelChoice) => {
     if (
@@ -774,7 +821,7 @@ export function ModelPicker({
             ) : undefined
           }
           accountHarness={accountChoices && visibleTab !== "favorites" ? visibleTab : undefined}
-          accountId={visibleTab === "favorites" ? "" : accountFor(visibleTab)}
+          accountId={browsedAccountId}
           accountListOpen={accountListOpen}
           onAccountListOpen={setAccountListOpen}
           onSelectAccount={selectAccount}

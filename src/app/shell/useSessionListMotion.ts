@@ -17,7 +17,7 @@ export function useSessionListMotion(
   listedSessions: readonly SessionSummary[],
 ) {
   const pendingRects = useRef<Map<string, DOMRect> | null>(null);
-  const captureListMotion = () => {
+  const handleCaptureListMotion = () => {
     const root = scrollRef.current;
     if (!root || !decorativeMotionEnabled()) return;
     const rects = new Map<string, DOMRect>();
@@ -65,5 +65,5 @@ export function useSessionListMotion(
     }
   }, [cwd, listedSessions]);
 
-  return { captureListMotion, insertMotion };
+  return { captureListMotion: handleCaptureListMotion, insertMotion };
 }

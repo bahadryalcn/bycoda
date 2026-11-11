@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isRemoteProjectPath, sameProjectPath } from "../../features/projects/model/recents";
 import { isBlankSession } from "../../features/projects/model/projectReturn";
 import type { Session } from "../../features/sessions/model/session";
@@ -243,14 +243,17 @@ export function useWorkspaceNavigation(options: Options) {
     );
   }, []);
 
-  return {
-    captureRequest,
-    selectWorkspace,
-    selectProject,
-    cancel,
-    isSwitching,
-    pending,
-    error,
-    revision,
-  };
+  return useMemo(
+    () => ({
+      captureRequest,
+      selectWorkspace,
+      selectProject,
+      cancel,
+      isSwitching,
+      pending,
+      error,
+      revision,
+    }),
+    [captureRequest, selectWorkspace, selectProject, cancel, isSwitching, pending, error, revision],
+  );
 }

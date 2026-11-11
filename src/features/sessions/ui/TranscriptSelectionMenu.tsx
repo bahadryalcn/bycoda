@@ -13,7 +13,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { serializeChatCitation } from "../model/chatCitation";
 import styles from "./TranscriptSelectionMenu.module.css";
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { Popover } from "../../../shared/ui/Popover";
 import {
   FloatingButtonGroup,
@@ -44,6 +44,47 @@ type Operations = {
   errors: Record<string, string>;
 };
 
+type OperationSettle = {
+  id: string;
+  owner: number;
+  epoch: React.RefObject<number>;
+  running: React.RefObject<Set<string>>;
+  update: (patch: (current: Operations) => Operations) => void;
+  onSelect: () => void | Promise<void>;
+  dismiss: boolean;
+  onSuccess: () => void;
+};
+
+// Module-level so the try/finally stays out of the hook the React Compiler compiles.
+async function settleSelectionOperation({
+  id,
+  owner,
+  epoch,
+  running,
+  update,
+  onSelect,
+  dismiss,
+  onSuccess,
+}: OperationSettle) {
+  try {
+    const result = onSelect();
+    if (result) await result;
+    if (owner !== epoch.current) return;
+    if (dismiss) {
+      onSuccess();
+    }
+  } catch (error) {
+    if (owner !== epoch.current) return;
+    const message = error instanceof Error ? error.message : String(error);
+    update((current) => ({ ...current, errors: { ...current.errors, [id]: message } }));
+  } finally {
+    if (owner === epoch.current) {
+      running.current.delete(id);
+      update((current) => ({ ...current, pending: { ...current.pending, [id]: false } }));
+    }
+  }
+}
+
 function useSelectionOperationRunner(
   operationEpoch: number,
   setOperations: React.Dispatch<React.SetStateAction<Operations>>,
@@ -56,38 +97,28 @@ function useSelectionOperationRunner(
     running.current.clear();
   }, [operationEpoch]);
 
-  const run = useCallback(
-    async (id: string, onSelect: () => void | Promise<void>, dismiss = true) => {
-      if (running.current.has(id)) return;
-      running.current.add(id);
-      const owner = epoch.current;
-      const update = (patch: (current: Operations) => Operations) =>
-        setOperations((current) => (current.epoch === owner ? patch(current) : current));
-      update((current) => ({
-        ...current,
-        pending: { ...current.pending, [id]: true },
-        errors: { ...current.errors, [id]: "" },
-      }));
-      try {
-        const result = onSelect();
-        if (result) await result;
-        if (owner !== epoch.current) return;
-        if (dismiss) {
-          onSuccess();
-        }
-      } catch (error) {
-        if (owner !== epoch.current) return;
-        const message = error instanceof Error ? error.message : String(error);
-        update((current) => ({ ...current, errors: { ...current.errors, [id]: message } }));
-      } finally {
-        if (owner === epoch.current) {
-          running.current.delete(id);
-          update((current) => ({ ...current, pending: { ...current.pending, [id]: false } }));
-        }
-      }
-    },
-    [onSuccess, setOperations],
-  );
+  const run = async (id: string, onSelect: () => void | Promise<void>, dismiss = true) => {
+    if (running.current.has(id)) return;
+    running.current.add(id);
+    const owner = epoch.current;
+    const update = (patch: (current: Operations) => Operations) =>
+      setOperations((current) => (current.epoch === owner ? patch(current) : current));
+    update((current) => ({
+      ...current,
+      pending: { ...current.pending, [id]: true },
+      errors: { ...current.errors, [id]: "" },
+    }));
+    await settleSelectionOperation({
+      id,
+      owner,
+      epoch,
+      running,
+      update,
+      onSelect,
+      dismiss,
+      onSuccess,
+    });
+  };
   return run;
 }
 

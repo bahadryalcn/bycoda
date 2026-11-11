@@ -287,6 +287,10 @@ function Seconds({ value, reduced }: { value: number; reduced: boolean }) {
   );
 }
 
+function invokeHandler(handler: (() => void | Promise<unknown>) | undefined) {
+  return handler?.();
+}
+
 export function ConfirmMorph({
   label,
   icon,
@@ -382,7 +386,7 @@ export function ConfirmMorph({
       setCounting(false);
       let result: void | Promise<unknown> | undefined;
       try {
-        result = handler?.();
+        result = invokeHandler(handler);
       } catch {
         go("error");
         setAnnouncement(errorLabel);
@@ -409,14 +413,14 @@ export function ConfirmMorph({
       go("done");
       setAnnouncement(onUndo ? `${doneLabel}. ${undoLabel}` : doneLabel);
     },
-    [doneLabel, errorLabel, go, onConfirm, onUndo, pendingLabel, undoLabel, undoingLabel],
+    [doneLabel, errorLabel, go, onConfirm, onUndo, pendingLabel, t, undoLabel, undoingLabel],
   );
 
   const cancel = useCallback(() => {
     onCancel?.();
     toIdle();
     setAnnouncement(t("Cancelled"));
-  }, [onCancel, toIdle]);
+  }, [onCancel, t, toIdle]);
   const expire = useRef(() => {});
   useLayoutEffect(() => {
     expire.current = () => {

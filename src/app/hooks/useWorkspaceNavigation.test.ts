@@ -417,3 +417,36 @@ it("keeps a split tab grouped under another project without leaving navigation p
   expect(view.sessions).toHaveLength(2);
   expect(move).not.toHaveBeenCalled();
 });
+
+it("returns the same navigation object across renders that change nothing it reports", async () => {
+  const session = chat("blank");
+  const tabs = [newTab(session.id)];
+  const sessions = [session];
+  const seen: (typeof navigation)[] = [];
+  let rerender!: () => void;
+  function Harness() {
+    const [, setTick] = useState(0);
+    rerender = () => setTick((tick) => tick + 1);
+    const heldPins = useRef(new Map<string, string>());
+    const result = useWorkspaceNavigation({
+      project,
+      activeTabId: tabs[0].id,
+      tabs,
+      sessions,
+      pins: heldPins.current,
+      tabWorkspace: () => null,
+      moveSession: async () => {},
+      activateTab: () => {},
+      createTab: () => "",
+    });
+    seen.push(result);
+    return null;
+  }
+  await act(async () => root.render(createElement(Harness)));
+  // Mount effects settle (revision bump) first; only then is a rerender idle.
+  await act(async () => rerender());
+  const settled = seen.at(-1);
+  await act(async () => rerender());
+  expect(seen.length).toBeGreaterThan(2);
+  expect(seen.at(-1)).toBe(settled);
+});

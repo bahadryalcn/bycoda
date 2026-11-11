@@ -11,6 +11,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { withSlowStartupNotice } from "../../core/providerStartupStatus";
 import {
   preserveProviderFailure,
   createProviderRetirementLedger,
@@ -127,7 +128,9 @@ async function runTurn(
   cancelled: () => boolean,
 ): Promise<void> {
   if (cancelled()) return;
-  const live = await ensureLive(input, path, cancelled);
+  const live = await withSlowStartupNotice(input.onEvent, "Antigravity", () =>
+    ensureLive(input, path, cancelled),
+  );
   if (!live || cancelled()) return;
   observeProviderProcess(input, live.handle);
   beginProviderOperation(input.operationContext, live.handle);

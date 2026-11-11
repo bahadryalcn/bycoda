@@ -435,21 +435,27 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
     [sessionsRef, setSessions],
   );
 
-  const onQueuedMessageEditingChange = useCallback((sessionId: string, messageId?: string) => {
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId ? { ...session, editingQueuedMessageId: messageId } : session,
-      ),
-    );
-  }, []);
+  const onQueuedMessageEditingChange = useCallback(
+    (sessionId: string, messageId?: string) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId ? { ...session, editingQueuedMessageId: messageId } : session,
+        ),
+      );
+    },
+    [setSessions],
+  );
 
-  const onReorderQueuedMessages = useCallback((sessionId: string, messageIds: string[]) => {
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId ? reorderSessionQueue(session, messageIds) : session,
-      ),
-    );
-  }, []);
+  const onReorderQueuedMessages = useCallback(
+    (sessionId: string, messageIds: string[]) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId ? reorderSessionQueue(session, messageIds) : session,
+        ),
+      );
+    },
+    [setSessions],
+  );
 
   const onEditQueuedMessage = useCallback(
     (sessionId: string, messageId: string, text: string, attachments: Attachment[]) => {
@@ -472,7 +478,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
         ),
       );
     },
-    [],
+    [setSessions],
   );
 
   /** Resolves true once Stop has settled the turn and the row is still queued. */

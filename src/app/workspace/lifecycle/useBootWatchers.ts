@@ -29,7 +29,7 @@ export function useBootWatchers({ setRecents }: BootWatcherDeps): void {
     const timer = window.setTimeout(() => void preloadEditorFind(), 1_500);
     return () => window.clearTimeout(timer);
   }, []);
-  useEffect(() => subscribeSyncedProjectsAdded(() => setRecents(loadRecents())), []);
+  useEffect(() => subscribeSyncedProjectsAdded(() => setRecents(loadRecents())), [setRecents]);
 }
 
 /** Probes the OS notification permission once; see the call site for the reason. */

@@ -143,6 +143,18 @@ export function writeToolsDraftPart<K extends keyof ToolsDraftTransfer>(
   const id = key(scope);
   snapshots.set(id, { ...snapshots.get(id), [domain]: structuredClone(value) });
 }
+// Shallow update of primitive fields: high-frequency state (scroll) must not clone large parts.
+export function patchToolsDraftPart<K extends keyof ToolsDraftTransfer>(
+  scope: ToolsDraftScope | undefined,
+  domain: K,
+  patch: Partial<NonNullable<ToolsDraftTransfer[K]>>,
+): void {
+  if (!scope) return;
+  const id = key(scope);
+  const current = snapshots.get(id);
+  if (current?.[domain])
+    snapshots.set(id, { ...current, [domain]: { ...current[domain], ...patch } });
+}
 export function peekToolsDraftPart<K extends keyof ToolsDraftTransfer>(
   scope: ToolsDraftScope,
   domain: K,

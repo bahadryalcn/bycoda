@@ -9,8 +9,9 @@ const mock = vi.hoisted(() => ({
 }));
 vi.mock("../model/assistantClient", () => ({
   assistantRequest: mock.request,
-  refreshAssistant: mock.refresh,
-  useAssistantSnapshot: () => ({ snapshot: null }),
+  refreshAssistantQuietly: mock.refresh,
+  useAssistantSnapshot: () => null,
+  watchAssistantSnapshot: () => () => undefined,
 }));
 vi.mock("../../notifications/hooks/useBackgroundNotifications", () => ({
   isLeadWindow: mock.lead,

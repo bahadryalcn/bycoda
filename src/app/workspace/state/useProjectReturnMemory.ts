@@ -35,7 +35,7 @@ export function useProjectReturnMemory({
       activeTabId: activeTabIdRef.current,
     });
     return projectReturnRef.current;
-  }, []);
+  }, [activeTabIdRef, tabsRef]);
   useEffect(() => {
     readProjectReturnMemory();
   }, [activeTabId, tabs, sessions, readProjectReturnMemory]);

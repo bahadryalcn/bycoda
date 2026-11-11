@@ -267,6 +267,7 @@ function emit() {
   for (const listener of listeners) listener();
 }
 
+/** Subscribe to catalog changes (the `useSyncExternalStore` subscribe for model hooks). */
 export function subscribeModels(onStoreChange: () => void): () => void {
   listeners.add(onStoreChange);
   return () => {
@@ -274,6 +275,7 @@ export function subscribeModels(onStoreChange: () => void): () => void {
   };
 }
 
+/** Catalog version, the snapshot paired with `subscribeModels`. */
 export function getModelSnapshot(): number {
   return catalogVersion;
 }

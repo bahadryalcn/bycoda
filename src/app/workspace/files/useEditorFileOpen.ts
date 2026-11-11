@@ -236,7 +236,7 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
       );
       setComposerFocused(false);
     },
-    [activeTabId],
+    [activeTabId, sessionsRef, tabsRef, setTabs, setComposerFocused],
   );
 
   useExternalFileDrop(onOpenFile);

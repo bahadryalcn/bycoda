@@ -47,7 +47,7 @@ export function useRemoteSessionDeleted(deps: {
       if (closePlan.action === "keep") onClearTabSession(tab.id);
       else onCloseTab(tab.id);
     },
-    [onClearTabSession, onCloseTab, tabCloseScope],
+    [onClearTabSession, onCloseTab, tabCloseScope, tabWorktreeOf, tabsRef, sessionsRef],
   );
 
   return { onRemoteSessionDeleted };
@@ -78,22 +78,25 @@ export function usePaneFileOrder(deps: {
 }): { onReorderFiles: (paneId: string, ids: string[]) => void } {
   const { isMovingPane, setTabs } = deps;
 
-  const onReorderFiles = useCallback((paneId: string, ids: string[]) => {
-    if (isMovingPane(paneId)) return;
-    setTabs((prev) =>
-      prev.map((tab) => {
-        const found = findSurfacePane(tab, paneId);
-        if (!found) return tab;
-        return withSurfacePanes(
-          tab,
-          found.kind,
-          surfacePanes(tab, found.kind).map((pane) =>
-            pane.id === paneId ? { ...pane, files: orderByIds(pane.files, ids) } : pane,
-          ),
-        );
-      }),
-    );
-  }, []);
+  const onReorderFiles = useCallback(
+    (paneId: string, ids: string[]) => {
+      if (isMovingPane(paneId)) return;
+      setTabs((prev) =>
+        prev.map((tab) => {
+          const found = findSurfacePane(tab, paneId);
+          if (!found) return tab;
+          return withSurfacePanes(
+            tab,
+            found.kind,
+            surfacePanes(tab, found.kind).map((pane) =>
+              pane.id === paneId ? { ...pane, files: orderByIds(pane.files, ids) } : pane,
+            ),
+          );
+        }),
+      );
+    },
+    [setTabs, isMovingPane],
+  );
 
   return { onReorderFiles };
 }
@@ -105,15 +108,18 @@ export function useFileErrorCounts(deps: {
   const { setFileErrorCounts } = deps;
 
   /** The editor reports 0 as it unmounts, so closed tabs drop out on their own. */
-  const onFileErrorCountChange = useCallback((fileId: string, count: number) => {
-    setFileErrorCounts((prev) => {
-      if ((prev.get(fileId) ?? 0) === count) return prev;
-      const next = new Map(prev);
-      if (count > 0) next.set(fileId, count);
-      else next.delete(fileId);
-      return next;
-    });
-  }, []);
+  const onFileErrorCountChange = useCallback(
+    (fileId: string, count: number) => {
+      setFileErrorCounts((prev) => {
+        if ((prev.get(fileId) ?? 0) === count) return prev;
+        const next = new Map(prev);
+        if (count > 0) next.set(fileId, count);
+        else next.delete(fileId);
+        return next;
+      });
+    },
+    [setFileErrorCounts],
+  );
 
   return { onFileErrorCountChange };
 }
@@ -148,37 +154,53 @@ export function useNotesPanelToggle(deps: {
     whatsNewVersionRef,
   } = deps;
 
-  const onToggleNotesPanel = useCallback((event: KeyboardEvent) => {
-    const target = event.target instanceof Element ? event.target : null;
-    if (
-      !shouldToggleNotesPanel({
-        enabled: loadNotesEnabled(),
-        activeTabId: activeTabIdRef.current,
-        tabs: tabsRef.current,
-        sessions: sessionsRef.current,
-        projectTerminalFocused: projectTerminalFocusedRef.current,
-        surfaceOpen: Boolean(
-          searchViewOpenRef.current ||
-          inboxViewOpenRef.current ||
-          notesViewOpenRef.current ||
-          automationsViewOpenRef.current ||
-          serversViewOpenRef?.current ||
-          settingsOpenRef.current ||
-          filePickerOpenRef.current ||
-          whatsNewVersionRef.current,
-        ),
-        inSessionArea:
-          !target ||
-          target === document.body ||
-          (!target.closest(".cm-editor, .bycoda-terminal") &&
-            Boolean(target.closest("[data-session-drop], [data-notes-panel]"))),
-      })
-    )
-      return;
-    event.preventDefault();
-    event.stopPropagation();
-    toggleNotesPanel();
-  }, []);
+  const onToggleNotesPanel = useCallback(
+    (event: KeyboardEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        !shouldToggleNotesPanel({
+          enabled: loadNotesEnabled(),
+          activeTabId: activeTabIdRef.current,
+          tabs: tabsRef.current,
+          sessions: sessionsRef.current,
+          projectTerminalFocused: projectTerminalFocusedRef.current,
+          surfaceOpen: Boolean(
+            searchViewOpenRef.current ||
+            inboxViewOpenRef.current ||
+            notesViewOpenRef.current ||
+            automationsViewOpenRef.current ||
+            serversViewOpenRef?.current ||
+            settingsOpenRef.current ||
+            filePickerOpenRef.current ||
+            whatsNewVersionRef.current,
+          ),
+          inSessionArea:
+            !target ||
+            target === document.body ||
+            (!target.closest(".cm-editor, .bycoda-terminal") &&
+              Boolean(target.closest("[data-session-drop], [data-notes-panel]"))),
+        })
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleNotesPanel();
+    },
+    [
+      inboxViewOpenRef,
+      notesViewOpenRef,
+      filePickerOpenRef,
+      projectTerminalFocusedRef,
+      activeTabIdRef,
+      searchViewOpenRef,
+      automationsViewOpenRef,
+      serversViewOpenRef,
+      tabsRef,
+      sessionsRef,
+      settingsOpenRef,
+      whatsNewVersionRef,
+    ],
+  );
 
   return { onToggleNotesPanel };
 }
@@ -191,24 +213,27 @@ export function useResumeProviderSession(deps: {
 }): { onResumeProviderSession: (sessionId: string) => void } {
   const { sessionsRef, turnGen, setResumePickerFor } = deps;
 
-  const onResumeProviderSession = useCallback((sessionId: string) => {
-    const source = sessionsRef.current.find((session) => session.id === sessionId);
-    if (!source) return;
-    if (isRemoteProjectPath(source.cwd)) return;
-    if (source.harness === "codex") {
-      requestSessionImport({ cwd: sessionWorkCwd(source), provider: "codex" });
-      return;
-    }
-    if (source.harness !== "claude") return;
-    setResumePickerFor({
-      sessionId,
-      // Claude files conversations under the directory it ran in, which for a
-      // worktree session is the checkout rather than the project root.
-      cwd: sessionWorkCwd(source),
-      turnGen: turnGen.current.get(sessionId) ?? 0,
-      ...(source.providerAccountId ? { providerAccountId: source.providerAccountId } : {}),
-    });
-  }, []);
+  const onResumeProviderSession = useCallback(
+    (sessionId: string) => {
+      const source = sessionsRef.current.find((session) => session.id === sessionId);
+      if (!source) return;
+      if (isRemoteProjectPath(source.cwd)) return;
+      if (source.harness === "codex") {
+        requestSessionImport({ cwd: sessionWorkCwd(source), provider: "codex" });
+        return;
+      }
+      if (source.harness !== "claude") return;
+      setResumePickerFor({
+        sessionId,
+        // Claude files conversations under the directory it ran in, which for a
+        // worktree session is the checkout rather than the project root.
+        cwd: sessionWorkCwd(source),
+        turnGen: turnGen.current.get(sessionId) ?? 0,
+        ...(source.providerAccountId ? { providerAccountId: source.providerAccountId } : {}),
+      });
+    },
+    [setResumePickerFor, turnGen, sessionsRef],
+  );
 
   return { onResumeProviderSession };
 }
@@ -245,7 +270,7 @@ export function useOpenArchivedSession(deps: {
       setSettingsOpen(false);
       void onSelectHistorySession(sessionId);
     },
-    [onSelectHistorySession],
+    [onSelectHistorySession, setSettingsOpen],
   );
 
   return { onOpenArchivedSession };

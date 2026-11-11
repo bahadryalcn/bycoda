@@ -110,7 +110,7 @@ export function useSecondOpinion({
       openSessionBeside(sourceId, session, source.cwd);
       onSubmit(session.id, request.prompt, [], request.options);
     },
-    [onSubmit, openSessionBeside],
+    [onSubmit, openSessionBeside, sessionsRef],
   );
   return { openSessionBeside, onSecondOpinion };
 }

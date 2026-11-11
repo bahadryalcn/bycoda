@@ -628,7 +628,7 @@ function DevicePanelSurface({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [live, selected, capture, status?.running, visible, streaming]);
+  }, [live, selected, capture, status?.running, visible, streaming, setErrorOperation]);
   const action = (command: DeviceAction) =>
     void execute(
       command.type,

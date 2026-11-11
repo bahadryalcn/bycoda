@@ -3,7 +3,6 @@ import { PromptField } from "../../../shared/ui/PromptField";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import {
-  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -73,6 +72,42 @@ export function QueuedMessageEditDialog(props: Props) {
   );
 }
 
+/** Dispatch may have happened before a callback threw, so a throw keeps the input as unknown. */
+function dispatchSave<Input extends object>(
+  onSave: (text: string, attachments: Attachment[]) => void,
+  next: { text: string; attachments: Attachment[] },
+  retained: { update: (input: Input & { disposition: string }) => unknown },
+  input: Input,
+  outcome: { accepted: () => void; failed: (message: string) => void },
+) {
+  try {
+    onSave(next.text, next.attachments);
+    retained.update({ ...input, disposition: "accepted-unknown" });
+    outcome.accepted();
+  } catch (reason) {
+    // The visible error is not an authoritative rejection; keep the original input as unknown.
+    retained.update({ ...input, disposition: "dispatch-unknown" });
+    outcome.failed(reason instanceof Error ? reason.message : String(reason));
+  }
+}
+
+/** Reads and applies prepared attachments; `release` always runs, as the `finally` of the read. */
+async function finishCollect(steps: {
+  read: () => Promise<Attachment[]>;
+  apply: (incoming: Attachment[]) => unknown;
+  isAlive: () => boolean;
+  setError: (message: string) => void;
+  release: () => void;
+}) {
+  try {
+    steps.apply(await steps.read());
+  } catch (reason) {
+    if (steps.isAlive()) steps.setError(reason instanceof Error ? reason.message : String(reason));
+  } finally {
+    steps.release();
+  }
+}
+
 /** Edits a queued message's text and attachments in a dialog instead of the queue row. */
 function QueueEditContent({
   parentSessionId,
@@ -93,7 +128,6 @@ function QueueEditContent({
   const dropBox = useRef<HTMLDivElement>(null);
   const dropFeedback = useExternalDropFeedback();
   const draftRef = useRef(draft);
-  draftRef.current = draft;
   /** Where the caret goes once the next draft is rendered. */
   const pendingCaret = useRef<number | null>(null);
   /** Attachments added here: theirs to release if the edit does not keep them. */
@@ -101,7 +135,11 @@ function QueueEditContent({
   const saved = useRef(false);
   const alive = useRef(true);
   const canAttachRef = useRef(canAttach);
-  canAttachRef.current = canAttach;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- publishes the committed draft and attach flag to handlers and parent-input snapshots that read the refs outside render
+  useLayoutEffect(() => {
+    draftRef.current = draft;
+    canAttachRef.current = canAttach;
+  }, [draft, canAttach]);
   const parentChanged = useParentInputClosure(
     {
       kind: "queue-edit",
@@ -176,12 +214,12 @@ function QueueEditContent({
     }
   }, [draft.text]);
 
-  const requestClose = useCallback(() => {
+  const requestClose = () => {
     parentChanged();
     if (confirmingDiscard) setConfirmingDiscard(false);
     else if (dirty || loadingAttachments > 0) setConfirmingDiscard(true);
     else onCancel();
-  }, [confirmingDiscard, dirty, loadingAttachments, onCancel]);
+  };
 
   const save = () =>
     mutateParentInput(parentChanged, () => {
@@ -198,18 +236,14 @@ function QueueEditContent({
         sessionId: parentSessionId,
         snapshot: () => input,
       });
-      try {
-        onSave(next.text, next.attachments);
-        retained.update({ ...input, disposition: "accepted-unknown" });
-        saved.current = true;
-        parentChanged();
-        setError(null);
-      } catch (reason) {
-        // Dispatch may have happened before a callback threw. Keep the original
-        // input as unknown; the visible error is not an authoritative rejection.
-        retained.update({ ...input, disposition: "dispatch-unknown" });
-        setError(reason instanceof Error ? reason.message : String(reason));
-      }
+      dispatchSave(onSave, next, retained, input, {
+        accepted: () => {
+          saved.current = true;
+          parentChanged();
+          setError(null);
+        },
+        failed: (message) => setError(message),
+      });
     });
 
   const change = (text: string, caret: number) => {
@@ -325,20 +359,22 @@ function QueueEditContent({
       parentChanged();
       setLoadingAttachments(pendingAttachments.current);
       setError(null);
-      try {
-        const incoming = await read();
-        admitted.apply(() => {
-          restore?.(incoming);
-          attach(incoming);
-        });
-      } catch (reason) {
-        if (alive.current) setError(reason instanceof Error ? reason.message : String(reason));
-      } finally {
-        pendingAttachments.current -= 1;
-        parentChanged();
-        pending.release();
-        if (alive.current) setLoadingAttachments(pendingAttachments.current);
-      }
+      await finishCollect({
+        read,
+        apply: (incoming) =>
+          admitted.apply(() => {
+            restore?.(incoming);
+            attach(incoming);
+          }),
+        isAlive: () => alive.current,
+        setError,
+        release: () => {
+          pendingAttachments.current -= 1;
+          parentChanged();
+          pending.release();
+          if (alive.current) setLoadingAttachments(pendingAttachments.current);
+        },
+      });
     });
   };
 

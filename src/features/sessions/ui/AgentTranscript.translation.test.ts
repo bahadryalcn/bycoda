@@ -29,6 +29,7 @@ it.each([
       "ResizeObserver",
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );

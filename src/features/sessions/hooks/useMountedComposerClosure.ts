@@ -76,7 +76,7 @@ export function useMountedComposerClosure(options: {
       // Keep this exact retired lease reachable by accepted callbacks until a
       // replacement mount binds. It rejects any new admission.
     };
-  }, [options.input, options.sessionId, registerMountedComposer]);
+  }, [options.input, options.sessionId]);
 
   const canMutate = useCallback(() => leaseRef.current?.canMutate() ?? true, []);
   const prepare = useCallback(<T>(operation: (accepted: ComposerPreparation) => Promise<T>) => {

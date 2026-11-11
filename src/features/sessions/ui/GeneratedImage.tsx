@@ -65,11 +65,11 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
   const t = useT();
   const [state, setState] = useState<State>({ status: "loading" });
   const [open, setOpen] = useState(false);
-  const [nearBox, near] = useNearViewport<HTMLDivElement>(NEAR_MARGIN_PX);
+  const [nearBoxRef, near] = useNearViewport<HTMLDivElement>(NEAR_MARGIN_PX);
   const box = useRef<HTMLDivElement | null>(null);
   const attachBox = (element: HTMLDivElement | null) => {
     box.current = element;
-    nearBox.current = element;
+    nearBoxRef.current = element;
   };
   useAboveViewportCompensation(box, image.path);
 

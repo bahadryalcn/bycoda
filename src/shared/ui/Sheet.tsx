@@ -9,7 +9,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
-import { translateAt, useLocale, type LanguageDomain } from "../i18n";
+import { useT, type LanguageDomain } from "../i18n";
+import { useT as useGitT } from "../i18n/git";
+import { useT as useTechnicalT } from "../i18n/technical";
+import { useStableCallback } from "../hooks/useStableCallback";
 import { isImeComposition } from "../lib/keyboard";
 import { LAYER } from "../lib/layers";
 import { Modal } from "./Modal";
@@ -209,15 +212,17 @@ function NonModalSheet({
   glassRef,
   bodyRef,
 }: SheetProps) {
-  const locale = useLocale(languageDomain);
-  const t = (message: string) => translateAt(locale, message);
+  // One bound translator per language domain; all three hooks run every render, the prop picks one.
+  const appT = useT();
+  const gitT = useGitT();
+  const technicalT = useTechnicalT();
+  const t = languageDomain === "git" ? gitT : languageDomain === "technical" ? technicalT : appT;
   const sheet = useRef<HTMLElement | null>(null);
   const overlay = useRef<HTMLDivElement | null>(null);
   const viewport = anchor === "viewport";
   const uid = useId();
   const titleId = `${uid}-title`;
-  const close = useRef(onClose);
-  close.current = onClose;
+  const close = useStableCallback(onClose);
   const [width, setWidth] = useState(resizable?.defaultSize);
   const resizeStart = useRef(width ?? 0);
   const resizeSign = useRef(1);
@@ -239,11 +244,11 @@ function NonModalSheet({
       const target = event.target instanceof Node ? event.target : null;
       if (target !== document.body && !(target && scope?.contains(target))) return;
       event.preventDefault();
-      close.current();
+      close();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [viewport, open, escapeScope]);
+  }, [viewport, open, escapeScope, close]);
 
   // Viewport: a press outside the sheet (and its child menus) closes it.
   useEffect(() => {
@@ -254,11 +259,11 @@ function NonModalSheet({
       const element = target instanceof Element ? target : target.parentElement;
       if (typeof ignore === "string" ? element?.closest(ignore) : ignore?.current?.contains(target))
         return;
-      close.current();
+      close();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
-  }, [viewport, open, dismissOnOutside, ignore, overlayId]);
+  }, [viewport, open, dismissOnOutside, ignore, overlayId, close]);
 
   // Focus moves into the sheet when it opens unless something inside already took it.
   useEffect(() => {
@@ -444,7 +449,7 @@ function NonModalSheet({
         .join(" ")}
     >
       {dismissOnOutside ? (
-        <div aria-hidden className="absolute inset-0" onMouseDown={() => close.current()} />
+        <div aria-hidden className="absolute inset-0" onMouseDown={() => close()} />
       ) : null}
       {surface}
     </div>

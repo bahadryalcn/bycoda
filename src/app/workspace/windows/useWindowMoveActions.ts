@@ -94,13 +94,16 @@ export function useWindowMoveActions(deps: WindowMoveActionDeps): {
         targetWindowLabel: pendingWindowMoves[id]?.targetWindowLabel,
       });
     }
-  }, [pendingWindowMoves, tabs, sessions, onMoveTabsToNewWindow]);
+  }, [pendingWindowMoves, tabs, sessions, onMoveTabsToNewWindow, setPendingWindowMoves]);
 
-  const onCancelMoveToNewWindow = useCallback((tabId: string) => {
-    cancelWindowMoveTiming([tabId]);
-    setPendingWindowMoves((prev) => dropWindowMoves(prev, [tabId]));
-    publishWindowTransferNotice("info", cancelledTransferMessage());
-  }, []);
+  const onCancelMoveToNewWindow = useCallback(
+    (tabId: string) => {
+      cancelWindowMoveTiming([tabId]);
+      setPendingWindowMoves((prev) => dropWindowMoves(prev, [tabId]));
+      publishWindowTransferNotice("info", cancelledTransferMessage());
+    },
+    [setPendingWindowMoves],
+  );
 
   /** Moves one file tab into a new window as its own editor tab. */
   const onOpenFileInNewWindow = useCallback(

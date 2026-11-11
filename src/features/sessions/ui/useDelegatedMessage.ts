@@ -4,6 +4,51 @@ import type { ComposerTurnOptions } from "../model/session";
 type Entry = { draft: string; status?: "accepted" | "rejected" };
 const EMPTY: Entry = { draft: "" };
 
+// Module-level so the try/finally stays out of the hook the React Compiler compiles.
+function submitDelegated({
+  text,
+  submitting,
+  onSubmit,
+  read,
+  write,
+}: {
+  text: string;
+  submitting: { current: boolean };
+  onSubmit: (text: string, options: ComposerTurnOptions) => boolean | void;
+  read: () => Entry;
+  write: (value: Entry) => void;
+}) {
+  let rejected = false;
+  const recover = () => {
+    if (rejected) return true;
+    rejected = true;
+    const current = read();
+    // A late rejection must not overwrite a newer draft.
+    write({
+      draft:
+        current.draft && current.draft !== text
+          ? `${current.draft}
+
+${text}`
+          : text,
+      status: "rejected",
+    });
+    return true;
+  };
+  try {
+    const accepted = onSubmit(text, { onSendRejected: recover });
+    if (accepted === false) {
+      if (!rejected) recover();
+    } else if (!rejected) {
+      write({ draft: "", status: "accepted" });
+    }
+  } catch {
+    if (!rejected) recover();
+  } finally {
+    submitting.current = false;
+  }
+}
+
 /**
  * The message box of a delegated child. It sends straight to the child session:
  * the submit path steers it while it runs and starts a new turn once it is idle.
@@ -32,30 +77,13 @@ export function useDelegatedMessage({
     const text = (entriesRef.current[key] ?? EMPTY).draft.trim();
     if (!text) return;
     submitting.current = true;
-    let rejected = false;
-    const recover = () => {
-      if (rejected) return true;
-      rejected = true;
-      const current = entriesRef.current[key] ?? EMPTY;
-      // A late rejection must not overwrite a newer draft.
-      update(key, {
-        draft: current.draft && current.draft !== text ? `${current.draft}\n\n${text}` : text,
-        status: "rejected",
-      });
-      return true;
-    };
-    try {
-      const accepted = onSubmit(text, { onSendRejected: recover });
-      if (accepted === false) {
-        if (!rejected) recover();
-      } else if (!rejected) {
-        update(key, { draft: "", status: "accepted" });
-      }
-    } catch {
-      if (!rejected) recover();
-    } finally {
-      submitting.current = false;
-    }
+    submitDelegated({
+      text,
+      submitting,
+      onSubmit,
+      read: () => entriesRef.current[key] ?? EMPTY,
+      write: (value) => update(key, value),
+    });
   };
   return {
     ...entry,

@@ -13,7 +13,10 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
-import { PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
+import {
+  PROVIDER_STARTUP_TIMEOUT_MS,
+  announceSlowProviderStartup,
+} from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -197,6 +200,8 @@ export async function sendGenericAcpTurn(
         const responseScope: { work: NativeOutputWork | null } = { work: null };
         const emitNative = (event: HarnessEvent) =>
           nativeOutputSink(responseScope.work, () => input.onEvent(event))();
+        // A start slower than a few seconds says so instead of looking stuck.
+        const startupDone = announceSlowProviderStartup(input.onEvent, "ACP agent");
         try {
           const configId = program?.id ?? input.model.replace(/^acp:/, "");
           if (!configId) throw new Error("Choose a configured ACP agent in Settings first");
@@ -440,6 +445,7 @@ export async function sendGenericAcpTurn(
               if (starting.get(input.sessionId) === state) starting.delete(input.sessionId);
             }
           }
+          startupDone();
           observeProviderProcess(input, live.handle);
           beginProviderOperation(input.operationContext, live.handle);
           const acp = await acpTurnWriter(
@@ -487,7 +493,7 @@ export async function sendGenericAcpTurn(
             );
           emitNative({ type: "session.started" });
           try {
-            const result = await acp.request(
+            const response = acp.request(
               "session/prompt",
               {
                 sessionId: live.providerId,
@@ -500,6 +506,8 @@ export async function sendGenericAcpTurn(
                 return value;
               },
             );
+            input.onAccepted?.();
+            const result = await response;
             emitNative({ type: "message.completed" });
             emitNative({ type: "reasoning.completed" });
             if (!live.cancelled) reportAcpStopReason(result, emitNative);
@@ -507,6 +515,7 @@ export async function sendGenericAcpTurn(
             if (!live.cancelled) throw error;
           }
         } finally {
+          startupDone();
           responseScope.work?.finish();
         }
       },

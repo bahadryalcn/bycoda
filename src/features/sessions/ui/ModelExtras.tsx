@@ -28,15 +28,46 @@ import {
   decodeSubagents,
   isReservedDelegationKey,
 } from "../../../shared/model/host-contracts/delegation";
-import type { ModelSetting } from "../model/models";
+import type { AgentModel, ModelSetting } from "../model/models";
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
-import { useModelSource } from "./modelSource";
+import { useModelSource, type ModelSource } from "./modelSource";
 import { DelegationOptionIcon, DelegationSubagentsControl } from "./DelegationSettings";
+import { subscribeProviderAccounts } from "../../providers/public/providerAccounts";
 import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/rateLimitsCache";
 import { signedOutAccountKeys } from "../model/accountModelChoices";
 
 /** Rows indented under the setting they depend on. */
 const DEPENDENT = new Set(["subagentPolicy", "autoCompactWindow"]);
+
+function subscribeExtrasSources(onChange: () => void): () => void {
+  const offModels = subscribeModels(onChange);
+  const offAccounts = subscribeProviderAccounts(onChange);
+  return () => {
+    offModels();
+    offAccounts();
+  };
+}
+
+function extraSettingsJson(
+  current: AgentModel,
+  source: ModelSource,
+  usage: ReturnType<typeof getAllRateLimits>,
+  t: ReturnType<typeof useT>,
+  merged: Record<string, string>,
+): string {
+  return JSON.stringify(
+    menuSettings({
+      current,
+      harnesses: HARNESSES.filter((id) => source.available(id)),
+      source,
+      accountChoices: true,
+      signedOutAccounts: source.accounts === undefined ? signedOutAccountKeys(usage) : undefined,
+      signedOutLabel: t("Not signed in"),
+      values: merged,
+      unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
+    }),
+  );
+}
 
 /** The current model's extras, their effective values and which differ from the defaults. */
 function useModelExtras(harness: HarnessId, model: string, values: Record<string, string>) {
@@ -45,17 +76,22 @@ function useModelExtras(harness: HarnessId, model: string, values: Record<string
   const usage = useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
   const t = useT();
   const current = source.resolve(harness, model);
-  const merged = mergeModelSettings(current, values);
-  const settings = menuSettings({
-    current,
-    harnesses: HARNESSES.filter((id) => source.available(id)),
-    source,
-    accountChoices: true,
-    signedOutAccounts: source.accounts === undefined ? signedOutAccountKeys(usage) : undefined,
-    signedOutLabel: t("Not signed in"),
-    values: merged,
-    unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
-  });
+  // The merge reads the model catalog, so React reads it through the catalog's store.
+  const merged: Record<string, string> = JSON.parse(
+    useSyncExternalStore(
+      subscribeModels,
+      () => JSON.stringify(mergeModelSettings(current, values)),
+      () => JSON.stringify(mergeModelSettings(current, values)),
+    ),
+  );
+  // The delegation rows read the model catalog and local accounts, so React reads them through their stores.
+  const settings: ModelSetting[] = JSON.parse(
+    useSyncExternalStore(
+      subscribeExtrasSources,
+      () => extraSettingsJson(current, source, usage, t, merged),
+      () => extraSettingsJson(current, source, usage, t, merged),
+    ),
+  );
   const effective = Object.fromEntries(
     [...(current.settings ?? []), ...settings.filter(isDelegationSetting)].map((setting) => [
       setting.id,

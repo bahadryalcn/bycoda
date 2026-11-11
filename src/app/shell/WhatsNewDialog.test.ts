@@ -11,7 +11,10 @@ vi.mock("../../shared/lib/productIdentity", () => ({
   PRODUCT_IDENTITY: identity,
 }));
 
-vi.mock("../../shared/lib/appName", () => ({ appName: () => "Test Product Native" }));
+vi.mock("../../shared/lib/appName", () => ({
+  appName: () => "Test Product Native",
+  useAppName: () => "Test Product Native",
+}));
 vi.mock("../../shared/ui/Modal", () => ({
   Modal: ({ description }: { description: string }) => createElement("section", null, description),
 }));

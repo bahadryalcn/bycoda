@@ -251,67 +251,97 @@ export function useAppearanceSettings(
   const collapsedProjectRailMode =
     controlledCollapsedProjectRailMode ?? storedCollapsedProjectRailMode;
 
-  const onThemePreference = useCallback((next: ThemePreference) => {
-    applyThemePreference(next, { animate: true });
-    saveThemePreference(next);
-    setThemePreference(next);
-  }, []);
+  const onThemePreference = useCallback(
+    (next: ThemePreference) => {
+      applyThemePreference(next, { animate: true });
+      saveThemePreference(next);
+      setThemePreference(next);
+    },
+    [setThemePreference],
+  );
 
-  const onAccentColor = useCallback((value: string | null) => {
-    const next = applyAccentColor(value);
-    saveAccentColor(next);
-    setAccentColor(next);
-  }, []);
+  const onAccentColor = useCallback(
+    (value: string | null) => {
+      const next = applyAccentColor(value);
+      saveAccentColor(next);
+      setAccentColor(next);
+    },
+    [setAccentColor],
+  );
 
-  const onOpacity = useCallback((percent: number) => {
-    const next = applySidebarOpacity(percent / 100);
-    saveSidebarOpacity(next);
-    setOpacity(next);
-  }, []);
+  const onOpacity = useCallback(
+    (percent: number) => {
+      const next = applySidebarOpacity(percent / 100);
+      saveSidebarOpacity(next);
+      setOpacity(next);
+    },
+    [setOpacity],
+  );
 
-  const onMainOpacity = useCallback((percent: number) => {
-    const next = applyMainOpacity(percent / 100);
-    saveMainOpacity(next);
-    setMainOpacity(next);
-  }, []);
+  const onMainOpacity = useCallback(
+    (percent: number) => {
+      const next = applyMainOpacity(percent / 100);
+      saveMainOpacity(next);
+      setMainOpacity(next);
+    },
+    [setMainOpacity],
+  );
 
-  const onBlur = useCallback((radius: number) => {
-    const next = applySidebarBlur(radius);
-    saveSidebarBlur(next);
-    setBlur(next);
-  }, []);
+  const onBlur = useCallback(
+    (radius: number) => {
+      const next = applySidebarBlur(radius);
+      saveSidebarBlur(next);
+      setBlur(next);
+    },
+    [setBlur],
+  );
 
-  const onTint = useCallback((hue: number, saturation: number) => {
-    const next = applyThemeTint(hue, saturation);
-    saveThemeHue(next.hue);
-    saveThemeSaturation(next.saturation);
-    setThemeHue(next.hue);
-    setThemeSaturation(next.saturation);
-  }, []);
+  const onTint = useCallback(
+    (hue: number, saturation: number) => {
+      const next = applyThemeTint(hue, saturation);
+      saveThemeHue(next.hue);
+      saveThemeSaturation(next.saturation);
+      setThemeHue(next.hue);
+      setThemeSaturation(next.saturation);
+    },
+    [setThemeSaturation, setThemeHue],
+  );
 
-  const onDarkLightness = useCallback((value: number) => {
-    const next = applyThemeDarkLightness(value);
-    saveThemeDarkLightness(next);
-    setThemeDarkLightness(next);
-  }, []);
+  const onDarkLightness = useCallback(
+    (value: number) => {
+      const next = applyThemeDarkLightness(value);
+      saveThemeDarkLightness(next);
+      setThemeDarkLightness(next);
+    },
+    [setThemeDarkLightness],
+  );
 
-  const onBodyGlass = useCallback((next: boolean) => {
-    applyBodyGlass(next);
-    saveBodyGlass(next);
-    setBodyGlass(next);
-    if (IS_LINUX) syncNativeGlass(isLightScheme() ? "light" : "dark");
-  }, []);
+  const onBodyGlass = useCallback(
+    (next: boolean) => {
+      applyBodyGlass(next);
+      saveBodyGlass(next);
+      setBodyGlass(next);
+      if (IS_LINUX) syncNativeGlass(isLightScheme() ? "light" : "dark");
+    },
+    [setBodyGlass],
+  );
 
-  const onWindowGlass = useCallback((next: boolean) => {
-    saveWindowGlass(next);
-    setWindowGlass(next);
-    if (!IS_LINUX) syncNativeGlass(isLightScheme() ? "light" : "dark");
-  }, []);
+  const onWindowGlass = useCallback(
+    (next: boolean) => {
+      saveWindowGlass(next);
+      setWindowGlass(next);
+      if (!IS_LINUX) syncNativeGlass(isLightScheme() ? "light" : "dark");
+    },
+    [setWindowGlass],
+  );
 
-  const onShowExcludedFiles = useCallback((next: boolean) => {
-    saveShowExcludedFiles(next);
-    setShowExcludedFiles(loadShowExcludedFiles());
-  }, []);
+  const onShowExcludedFiles = useCallback(
+    (next: boolean) => {
+      saveShowExcludedFiles(next);
+      setShowExcludedFiles(loadShowExcludedFiles());
+    },
+    [setShowExcludedFiles],
+  );
 
   /**
    * Picks an image, or takes a path the user dropped on the preview; the Host validates it.
@@ -353,7 +383,7 @@ export function useAppearanceSettings(
         setChatBackgroundOperation(null);
       }
     },
-    [],
+    [setChatBackgroundPath],
   );
 
   const onClearChatBackground = useCallback(async () => {
@@ -375,48 +405,69 @@ export function useAppearanceSettings(
       setChatBackgroundBusy(false);
       setChatBackgroundOperation(null);
     }
-  }, []);
+  }, [setChatBackgroundPath]);
 
-  const onChatBackgroundEmptyOpacity = useCallback((percent: number) => {
-    const next = applyChatBackgroundEmptyOpacity(percent / 100);
-    saveChatBackgroundEmptyOpacity(next);
-    setChatBackgroundEmptyOpacity(next);
-  }, []);
+  const onChatBackgroundEmptyOpacity = useCallback(
+    (percent: number) => {
+      const next = applyChatBackgroundEmptyOpacity(percent / 100);
+      saveChatBackgroundEmptyOpacity(next);
+      setChatBackgroundEmptyOpacity(next);
+    },
+    [setChatBackgroundEmptyOpacity],
+  );
 
-  const onChatBackgroundSessionOpacity = useCallback((percent: number) => {
-    const next = applyChatBackgroundSessionOpacity(percent / 100);
-    saveChatBackgroundSessionOpacity(next);
-    setChatBackgroundSessionOpacity(next);
-  }, []);
+  const onChatBackgroundSessionOpacity = useCallback(
+    (percent: number) => {
+      const next = applyChatBackgroundSessionOpacity(percent / 100);
+      saveChatBackgroundSessionOpacity(next);
+      setChatBackgroundSessionOpacity(next);
+    },
+    [setChatBackgroundSessionOpacity],
+  );
 
-  const onChatBackgroundBlur = useCallback((radius: number) => {
-    const next = applyChatBackgroundBlur(radius);
-    saveChatBackgroundBlur(next);
-    setChatBackgroundBlur(next);
-  }, []);
+  const onChatBackgroundBlur = useCallback(
+    (radius: number) => {
+      const next = applyChatBackgroundBlur(radius);
+      saveChatBackgroundBlur(next);
+      setChatBackgroundBlur(next);
+    },
+    [setChatBackgroundBlur],
+  );
 
-  const onDiffPalette = useCallback((next: DiffPalette) => {
-    applyDiffPalette(next);
-    saveDiffPalette(next);
-    setDiffPalette(next);
-  }, []);
+  const onDiffPalette = useCallback(
+    (next: DiffPalette) => {
+      applyDiffPalette(next);
+      saveDiffPalette(next);
+      setDiffPalette(next);
+    },
+    [setDiffPalette],
+  );
 
-  const onChatBackgroundScope = useCallback((next: ChatBackgroundScope) => {
-    applyChatBackgroundScope(next);
-    saveChatBackgroundScope(next);
-    setChatBackgroundScope(next);
-  }, []);
+  const onChatBackgroundScope = useCallback(
+    (next: ChatBackgroundScope) => {
+      applyChatBackgroundScope(next);
+      saveChatBackgroundScope(next);
+      setChatBackgroundScope(next);
+    },
+    [setChatBackgroundScope],
+  );
 
-  const onNewThreadBackgroundEffect = useCallback((next: NewThreadBackgroundEffect) => {
-    setNewThreadBackgroundEffect(next);
-    setBackgroundEffect(next);
-  }, []);
+  const onNewThreadBackgroundEffect = useCallback(
+    (next: NewThreadBackgroundEffect) => {
+      setNewThreadBackgroundEffect(next);
+      setBackgroundEffect(next);
+    },
+    [setBackgroundEffect],
+  );
 
-  const onUiScale = useCallback((percent: number) => {
-    const next = saveUiScale(percent / 100);
-    setUiScale(next);
-    void applyUiScale(next);
-  }, []);
+  const onUiScale = useCallback(
+    (percent: number) => {
+      const next = saveUiScale(percent / 100);
+      setUiScale(next);
+      void applyUiScale(next);
+    },
+    [setUiScale],
+  );
 
   const onCollapsedProjectRailMode = useCallback(
     (next: CollapsedProjectRailMode) => {
@@ -424,7 +475,7 @@ export function useAppearanceSettings(
       setStoredCollapsedProjectRailMode(next);
       onControlledCollapsedProjectRailModeChange?.(next);
     },
-    [onControlledCollapsedProjectRailModeChange],
+    [onControlledCollapsedProjectRailModeChange, setStoredCollapsedProjectRailMode],
   );
 
   const restoreDefaults = useCallback(() => {

@@ -2,7 +2,7 @@
 import { OverflowTooltip } from "../../Tooltip";
 import { Popover } from "../../Popover";
 import { isImeComposition } from "../../../lib/keyboard";
-import { t } from "../../../i18n";
+import { useT } from "../../../i18n";
 import { SearchInput, SearchInputGroup } from "../../SearchInput";
 
 import { animate, AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -199,6 +199,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   },
   forwardedRef,
 ) {
+  const t = useT();
   const generatedId = useId();
   const controlId = id ?? generatedId;
   const listboxId = `${controlId}-listbox`;

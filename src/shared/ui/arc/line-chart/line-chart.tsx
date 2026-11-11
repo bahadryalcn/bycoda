@@ -123,6 +123,7 @@ const TOP = 12,
 const PALETTE = ["var(--accent)", "var(--ui-text-secondary)", "var(--ui-text-muted)"];
 const grouped = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const formatCompact = (value: number) => compact.format(value);
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 const colorOf = (series: LineChartSeries, index: number) =>
   series.color ?? PALETTE[Math.min(index, PALETTE.length - 1)];
@@ -309,7 +310,7 @@ export function LineChart({
   unit = "",
   height = 220,
   formatValue,
-  formatTick = (value) => compact.format(value),
+  formatTick = formatCompact,
   hiddenSeries,
   defaultHiddenSeries,
   onHiddenSeriesChange,

@@ -1,3 +1,4 @@
+import { isoTimestamp } from "../../src/shared/lib/time/timestamps";
 import type { HostStore } from "../store";
 import { withShortBusyTimeout } from "./short-busy-timeout";
 
@@ -53,7 +54,7 @@ export async function compactHostDatabase(
     await store.db.exec("VACUUM");
     await store.db
       .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)")
-      .run(HOST_DB_COMPACTION_MARKER, new Date(now).toISOString());
+      .run(HOST_DB_COMPACTION_MARKER, isoTimestamp(now) ?? new Date().toISOString());
     // In WAL mode the rewrite goes through the WAL; the file shrinks at this checkpoint.
     await truncateWal(store);
     return {

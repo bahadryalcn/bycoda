@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { updateNotificationPreferences } from "../../notifications/model/notificationPreferences";
 import { ApprovalToasts } from "./ApprovalToasts";
+import { NOTIFICATION_SEEN_KEY } from "../../notifications/model/notificationSeen";
 import {
   NOTIFICATION_HISTORY_KEY,
   type NotificationHistoryEntry,
@@ -119,8 +120,7 @@ it("records one StrictMode arrival, retains reused request occurrences and falls
     await act(async () => strictRender([notice("work", "question"), notice("second")]));
     await act(async () => strictRender([]));
     act(() => button("Notifications").click());
-    act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
-    expect(document.querySelectorAll('[role="tabpanel"] article')).toHaveLength(3);
+    expect(document.querySelectorAll(".notification-sheet-list article")).toHaveLength(3);
     expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(2);
     expect(onApproval).not.toHaveBeenCalled();
   } finally {
@@ -134,14 +134,13 @@ it("updates project names in open popups and history when the rail label changes
   expect(document.querySelector(".notification-project-name")?.textContent).toBe("bycoda");
   act(() => button("Notifications").click());
   act(() => render([]));
-  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
-  expect(document.querySelector('[role="tabpanel"] .notification-project-name')?.textContent).toBe(
-    "bycoda",
-  );
+  expect(
+    document.querySelector(".notification-sheet-list .notification-project-name")?.textContent,
+  ).toBe("bycoda");
   act(() => saveTabGroupLabel(pathKey("/projects/work"), "New name"));
-  expect(document.querySelector('[role="tabpanel"] .notification-project-name')?.textContent).toBe(
-    "New name",
-  );
+  expect(
+    document.querySelector(".notification-sheet-list .notification-project-name")?.textContent,
+  ).toBe("New name");
 });
 function visibleRequests() {
   return [...document.querySelectorAll(".approval-toast")].map((item) => item.textContent);
@@ -175,7 +174,8 @@ it("dismisses a popup without resolving it and retrieves it from the center", ()
   expect(visibleRequests()[0]).toContain("Request work");
   act(() => render([]));
   expect(visibleRequests()).toHaveLength(0);
-  expect(document.body.textContent).toContain("No pending requests");
+  expect(document.querySelector(".notification-pending-card")).toBeNull();
+  expect(document.body.textContent).not.toContain("Waiting for you");
 });
 
 it("limits a backlog of twenty requests to three popups and lists all in the center", () => {
@@ -243,14 +243,14 @@ it("keeps expired requests in history without approval controls and can clear th
   act(() => render([notice("work")]));
   act(() => render([]));
   act(() => button("Notifications").click());
-  const historyTab = document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!;
-  act(() => historyTab.click());
-  expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Request work");
+  expect(document.querySelector(".notification-sheet-list")?.textContent).toContain("Request work");
   expect(button("Allow")).toBeUndefined();
   expect(button("Deny")).toBeUndefined();
   expect(
-    button("Clear all").closest(".notification-history-toolbar")?.querySelector('[role="tablist"]'),
-  ).not.toBeNull();
+    button("Clear all")
+      .closest(".notification-history-toolbar")
+      ?.querySelector(".notification-summary")?.textContent,
+  ).toBe("You're all caught up");
   expect(document.body.textContent).not.toContain("What this app announced");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(1);
   let now = 1000;
@@ -262,7 +262,7 @@ it("keeps expired requests in history without approval controls and can clear th
   act(() => morph("Clear all").click());
   now += 300;
   await act(async () => morph("Clear").click());
-  expect(document.body.textContent).toContain("No recent notifications");
+  expect(document.body.textContent).toContain("All clear");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toEqual([]);
 });
 
@@ -277,7 +277,7 @@ const logEntry = (patch: Partial<NotificationHistoryEntry>): NotificationHistory
   ...patch,
 });
 
-it("distinguishes every history kind with a semantic badge tone", () => {
+it("distinguishes every history kind with a semantic tone marker and label", () => {
   const kinds = [
     "failed",
     "finished",
@@ -298,9 +298,21 @@ it("distinguishes every history kind with a semantic badge tone", () => {
   openHistory();
   expect(
     historyRows().map((row) =>
-      row.querySelector(".notification-history-kind")?.getAttribute("data-tone"),
+      row.querySelector(".notification-history-icon")?.getAttribute("data-tone"),
     ),
   ).toEqual(["danger", "success", "warning", "warning", "warning", "accent", "info", "neutral"]);
+  expect(
+    historyRows().map((row) => row.querySelector(".notification-history-kind")?.textContent),
+  ).toEqual([
+    "Failed",
+    "Finished",
+    "Question",
+    "Approval",
+    "Reminder",
+    "Assistant",
+    "Background",
+    "Account",
+  ]);
 });
 
 it("lists every kind of the common log with its label and opens a background target", async () => {
@@ -329,9 +341,8 @@ it("lists every kind of the common log with its label and opens a background tar
     "Finished",
     "Account",
   ]);
-  await act(async () =>
-    rows[0].querySelector<HTMLButtonElement>(".notification-request-body")!.click(),
-  );
+  expandRow(rows[0]);
+  await act(async () => rowButton(rows[0], "Open").click());
   expect(onOpenBackground).toHaveBeenCalledWith("background:automations");
   expect(onOpenHistorySession).not.toHaveBeenCalled();
   expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -344,7 +355,9 @@ it("shows a background row without an open action when nothing can open it", () 
   );
   act(() => renderWith([]));
   openHistory();
-  expect(document.querySelector(".notification-request-body")).toBeNull();
+  expandRow(historyRows()[0]);
+  expect(rowButton(historyRows()[0], "Open")).toBeUndefined();
+  expect(rowButton(historyRows()[0], "Remove")).toBeDefined();
 });
 
 it("shows the registered project and distinguishing path in popups, pending requests and restored history", () => {
@@ -362,18 +375,17 @@ it("shows the registered project and distinguishing path in popups, pending requ
   expect(document.querySelector(".notification-project-name")?.textContent).toBe("Acme / Work");
   expect(document.querySelector(".notification-project-path")?.textContent).toBe("/projects/work");
   act(() => button("Notifications").click());
-  expect(document.querySelector('[role="tabpanel"] .notification-project-name')?.textContent).toBe(
-    "Acme / Work",
-  );
+  expect(
+    document.querySelector(".notification-sheet-list .notification-project-name")?.textContent,
+  ).toBe("Acme / Work");
   act(() => render([]));
   act(() => root.unmount());
   root = createRoot(container);
   act(() => render([]));
   act(() => button("Notifications").click());
-  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
-  expect(document.querySelector('[role="tabpanel"] .notification-project-name')?.textContent).toBe(
-    "Acme / Work",
-  );
+  expect(
+    document.querySelector(".notification-sheet-list .notification-project-name")?.textContent,
+  ).toBe("Acme / Work");
   const row = document.querySelector<HTMLElement>(".notification-history-item")!;
   expect(row.querySelector(".notification-history-title")?.textContent).toBe("work");
   expect(row.querySelector(".notification-history-preview")?.textContent).toBe("Request work");
@@ -406,7 +418,6 @@ it("uses the folder name for old history without a registered project, including
   );
   act(() => render([]));
   act(() => button("Notifications").click());
-  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
   expect(
     [...document.querySelectorAll(".notification-project-name")].map((node) => node.textContent),
   ).toEqual(["demo", "demo"]);
@@ -426,8 +437,7 @@ it("restores history after remounting and records reused request IDs separately"
   root = createRoot(container);
   act(() => render([]));
   act(() => button("Notifications").click());
-  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
-  expect(document.querySelectorAll('[role="tabpanel"] article')).toHaveLength(2);
+  expect(document.querySelectorAll(".notification-sheet-list article")).toHaveLength(2);
   expect(document.body.textContent).toContain("Request work");
 });
 
@@ -443,8 +453,9 @@ it("redacts historical request content when its project is locked", () => {
   });
   act(() => render([]));
   act(() => button("Notifications").click());
-  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
-  expect(document.querySelector('[role="tabpanel"]')?.textContent).not.toContain("Request work");
+  expect(document.querySelector(".notification-sheet-list")?.textContent).not.toContain(
+    "Request work",
+  );
 });
 
 it("keeps the focused conversation in the center without a popup", () => {
@@ -577,7 +588,6 @@ it("keeps history when the durable clear fails and offers a retry", async () => 
   act(() => render([notice("work")]));
   act(() => render([]));
   act(() => button("Notifications").click());
-  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
   let now = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => now);
   const morph = (label: string) =>
@@ -592,15 +602,15 @@ it("keeps history when the durable clear fails and offers a retry", async () => 
   act(() => morph("Clear all").click());
   now += 300;
   await act(async () => morph("Clear").click());
-  expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Request work");
+  expect(document.querySelector(".notification-sheet-list")?.textContent).toContain("Request work");
   expect(document.body.textContent).toContain("Notification history could not be cleared");
   setItem.mockRestore();
   await act(async () => {
-    [...document.querySelectorAll<HTMLButtonElement>('[role="tabpanel"] button')]
+    [...document.querySelectorAll<HTMLButtonElement>(".notification-sheet-list button")]
       .find((item) => item.textContent === "Retry")!
       .click();
   });
-  expect(document.body.textContent).toContain("No recent notifications");
+  expect(document.body.textContent).toContain("All clear");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toEqual([]);
 });
 
@@ -608,9 +618,8 @@ it("does not show unreadable history as empty", () => {
   localStorage.setItem(NOTIFICATION_HISTORY_KEY, "{broken");
   act(() => render([]));
   act(() => button("Notifications").click());
-  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
   expect(document.body.textContent).toContain("Notification history could not be read");
-  expect(document.body.textContent).not.toContain("No recent notifications");
+  expect(document.body.textContent).not.toContain("All clear");
 });
 
 const longNotice = (id: string): Notice => ({
@@ -624,22 +633,32 @@ const rowButton = (row: HTMLElement, label: string) =>
   )!;
 const openHistory = () => {
   act(() => button("Notifications").click());
-  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
 };
+const expandRow = (row: HTMLElement) =>
+  act(() => row.querySelector<HTMLButtonElement>(".notification-row-toggle")!.click());
 
 it("keeps an expanded history entry open when newer arrivals are added", () => {
   act(() => render([longNotice("first")]));
   act(() => render([]));
   openHistory();
   const first = historyRows()[0];
-  act(() => rowButton(first, "Show more").click());
+  expandRow(first);
+  expect(first.querySelector(".notification-history-label")?.textContent).toContain(
+    "long explanation",
+  );
   expect(first.querySelector(".notification-history-path")?.textContent).toBe("/projects/first");
   act(() => render([notice("second", "question")]));
+  expect(historyRows()).toContain(first);
+  expect(first.querySelector(".notification-row-toggle")?.getAttribute("aria-expanded")).toBe(
+    "true",
+  );
+  act(() => render([]));
   expect(historyRows()).toHaveLength(2);
   expect(historyRows()).toContain(first);
-  expect(rowButton(first, "Show less")).toBeDefined();
-  // A short request needs no toggle.
-  expect(rowButton(historyRows()[0], "Show more")).toBeUndefined();
+  expect(first.querySelector(".notification-history-path")).not.toBeNull();
+  // The new arrival starts collapsed.
+  const other = historyRows().find((row) => row !== first)!;
+  expect(other.querySelector(".notification-history-path")).toBeNull();
 });
 
 it("removes one history entry and keeps the others", async () => {
@@ -649,6 +668,7 @@ it("removes one history entry and keeps the others", async () => {
   openHistory();
   expect(historyRows()).toHaveLength(2);
   const target = historyRows().find((row) => row.textContent?.includes("Request first"))!;
+  expandRow(target);
   await act(async () => rowButton(target, "Remove").click());
   expect(historyRows()).toHaveLength(1);
   expect(historyRows()[0].textContent).toContain("Request second");
@@ -661,22 +681,93 @@ it("keeps a history entry and says so when its removal cannot be saved", async (
   act(() => render([]));
   openHistory();
   const realSetItem = localStorage.setItem.bind(localStorage);
-  vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+  const setItem = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
     if (key === NOTIFICATION_HISTORY_KEY) throw new Error("quota");
     realSetItem(key, value);
   });
+  expandRow(historyRows()[0]);
   await act(async () => rowButton(historyRows()[0], "Remove").click());
   expect(historyRows()).toHaveLength(1);
   expect(document.body.textContent).toContain("This notification could not be removed.");
+  setItem.mockRestore();
 });
 
-it("marks a history entry whose request is still waiting", () => {
+it("shows a still-pending request once, in the pending card, not in Recent", () => {
   act(() => render([notice("open", "question")]));
   act(() => render([notice("open", "question"), notice("gone", "question")]));
   act(() => render([notice("open", "question")]));
   openHistory();
-  const waiting = historyRows().map((row) => row.textContent?.includes("Waiting for you"));
-  expect(waiting).toEqual([false, true]);
+  const card = document.querySelector<HTMLElement>(".notification-pending-card")!;
+  expect(card.textContent).toContain("Request open");
+  expect(card.querySelectorAll(".approval-toast")).toHaveLength(1);
+  expect(historyRows()).toHaveLength(1);
+  expect(historyRows()[0].textContent).toContain("Request gone");
+  expect(
+    document.querySelector(".notification-sheet-list")!.textContent!.split("Request open"),
+  ).toHaveLength(2);
+});
+
+it("shows pending requests in their own card above the recent rows", () => {
+  act(() => render([notice("gone", "question")]));
+  act(() => render([notice("open", "question")]));
+  openHistory();
+  const list = document.querySelector<HTMLElement>(".notification-sheet-list")!;
+  const card = list.querySelector<HTMLElement>(".notification-pending-card")!;
+  expect(list.textContent).toContain("Waiting for you");
+  expect(list.textContent).toContain("Recent");
+  expect(
+    card.compareDocumentPosition(historyRows()[0]) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(button("Answer")).toBeDefined();
+  expect(document.querySelector('[role="tab"]')).toBeNull();
+});
+
+it("badges new log entries on the trigger and resets once the sheet was opened", () => {
+  localStorage.setItem(NOTIFICATION_SEEN_KEY, "1000");
+  localStorage.setItem(
+    NOTIFICATION_HISTORY_KEY,
+    JSON.stringify([
+      logEntry({ key: "a", occurredAt: 2000 }),
+      logEntry({ key: "b", occurredAt: 2001 }),
+      logEntry({ key: "c", occurredAt: 500 }),
+    ]),
+  );
+  act(() => render([]));
+  const badge = () => button("Notifications").querySelector(".notification-trigger-count");
+  expect(badge()?.textContent).toBe("2");
+  expect(badge()?.getAttribute("data-tone")).toBe("accent");
+  act(() => button("Notifications").click());
+  expect(badge()).toBeNull();
+  act(() => button("Close").click());
+  expect(badge()).toBeNull();
+  expect(Number(localStorage.getItem(NOTIFICATION_SEEN_KEY))).toBeGreaterThan(2001);
+});
+
+it("adds waiting requests to the new count and uses the warning tone", () => {
+  localStorage.setItem(NOTIFICATION_SEEN_KEY, "1000");
+  localStorage.setItem(NOTIFICATION_HISTORY_KEY, JSON.stringify([logEntry({ occurredAt: 2000 })]));
+  act(() => render([notice("work", "question")]));
+  const badge = button("Notifications").querySelector(".notification-trigger-count");
+  expect(badge?.textContent).toBe("2");
+  expect(badge?.getAttribute("data-tone")).toBe("warning");
+});
+
+it("marks a row that arrived after the last look as new while the sheet is open", () => {
+  localStorage.setItem(NOTIFICATION_SEEN_KEY, "1500");
+  localStorage.setItem(
+    NOTIFICATION_HISTORY_KEY,
+    JSON.stringify([
+      logEntry({ key: "fresh", title: "Fresh", occurredAt: 2000 }),
+      logEntry({ key: "stale", title: "Stale", occurredAt: 1000 }),
+    ]),
+  );
+  act(() => render([]));
+  openHistory();
+  const row = (title: string) => historyRows().find((item) => item.textContent?.includes(title))!;
+  expect(row("Fresh").querySelector(".notification-new-dot")).not.toBeNull();
+  expect(row("Fresh").textContent).toContain("New");
+  expect(row("Stale").querySelector(".notification-new-dot")).toBeNull();
+  expect(document.querySelector(".notification-summary")?.textContent).toBe("1 new");
 });
 
 it("opens a history conversation from its row and reports an unavailable one", async () => {
@@ -684,7 +775,8 @@ it("opens a history conversation from its row and reports an unavailable one", a
   act(() => renderWith([notice("work", "question")], { onOpenHistorySession: open }));
   act(() => renderWith([], { onOpenHistorySession: open }));
   openHistory();
-  const body = () => document.querySelector<HTMLButtonElement>(".notification-request-body")!;
+  expandRow(historyRows()[0]);
+  const body = () => rowButton(historyRows()[0], "Open conversation");
   await act(async () => body().click());
   expect(open).toHaveBeenCalledWith("work", "/projects/work");
   expect(document.body.textContent).toContain("This conversation is no longer available");

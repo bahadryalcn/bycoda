@@ -24,6 +24,7 @@ it("anchors at the start of the typed command so typing does not move the popove
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

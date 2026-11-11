@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/Button";
-import { t, useT } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
@@ -11,7 +11,7 @@ import { TransientNotice } from "../../shared/ui/TransientNotice";
 
 type Props = { agents: LiveAgent[]; onSelectAgent: (id: string) => void };
 
-export function detachedAgentStatus(agent: LiveAgent): string {
+export function detachedAgentStatus(agent: LiveAgent, t: (text: string) => string): string {
   if (agent.issue) return t(agent.issue === "retrying" ? "Retrying" : "Failed");
   if (agent.done) return t("Done");
   if (agent.needsApproval) return t("Needs input");
@@ -86,7 +86,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
     kind: "item",
     id: agent.id,
     label: detachedAgentTitle(agent.title),
-    description: `${detachedAgentStatus(agent)}${
+    description: `${detachedAgentStatus(agent, t)}${
       agent.ownerWindowLabel ? t(" · Other window") : t(" · This window")
     }`,
     icon: (

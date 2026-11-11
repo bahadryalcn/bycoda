@@ -180,12 +180,22 @@ export function useSettingsSurfaceActions({
     setAutomationsViewOpen(returnView.automations);
     setServersViewOpen?.(returnView.servers);
     setSettingsOpen(false);
-  }, []);
+  }, [
+    setInboxViewOpen,
+    setNotesViewOpen,
+    setServersViewOpen,
+    setSettingsOpen,
+    setAutomationsViewOpen,
+    setSearchViewOpen,
+  ]);
 
-  const onSelectSettingsSection = useCallback((section: SettingsSectionId) => {
-    setSettingsSection(section);
-    saveSettingsSection(section);
-  }, []);
+  const onSelectSettingsSection = useCallback(
+    (section: SettingsSectionId) => {
+      setSettingsSection(section);
+      saveSettingsSection(section);
+    },
+    [setSettingsSection],
+  );
 
   return {
     settingsReturnViewRef,

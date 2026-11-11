@@ -5,7 +5,8 @@ import { Popover, type PopoverAnchor } from "./Popover";
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
 import { Check, ChevronRight } from "./icons";
 import { Badge } from "./Badge";
-import { formatShortcutLabel, usePlatform } from "./shortcut";
+import { useT } from "../i18n";
+import { formatShortcutLabelWith, usePlatform } from "./shortcut";
 import {
   actionsOf,
   isField,
@@ -156,12 +157,14 @@ function MenuSurface({
   ignore,
   onEscape,
   back,
-  takeFocus = depth === 0,
+  takeFocus,
   onPointerEnter,
   onPointerLeave,
   ...dataAttributes
 }: SurfaceProps) {
   const platform = usePlatform();
+  const t = useT();
+  const takesFocus = takeFocus ?? depth === 0;
   const surface = useRef<HTMLDivElement>(null);
   const searchField = useRef<HTMLInputElement>(null);
   const query = useRef({ value: "", at: 0 });
@@ -196,7 +199,7 @@ function MenuSurface({
   };
   useEffect(() => cancelClose, []);
   useEffect(() => {
-    if (!takeFocus) return;
+    if (!takesFocus) return;
     // A flyout of radio rows opens on the current choice.
     const first = () =>
       (initialActiveId ? rowOf(initialActiveId) : undefined) ??
@@ -416,7 +419,7 @@ function MenuSurface({
         ) : item.shortcut ? (
           <span className={`${slot.trailing} ${slot.shortcut}`} aria-hidden="true">
             {/* The one shortcut formatter: platform spelling, sequences and alternatives kept. */}
-            {formatShortcutLabel(item.shortcut, platform).text || item.shortcut}
+            {formatShortcutLabelWith(item.shortcut, platform, t).text || item.shortcut}
           </span>
         ) : null}
         {hasBranch ? (
@@ -501,7 +504,7 @@ function MenuSurface({
       role="menu"
       aria-label={label}
       tabIndex={-1}
-      autoFocus={takeFocus}
+      autoFocus={takesFocus}
       side={side}
       align={align}
       width={width}

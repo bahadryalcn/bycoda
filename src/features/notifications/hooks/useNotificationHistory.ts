@@ -14,6 +14,19 @@ import {
 
 type Notice = Parameters<typeof historyEntry>[0];
 
+async function confirmClear(setClearing: (clearing: boolean) => void): Promise<boolean> {
+  setClearing(true);
+  let cleared = false;
+  try {
+    cleared = (await clearNotificationHistory()) !== false;
+  } catch {
+    cleared = false;
+  } finally {
+    setClearing(false);
+  }
+  return cleared;
+}
+
 /**
  * The notification log: records each new pending request once, shows what the app
  * announced elsewhere (written by the delivery code),
@@ -84,17 +97,9 @@ export function useNotificationHistory(notices: readonly Notice[]) {
   }, [reload]);
 
   // The list only empties once the durable clear is confirmed.
-  const clear = useCallback(async (): Promise<boolean> => {
+  const clear = async (): Promise<boolean> => {
     mutation.current += 1;
-    setClearing(true);
-    let cleared = false;
-    try {
-      cleared = (await clearNotificationHistory()) !== false;
-    } catch {
-      cleared = false;
-    } finally {
-      setClearing(false);
-    }
+    const cleared = await confirmClear(setClearing);
     setClearError(!cleared);
     if (!cleared) {
       reload();
@@ -104,29 +109,26 @@ export function useNotificationHistory(notices: readonly Notice[]) {
     local.current = [];
     setHistory([]);
     return true;
-  }, [reload]);
+  };
 
   // The row only leaves once the durable removal is confirmed.
-  const remove = useCallback(
-    async (entry: NotificationHistoryEntry): Promise<boolean> => {
-      mutation.current += 1;
-      let stored: NotificationHistoryEntry[] | null = null;
-      try {
-        stored = await removeNotificationHistoryEntry(entry);
-      } catch {
-        stored = null;
-      }
-      if (!stored) {
-        reload();
-        return false;
-      }
-      setUnavailable(false);
-      local.current = stored;
-      setHistory(stored);
-      return true;
-    },
-    [reload],
-  );
+  const remove = async (entry: NotificationHistoryEntry): Promise<boolean> => {
+    mutation.current += 1;
+    let stored: NotificationHistoryEntry[] | null = null;
+    try {
+      stored = await removeNotificationHistoryEntry(entry);
+    } catch {
+      stored = null;
+    }
+    if (!stored) {
+      reload();
+      return false;
+    }
+    setUnavailable(false);
+    local.current = stored;
+    setHistory(stored);
+    return true;
+  };
 
   return { history, unavailable, clearError, clearing, reload, clear, remove };
 }

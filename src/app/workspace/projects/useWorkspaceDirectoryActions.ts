@@ -83,14 +83,17 @@ export function useWorkspaceDirectoryActions({
     [activeTab, onFocusPane],
   );
 
-  const onRatio = useCallback((tabId: string, splitId: string, index: number, ratio: number) => {
-    if (windowTransferPendingRef.current || movingTabIds.current.has(tabId)) return;
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === tabId ? { ...t, layout: setSplitRatio(t.layout, splitId, index, ratio) } : t,
-      ),
-    );
-  }, []);
+  const onRatio = useCallback(
+    (tabId: string, splitId: string, index: number, ratio: number) => {
+      if (windowTransferPendingRef.current || movingTabIds.current.has(tabId)) return;
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId ? { ...t, layout: setSplitRatio(t.layout, splitId, index, ratio) } : t,
+        ),
+      );
+    },
+    [movingTabIds, setTabs, windowTransferPendingRef],
+  );
 
   const onCwdChange = useCallback(
     (sessionId: string, cwd: string, token?: PrivacyMutationToken) => {
@@ -198,7 +201,7 @@ export function useWorkspaceDirectoryActions({
       persistSession(next);
       notifyReviewChanged(sessionId);
     },
-    [persistSession],
+    [persistSession, sessionsRef, setSessions],
   );
 
   const onWorkspaceModeChange = useCallback(
@@ -227,22 +230,25 @@ export function useWorkspaceDirectoryActions({
         }),
       );
     },
-    [],
+    [setSessions],
   );
 
-  const onWorktreeBaseChange = useCallback((sessionId: string, base: string) => {
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId &&
-        !hostSessionBinding(session) &&
-        (isBlankSession(session) ||
-          (!!session.workspaceMode && !session.worktreeCwd && !session.busy)) &&
-        session.workspaceMode !== "current"
-          ? { ...session, worktreeBase: base }
-          : session,
-      ),
-    );
-  }, []);
+  const onWorktreeBaseChange = useCallback(
+    (sessionId: string, base: string) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId &&
+          !hostSessionBinding(session) &&
+          (isBlankSession(session) ||
+            (!!session.workspaceMode && !session.worktreeCwd && !session.busy)) &&
+          session.workspaceMode !== "current"
+            ? { ...session, worktreeBase: base }
+            : session,
+        ),
+      );
+    },
+    [setSessions],
+  );
   const onSelectWorkspace = useCallback(
     (focus?: WorktreeFocus) => {
       setProjectCwd(sidebarCwdRef.current);

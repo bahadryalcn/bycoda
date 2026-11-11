@@ -2,10 +2,27 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { Button } from "../../../shared/ui/Button";
-import { t } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import type { SshShellController, SshShellPreview } from "../model/sshShellIntegration";
 import styles from "./TerminalTools.module.css";
 import { TerminalGhostText } from "./TerminalGhostText";
+
+async function acceptSuggestion(
+  shell: SshShellController,
+  value: string,
+  done: () => void,
+  fail: (reason: unknown) => void,
+  settle: () => void,
+) {
+  try {
+    await shell.accept(value);
+    done();
+  } catch (reason) {
+    fail(reason);
+  } finally {
+    settle();
+  }
+}
 
 /** Explicit selection mode. Native code, not this UI, verifies safe insertion. */
 export function RemoteShellSuggestions({
@@ -22,6 +39,7 @@ export function RemoteShellSuggestions({
   preview?: SshShellPreview;
   selectionMode?: boolean;
 }) {
+  const t = useT();
   const [selection, setSelection] = useState({ prefix: "", value: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -54,16 +72,19 @@ export function RemoteShellSuggestions({
     pending.current = true;
     setBusy(true);
     setError("");
-    try {
-      await shell.accept(value);
-      onClose();
-      terminal?.focus();
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
+    await acceptSuggestion(
+      shell,
+      value,
+      () => {
+        onClose();
+        terminal?.focus();
+      },
+      (reason) => setError(String(reason)),
+      () => {
+        pending.current = false;
+        setBusy(false);
+      },
+    );
   };
   const previewKeys = useRef<(event: KeyboardEvent) => void>(() => {});
   const handlePreviewKey = (event: KeyboardEvent) => {

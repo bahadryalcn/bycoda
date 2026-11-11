@@ -203,6 +203,26 @@ export function loadRemoteCapabilities(environmentId: string): Promise<string[] 
 const TAB_KEY = "bycoda.remote-tabs.v2";
 export const REMOTE_TAB_BINDING_CHANGE = "bycoda:remote-tab-binding";
 const WORKTREE_KEY = "bycoda.remote-pending-worktrees.v1";
+/** Fired on this window after a pending-worktree write. */
+export const REMOTE_PENDING_WORKTREE_CHANGE = "bycoda:remote-pending-worktree";
+
+/** The stored tab-binding JSON, for subscriptions that need a comparable snapshot. */
+export function remoteTabBindingsRaw(): string | null {
+  try {
+    return localStorage.getItem(TAB_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** The stored pending-worktree JSON, for subscriptions that need a comparable snapshot. */
+export function remotePendingWorktreesRaw(): string | null {
+  try {
+    return localStorage.getItem(WORKTREE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export function remotePendingWorktree(shellId: string): string | undefined {
   try {
@@ -232,6 +252,7 @@ export function rememberRemotePendingWorktree(shellId: string, path?: string) {
   } catch {
     /* selection is restored from the host once a session exists */
   }
+  window.dispatchEvent(new Event(REMOTE_PENDING_WORKTREE_CHANGE));
 }
 
 /** False when the tab bindings are missing or unreadable (e.g. cleared storage):

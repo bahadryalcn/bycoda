@@ -53,6 +53,7 @@ beforeEach(() => {
         notifyResize = callback;
       }
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

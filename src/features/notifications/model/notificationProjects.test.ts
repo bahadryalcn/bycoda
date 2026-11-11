@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, expect, it } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { projectKey } from "../../../shared/lib/paths";
 import { saveTabGroupLabel } from "../../workspace/model/tabGroups";
 import {
@@ -10,6 +10,8 @@ import {
   rememberNotificationProjects,
   subscribeNotificationProjects,
   notificationProjectsSnapshot,
+  notificationProjectsViewSnapshot,
+  knownNotificationProjectSelectionFrom,
 } from "./notificationProjects";
 
 beforeEach(() => localStorage.clear());
@@ -174,4 +176,32 @@ it("uses a new catalog version so old Git-derived path mappings are ignored", ()
   );
   expect(loadNotificationProjects()).toEqual([]);
   expect(knownNotificationProject("/work/app")?.id).toBe("local:/work/app");
+});
+
+it("serves a stable catalog view that follows catalog and label writers and selects like the store reader", () => {
+  const path = "G:/Projects/upstream";
+  const first = notificationProjectsViewSnapshot();
+  expect(notificationProjectsViewSnapshot()).toBe(first);
+  const listener = vi.fn();
+  const unsubscribe = subscribeNotificationProjects(listener);
+  try {
+    rememberNotificationProjects([
+      inboxNotificationProject({
+        provider: "github",
+        repo: "acme/upstream",
+        url: "https://github.com/acme/upstream",
+        projectPath: path,
+      }),
+    ]);
+    saveTabGroupLabel(projectKey(path), "bycoda");
+    expect(listener).toHaveBeenCalled();
+    const next = notificationProjectsViewSnapshot();
+    expect(next).not.toBe(first);
+    expect(notificationProjectsViewSnapshot()).toBe(next);
+    expect(knownNotificationProjectSelectionFrom([path], next.catalog, next.labels)).toEqual(
+      knownNotificationProjectSelection([path]),
+    );
+  } finally {
+    unsubscribe();
+  }
 });

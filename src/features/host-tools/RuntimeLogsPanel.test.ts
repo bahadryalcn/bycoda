@@ -8,6 +8,7 @@ import { writeTextFile } from "../../platform/tauri/fs";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
 import { registerLogsComposer } from "./logsComposer";
 import { RuntimeLogsPanel } from "./RuntimeLogsPanel";
+import { readToolsDraftTransfer } from "./toolsDraftTransfer";
 import type { RuntimeLogEntry, RuntimeLogSnapshot } from "./runtimeLogTypes";
 import type { HostToolTarget } from "../connections/model/hostToolTarget";
 import type { OpenFileFn } from "../search/model/search";
@@ -265,6 +266,32 @@ it("keeps selected log text in place while new output arrives and resumes follow
   );
   await act(async () => vi.advanceTimersByTimeAsync(1_500));
   expect(timeline.scrollTop).toBe(900);
+});
+
+it("persists the scroll position without cloning the log buffer per scroll event", async () => {
+  const scope = { cwd: "/repo", sessionId: "host-session", targetValue: "scroll-target" };
+  await act(async () =>
+    root.render(
+      createElement(RuntimeLogsPanel, {
+        cwd: "/repo",
+        sessionId: "host-session",
+        composerSessionId: "composer-session",
+        transferScope: scope,
+        active: true,
+      }),
+    ),
+  );
+  const timeline = container.querySelector<HTMLElement>(".runtime-logs-timeline")!;
+  const clone = vi.spyOn(globalThis, "structuredClone");
+  timeline.scrollTop = 120;
+  await act(async () => timeline.dispatchEvent(new Event("scroll", { bubbles: true })));
+  timeline.scrollTop = 130;
+  await act(async () => timeline.dispatchEvent(new Event("scroll", { bubbles: true })));
+  expect(clone).not.toHaveBeenCalled();
+  clone.mockRestore();
+  const draft = readToolsDraftTransfer("/repo", "host-session", "scroll-target");
+  expect(draft?.logs?.scrollTop).toBe(130);
+  expect(draft?.logs?.buffer.entries).toHaveLength(4);
 });
 
 it("sends the retained stream generation and replaces equal-cursor history after restart", async () => {

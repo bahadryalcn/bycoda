@@ -2,7 +2,7 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { Surface } from "../../../shared/ui/Surface";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HtmlPreview } from "../../files/public/HtmlPreview";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
@@ -76,10 +76,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
     window.addEventListener(SCHEME_CHANGE_EVENT, update);
     return () => window.removeEventListener(SCHEME_CHANGE_EVENT, update);
   }, []);
-  const source = useMemo(
-    () => sandboxedInlineVisual(valid.html, scheme.dark, scheme.theme),
-    [valid, scheme],
-  );
+  const source = sandboxedInlineVisual(valid.html, scheme.dark, scheme.theme);
   const controls = (location: typeof view) => (
     <>
       {location !== "expanded" ? (

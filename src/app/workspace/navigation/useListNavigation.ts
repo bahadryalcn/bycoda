@@ -84,9 +84,12 @@ export function useListNavigation({
     return paths;
   }, [tabs]);
 
-  const onSessionNavigationOrder = useCallback((ids: readonly string[]) => {
-    sessionNavigationIdsRef.current = ids;
-  }, []);
+  const onSessionNavigationOrder = useCallback(
+    (ids: readonly string[]) => {
+      sessionNavigationIdsRef.current = ids;
+    },
+    [sessionNavigationIdsRef],
+  );
 
   const onNavigateSessionList = useCallback(
     (delta: number, inCurrentTab = false) => {
@@ -153,6 +156,13 @@ export function useListNavigation({
       onSelectHistorySession,
       onSelectRemoteSession,
       revealLinkedSessionUpdate,
+      tabsRef,
+      sessionNavigationIdsRef,
+      sessionsRef,
+      linkedSessionUpdatesRef,
+      activeTabIdRef,
+      setTabs,
+      setComposerFocused,
     ],
   );
 
@@ -167,7 +177,7 @@ export function useListNavigation({
       if (!next || sameProjectPath(next, current)) return;
       onSelectProject(next);
     },
-    [onSelectProject],
+    [onSelectProject, projectCwdRef],
   );
 
   return {

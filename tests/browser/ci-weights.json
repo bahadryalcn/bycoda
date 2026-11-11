@@ -148,6 +148,9 @@
       "chromium": 7,
       "webkit": 7
     },
+    "render-budget": {
+      "chromium": 5
+    },
     "subagent-relay": {
       "chromium": 13
     },
@@ -423,6 +426,9 @@
     "sprints": {
       "chromium": 23800,
       "webkit": 46400
+    },
+    "render-budget": {
+      "chromium": 240000
     },
     "subagent-relay": {
       "chromium": 16300

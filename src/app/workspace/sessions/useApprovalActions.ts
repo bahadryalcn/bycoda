@@ -85,7 +85,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
         sessionsRef.current.find((current) => current.id === sessionId),
       );
     },
-    [],
+    [sessionsRef],
   );
 
   const onQuestionReply = useCallback(
@@ -120,15 +120,18 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
           t("The provider is no longer waiting for this answer, so it was not delivered."),
         );
     },
-    [],
+    [sessionsRef],
   );
 
-  const onQuestionInteraction = useCallback((sessionId: string, requestId: number) => {
-    const session = sessionsRef.current.find((s) => s.id === sessionId);
-    if (session && (hostSessionBinding(session) || remoteProjectFor(session.cwd))) return;
-    if (session && !session.worktreeRemoved)
-      keepHarnessQuestionOpen(liveTurnHarness(session), sessionId, requestId);
-  }, []);
+  const onQuestionInteraction = useCallback(
+    (sessionId: string, requestId: number) => {
+      const session = sessionsRef.current.find((s) => s.id === sessionId);
+      if (session && (hostSessionBinding(session) || remoteProjectFor(session.cwd))) return;
+      if (session && !session.worktreeRemoved)
+        keepHarnessQuestionOpen(liveTurnHarness(session), sessionId, requestId);
+    },
+    [sessionsRef],
+  );
 
   /**
    * The one opener behind every notification target. Resolves whether the

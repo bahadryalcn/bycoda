@@ -55,6 +55,7 @@ import {
 } from "../../../../features/sessions/model/userQuestion";
 import { resolveCodexBinary, spawnChild, watchChild } from "../../core/child";
 import { additionalDirsFor } from "../../core/additionalDirs";
+import { announceSlowProviderStartup } from "../../core/providerStartupStatus";
 import { forgetSessionCommands, reportSessionCommands } from "../../core/reportedCommands";
 import { skillDisabled, skillPathKey } from "../../core/skillPolicy";
 import {
@@ -886,6 +887,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     operation: input.operationContext?.operation,
   };
   startingByThread.set(input.sessionId, startup);
+  // A start slower than a few seconds says so instead of looking stuck.
+  const clearStartupNotice = announceSlowProviderStartup(input.onEvent, "Codex");
   try {
     observeProviderProcess(input, handle, "starting");
     if (existing) {
@@ -1050,13 +1053,19 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     let skillConfig: Record<string, unknown> | undefined;
     if (input.skillPolicy) {
-      const effective = asRecord(await startupRpc.request("config/read", { includeLayers: false }));
+      // Neither read needs the other's answer, and the inventory only matters
+      // when something is disabled: it finds the paths behind disabled names.
+      const disablesSkills =
+        input.skillPolicy.disabledNames.length > 0 || input.skillPolicy.disabledPaths.length > 0;
+      const [config, inventory] = await Promise.all([
+        startupRpc.request("config/read", { includeLayers: false }),
+        disablesSkills
+          ? startupRpc.request("skills/list", { cwds: [input.cwd], forceReload: true })
+          : undefined,
+      ]);
+      const effective = asRecord(config);
       const configured = asRecord(asRecord(effective?.config)?.skills)?.config;
       const entries = Array.isArray(configured) ? [...configured] : [];
-      const inventory = await startupRpc.request("skills/list", {
-        cwds: [input.cwd],
-        forceReload: true,
-      });
       for (const path of input.skillPolicy.disabledPaths) {
         if (!entries.some((entry) => asRecord(entry)?.path === path))
           entries.push({ path, enabled: false });
@@ -1202,6 +1211,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     startup.rpc?.close(error instanceof Error ? error : new Error(String(error)));
     return preserveProviderFailure(error, stopCodexSession(input.sessionId, handle));
   } finally {
+    clearStartupNotice();
     if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }

@@ -14,6 +14,8 @@ export {
   notificationKey,
   type NotificationHistoryEntry,
 } from "./model/notificationHistory";
+export { useNotificationSeenAt } from "./hooks/useNotificationSeen";
+export { markNotificationsSeen, countUnseenNotifications } from "./model/notificationSeen";
 export {
   sessionsNeedingAttention,
   type AttentionRules,

@@ -1,0 +1,162 @@
+/* Adapted official free Arc source; bycoda semantic theme owns presentation. */
+@layer properties, theme, base, components, utilities;
+
+/* Box layout is layered so a self-positioned card can take placement and width utilities. */
+@layer components {
+  /* Toasts hang from the stack's edge. Its height covers the gaps between open toasts, so hover
+     survives the space between them. */
+  .stack {
+    position: relative;
+    flex: none;
+    inline-size: min(22.5rem, calc(100vw - 1.5rem));
+    pointer-events: auto;
+    transition:
+      block-size var(--motion-duration-standard) var(--motion-ease-standard),
+      margin-block var(--motion-duration-standard) var(--motion-ease-standard);
+  }
+  /* An empty stack takes no room: it also gives back the gap its column puts beside it. */
+  .stack[data-empty] {
+    margin-block: -0.25rem;
+    pointer-events: none;
+  }
+
+  /* Tucked toasts scale from the edge they tuck away from, so exactly the peek shows beyond the
+     toast in front. */
+  .item {
+    position: absolute;
+    inset-inline: 0;
+  }
+  .item[data-edge="bottom"] {
+    inset-block-end: 0;
+    transform-origin: 50% 0;
+  }
+  .item[data-edge="top"] {
+    inset-block-start: 0;
+    transform-origin: 50% 100%;
+  }
+  .item[data-toast-leaving] {
+    pointer-events: none;
+  }
+
+  .card {
+    position: relative;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 1px solid var(--ui-pane-border);
+    border-radius: var(--ui-radius-popup);
+    background: var(--ui-surface-floating);
+    color: var(--foreground);
+    box-shadow: var(--ui-elevation-floating);
+    container-type: inline-size;
+    transition: background-color var(--duration-standard) var(--ease-standard);
+  }
+  .stacked {
+    position: absolute;
+    inset: 0;
+  }
+  /* Tucked toasts sit a step back in tone as well as scale. */
+  .item[data-front="false"][data-expanded="false"] .card {
+    background: color-mix(in oklab, var(--ui-surface-floating) 94%, var(--foreground));
+    box-shadow: none;
+  }
+
+  .content {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding-block: var(--space-3);
+    padding-inline: var(--space-4) var(--space-3);
+  }
+  .icon {
+    display: grid;
+    flex: none;
+    inline-size: 1.125rem;
+    block-size: 1.25rem;
+    place-items: center;
+    color: var(--text-muted);
+    transition: color var(--duration-fast) var(--ease-standard);
+  }
+  .icon[data-tone="success"] {
+    color: var(--success);
+  }
+  .icon[data-tone="info"] {
+    color: var(--info);
+  }
+  .icon[data-tone="warning"] {
+    color: var(--warning);
+  }
+  .icon[data-tone="danger"] {
+    color: var(--danger);
+  }
+  .icon svg {
+    display: block;
+  }
+
+  .copy {
+    flex: 1;
+    min-inline-size: 0;
+    font-size: var(--text-base);
+    line-height: 1.25rem;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+  .title {
+    display: block;
+    font-weight: 500;
+  }
+  .description {
+    margin-block-start: 0.125rem;
+    color: var(--text-secondary);
+  }
+  /* Without a title the description is the toast's one line, so it reads at full strength. */
+  .description:first-child {
+    margin-block-start: 0;
+    color: inherit;
+  }
+  .body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-block-start: var(--space-2);
+    min-inline-size: 0;
+  }
+  .body:first-child {
+    margin-block-start: 0;
+  }
+
+  /* Both controls are a compact control tall; the offset centres them on the first text line. */
+  .actionSlot,
+  .closeSlot {
+    display: flex;
+    flex: none;
+    margin-block-start: -0.25rem;
+  }
+  .actionSlot {
+    justify-content: flex-end;
+  }
+  .closeSlot {
+    margin-inline-end: -0.125rem;
+  }
+  /* A narrow toast keeps its copy wide: the action drops under the copy instead of squeezing it. */
+  @container (max-width: 21rem) {
+    .content {
+      flex-wrap: wrap;
+      row-gap: var(--space-2);
+    }
+    .actionSlot {
+      order: 1;
+      flex-basis: 100%;
+      justify-content: flex-start;
+      margin-block-start: 0;
+      padding-inline-start: calc(1.125rem + var(--space-3));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stack,
+    .card,
+    .icon {
+      transition: none;
+    }
+  }
+}

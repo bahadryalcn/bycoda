@@ -7,7 +7,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { useLocale, useT } from "../../../shared/i18n";
 import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
-import { sessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
+import { useSessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import {
@@ -43,6 +43,7 @@ import type { ProjectAction } from "../../projects";
 import type { OpenFileFn } from "../../search/model/search";
 import {
   sessionProviderAccountId,
+  subscribeProviderAccounts,
   supportsProviderAccounts,
   type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
@@ -163,7 +164,7 @@ import type { SessionFolderTarget } from "../model/sessionFolders";
 import type { SessionOrganizationResult } from "../model/sessionOrganizationStore";
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
 import { RemoteSession } from "../../connections/public/RemoteSession";
-import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
+import { useHostSessionBinding } from "../../connections/public/useHostSessionBinding";
 import {
   getSessions,
   sameOptionalSessionIgnoringStreamingText,
@@ -346,9 +347,10 @@ export const SessionPane = memo(function SessionPane(props: SessionPaneProps) {
   // Keeps identity when a rebuilt session has the same content, so the pane below
   // is not re-rendered for it.
   const paneSession = useStableValue(live, sameSessionIgnoringStreamingText);
+  const hostBinding = useHostSessionBinding(props.session);
   // Sessions in a project on another machine render this same pane, backed by
   // the host instead of this computer's session runtime.
-  if (hostSessionBinding(props.session) || isRemoteProjectPath(props.session.cwd))
+  if (hostBinding || isRemoteProjectPath(props.session.cwd))
     return (
       <RemoteSession
         shell={props.session}
@@ -362,6 +364,34 @@ export const SessionPane = memo(function SessionPane(props: SessionPaneProps) {
     );
   return <LocalSessionPane {...props} session={paneSession} />;
 });
+
+/** An event-time view of the pane's session: the store's current one, or the rendered one for a remote session. */
+function currentSessionAccessor(
+  renderedSession: { current: Session },
+  renderedRemote: { current: boolean },
+): { readonly current: Session } {
+  return {
+    get current(): Session {
+      const rendered = renderedSession.current;
+      return renderedRemote.current
+        ? rendered
+        : (selectSessionById(getSessions(), rendered.id) ?? rendered);
+    },
+  };
+}
+
+function approvalContextFor(
+  currentSessionRef: { readonly current: Session },
+  dispatch: Props["onApproval"],
+) {
+  return {
+    get session() {
+      return currentSessionRef.current;
+    },
+    getSession: () => currentSessionRef.current,
+    dispatch,
+  };
+}
 
 const LocalSessionPane = memo(function LocalSessionPane({
   remoteSession = false,
@@ -449,6 +479,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onLoadRemoteHistory,
   onLoadRemoteBlock,
 }: Props) {
+  const performanceTraceId = useSessionPerformanceTrace(session.id);
   const rootParentRef = useRef<ParentInputHandle | null>(null);
   const rootMutation = <T,>(operation: () => T, original?: ParentAdmission): T | false => {
     const owner = rootParentRef.current;
@@ -566,14 +597,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const renderedRemote = useRef(remote);
   renderedRemote.current = remote;
   const currentSessionRef = useMemo(
-    () => ({
-      get current(): Session {
-        const rendered = renderedSession.current;
-        return renderedRemote.current
-          ? rendered
-          : (selectSessionById(getSessions(), rendered.id) ?? rendered);
-      },
-    }),
+    () => currentSessionAccessor(renderedSession, renderedRemote),
     [],
   );
   const stableSession = useStableValue(session, sameSessionIgnoringStreamingText);
@@ -645,11 +669,34 @@ const LocalSessionPane = memo(function LocalSessionPane({
     loadNewThreadBackgroundEffect,
     loadNewThreadBackgroundEffect,
   );
-  const projectBackground = loadProjectChatBackgroundSettings(projectKey(session.cwd));
+  // A string snapshot keeps the store read stable while the stored settings are unchanged.
+  const projectBackgroundJson = useSyncExternalStore(
+    subscribeProjectChatBackground,
+    () => JSON.stringify(loadProjectChatBackgroundSettings(projectKey(session.cwd))),
+    () => "null",
+  );
+  const projectBackground: {
+    path: string;
+    emptyOpacity: number;
+    sessionOpacity: number;
+    scope: string;
+    effect: Parameters<typeof useProjectBackgroundEffect>[1];
+  } | null = JSON.parse(projectBackgroundJson);
+  // The default account lives in a store; a string snapshot keeps the read value-stable.
+  const sessionAccountId = useSyncExternalStore(subscribeProviderAccounts, () =>
+    supportsProviderAccounts(session.harness)
+      ? sessionProviderAccountId(session.harness, session)
+      : undefined,
+  );
+  const projectBackgroundImageRevision = useSyncExternalStore(
+    subscribeProjectChatBackground,
+    projectChatBackgroundImageRevision,
+    projectChatBackgroundImageRevision,
+  );
   const projectBackgroundUrl = useProjectBackgroundEffect(
     projectBackground?.path ?? null,
     projectBackground?.effect ?? "none",
-    projectChatBackgroundImageRevision(),
+    projectBackgroundImageRevision,
   );
   const projectBackgroundPresent = !!projectBackground;
   const projectBackgroundEmptyOpacity = projectBackground?.emptyOpacity;
@@ -677,13 +724,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     [onApproval, session.id],
   );
   const approvalContext = useMemo(
-    () => ({
-      get session() {
-        return currentSessionRef.current;
-      },
-      getSession: () => currentSessionRef.current,
-      dispatch: onApproval,
-    }),
+    () => approvalContextFor(currentSessionRef, onApproval),
     [onApproval, currentSessionRef],
   );
   const replyQuestion = useCallback(
@@ -1359,7 +1400,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onUsageLimitDismiss={composerUsageLimitDismiss}
       providerAccountId={
         supportsProviderAccounts(session.harness)
-          ? (session.nextProviderAccountId ?? sessionProviderAccountId(session.harness, session))
+          ? (session.nextProviderAccountId ?? sessionAccountId)
           : undefined
       }
       onSelectProviderAccount={onSelectProviderAccount ? composerSelectProviderAccount : undefined}
@@ -1416,7 +1457,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             ariaLabel: t("Open notes panel"),
             shortcut: notesShortcut,
             icon: <StickyNote className="icon-sm" strokeWidth={1.75} />,
-            onSelect: toggleNotesPanel,
+            onSelect: () => toggleNotesPanel(),
           },
         ]
       : []),
@@ -1722,7 +1763,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           ? liveBlocks.filter((block) => block.id !== draftBlock?.id)
                           : liveBlocks
                       }
-                      performanceTraceId={sessionPerformanceTrace(session.id)}
+                      performanceTraceId={performanceTraceId}
                       historyLoading={session.historyLoading}
                       historyLoadError={session.historyLoadError}
                       remoteHistoryHasMore={remoteHistoryHasMore}

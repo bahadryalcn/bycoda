@@ -6,7 +6,10 @@ import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
-import { projectDisplayName } from "../../features/projects/model/projectNames";
+import {
+  projectDisplayNameFrom,
+  useProjectLabels,
+} from "../../features/projects/model/projectNames";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocale, useT } from "../../shared/i18n";
 import { Modal } from "../../shared/ui/Modal";
@@ -67,6 +70,7 @@ export function SessionRecoveryPanel({
 }: Props) {
   const t = useT();
   const locale = useLocale();
+  const projectLabels = useProjectLabels();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pending, setPending] = useState(false);
@@ -198,7 +202,7 @@ export function SessionRecoveryPanel({
     .filter(
       (row) =>
         (filter === "all" || recoveryNeedsAttention(row.status)) &&
-        `${row.title} ${projectDisplayName(row.stub.cwd)} ${row.stub.cwd} ${row.machine} ${row.stub.model}`
+        `${row.title} ${projectDisplayNameFrom(row.stub.cwd, projectLabels)} ${row.stub.cwd} ${row.machine} ${row.stub.model}`
           .toLocaleLowerCase()
           .includes(query.toLocaleLowerCase()),
     )
@@ -439,7 +443,7 @@ export function SessionRecoveryPanel({
                   <div className="min-w-0 basis-48 flex-1">
                     <div className="break-words text-ui-secondary font-medium">{title}</div>
                     <div className="break-words text-ui-caption text-(--ui-text-muted)">
-                      <p>{`${projectDisplayName(stub.cwd)} · ${machine}`}</p>
+                      <p>{`${projectDisplayNameFrom(stub.cwd, projectLabels)} · ${machine}`}</p>
                       <p className="select-text [overflow-wrap:anywhere]">{stub.cwd}</p>
                       <p>
                         {HARNESS_TITLE[stub.harness]} · {stub.model}

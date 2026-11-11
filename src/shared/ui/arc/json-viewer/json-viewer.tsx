@@ -3,7 +3,7 @@ import { OverflowTooltip } from "../../Tooltip";
 import { debounce } from "es-toolkit";
 import { SearchInput, SearchInputGroup } from "../../SearchInput";
 
-import { t, useT } from "../../../i18n";
+import { useT } from "../../../i18n";
 import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { AnimatePresence, LayoutGroup, animate, motion, useReducedMotion } from "motion/react";
@@ -133,7 +133,7 @@ function copyText(value: unknown, type: JsonValueType) {
   if (isBranch(type)) return JSON.stringify(value, null, 2);
   return primitiveText(value, type);
 }
-const countLabel = (row: { type: JsonValueType; count: number }) =>
+const countLabel = (row: { type: JsonValueType; count: number }, t: ReturnType<typeof useT>) =>
   t(row.type === "array" ? "{p0} items" : "{p0} keys", { p0: row.count });
 
 /** Every container path, for expand all. */
@@ -614,14 +614,15 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
   const [announcement, setAnnouncement] = useState("");
   const copy = async (row: Row, kind: "value" | "path") => {
     const text = kind === "path" ? row.id : copyText(row.value, row.type);
+    const write = writeText ?? writeClipboard;
+    const copied = t(kind === "path" ? "Copied path: {p0}" : "Copied value: {p0}", {
+      p0: row.id,
+    });
+    const notify = () => onCopy?.({ kind, path: row.id, text });
     try {
-      await (writeText ?? writeClipboard)(text);
-      setAnnouncement(
-        t(kind === "path" ? "Copied path: {p0}" : "Copied value: {p0}", {
-          p0: row.id,
-        }),
-      );
-      onCopy?.({ kind, path: row.id, text });
+      await write(text);
+      setAnnouncement(copied);
+      notify();
     } catch (error) {
       setAnnouncement(t("Copy failed"));
       throw error;
@@ -748,7 +749,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
         p1: row.hidden,
       });
     return isBranch(row.type)
-      ? `${name}, ${row.type}, ${countLabel(row)}`
+      ? `${name}, ${row.type}, ${countLabel(row, t)}`
       : `${name}: ${primitiveText(row.value, row.type)}`;
   };
 
@@ -963,7 +964,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                                       .join(", ")}${row.count > 3 ? ", …" : ""} }`}
                               </span>
                             ) : null}
-                            <span className={styles.countLabel}>{countLabel(row)}</span>
+                            <span className={styles.countLabel}>{countLabel(row, t)}</span>
                           </span>
                         ) : (
                           <span
@@ -1032,7 +1033,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
           <span className={styles.pathType}>
             {activeRow.kind === "node"
               ? isBranch(activeRow.type)
-                ? `${activeRow.type}, ${countLabel(activeRow)}`
+                ? `${activeRow.type}, ${countLabel(activeRow, t)}`
                 : activeRow.type
               : "page"}
           </span>

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { notifySession, pendingInputNotifications } from "../model/notifications";
 import type { Session } from "../../sessions/model/session";
 
 export function useInputNotifications(sessions: Session[], activeSessionId: string | undefined) {
-  const inputNotifications = useMemo(() => pendingInputNotifications(sessions), [sessions]);
+  const inputNotifications = pendingInputNotifications(sessions);
   const notifiedInputIdsRef = useRef(new Set<string>());
   useEffect(() => {
     const notified = notifiedInputIdsRef.current;
@@ -11,7 +11,8 @@ export function useInputNotifications(sessions: Session[], activeSessionId: stri
       if (!inputNotifications.has(key)) notified.delete(key);
     }
     const notifiedSessions = new Set<string>();
-    for (const [key, { session, event }] of inputNotifications) {
+    for (const entry of inputNotifications) {
+      const [key, { session, event }] = entry;
       if (notified.has(key) || notifiedSessions.has(session.id)) continue;
       notifiedSessions.add(session.id);
       // Coalesce this render's banners per session, but leave other requests

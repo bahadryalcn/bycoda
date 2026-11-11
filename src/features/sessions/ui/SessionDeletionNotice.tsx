@@ -54,6 +54,7 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
     const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
   }, [pending, status.startedAt]);
+  const onDismissStatus = () => dismissSessionDeletionStatus(status.sessionId);
   const stages = {
     preparing: t("Preparing deletion…"),
     stopping: t("Stopping conversation…"),
@@ -76,7 +77,7 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
                 : "success"
         }
         icon={pending ? <Spinner size="sm" /> : undefined}
-        onDismiss={pending ? undefined : () => dismissSessionDeletionStatus(status.sessionId)}
+        onDismiss={pending ? undefined : onDismissStatus}
       >
         <span className="min-w-0 break-words">
           <span className="block">{status.title}</span>

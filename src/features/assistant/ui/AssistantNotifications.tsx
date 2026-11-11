@@ -1,6 +1,15 @@
 import { useEffect, useRef } from "react";
-import { assistantRequest, refreshAssistant, useAssistantSnapshot } from "../model/assistantClient";
-import { AssistantNotificationDelivery } from "../model/assistantNotifications";
+import {
+  assistantRequest,
+  refreshAssistantQuietly,
+  watchAssistantSnapshot,
+  useAssistantSnapshot,
+  type AssistantClientState,
+} from "../model/assistantClient";
+import {
+  AssistantNotificationDelivery,
+  type AssistantNotificationInput,
+} from "../model/assistantNotifications";
 import { isLeadWindow } from "../../notifications/hooks/useBackgroundNotifications";
 import { notifyAssistant } from "../../notifications/model/notifications";
 import {
@@ -17,9 +26,24 @@ function notificationStorage() {
   }
 }
 
+// Reads: profile.enabled, profile.setupComplete and the first five notifications' id/eligible.
+function selectDelivery(state: AssistantClientState): AssistantNotificationInput | null {
+  const snapshot = state.snapshot;
+  if (!snapshot) return null;
+  return {
+    profile: { enabled: snapshot.profile.enabled, setupComplete: snapshot.profile.setupComplete },
+    notifications: (snapshot.notifications ?? [])
+      .slice(0, 5)
+      .map(({ id, eligible }) => ({ id, eligible })),
+  };
+}
+function sameDelivery(a: AssistantNotificationInput | null, b: AssistantNotificationInput | null) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /** Main-window bridge. No permission prompt, microphone, or background execution grant. */
 export function AssistantNotifications() {
-  const { snapshot } = useAssistantSnapshot();
+  const snapshot = useAssistantSnapshot(selectDelivery, sameDelivery);
   const current = useRef(snapshot);
   current.current = snapshot;
   const pump = useRef<AssistantNotificationDelivery | null>(null);
@@ -61,9 +85,15 @@ export function AssistantNotifications() {
           occurredAt: notification.createdAt,
         }),
     });
+  // Delivery and acknowledgement retries run on every snapshot change, heartbeat included,
+  // so they follow the store instead of this bridge's narrower render selection.
   useEffect(() => {
-    if (snapshot) void pump.current!.check(snapshot).catch(() => undefined);
-  }, [snapshot]);
+    const check = (input: AssistantNotificationInput | null) => {
+      if (input) void pump.current!.check(input).catch(() => undefined);
+    };
+    check(current.current);
+    return watchAssistantSnapshot((state) => check(selectDelivery(state)));
+  }, []);
   useEffect(() => {
     let cancelled = false,
       running = false,
@@ -84,7 +114,7 @@ export function AssistantNotifications() {
         }
         if (cancelled) return;
         // Keep notification intake alive when the main webview is in the background.
-        await refreshAssistant();
+        await refreshAssistantQuietly();
         const state = current.current;
         if (!state?.profile.enabled || !state.profile.setupComplete || !loadDailySummaryEnabled())
           return;

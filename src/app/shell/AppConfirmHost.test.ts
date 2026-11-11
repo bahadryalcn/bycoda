@@ -19,6 +19,7 @@ beforeEach(async () => {
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

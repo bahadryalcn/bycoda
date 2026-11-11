@@ -6,4 +6,5 @@ export {
   removeSessionAdditionalDirs,
   saveSessionAdditionalDirs,
   subscribeSessionAdditionalDirs,
+  useSessionAdditionalDirs,
 } from "../model/additionalDirs";

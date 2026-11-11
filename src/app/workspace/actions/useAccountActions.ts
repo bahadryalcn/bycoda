@@ -72,15 +72,18 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
     (sessionId: string, provider: ProviderAccountProvider, accountId: string) => Promise<boolean>
   >(async () => false);
 
-  const onUsageLimitDismiss = useCallback((sessionId: string) => {
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId && session.usageLimit
-          ? { ...session, usageLimit: undefined }
-          : session,
-      ),
-    );
-  }, []);
+  const onUsageLimitDismiss = useCallback(
+    (sessionId: string) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId && session.usageLimit
+            ? { ...session, usageLimit: undefined }
+            : session,
+        ),
+      );
+    },
+    [setSessions],
+  );
 
   /** Move one session to another account of its provider, keeping the conversation. */
   const onSwitchSessionAccount = useCallback(
@@ -172,7 +175,15 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
       promptProviderAccountSignIn(sessionId, provider, accountId);
       return true;
     },
-    [enqueueHarnessEvent, flushHarnessEvents, promptProviderAccountSignIn],
+    [
+      enqueueHarnessEvent,
+      flushHarnessEvents,
+      promptProviderAccountSignIn,
+      setSessions,
+      isMovingPane,
+      sessionsRef,
+      removingSessionIds,
+    ],
   );
 
   latestSwitch.current = onSwitchSessionAccount;
@@ -184,18 +195,21 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
     [active?.id, onSwitchSessionAccount],
   );
 
-  const onUsageLimitResumeAtReset = useCallback((sessionId: string, enabled: boolean) => {
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId && session.usageLimit
-          ? {
-              ...session,
-              usageLimit: { ...session.usageLimit, resumeAtReset: enabled },
-            }
-          : session,
-      ),
-    );
-  }, []);
+  const onUsageLimitResumeAtReset = useCallback(
+    (sessionId: string, enabled: boolean) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId && session.usageLimit
+            ? {
+                ...session,
+                usageLimit: { ...session.usageLimit, resumeAtReset: enabled },
+              }
+            : session,
+        ),
+      );
+    },
+    [setSessions],
+  );
 
   const onUsageLimitResume = useCallback(
     (sessionId: string) => {
@@ -204,7 +218,7 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
       onUsageLimitDismiss(sessionId);
       onSubmit(sessionId, RESUME_PROMPT);
     },
-    [onSubmit, onUsageLimitDismiss],
+    [onSubmit, onUsageLimitDismiss, sessionsRef],
   );
 
   return {

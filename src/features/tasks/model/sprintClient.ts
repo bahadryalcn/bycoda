@@ -54,11 +54,23 @@ const emptyBoardState = (key: string): BoardState => ({
   syncFailures: EMPTY_SYNC_FAILURES,
 });
 
+/** Keeps the current state when the patch changes nothing, so a poll that
+ * returns unchanged data does not re-render the Tasks view. */
 const patchedBoardState = (
   current: BoardState,
   key: string,
   patch: Partial<Omit<BoardState, "key">>,
-): BoardState => ({ ...(current.key === key ? current : emptyBoardState(key)), ...patch });
+): BoardState => {
+  const base = current.key === key ? current : emptyBoardState(key);
+  const unchanged =
+    base === current &&
+    (Object.keys(patch) as (keyof typeof patch)[]).every(
+      (field) =>
+        base[field] === patch[field] ||
+        JSON.stringify(base[field]) === JSON.stringify(patch[field]),
+    );
+  return unchanged ? current : { ...base, ...patch };
+};
 type SourceSnapshot = {
   tasks: SprintTaskSnapshot[];
   cursor: number;

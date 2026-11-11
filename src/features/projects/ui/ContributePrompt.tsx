@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
 import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
@@ -21,28 +21,33 @@ import {
 const FIRST_DELAY_MS = 20_000;
 const RETRY_MS = 5_000;
 
+/** Waits for the first delay, then for no dialog and a visible window, and shows the prompt. */
+function scheduleContributePrompt(show: () => void): (() => void) | undefined {
+  if (!shouldPromptContribute(readContributeState(), Date.now())) return;
+  let timer = setTimeout(function check() {
+    if (hasActiveModalOverlay() || document.visibilityState !== "visible") {
+      timer = setTimeout(check, RETRY_MS);
+    } else if (shouldPromptContribute(readContributeState(), Date.now())) {
+      show();
+    }
+  }, FIRST_DELAY_MS);
+  return () => clearTimeout(timer);
+}
+
 /**
  * The invitation to contribute, after a week and five days of use, and the progress of the
  * clone-and-open flow (also started from Settings → About). Non-blocking: it waits for dialogs
  * to close and for a visible window, and is hidden when no repository is configured.
  */
 export function ContributePrompt() {
-  useLocale();
+  const t = useT();
   const flow = useContributeFlow();
   const [shown, setShown] = useState(false);
   const repository = PRODUCT_IDENTITY.repositoryUrl;
   useEffect(() => {
     if (!repository) return;
     recordContributeUse();
-    if (!shouldPromptContribute(readContributeState(), Date.now())) return;
-    let timer = setTimeout(function check() {
-      if (hasActiveModalOverlay() || document.visibilityState !== "visible") {
-        timer = setTimeout(check, RETRY_MS);
-      } else if (shouldPromptContribute(readContributeState(), Date.now())) {
-        setShown(true);
-      }
-    }, FIRST_DELAY_MS);
-    return () => clearTimeout(timer);
+    return scheduleContributePrompt(() => setShown(true));
   }, [repository]);
 
   if (!repository) return null;

@@ -1,11 +1,10 @@
 import "./PromptOutline.css";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   memo,
-  useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -69,7 +68,7 @@ export const PromptOutline = memo(function PromptOutline({
   onOpenChange,
 }: Props) {
   const t = useT();
-  const prompts = useMemo(() => promptBlocks(blocks), [blocks]);
+  const prompts = promptBlocks(blocks);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [stackBudget, setStackBudget] = useState(BAR_STACK_MAX_PX);
   const [hover, setHover] = useState<Hover | null>(null);
@@ -84,9 +83,13 @@ export const PromptOutline = memo(function PromptOutline({
   const openTimer = useRef<number | null>(null);
   const pointerInside = useRef(false);
   const lastPromptId = useRef<string | null>(null);
-  lastPromptId.current = prompts[prompts.length - 1]?.id ?? null;
+  const lastId = prompts[prompts.length - 1]?.id ?? null;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the latest prompt id for measure(), which runs from scroll/frame callbacks outside render
+  useEffect(() => {
+    lastPromptId.current = lastId;
+  }, [lastId]);
 
-  const measure = useCallback(() => {
+  const measure = () => {
     const scroller = scope.current?.querySelector<HTMLElement>(SCROLLER);
     if (!scroller) {
       setActiveId(null);
@@ -112,15 +115,16 @@ export const PromptOutline = memo(function PromptOutline({
     setActiveId(
       activePromptId({ top: viewport.top, bottom: viewport.bottom }, anchors, distanceToEnd),
     );
-  }, [scope]);
+  };
 
-  const schedule = useCallback(() => {
+  // Stable without the compiler too: the scroll and resize subscriptions below depend on it.
+  const schedule = useStableCallback(() => {
     if (frame.current != null) return;
     frame.current = window.requestAnimationFrame(() => {
       frame.current = null;
       measure();
     });
-  }, [measure]);
+  });
 
   useEffect(() => {
     const scroller = mountedScroller ?? scope.current?.querySelector<HTMLElement>(SCROLLER);
@@ -203,10 +207,7 @@ export const PromptOutline = memo(function PromptOutline({
   };
 
   const hoverId = hover?.id ?? null;
-  const preview = useMemo(
-    () => (hoverId ? promptPreview(blocks, hoverId) : null),
-    [blocks, hoverId],
-  );
+  const preview = hoverId ? promptPreview(blocks, hoverId) : null;
 
   const jumpTo = (id: string) => {
     const scroller = scope.current?.querySelector<HTMLElement>(SCROLLER);

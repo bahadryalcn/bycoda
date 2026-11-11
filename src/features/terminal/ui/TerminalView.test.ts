@@ -643,6 +643,7 @@ function setup() {
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -661,6 +662,7 @@ it("fits before replaying hidden output and redraws on return even at the same s
         intersect = callback;
       }
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

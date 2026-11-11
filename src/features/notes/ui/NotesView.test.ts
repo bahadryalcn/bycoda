@@ -431,6 +431,7 @@ it("keeps the desktop split preference and source undo state when a narrow pane 
             );
         }
       }
+      unobserve() {}
       disconnect() {}
     },
   );

@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { t, type t as Translate } from "../../../shared/i18n";
 import { sessionNeedsInput, type Session } from "./session";
 import { delegationParentOf } from "./delegatedAgents";
 import {
@@ -47,6 +47,11 @@ export function sessionWait(
 
 /** One line for tooltips and screen readers: what the wait is on. */
 export function sessionWaitReason(wait: SessionWait): string {
+  return sessionWaitReasonWith(t, wait);
+}
+
+/** `sessionWaitReason` with the bound translator (`useT()`), for render. */
+export function sessionWaitReasonWith(t: typeof Translate, wait: SessionWait): string {
   const p0 = String(wait.count);
   switch (wait.kind) {
     case "commands":

@@ -3,7 +3,7 @@ import {
   type SortableDataTableProps,
 } from "./arc/sortable-data-table/sortable-data-table";
 export type { DataColumn } from "./arc/sortable-data-table/sortable-data-table";
-import { getLocale, useT } from "../i18n";
+import { useLocale, useT } from "../i18n";
 
 /**
  * Table of comparable records with sortable columns, real numeric/date sorting, an empty message and optional grouping.
@@ -18,9 +18,10 @@ export function SortableDataTable<T extends Record<string, unknown>>(
   props: SortableDataTableProps<T>,
 ) {
   const t = useT();
+  const locale = useLocale();
   return (
     <div className="bycoda-arc bycoda-arc-table">
-      <ArcSortableDataTable locale={getLocale()} emptyMessage={t("No records")} {...props} />
+      <ArcSortableDataTable locale={locale} emptyMessage={t("No records")} {...props} />
     </div>
   );
 }

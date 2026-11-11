@@ -56,7 +56,7 @@ export function useHandoff({ sessionsRef, openSessionBeside }: HandoffDeps) {
       };
       openSessionBeside(sourceId, session, source.cwd, true);
     },
-    [openSessionBeside],
+    [openSessionBeside, sessionsRef],
   );
   return { onHandoff };
 }

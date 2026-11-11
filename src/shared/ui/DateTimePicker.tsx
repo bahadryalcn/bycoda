@@ -1,12 +1,13 @@
 import { OverflowTooltip } from "./Tooltip";
 import { useLocale, useT } from "../i18n";
-import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Calendar, ChevronLeft, ChevronRight, Clock } from "./icons";
 import { Button } from "./Button";
 import { TextField } from "./TextField";
 import { Field, type FieldVariant } from "./Field";
 import { Popover } from "./Popover";
 import { SelectTrigger } from "./arc/select/select";
+import { useToday } from "./arc/lib/use-today";
 import { LAYER } from "../lib/layers";
 import { isImeComposition } from "../lib/keyboard";
 import "./DateTimePicker.css";
@@ -100,7 +101,11 @@ export function DateTimePicker({
 }: Props) {
   const t = useT();
   const locale = useLocale();
-  const today = new Date(Date.now());
+  // Only the calendar day of `today` is used; the shared day clock follows midnight and focus.
+  const dayStart = useToday();
+  const today = dayStart
+    ? new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate(), 12)
+    : new Date(0);
   const dateValue = mode === "time" ? "" : value.slice(0, 10);
   const selected = parseLocalDateTime(`${dateValue}T12:00`) ?? today;
   const minimum = minDate ? parseLocalDateTime(`${minDate}T12:00`) : null;
@@ -127,14 +132,12 @@ export function DateTimePicker({
     setFocusedDate(next);
     setMonth(new Date(next.getFullYear(), next.getMonth(), 1, 12));
   }, [selectedKey, minimumTime, focusedDate]);
-  const weekdays = useMemo(() => {
-    const short = new Intl.DateTimeFormat(locale, { weekday: "short" });
-    const long = new Intl.DateTimeFormat(locale, { weekday: "long" });
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(2024, 0, 1 + index, 12);
-      return { short: short.format(date), long: long.format(date) };
-    });
-  }, [locale]);
+  const shortWeekday = new Intl.DateTimeFormat(locale, { weekday: "short" });
+  const longWeekday = new Intl.DateTimeFormat(locale, { weekday: "long" });
+  const weekdays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(2024, 0, 1 + index, 12);
+    return { short: shortWeekday.format(date), long: longWeekday.format(date) };
+  });
   useLayoutEffect(() => {
     if (!shouldFocus.current) return;
     shouldFocus.current = false;
@@ -434,6 +437,12 @@ export function DateTimeField({
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  // Inside a dialog the popover opens above it; decided from the DOM when it opens.
+  const [layer, setLayer] = useState<number>(LAYER.popover);
+  const openPopover = () => {
+    setLayer(root.current?.closest('[role="dialog"]') ? LAYER.dialogPopover : LAYER.popover);
+    setOpen(true);
+  };
   // The draft is what the picker shows; the owner hears only complete values or "" (native semantics).
   // A new value from the owner replaces the draft during render.
   const [draft, setDraft] = useState({ source: value, text: value });
@@ -493,7 +502,6 @@ export function DateTimeField({
   const shownPlaceholder =
     placeholder ?? (mode === "date" ? t("Choose a date") : t("Choose date and time"));
   const minDate = min ? min.slice(0, 10) : undefined;
-  const layer = root.current?.closest('[role="dialog"]') ? LAYER.dialogPopover : LAYER.popover;
   return (
     <Field
       label={label}
@@ -521,13 +529,15 @@ export function DateTimeField({
               aria-expanded={open}
               aria-controls={open ? popoverId : undefined}
               onClick={() => {
-                if (!disabled) setOpen((current) => !current);
+                if (disabled) return;
+                if (open) setOpen(false);
+                else openPopover();
               }}
               onKeyDown={(event) => {
                 if (disabled || isImeComposition(event.nativeEvent)) return;
                 if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
                   event.preventDefault();
-                  setOpen(true);
+                  openPopover();
                   return;
                 }
                 if (canClear && (event.key === "Backspace" || event.key === "Delete")) {

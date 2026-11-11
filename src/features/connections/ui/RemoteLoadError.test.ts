@@ -74,6 +74,7 @@ it("keeps the compact notice to one row and the raw transport text behind Detail
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

@@ -1,5 +1,5 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { prettyCwd } from "../../../shared/lib/paths";
@@ -29,7 +29,7 @@ export function ProjectNameConflictDialog({
   onConfirm,
   onCancel,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [value, setValue] = useState(suggested);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);

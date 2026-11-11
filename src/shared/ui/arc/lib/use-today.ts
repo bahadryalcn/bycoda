@@ -8,30 +8,38 @@ const fromKey = (key: string) => {
   return new Date(year, month - 1, day);
 };
 
-/** Today turns over at local midnight; returning to the tab, focusing the window or waking the device reads it again. */
+const listeners = new Set<() => void>();
+let timer = 0;
+const notifyAll = () => listeners.forEach((notify) => notify());
+const schedule = () => {
+  const now = new Date();
+  const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  timer = window.setTimeout(
+    () => {
+      notifyAll();
+      schedule();
+    },
+    nextMidnight.getTime() - now.getTime() + 1000,
+  );
+};
+const onVisible = () => {
+  if (document.visibilityState === "visible") notifyAll();
+};
+
+/** Today turns over at local midnight; returning to the tab, focusing the window or waking the device reads it again. One timer and one listener pair serve every subscriber, started by the first and stopped by the last. */
 const subscribeToday = (notify: () => void) => {
-  let timer = 0;
-  const schedule = () => {
-    const now = new Date();
-    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    timer = window.setTimeout(
-      () => {
-        notify();
-        schedule();
-      },
-      nextMidnight.getTime() - now.getTime() + 1000,
-    );
-  };
-  const onVisible = () => {
-    if (document.visibilityState === "visible") notify();
-  };
-  schedule();
-  document.addEventListener("visibilitychange", onVisible);
-  window.addEventListener("focus", notify);
+  listeners.add(notify);
+  if (listeners.size === 1) {
+    schedule();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", notifyAll);
+  }
   return () => {
+    listeners.delete(notify);
+    if (listeners.size > 0) return;
     window.clearTimeout(timer);
     document.removeEventListener("visibilitychange", onVisible);
-    window.removeEventListener("focus", notify);
+    window.removeEventListener("focus", notifyAll);
   };
 };
 const readToday = () => dateKey(new Date());

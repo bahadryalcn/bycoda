@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { composerDraftOf, setComposerDraftSnapshot } from "../model/draftCache";
 import { composerDraftsLoaded, subscribeComposerDraftLoadState } from "../data/composerDraftStore";
 import type { Block } from "../model/session";
@@ -32,7 +32,7 @@ export function useSavedDraftProjection(sessionId: string, block: Block | undefi
     composerDraftsLoaded,
     composerDraftsLoaded,
   );
-  const digest = useMemo(() => (block ? sourceDigest(block) : undefined), [block]);
+  const digest = block ? sourceDigest(block) : undefined;
   const [ready, setReady] = useState<{
     key: string;
     digest: string;

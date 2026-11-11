@@ -6,7 +6,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
 import { Button } from "../../Button";
-import { t, useT } from "../../../i18n";
+import { useT } from "../../../i18n";
 import { isImeComposition } from "../../../lib/keyboard";
 import styles from "./stepper.module.css";
 
@@ -274,11 +274,13 @@ export function Stepper({
   onStepSelect,
   details = "all",
   compact = false,
-  label = t("Progress"),
-  completeLabel = t("Completed"),
+  label: labelProp,
+  completeLabel: completeLabelProp,
   className,
 }: StepperProps) {
   const t = useT();
+  const label = labelProp === undefined ? t("Progress") : labelProp;
+  const completeLabel = completeLabelProp === undefined ? t("Completed") : completeLabelProp;
   const statusId = useId();
   const reduced = useReducedMotion() ?? false;
   const count = steps.length;

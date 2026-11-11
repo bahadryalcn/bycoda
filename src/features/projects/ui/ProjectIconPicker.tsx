@@ -4,7 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useState } from "react";
 import { PROJECT_ICON_CATEGORIES, type ProjectIconCategory } from "../model/projectCodeIcons";
 import { filterProjectMascots, projectMascot } from "../model/projectMascots";
@@ -21,7 +21,7 @@ export function ProjectIconPicker({
   color?: string;
   onPick: (name: string | null) => void;
 }) {
-  useLocale();
+  const t = useT();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<ProjectIconCategory | "All">("All");
   const selected = projectMascot(project, name);

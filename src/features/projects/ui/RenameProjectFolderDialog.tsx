@@ -1,10 +1,10 @@
 import { useId, useState } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { basename } from "../../../platform/tauri/fs";
-import { folderRenameError } from "../model/projectFolderRename";
+import { folderRenameErrorWith } from "../model/projectFolderRename";
 
 export function RenameProjectFolderDialog({
   path,
@@ -15,11 +15,11 @@ export function RenameProjectFolderDialog({
   onRename: (name: string) => Promise<void>;
   onClose: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const [name, setName] = useState(basename(path));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const invalid = folderRenameError(name);
+  const invalid = folderRenameErrorWith(name, t);
   const formId = useId();
   return (
     <Modal

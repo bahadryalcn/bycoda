@@ -35,7 +35,6 @@ export function SessionLifecycleControl({
   const [dialog, setDialog] = useState<LinkDialog>();
   const [busy, setBusy] = useState(false);
   if (!machineId || !view) return null;
-  const client = sessionLifecycleClient(machineId);
   const report = (cause: unknown) =>
     toast.show({
       tone: "danger",
@@ -56,7 +55,10 @@ export function SessionLifecycleControl({
         disabled={!hasMessages && !settled}
         onClick={() => {
           setBusy(true);
-          (settled ? client.unsettle(sessionId) : client.settle(sessionId))
+          (settled
+            ? sessionLifecycleClient(machineId).unsettle(sessionId)
+            : sessionLifecycleClient(machineId).settle(sessionId)
+          )
             .then(setSessionLifecycle)
             .catch(report)
             .finally(() => setBusy(false));
@@ -71,7 +73,7 @@ export function SessionLifecycleControl({
         onClick={() => {
           Promise.all([
             remoteRequest<LinkableTask[]>(machineId, "tasks.list", {}),
-            client.taskFor(sessionId),
+            sessionLifecycleClient(machineId).taskFor(sessionId),
           ]).then(
             ([tasks, linkedTaskId]) =>
               setDialog({
@@ -90,8 +92,10 @@ export function SessionLifecycleControl({
           tasks={dialog.tasks}
           linkedTaskId={dialog.linkedTaskId}
           onClose={() => setDialog(undefined)}
-          onLink={async (taskId) => void (await client.link(sessionId, taskId))}
-          onUnlink={async () => void (await client.unlink(sessionId))}
+          onLink={async (taskId) =>
+            void (await sessionLifecycleClient(machineId).link(sessionId, taskId))
+          }
+          onUnlink={async () => void (await sessionLifecycleClient(machineId).unlink(sessionId))}
         />
       ) : null}
     </>

@@ -29,8 +29,26 @@ export class TranscriptVirtualization {
   readonly disclosures = new Map<string, boolean | null>();
   readonly codeFolds = new Map<string, Record<string, boolean>>();
   readonly measurements = new Map<string, Map<string, { width: number; height: number }>>();
+  /** The measured row sizes of one list, created on first use. */
+  measurementsFor(listId: string): Map<string, { width: number; height: number }> {
+    let cache = this.measurements.get(listId);
+    if (!cache) {
+      cache = new Map();
+      this.measurements.set(listId, cache);
+    }
+    return cache;
+  }
+  /** Drops the measured sizes of rows the list no longer has. */
+  retainMeasurements(listId: string, retained: ReadonlySet<string>): void {
+    const cache = this.measurements.get(listId);
+    if (cache) for (const key of cache.keys()) if (!retained.has(key)) cache.delete(key);
+  }
   readonly rowScroll = new WeakMap<HTMLElement, HTMLElement>();
   adjusted?: (element: HTMLElement) => void;
+  /** Registers who learns that anchoring moved a scroller; `undefined` unregisters. */
+  setAdjusted(handler: ((element: HTMLElement) => void) | undefined): void {
+    this.adjusted = handler;
+  }
   constructor(target: string | null = null) {
     this.target = target;
   }
@@ -206,10 +224,13 @@ function firstVisibleRow(
   for (; index < rows.length; index++) {
     const node = rows[index];
     if (ownerOf(node) !== scroll) continue;
+    // Rows are in document order, so the rows nested in the candidate are contiguous right
+    // after it. The first owned row outside it can neither replace nor be replaced by the
+    // candidate, whether it is visible or not: stop without measuring the rest of the list.
+    if (candidate && !candidate.contains(node)) break;
     const rect = node.getBoundingClientRect();
     if (rect.bottom <= top || rect.top >= bottom) continue;
-    if (!candidate || candidate.contains(node)) candidate = node;
-    else if (!node.contains(candidate)) break;
+    candidate = node;
   }
   return candidate;
 }

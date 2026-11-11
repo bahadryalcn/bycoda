@@ -5,7 +5,7 @@ import { ArrowDownCircle, RefreshCw } from "../../shared/ui/icons";
 import { InlineError } from "../../shared/ui/InlineError";
 import { Spinner } from "../../shared/ui/Spinner";
 import { StatusDot } from "../../shared/ui/StatusDot";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { claimStartupUpdatePrompt, installAppUpdate, useAppUpdater } from "../model/useAppUpdater";
 import { type UpdaterSnapshot } from "../model/updater";
 import type { InstalledUpdate } from "../model/updateNotice";
@@ -171,6 +171,18 @@ export function SidebarUpdateFooter({
   );
 }
 
+/** Installs the update, then `release`s the click guard even when the install rejects. */
+async function installThenRelease(
+  onSnapshot: (next: UpdaterSnapshot) => void,
+  release: () => void,
+): Promise<void> {
+  try {
+    await installAppUpdate(onSnapshot);
+  } finally {
+    release();
+  }
+}
+
 export function SidebarUpdate({
   snapshot,
   onSnapshot,
@@ -186,15 +198,13 @@ export function SidebarUpdate({
   // second click can still land. The ref closes that window immediately.
   const installing = useRef(false);
 
-  const onClick = useCallback(async () => {
+  const onClick = async () => {
     if (busy || installing.current) return;
     installing.current = true;
-    try {
-      await installAppUpdate(onSnapshot);
-    } finally {
+    await installThenRelease(onSnapshot, () => {
       installing.current = false;
-    }
-  }, [busy, onSnapshot]);
+    });
+  };
 
   const label = busy
     ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`

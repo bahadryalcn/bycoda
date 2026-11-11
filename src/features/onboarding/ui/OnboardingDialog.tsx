@@ -410,7 +410,9 @@ function Projects({
     <>
       <div className="onboarding-body">
         <div className="onboarding-heading">
-          <Heading size="page" level={3}>{t("Choose your projects")}</Heading>
+          <Heading size="page" level={3}>
+            {t("Choose your projects")}
+          </Heading>
           <p>
             {t(
               "Import local projects and conversations from Claude Code and Codex, or choose a folder.",

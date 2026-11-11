@@ -43,7 +43,7 @@ import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
   resolveTabGroupColor,
   resolveTabGroupLabel,
-  resolveTabGroupLogo,
+  useResolvedTabGroupLogo,
   resolveTabGroupMascot,
 } from "../../features/workspace/model/tabGroups";
 
@@ -86,11 +86,11 @@ export function useLastSessionsRows({
       }),
     [stored, source.live, projectKeys, prefs.count],
   );
-  const update = (next: RecentSessionsPrefs) => {
+  const handleUpdate = (next: RecentSessionsPrefs) => {
     setPrefs(next);
     saveRecentSessionsPrefs(next);
   };
-  return { prefs, update, rows, hasRows: rows.length > 0, refresh };
+  return { prefs, update: handleUpdate, rows, hasRows: rows.length > 0, refresh };
 }
 
 const STATUS_LABEL: Record<RecentSessionStatus, string> = {
@@ -315,7 +315,7 @@ function SessionRow({
   const project = projectless
     ? t("No project")
     : resolveTabGroupLabel(key, groupLabels, basename(row.cwd));
-  const logoPath = resolveTabGroupLogo(key, groupLogos);
+  const logoPath = useResolvedTabGroupLogo(key, groupLogos);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
   const agent = HARNESS_TITLE[row.harness];
   const model = row.model ? resolveModel(row.harness, row.model).name : "";

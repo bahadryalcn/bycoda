@@ -192,6 +192,23 @@ function requiredText(request: ConfirmRequest) {
   return typeof spec === "string" ? { text: spec, caseSensitive: false } : spec;
 }
 
+/** Runs the confirm action and settles; resolves to the failure message, or null on success. */
+async function attemptConfirm(
+  request: ConfirmRequest,
+  result: ConfirmResult,
+  onResult: ((result: ConfirmResult) => void) | undefined,
+  onSettle: (value: boolean) => void,
+): Promise<string | null> {
+  try {
+    await request.onConfirm?.(result);
+    onResult?.(result);
+    onSettle(true);
+    return null;
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : String(cause);
+  }
+}
+
 /**
  * One confirmation for multi-consequence actions: a Modal with Cancel and a
  * (danger) confirm button. Row-level deletes use ConfirmMorph instead; the Tauri
@@ -255,16 +272,12 @@ export function ConfirmDialog({
     inFlight.current = true;
     setPending(true);
     setError(null);
-    try {
-      await request.onConfirm(result);
-      onResult?.(result);
-      onSettle(true);
-    } catch (cause) {
-      inFlight.current = false;
-      if (!alive.current) return;
-      setError(cause instanceof Error ? cause.message : String(cause));
-      setPending(false);
-    }
+    const failure = await attemptConfirm(request, result, onResult, onSettle);
+    if (failure === null) return;
+    inFlight.current = false;
+    if (!alive.current) return;
+    setError(failure);
+    setPending(false);
   };
   const acknowledgeId = `${uid}-acknowledge`;
   return (

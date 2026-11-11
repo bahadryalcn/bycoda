@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { readBinaryFile } from "../../../platform/tauri/fs";
 import { attachmentPreviewSrc } from "../model/attachments";
 import type { Attachment } from "../model/session";
@@ -29,6 +30,52 @@ function sameOwner(a: PreviewOwner, b: PreviewOwner): boolean {
     a.kind === b.kind &&
     a.missing === b.missing
   );
+}
+
+type PreviewRead = {
+  attachment: Attachment;
+  generation: number;
+  openPreview: boolean;
+  request: { current: number };
+  pending: { current: boolean };
+  ownedUrl: { current: string | undefined };
+  update: (patch: Partial<PreviewState>) => void;
+};
+
+// Module-level so the try/finally stays out of the hook the React Compiler compiles.
+async function readPreview({
+  attachment,
+  generation,
+  openPreview,
+  request,
+  pending,
+  ownedUrl,
+  update,
+}: PreviewRead) {
+  try {
+    let src: string;
+    // The owning host's reader always takes precedence over a disk path.
+    if (attachment.loadPreview) {
+      const data = await attachment.loadPreview();
+      if (!data) throw new Error("Empty image preview");
+      src = `data:${attachment.mimeType};base64,${data}`;
+    } else {
+      const bytes = await readBinaryFile(attachment.path!);
+      if (generation !== request.current) return;
+      if (!bytes.byteLength) throw new Error("Empty image preview");
+      src = URL.createObjectURL(new Blob([bytes], { type: attachment.mimeType }));
+      ownedUrl.current = src;
+    }
+    if (generation !== request.current) return;
+    update({ loadedPreview: src, open: openPreview });
+  } catch {
+    if (generation === request.current) update({ error: true });
+  } finally {
+    if (generation === request.current) {
+      pending.current = false;
+      update({ loading: false });
+    }
+  }
 }
 
 /** Cards preload near the viewport; text tokens load only when opened. */
@@ -116,48 +163,22 @@ export function useAttachmentPreview(attachment: Attachment, preload = false) {
     update({ loadedPreview: undefined, open: false, loading: false });
   };
 
-  const load = useCallback(
-    async (openPreview: boolean, reload = false) => {
-      if (!canOpen || pending.current) return;
-      if ((preview || loadedPreview) && (!reload || (!attachment.loadPreview && !canReadPath))) {
-        if (openPreview) update({ error: false, open: true });
-        return;
-      }
-      const generation = ++request.current;
-      pending.current = true;
-      if (reload) release();
-      update({
-        error: false,
-        loading: true,
-        ...(reload ? { loadedPreview: undefined, open: openPreview } : {}),
-      });
-      try {
-        let src: string;
-        // The owning host's reader always takes precedence over a disk path.
-        if (attachment.loadPreview) {
-          const data = await attachment.loadPreview();
-          if (!data) throw new Error("Empty image preview");
-          src = `data:${attachment.mimeType};base64,${data}`;
-        } else {
-          const bytes = await readBinaryFile(attachment.path!);
-          if (generation !== request.current) return;
-          if (!bytes.byteLength) throw new Error("Empty image preview");
-          src = URL.createObjectURL(new Blob([bytes], { type: attachment.mimeType }));
-          ownedUrl.current = src;
-        }
-        if (generation !== request.current) return;
-        update({ loadedPreview: src, open: openPreview });
-      } catch {
-        if (generation === request.current) update({ error: true });
-      } finally {
-        if (generation === request.current) {
-          pending.current = false;
-          update({ loading: false });
-        }
-      }
-    },
-    [canOpen, canReadPath, preview, loadedPreview, owner, update, release],
-  );
+  const load = useStableCallback(async (openPreview: boolean, reload = false) => {
+    if (!canOpen || pending.current) return;
+    if ((preview || loadedPreview) && (!reload || (!attachment.loadPreview && !canReadPath))) {
+      if (openPreview) update({ error: false, open: true });
+      return;
+    }
+    const generation = ++request.current;
+    pending.current = true;
+    if (reload) release();
+    update({
+      error: false,
+      loading: true,
+      ...(reload ? { loadedPreview: undefined, open: openPreview } : {}),
+    });
+    await readPreview({ attachment, generation, openPreview, request, pending, ownedUrl, update });
+  });
 
   useEffect(() => {
     if (!preload || !canOpen || preview || loadedPreview) return;

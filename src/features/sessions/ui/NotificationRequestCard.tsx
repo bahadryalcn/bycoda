@@ -12,8 +12,8 @@ import { NotificationProjectLabel, NotificationTime } from "./NotificationHistor
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 
 /**
- * One pending question or approval, as a floating popup or a Pending row of the
- * request center. The body opens the conversation; an approval is decided in
+ * One pending question or approval, as a floating popup or a row of the sheet's
+ * pending card. The body opens the conversation; an approval is decided in
  * place, a question is answered in its conversation.
  */
 export function NotificationRequestCard({
@@ -24,7 +24,7 @@ export function NotificationRequestCard({
   onDismiss,
 }: {
   notice: Notice;
-  /** Shown in the sheet's Pending list; floating popups omit it. */
+  /** Shown in the sheet's pending card; floating popups omit it. */
   occurredAt?: number;
   onFocusSession: (sessionId: string) => void;
   onApproval: ApprovalDispatch;

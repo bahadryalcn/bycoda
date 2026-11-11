@@ -110,7 +110,7 @@ deadline; truncate with `truncateGraphemes`; measure durations with `elapsedSinc
 format dates, numbers, bytes and durations with `src/shared/i18n`; open links with
 `openExternal`; use shared feedback, dialog and form controls instead of native elements
 or hand-written `role`/`aria-live`; observe sizes with `observeResize`; give every new
-React effect a reason comment and write no `useMemo`/`useCallback`/`memo` in files the
+React effect a reason comment and write no `useMemo`/`useCallback`/`memo` in folders the
 React Compiler compiles in full; add no function it skips (`pnpm check:compiler`). Suppress one line only, with `-- <reason>`. A fix for
 one of these defect classes adds a regression test. Code, rules and docs are in English.
 

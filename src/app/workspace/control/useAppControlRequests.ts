@@ -944,5 +944,11 @@ export function useAppControlRequests({
       deactivateRoomPrivacyProjection();
       unlisten?.();
     };
-  }, [workspaceActions]);
+  }, [
+    workspaceActions,
+    saveDraftRef,
+    launchQuickSessionRef,
+    submitSessionRef,
+    ensureOpenSessionRef,
+  ]);
 }

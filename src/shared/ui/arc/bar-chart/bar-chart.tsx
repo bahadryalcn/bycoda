@@ -129,6 +129,7 @@ const TOP = 12,
 const GROUP_FILL = 0.8,
   LANE_GAP = 2;
 const grouped = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const formatGrouped = (value: number) => grouped.format(value);
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
 /** A column that grows from a square baseline to a softly rounded data end. */
@@ -510,7 +511,7 @@ export function BarChart({
   seriesColumnLabel = "Series",
   showAverage = true,
   height = 176,
-  formatValue = (value) => grouped.format(value),
+  formatValue = formatGrouped,
 }: BarChartProps) {
   const reduced = useReducedMotionSafe();
   const figure = useRef<HTMLElement>(null);
@@ -518,7 +519,7 @@ export function BarChart({
   const inView = useInView(figure, { once: true, amount: 0.35 });
   const titleId = useId();
   const patternBase = useId().replace(/:/g, "");
-  const lanes = useMemo(() => lanesOf(data), [data]);
+  const lanes = lanesOf(data);
   const groupedBars = lanes > 1;
   const usedPatterns = useMemo(
     () =>

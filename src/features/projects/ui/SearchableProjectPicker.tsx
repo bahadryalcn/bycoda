@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTabGroupLogos } from "../hooks/useTabGroupLogos";
 import { basename } from "../../../platform/tauri/fs";
@@ -8,7 +8,8 @@ import { prettyParent, projectKey, projectName } from "../../../shared/lib/paths
 import {
   looksLikeProject,
   isLocalProject,
-  projectRailItems,
+  projectRailItemsFrom,
+  useProjectRailLayout,
   sameProjectPath,
   subscribeProjectPathsChanged,
   type RecentProject,
@@ -20,7 +21,7 @@ import {
   loadTabGroupMascots,
   resolveTabGroupColor,
   resolveTabGroupLabel,
-  resolveTabGroupLogo,
+  useResolvedTabGroupLogos,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
 import { Check, ChevronDown, Plus } from "../../../shared/ui/icons";
@@ -76,7 +77,7 @@ export function SearchableProjectPicker({
   onProjectContextMenu,
   projectMenuActive = false,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -93,9 +94,9 @@ export function SearchableProjectPicker({
   const label = inProject
     ? resolveTabGroupLabel(key, groupLabels, basename(cwd) || seed)
     : "Choose project";
-  const logoPath = resolveTabGroupLogo(key, groupLogos);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
-  const railProjects = projectRailItems(recents, railCwd ?? cwd);
+  const railLayout = useProjectRailLayout();
+  const railProjects = projectRailItemsFrom(recents, railCwd ?? cwd, railLayout);
   const projects =
     inProject && !railProjects.some((item) => sameProjectPath(item.path, cwd))
       ? [{ path: cwd, openedAt: 0 }, ...railProjects]
@@ -116,6 +117,11 @@ export function SearchableProjectPicker({
         return `${itemLabel}\n${item.path}`.toLocaleLowerCase().includes(normalizedQuery);
       })
     : orderedProjects;
+  const resolvedLogos = useResolvedTabGroupLogos(
+    [key, ...filteredProjects.map((item) => projectKey(item.path))],
+    groupLogos,
+  );
+  const logoPath = resolvedLogos[key] ?? null;
 
   const closePicker = () => {
     setOpen(false);
@@ -286,7 +292,7 @@ export function SearchableProjectPicker({
                   groupLabels,
                   basename(item.path) || itemSeed,
                 );
-                const itemLogo = resolveTabGroupLogo(itemKey, groupLogos);
+                const itemLogo = resolvedLogos[itemKey] ?? null;
                 const itemColor = resolveTabGroupColor(
                   itemKey,
                   groupColors,

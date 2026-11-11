@@ -193,6 +193,36 @@ export function notificationPreferencesSnapshot(): string {
   });
 }
 
+export type NotificationPreferencesView = {
+  preferences: Preferences;
+  unavailable: boolean;
+  /** Project ids muted when the snapshot was taken; the store re-notifies at each deadline. */
+  muted: ReadonlySet<string>;
+};
+
+let viewCache: { json: string; view: NotificationPreferencesView } | null = null;
+
+/** The view of the current snapshot, with one identity while the snapshot string is unchanged (for `useSyncExternalStore`). */
+export function notificationPreferencesViewSnapshot(): NotificationPreferencesView {
+  const json = notificationPreferencesSnapshot();
+  if (viewCache?.json !== json) {
+    const parsed = JSON.parse(json) as {
+      unavailable: boolean;
+      preferences: Preferences;
+      muted: string[];
+    };
+    viewCache = {
+      json,
+      view: {
+        preferences: parsed.preferences,
+        unavailable: parsed.unavailable,
+        muted: new Set(parsed.muted),
+      },
+    };
+  }
+  return viewCache.view;
+}
+
 export function subscribeNotificationPreferences(listener: () => void): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const schedule = () => {

@@ -65,7 +65,7 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
     recordGuideActivity("terminal-opened");
     setProjectTerminalFocused(true);
     setComposerFocused(false);
-  }, []);
+  }, [setComposerFocused, setProjectTerminalFocused]);
 
   const openProjectTerminal = useCallback(
     (cwd: string, profile?: string, terminalId?: string) => {
@@ -96,7 +96,7 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
       focusProjectTerminal();
       return true;
     },
-    [focusProjectTerminal],
+    [focusProjectTerminal, projectCwdRef, setProjectTerminals, lastDockSideRef],
   );
 
   const onOpenTerminal = useCallback(
@@ -173,7 +173,7 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
       );
       focusProjectTerminal();
     },
-    [focusProjectTerminal],
+    [focusProjectTerminal, setProjectTerminals, projectCwdRef],
   );
 
   const onShowProjectTerminal = useCallback(() => {
@@ -188,7 +188,14 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
       return;
     }
     onOpenTerminal(terminalCwd);
-  }, [terminalCwd, focusProjectTerminal, onOpenTerminal, projectCwd]);
+  }, [
+    terminalCwd,
+    focusProjectTerminal,
+    onOpenTerminal,
+    projectCwd,
+    setProjectTerminals,
+    projectTerminalsRef,
+  ]);
 
   const onNewTerminalInSession = useCallback(
     (sessionId: string) => {
@@ -196,7 +203,7 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
       if (session?.worktreeRemoved) return;
       onOpenTerminal(session ? sessionWorkCwd(session) : projectCwd, false, sessionId);
     },
-    [onOpenTerminal, projectCwd],
+    [onOpenTerminal, projectCwd, sessionsRef],
   );
 
   const onRunSessionProjectAction = useCallback(

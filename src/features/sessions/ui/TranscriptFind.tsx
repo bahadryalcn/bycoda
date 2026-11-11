@@ -3,11 +3,10 @@ import { Portal } from "../../../shared/ui/Portal";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
-  memo,
   useCallback,
+  memo,
   useEffect,
   useEffectEvent,
-  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -54,7 +53,7 @@ export const TranscriptFind = memo(function TranscriptFind({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const matches = useMemo(() => findTranscriptBlocks(blocks, query), [blocks, query]);
+  const matches = findTranscriptBlocks(blocks, query);
   const searching = visible && open && query.trim() !== "";
   useEffect(() => {
     onSearchingChange?.(searching);

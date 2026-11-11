@@ -4,6 +4,25 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { sessionRetryNotice } from "../model/sessionIssue";
 
+async function runRefresh(
+  onRefresh: () => Promise<unknown>,
+  pending: { current: boolean },
+  setRefreshing: (value: boolean) => void,
+  setRefreshFailed: (value: boolean) => void,
+) {
+  pending.current = true;
+  setRefreshing(true);
+  setRefreshFailed(false);
+  try {
+    await onRefresh();
+  } catch {
+    setRefreshFailed(true);
+  } finally {
+    pending.current = false;
+    setRefreshing(false);
+  }
+}
+
 /** Recovery actions inspect or stop the current turn; they never resend it. */
 export function ProviderRetryNotice({
   provider,
@@ -21,19 +40,9 @@ export function ProviderRetryNotice({
   const pending = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
-  const refresh = async () => {
-    if (!onRefresh || pending.current) return;
-    pending.current = true;
-    setRefreshing(true);
-    setRefreshFailed(false);
-    try {
-      await onRefresh();
-    } catch {
-      setRefreshFailed(true);
-    } finally {
-      pending.current = false;
-      setRefreshing(false);
-    }
+  const refresh = () => {
+    if (!onRefresh || pending.current) return Promise.resolve();
+    return runRefresh(onRefresh, pending, setRefreshing, setRefreshFailed);
   };
   return (
     <div className="shrink-0 px-4 py-1.5 text-ui-caption">

@@ -14,6 +14,16 @@ import { ErrorDetails, errorHeadline, fitsOneLine } from "../../shared/ui/ErrorD
 
 const shortcutLabel = () => keybindingShortcutLabel("App: Toggle Full Screen", FULLSCREEN_SHORTCUT);
 
+/** Never rejects: a failure is handed to `onError`. */
+async function runFullscreenToggle(onError: (message: string) => void): Promise<void> {
+  try {
+    await setNativeFullscreen();
+    await refreshWindowState().catch(() => null);
+  } catch (failure) {
+    onError(failure instanceof Error ? failure.message : String(failure));
+  }
+}
+
 export function FullscreenButton() {
   const t = useT();
   const shortcut = useSyncExternalStore(subscribeKeybindings, shortcutLabel, shortcutLabel);
@@ -25,14 +35,8 @@ export function FullscreenButton() {
     if (pending.current) return;
     pending.current = true;
     setError(null);
-    try {
-      await setNativeFullscreen();
-      await refreshWindowState().catch(() => null);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
-    } finally {
-      pending.current = false;
-    }
+    await runFullscreenToggle(setError);
+    pending.current = false;
   };
   const label = fullscreen ? t("Restore window") : t("Full screen");
   const Icon = fullscreen ? Minimize2 : Maximize2;

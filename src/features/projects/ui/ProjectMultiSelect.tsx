@@ -2,8 +2,9 @@ import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProje
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { createContext, useContext, useRef, useState, type ReactNode } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { createContext, useContext, useState, type ReactNode } from "react";
+import { useT } from "../../../shared/i18n";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { pathKey } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../files/public/ExplorerMenu";
@@ -46,6 +47,11 @@ function stillListed(list: string[], current: string[]): string[] {
   return list.filter((path) => available.has(pathKey(path)));
 }
 
+function remainingOrNull(list: string[], current: string[]): string[] | null {
+  const remaining = stillListed(list, current);
+  return remaining.length ? remaining : null;
+}
+
 export function ProjectMultiSelect({
   paths,
   groups,
@@ -55,7 +61,7 @@ export function ProjectMultiSelect({
   onRemove,
   children,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [stored, setStored] = useState<Set<string>>(() => new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
   const [menu, setMenu] = useState<{
@@ -66,9 +72,8 @@ export function ProjectMultiSelect({
   const [name, setName] = useState("");
   const [error, setError] = useState(false);
   const [deleting, setDeleting] = useState<string[] | null>(null);
-  const latestPaths = useRef(paths);
+  const latestPaths = useStableCallback(() => paths);
   const [deletionStarted, setDeletionStarted] = useState(false);
-  latestPaths.current = paths;
   // A bulk removal can succeed for some projects before another fails. Keep
   // the failed/unprocessed part selected and retryable as the rail updates.
   if (deleting && deletionStarted) {
@@ -285,10 +290,9 @@ export function ProjectMultiSelect({
             if (!deletionValid) return;
             setDeletionStarted(true);
             try {
-              await onRemove?.([...deleting]);
+              if (onRemove) await onRemove([...deleting]);
             } catch (reason) {
-              const remaining = stillListed(deleting, latestPaths.current);
-              setDeleting(remaining.length ? remaining : null);
+              setDeleting(remainingOrNull(deleting, latestPaths()));
               throw reason;
             }
             reset();

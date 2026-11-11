@@ -1,13 +1,7 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { t } from "../../../../../shared/i18n";
+import { useStableCallback } from "../../../../../shared/hooks/useStableCallback";
 import { Button } from "../../../../../shared/ui/Button";
 import { ImagePlus } from "../../../../../shared/ui/icons";
 import { dragPointToClient } from "../../../../../shared/lib/dragPoint";
@@ -25,10 +19,7 @@ function pointInside(element: HTMLElement | null, x: number, y: number): boolean
 /** Tracks an OS file drag over `ref`; `onDrop` receives the first dropped path inside it. */
 function useImageFileDrop(ref: RefObject<HTMLElement | null>, onDrop: (path: string) => void) {
   const [over, setOver] = useState(false);
-  const latest = useRef(onDrop);
-  useLayoutEffect(() => {
-    latest.current = onDrop;
-  });
+  const dropLatest = useStableCallback(onDrop);
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -46,7 +37,7 @@ function useImageFileDrop(ref: RefObject<HTMLElement | null>, onDrop: (path: str
           }
           setOver(false);
           const path = payload.paths[0];
-          if (inside && path) latest.current(path);
+          if (inside && path) dropLatest(path);
         })
         .then((stop) => {
           if (cancelled) stop();
@@ -60,7 +51,7 @@ function useImageFileDrop(ref: RefObject<HTMLElement | null>, onDrop: (path: str
       cancelled = true;
       unlisten?.();
     };
-  }, [ref]);
+  }, [ref, dropLatest]);
   return over;
 }
 

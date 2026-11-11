@@ -14,7 +14,7 @@ import { MAX_ATTACHMENTS, MAX_EMBED_BYTES, revokeAttachment } from "../model/att
 import { setComposerAttachments } from "../model/draftCache";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { harnessSupportsAttachments, type Attachment, type HarnessId } from "../model/session";
-import { t } from "../../../shared/i18n";
+import { t, useT } from "../../../shared/i18n";
 
 type MountedClosure = ReturnType<typeof useMountedComposerClosure>;
 
@@ -172,6 +172,16 @@ type ReadOptions = {
   setPasteError: Dispatch<SetStateAction<string | null>>;
 };
 
+// Module level: React Compiler cannot lower try/finally inside a hook.
+function applyAtDepth<T>(depth: { current: number }, mutation: () => T): T {
+  depth.current++;
+  try {
+    return mutation();
+  } finally {
+    depth.current--;
+  }
+}
+
 /**
  * Admits asynchronous file reads (paste, pick, drop) as retained Parent and
  * Composer preparations. A read that outlives its draft, or fails, cannot land
@@ -188,6 +198,7 @@ export function useComposerAttachmentReads({
   pasteFlightRef,
   setPasteError,
 }: ReadOptions) {
+  const t = useT();
   const rememberAttachmentRead = useCallback(
     (read: (accepted: ComposerPreparation & { isCurrent(): boolean }) => Promise<void>) => {
       let parentAttempt: ParentAdmission | null = parentInputRef.current?.admit() ?? null;
@@ -214,16 +225,7 @@ export function useComposerAttachmentReads({
           ...accepted,
           isCurrent: () => pasteGenerationRef.current === generation,
           apply: (mutation) =>
-            attempt.apply(() =>
-              accepted.apply(() => {
-                attachmentApplyDepth.current++;
-                try {
-                  return mutation();
-                } finally {
-                  attachmentApplyDepth.current--;
-                }
-              }),
-            ),
+            attempt.apply(() => accepted.apply(() => applyAtDepth(attachmentApplyDepth, mutation))),
         });
       });
       void work.then(initialParentAttempt.finish, initialParentAttempt.finish);
@@ -248,7 +250,17 @@ export function useComposerAttachmentReads({
         if (pasteFlightRef.current === joined) pasteFlightRef.current = null;
       });
     },
-    [mountedClosure, setPasteError],
+    // The ref objects are stable; they are listed so the compiler can keep this memoization.
+    [
+      mountedClosure,
+      setPasteError,
+      t,
+      pasteFlightRef,
+      parentInputRef,
+      attachmentApplyDepth,
+      pasteGenerationRef,
+      pasteFailuresRef,
+    ],
   );
 
   const readDroppedAttachments = useCallback(
@@ -281,7 +293,7 @@ export function useComposerAttachmentReads({
           }),
       );
     },
-    [rememberAttachmentRead],
+    [rememberAttachmentRead, setPasteError, t, sinkRef],
   );
 
   return { rememberAttachmentRead, readDroppedAttachments };

@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { TAB_GROUP_LOGOS_CHANGED } from "../../workspace/model/tabGroups";
 
-vi.mock("../model/projectLogos", () => ({ projectLogoSrc: (path: string) => path }));
+vi.mock("../model/projectLogos", () => ({ projectLogoSrcAt: (path: string) => path }));
 vi.mock("../../workspace/model/tabGroups", () => ({
   TAB_GROUP_LOGOS_CHANGED: "logos-changed",
   tabGroupLogoDisplayRevision: vi.fn().mockReturnValueOnce(0).mockReturnValue(1),

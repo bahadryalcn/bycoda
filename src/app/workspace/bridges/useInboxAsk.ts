@@ -187,7 +187,7 @@ export function useInboxAskRestart(deps: InboxAskRestartDeps) {
   useEffect(() => {
     if (!inboxAskPortal || !inboxViewOpen) return;
     setComposerFocused(true);
-  }, [inboxAskPortal, inboxViewOpen]);
+  }, [inboxAskPortal, inboxViewOpen, setComposerFocused]);
 
   return { onRestartInboxAsk };
 }
@@ -225,6 +225,6 @@ export function useOpenInboxSession(deps: OpenInboxSessionDeps) {
       setSidebarTab("sessions", cwd);
       await onSelectHistorySession(sessionId);
     },
-    [history, onSelectHistorySession, toolWindow],
+    [history, onSelectHistorySession, toolWindow, sessionsRef, setInboxViewOpen, setSidebarTab],
   );
 }

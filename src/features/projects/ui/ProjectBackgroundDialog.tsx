@@ -2,8 +2,8 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Slider } from "../../../shared/ui/Slider";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useLocale, useT } from "../../../shared/i18n";
+import { useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import {
@@ -19,6 +19,7 @@ import {
   NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS,
   NEW_THREAD_BACKGROUND_EFFECT_LABELS,
   NEW_THREAD_BACKGROUND_EFFECTS,
+  subscribeChatBackgroundPath,
   type ChatBackgroundScope,
   type NewThreadBackgroundEffect,
 } from "../../settings/public/appearance";
@@ -44,8 +45,9 @@ type Props = {
 };
 
 export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
-  useLocale();
-  const initial = loadProjectChatBackgroundSettings(project);
+  const t = useT();
+  // Only the starting values of the controls below: later edits are held in their state.
+  const [initial] = useState(() => loadProjectChatBackgroundSettings(project));
   const [path, setPath] = useState(initial?.path ?? null);
   const [emptyOpacity, setEmptyOpacity] = useState(
     initial?.emptyOpacity ?? loadChatBackgroundEmptyOpacity(),
@@ -62,12 +64,21 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
   const [revision, setRevision] = useState(projectChatBackgroundImageRevision);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const globalPath = loadChatBackgroundPath();
+  const globalPath = useSyncExternalStore(
+    subscribeChatBackgroundPath,
+    loadChatBackgroundPath,
+    loadChatBackgroundPath,
+  );
   const effectPreviewSrc = useProjectBackgroundEffect(path, effect, revision);
   const previewSrc = path
     ? (effectPreviewSrc ?? projectChatBackgroundSrc(path, revision))
     : chatBackgroundSrc(globalPath);
-  const previewEffect = path ? effect : loadNewThreadBackgroundEffect();
+  const globalEffect = useSyncExternalStore(
+    subscribeChatBackgroundPath,
+    loadNewThreadBackgroundEffect,
+    loadNewThreadBackgroundEffect,
+  );
+  const previewEffect = path ? effect : globalEffect;
 
   const save = (
     nextPath: string,

@@ -282,7 +282,7 @@ export function useProjectRemoval({
       setRecents(await rememberProject(path));
       onSelectProject(path);
     },
-    [onSelectProject],
+    [onSelectProject, setRecents],
   );
 
   return { onRemoveProject, onRestoreProject };

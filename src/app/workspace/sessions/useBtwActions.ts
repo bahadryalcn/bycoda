@@ -111,7 +111,7 @@ export function useBtwActions({
       });
       return true;
     },
-    [runBtwRequest, updateBtwThread],
+    [runBtwRequest, updateBtwThread, sessionsRef],
   );
 
   const onBtwModelChange = useCallback(
@@ -154,7 +154,7 @@ export function useBtwActions({
           : undefined,
       );
     },
-    [updateBtwThread],
+    [updateBtwThread, sessionsRef],
   );
 
   const onBtwDelete = useCallback(
@@ -183,7 +183,7 @@ export function useBtwActions({
       btwRequestsRef.current.delete(requestKey);
       removeBtwThread(sessionId, sourceUserId, threadId);
     },
-    [removeBtwThread],
+    [removeBtwThread, sessionsRef, btwRequestsRef],
   );
 
   // Stopping keeps whatever the side answer had streamed, like stopping a
@@ -231,7 +231,7 @@ export function useBtwActions({
         };
       });
     },
-    [updateBtwThread],
+    [updateBtwThread, btwRequestsRef],
   );
 
   const onBtwRetry = useCallback(
@@ -272,7 +272,7 @@ export function useBtwActions({
         harness: thread.harness ?? threadHarness!,
       });
     },
-    [runBtwRequest, updateBtwThread],
+    [runBtwRequest, updateBtwThread, sessionsRef],
   );
   return { onBtwSubmit, onBtwModelChange, onBtwDelete, onBtwStop, onBtwRetry };
 }

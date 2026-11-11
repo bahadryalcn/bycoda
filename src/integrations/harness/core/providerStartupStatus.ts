@@ -36,3 +36,17 @@ export function announceSlowProviderStartup(
     onEvent({ type: "status", key: PROVIDER_STARTUP_STATUS_KEY, text: "" });
   };
 }
+
+/** Runs a provider start under the slow-start notice and clears it either way. */
+export async function withSlowStartupNotice<T>(
+  onEvent: (event: HarnessEvent) => void,
+  provider: string,
+  start: () => Promise<T>,
+): Promise<T> {
+  const done = announceSlowProviderStartup(onEvent, provider);
+  try {
+    return await start();
+  } finally {
+    done();
+  }
+}

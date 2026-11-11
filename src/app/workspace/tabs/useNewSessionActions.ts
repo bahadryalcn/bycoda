@@ -146,7 +146,19 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
     };
     window.addEventListener(NEW_LOCAL_HOST_SESSION, open);
     return () => window.removeEventListener(NEW_LOCAL_HOST_SESSION, open);
-  }, [appendTab, followProject, setActiveTabId, setSessions]);
+  }, [
+    appendTab,
+    followProject,
+    setActiveTabId,
+    setSessions,
+    setNotesViewOpen,
+    sessionsRef,
+    setInboxViewOpen,
+    setAutomationsViewOpen,
+    setComposerFocused,
+    setSearchViewOpen,
+    setServersViewOpen,
+  ]);
 
   const createWorkspaceTab = useCallback(
     (cwd: string, focus?: WorktreeFocus) => {
@@ -156,7 +168,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
       appendTab(tab, cwd);
       return tab.id;
     },
-    [appendTab, sessionDefaults?.runtimeMode],
+    [appendTab, sessionDefaults?.runtimeMode, setSessions],
   );
 
   const onNewSession = useCallback(

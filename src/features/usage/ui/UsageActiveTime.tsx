@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import {
   ActivitySources,
   activitySourceNote,
@@ -33,9 +34,9 @@ export function UsageActiveTime() {
         <DescriptionItem term={t("This year")}>{value(summary?.year)}</DescriptionItem>
       </DescriptionList>
       {overview.failed && !summary ? (
-        <p className="text-ui-secondary text-(--ui-text-muted)">
+        <Text as="p" size="secondary" tone="muted">
           {t("Active time is unavailable right now.")}
-        </p>
+        </Text>
       ) : null}
     </Surface>
   );

@@ -3,7 +3,12 @@ import { parentPath, pathKey, slash } from "../../../shared/lib/paths";
 import { moveIdByStep, orderByIds, type MoveStep } from "../../../shared/lib/reorder";
 import { normalizeProjectMascotName } from "./projectMascots";
 import { TAB_GROUP_COLORS, tabGroupColor } from "../../workspace/model/tabGroups";
-import { notifyProjectPathsChanged, type RecentProject } from "./recents";
+import { useSyncExternalStore } from "react";
+import {
+  notifyProjectPathsChanged,
+  subscribeProjectPathsChanged,
+  type RecentProject,
+} from "./recents";
 
 const GROUPS_KEY = "bycoda.projectGroups";
 const ASSIGNMENTS_KEY = "bycoda.projectGroupAssignments";
@@ -265,6 +270,43 @@ export function loadProjectGroupAssignments(
   } catch {
     return {};
   }
+}
+
+let assignmentsCache: { key: string; assignments: Record<string, string> } | null = null;
+
+/** The assignments, with one object identity while the stored groups and assignments are unchanged. */
+function projectGroupAssignmentsSnapshot(): Record<string, string> {
+  let key = "";
+  try {
+    key = `${localStorage.getItem(GROUPS_KEY)}
+${localStorage.getItem(ASSIGNMENTS_KEY)}`;
+  } catch {
+    /* storage unavailable: nothing saved */
+  }
+  if (assignmentsCache?.key !== key)
+    assignmentsCache = { key, assignments: loadProjectGroupAssignments() };
+  return assignmentsCache.assignments;
+}
+
+const NO_ASSIGNMENTS: Record<string, string> = {};
+
+function subscribeProjectGroupAssignments(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const stop = subscribeProjectPathsChanged(onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    stop();
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+/** `loadProjectGroupAssignments` for render: re-renders the caller when groups or assignments are saved. */
+export function useProjectGroupAssignments(): Record<string, string> {
+  return useSyncExternalStore(
+    subscribeProjectGroupAssignments,
+    projectGroupAssignmentsSnapshot,
+    () => NO_ASSIGNMENTS,
+  );
 }
 
 export function saveProjectGroupAssignments(assignments: Record<string, string>): boolean {

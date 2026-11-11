@@ -71,7 +71,10 @@ export function LocalMedia({
           const bytes = await readBinaryFile(path);
           if (controller.signal.aborted) return;
           const mime = sniffImageMime(bytes);
-          if (!mime) throw new Error("Unsupported image");
+          if (!mime) {
+            setFailed(true);
+            return;
+          }
           ownedUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
           next = ownedUrl;
         }

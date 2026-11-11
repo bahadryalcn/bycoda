@@ -1,4 +1,5 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
+import { useStableCallback } from "../hooks/useStableCallback";
 import { isImeComposition } from "../lib/keyboard";
 
 export const OverlayParent = createContext<symbol | null>(null);
@@ -309,14 +310,12 @@ export function useOverlay(
   passive = false,
   keepEscape?: (event: KeyboardEvent) => boolean,
 ) {
-  const id = useRef(Symbol("overlay")).current;
+  const [id] = useState(() => Symbol("overlay"));
   // Capture before descendant layout effects can move focus into their portals.
   const [captured] = useState(captureReturn);
   const parent = useContext(OverlayParent);
-  const close = useRef(escape);
-  close.current = escape;
-  const keep = useRef(keepEscape);
-  keep.current = keepEscape;
+  const close = useStableCallback(escape);
+  const keep = useStableCallback(keepEscape);
   const restore = useRef(restoreFocus);
   const hasEscape = Boolean(escape);
   const hasKeep = Boolean(keepEscape);
@@ -328,13 +327,13 @@ export function useOverlay(
       parent,
       root: root.current,
       modal,
-      escape: hasEscape ? () => close.current?.() : undefined,
+      escape: hasEscape ? () => close?.() : undefined,
       previous: captured.previous,
       fallbacks: captured.fallbacks,
       scope: captured.scope,
       initialFocusSelector,
       passive,
-      keepEscape: hasKeep ? (event) => keep.current?.(event) ?? false : undefined,
+      keepEscape: hasKeep ? (event) => keep?.(event) ?? false : undefined,
     };
     // Child layout effects run first: insert ancestors before their descendants.
     const child = entries.findIndex((item) => descendant(item, id));
@@ -372,10 +371,10 @@ export function useOverlay(
     restore.current = restoreFocus;
     const entry = registered.current;
     if (!entry) return;
-    entry.escape = hasEscape ? () => close.current?.() : undefined;
+    entry.escape = hasEscape ? () => close?.() : undefined;
     entry.initialFocusSelector = initialFocusSelector;
     entry.passive = passive;
-    entry.keepEscape = hasKeep ? (event) => keep.current?.(event) ?? false : undefined;
+    entry.keepEscape = hasKeep ? (event) => keep?.(event) ?? false : undefined;
   }, [hasEscape, initialFocusSelector, passive, hasKeep, restoreFocus]);
   return id;
 }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Modal } from "../../../shared/ui/Modal";
@@ -9,19 +10,21 @@ import { TaskForm } from "./TaskForm";
 import { machineName } from "./TaskFormFields";
 import { resolveTaskMachineId } from "./useTaskTargetMachine";
 
-/** The new/edit task dialog; the draft and its save stay owned by the board. */
+/** The new/edit task dialog. The board hands over the draft to start from; the
+ * text being typed lives here, so a keystroke re-renders only this dialog, and the
+ * board receives the finished draft with the save. */
 export function TasksViewDraftDialog({
-  draft,
+  draft: seed,
   recents,
   machines,
   todoCapable,
   saving,
   error,
   sprintName,
-  onChange,
   onClose,
   onSave,
 }: {
+  /** The draft to start from; a different one restarts the form. */
   draft: TaskDraft;
   recents: RecentProject[];
   machines: RemoteMachine[];
@@ -29,11 +32,16 @@ export function TasksViewDraftDialog({
   saving: boolean;
   error: string | null;
   sprintName: string | undefined;
-  onChange: (draft: TaskDraft) => void;
   onClose: () => void;
-  onSave: (mode: "todo" | "queued" | "save") => void;
+  onSave: (mode: "todo" | "queued" | "save", draft: TaskDraft) => void;
 }) {
   const t = useT();
+  const [draft, setDraft] = useState(seed);
+  const [seenSeed, setSeenSeed] = useState(seed);
+  if (seenSeed !== seed) {
+    setSeenSeed(seed);
+    setDraft(seed);
+  }
   return (
     <Modal
       padding="none"
@@ -67,12 +75,12 @@ export function TasksViewDraftDialog({
           todoUnsupported={todoUnsupportedMessage(machines, todoCapable, draft.cwd)}
           saving={saving}
           onChange={(next) => {
-            if (!saving) onChange(next);
+            if (!saving) setDraft(next);
           }}
           onCancel={() => {
             if (!saving) onClose();
           }}
-          onSubmit={onSave}
+          onSubmit={(mode) => onSave(mode, draft)}
         />
       </HostModelSource>
     </Modal>

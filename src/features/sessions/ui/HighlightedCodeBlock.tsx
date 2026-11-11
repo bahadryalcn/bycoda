@@ -38,6 +38,9 @@ const CodeLine = memo(function CodeLine({ tokens, numbered }: { tokens: Line; nu
   );
 });
 
+// One element per (tokens, index, numbered); sharing the cache across blocks yields the same elements.
+const codeLines = new WeakMap<Line, { index: number; numbered: boolean; element: ReactElement }>();
+
 const CodeBody = memo(function CodeBody({
   result,
   lineNumbers,
@@ -47,20 +50,16 @@ const CodeBody = memo(function CodeBody({
   lineNumbers: boolean;
   startLine?: number;
 }) {
-  const lines = useMemo(
-    () => new WeakMap<Line, { index: number; numbered: boolean; element: ReactElement }>(),
-    [],
-  );
   const children = useMemo(
     () =>
       result.tokens.map((tokens, index) => {
-        const cached = lines.get(tokens);
+        const cached = codeLines.get(tokens);
         if (cached?.index === index && cached.numbered === lineNumbers) return cached.element;
         const element = <CodeLine key={index} tokens={tokens} numbered={lineNumbers} />;
-        lines.set(tokens, { index, numbered: lineNumbers, element });
+        codeLines.set(tokens, { index, numbered: lineNumbers, element });
         return element;
       }),
-    [result, lineNumbers, lines],
+    [result, lineNumbers],
   );
   return (
     <pre>
@@ -114,7 +113,7 @@ export function HighlightedCodeBlock({
       ? highlighted.result
       : undefined;
   // Plain text is only drawn until the first tokens arrive.
-  const fallbackLines = useMemo(() => (result ? [] : source.split("\n")), [result, source]);
+  const fallbackLines = result ? [] : source.split("\n");
   return (
     <CodeBlockContainer className={className} language={language} isIncomplete={isIncomplete}>
       <CodeBlockHeader language={language} />

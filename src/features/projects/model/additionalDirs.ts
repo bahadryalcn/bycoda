@@ -1,3 +1,4 @@
+import { useMemo, useSyncExternalStore } from "react";
 import { pathKey } from "../../../shared/lib/paths";
 import { loadProjectGroupAssignments, projectGroupIdForPath } from "./projectGroups";
 import {
@@ -5,6 +6,8 @@ import {
   loadRecents,
   normalizeProjectPath,
   notifyProjectPathsChanged,
+  subscribeProjectPathsChanged,
+  type RecentProject,
 } from "./recents";
 
 const KEY = "bycoda.projectAdditionalDirs";
@@ -74,11 +77,19 @@ export function rebaseAdditionalDirs(from: string, to: string): void {
 
 /** The other local projects in this project's rail group: what the picker offers. */
 export function additionalDirCandidates(project: string): string[] {
-  const assignments = loadProjectGroupAssignments();
+  return additionalDirCandidatesFrom(project, loadRecents(), loadProjectGroupAssignments());
+}
+
+/** `additionalDirCandidates` with the recents and group assignments given (see their hooks). */
+export function additionalDirCandidatesFrom(
+  project: string,
+  recents: readonly RecentProject[],
+  assignments: Record<string, string>,
+): string[] {
   const groupId = projectGroupIdForPath(project, assignments);
   if (!groupId) return [];
   const own = pathKey(normalizeProjectPath(project));
-  return loadRecents()
+  return recents
     .map((recent) => recent.path)
     .filter(
       (path) =>
@@ -200,4 +211,44 @@ export function subscribeSessionAdditionalDirs(onStoreChange: () => void) {
     window.removeEventListener(SESSION_CHANGE_EVENT, onStoreChange);
     window.removeEventListener("storage", onStorage);
   };
+}
+
+type SessionAdditionalDirs = {
+  /** The session picked its own folders instead of following its project. */
+  overridden: boolean;
+  /** `additionalDirsForSession` for this session and project. */
+  dirs: string[];
+  /** `loadAdditionalDirs` for the project. */
+  projectDirs: string[];
+};
+
+function subscribeSessionAndProjectDirs(onStoreChange: () => void) {
+  const stopSession = subscribeSessionAdditionalDirs(onStoreChange);
+  const stopProject = subscribeProjectPathsChanged(onStoreChange);
+  return () => {
+    stopSession();
+    stopProject();
+  };
+}
+
+/**
+ * The session's extra folders for render: re-renders the caller when the session's own
+ * choice or its project's folders change. The snapshot is a string, so it only changes
+ * with the stored content.
+ */
+export function useSessionAdditionalDirs(
+  sessionId: string,
+  project: string,
+): SessionAdditionalDirs {
+  const key = useSyncExternalStore(
+    subscribeSessionAndProjectDirs,
+    () =>
+      JSON.stringify({
+        overridden: loadSessionAdditionalDirs(sessionId) !== undefined,
+        dirs: additionalDirsForSession(sessionId, project),
+        projectDirs: loadAdditionalDirs(project),
+      }),
+    () => '{"overridden":false,"dirs":[],"projectDirs":[]}',
+  );
+  return useMemo(() => JSON.parse(key) as SessionAdditionalDirs, [key]);
 }

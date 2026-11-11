@@ -279,7 +279,7 @@ export function useSessionStop(deps: SessionStopDeps) {
     };
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [onStop]);
+  }, [onStop, projectTerminalFocusedRef, sessionsRef, activeTabIdRef, tabsRef]);
 
   const onStopForRoom = useCallback(
     async (sessionId: string) => {
@@ -294,7 +294,7 @@ export function useSessionStop(deps: SessionStopDeps) {
         throw new Error("Session stop owner is unavailable in this window.");
       await onStop(sessionId, false, undefined, true);
     },
-    [onStop],
+    [onStop, sessionsRef],
   );
   return { onStop, onStopForRoom };
 }

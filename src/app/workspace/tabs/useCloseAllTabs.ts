@@ -186,7 +186,22 @@ export function useCloseAllTabs({
       );
       setComposerFocused(true);
     })();
-  }, [onCloseTab, onCloseTabs, onClearTabSession, projectCwd, tabCloseScope]);
+  }, [
+    onCloseTab,
+    onCloseTabs,
+    onClearTabSession,
+    projectCwd,
+    tabCloseScope,
+    tabsRef,
+    sessionsRef,
+    setTabs,
+    tabWorktreeOf,
+    setDirtyFiles,
+    dirtyFilesRef,
+    setSessions,
+    activeTabIdRef,
+    setComposerFocused,
+  ]);
 
   return { onCloseAllTabs };
 }

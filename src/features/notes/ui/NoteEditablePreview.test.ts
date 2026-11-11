@@ -5,7 +5,11 @@ import { expect, it, vi } from "vitest";
 import { NotePreviewParser } from "../previewBlocks";
 import { NoteEditablePreview } from "./NoteEditablePreview";
 
-vi.mock("../../../shared/i18n", () => ({ t: (text: string) => text, useLocale: () => "en" }));
+vi.mock("../../../shared/i18n", () => ({
+  t: (text: string) => text,
+  useT: () => (text: string) => text,
+  useLocale: () => "en",
+}));
 vi.mock("../../sessions/ui/AgentMarkdown", async () => {
   const { createElement } = await import("react");
   return { AgentMarkdown: ({ text }: { text: string }) => createElement("p", {}, text) };

@@ -127,6 +127,21 @@ export function ToolPanel({
   ) : null;
 }
 
+/** Opens the tool in its own window; resolves to the failure text, or null. Never rejects. */
+async function openToolWindow(
+  tool: WorkspaceToolId,
+  cwd: string,
+  grouped: boolean,
+): Promise<string | null> {
+  try {
+    if (await routeWindowDestination({ kind: "tool", tool, cwd, grouped })) return null;
+    await invoke("open_tool_window", { tool, cwd, grouped });
+    return null;
+  } catch (cause) {
+    return String(cause);
+  }
+}
+
 export function ToolNavigation() {
   const t = useT();
   const assistant = useAssistantIdentity();
@@ -166,23 +181,10 @@ export function ToolNavigation() {
     openingRef.current = true;
     setOpening(grouped ? "grouped" : "single");
     setError("");
-    try {
-      if (
-        await routeWindowDestination({
-          kind: "tool",
-          tool: active,
-          cwd: navigation.cwd,
-          grouped,
-        })
-      )
-        return;
-      await invoke("open_tool_window", { tool: active, cwd: navigation.cwd, grouped });
-    } catch (cause) {
-      setError(String(cause));
-    } finally {
-      openingRef.current = false;
-      setOpening(null);
-    }
+    const failure = await openToolWindow(active, navigation.cwd, grouped);
+    if (failure !== null) setError(failure);
+    openingRef.current = false;
+    setOpening(null);
   };
   return (
     <div

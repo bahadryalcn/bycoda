@@ -2,8 +2,14 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { UsageMeter, AccountUsageMeters } from "./ProviderAccountUsage";
+import {
+  UsageMeter,
+  AccountUsageMeters,
+  meterWindows,
+  meterWindowsWith,
+} from "./ProviderAccountUsage";
 import { idleRateLimits } from "../model/rateLimits";
+import { t } from "../../../shared/i18n";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -82,4 +88,19 @@ it("exposes loading placeholders only while limits are unavailable", async () =>
     ),
   );
   expect(container.querySelector('[role="status"]')).toBeNull();
+});
+
+it("meterWindowsWith returns the same titles as meterWindows and uses the translator given", () => {
+  const w = { usedPercent: 10, windowMinutes: 300, resetsAt: null };
+  const limits = { ...idleRateLimits("codex"), session: w, weekly: w, monthly: w };
+  const plain = (list: ReturnType<typeof meterWindows>) =>
+    list.map((entry) => ({ title: entry.title, window: entry.window }));
+  expect(plain(meterWindowsWith(limits, t))).toEqual(plain(meterWindows(limits)));
+  expect(meterWindowsWith(undefined, t)).toEqual([]);
+  const upper = ((key: string) => key.toUpperCase()) as typeof t;
+  expect(meterWindowsWith(limits, upper).map((entry) => entry.title)).toEqual([
+    "5h",
+    "WEEKLY",
+    "MONTHLY",
+  ]);
 });

@@ -20,6 +20,7 @@ it.each(["rejection", "false-result"])(
       "ResizeObserver",
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );

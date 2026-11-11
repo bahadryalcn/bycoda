@@ -7,12 +7,13 @@ import { useSyncExternalStore } from "react";
  * actions together instead of a second toolbar row. Without a slot (a test, or a
  * window with no title bar) the pane keeps rendering its actions inline.
  */
-let slotElement: HTMLElement | null = null;
+// An object field instead of a reassigned module `let`: the value is read through the store.
+const slot: { element: HTMLElement | null } = { element: null };
 const listeners = new Set<() => void>();
 
 function setSlotElement(element: HTMLElement | null) {
-  if (slotElement === element) return;
-  slotElement = element;
+  if (slot.element === element) return;
+  slot.element = element;
   for (const listener of listeners) listener();
 }
 
@@ -27,7 +28,7 @@ function subscribe(listener: () => void) {
 export function useTitleBarActionsSlot(): HTMLElement | null {
   return useSyncExternalStore(
     subscribe,
-    () => slotElement,
+    () => slot.element,
     () => null,
   );
 }

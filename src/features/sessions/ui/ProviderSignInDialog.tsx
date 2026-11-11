@@ -1,5 +1,5 @@
 import { useT } from "../../../shared/i18n";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { loginHarness } from "../../../integrations/harness/core/auth";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import { Modal } from "../../../shared/ui/Modal";
@@ -32,7 +32,7 @@ export function ProviderSignInDialog({
   const state: ProviderSignInState = current?.state ?? "idle";
   const error = current?.error ?? null;
 
-  const signIn = useCallback(() => {
+  const signIn = () => {
     setAttempt({ key: ownerKey, state: "running", error: null });
     void loginHarness(harness, accountId).then(
       () => {
@@ -50,7 +50,7 @@ export function ProviderSignInDialog({
         });
       },
     );
-  }, [harness, accountId, ownerKey, onSignedIn]);
+  };
 
   return (
     <Modal

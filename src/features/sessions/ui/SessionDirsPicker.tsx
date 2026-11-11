@@ -4,7 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useT } from "../../../shared/i18n";
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useRef, useState } from "react";
 import { basename, pickFolders } from "../../../platform/tauri/fs";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { pathKey, prettyCwd } from "../../../shared/lib/paths";
@@ -13,11 +13,15 @@ import { Popover } from "../../../shared/ui/Popover";
 import {
   additionalDirsForSession,
   loadAdditionalDirs,
-  loadSessionAdditionalDirs,
   saveSessionAdditionalDirs,
-  subscribeSessionAdditionalDirs,
+  useSessionAdditionalDirs,
 } from "../../projects/public/additionalDirs";
-import { isLocalProject, loadRecents, type RecentProject } from "../../projects/public/recents";
+import {
+  isLocalProject,
+  loadRecents,
+  useRecents,
+  type RecentProject,
+} from "../../projects/public/recents";
 
 function uniquePaths(paths: readonly string[]): string[] {
   const seen = new Set<string>();
@@ -34,11 +38,72 @@ export function sessionDirCandidates(
   project: string,
   recents: readonly RecentProject[] = loadRecents(),
 ): string[] {
+  return candidatesFrom(project, loadAdditionalDirs(project), recents);
+}
+
+/** `sessionDirCandidates` over values already read (see `useSessionAdditionalDirs`, `useRecents`). */
+function candidatesFrom(
+  project: string,
+  projectDirs: readonly string[],
+  recents: readonly RecentProject[],
+): string[] {
   return uniquePaths([
     project,
-    ...loadAdditionalDirs(project),
+    ...projectDirs,
     ...recents.map((recent) => recent.path).filter(isLocalProject),
   ]);
+}
+
+type FolderPick = {
+  choosingProject: boolean;
+  sessionId: string;
+  project: string;
+  pickingRef: { current: boolean };
+  setPicking: (picking: boolean) => void;
+  setError: (message: string | undefined) => void;
+  setOpen: (open: boolean) => void;
+  changeProject: (path: string) => void;
+};
+
+/** The native folder dialog and what follows; outside the component so its `try` stays out of render code. */
+async function pickSessionFolders({
+  choosingProject,
+  sessionId,
+  project,
+  pickingRef,
+  setPicking,
+  setError,
+  setOpen,
+  changeProject,
+}: FolderPick): Promise<void> {
+  try {
+    const selected = await pickFolders(
+      choosingProject ? "Choose session project" : "Add folders to this session",
+      !choosingProject,
+    );
+    if (selected.length === 0) return;
+    if (selected.some((path) => !isLocalProject(path))) {
+      setError("Choose a local project folder rather than your home or drive root.");
+      setOpen(true);
+      return;
+    }
+    if (choosingProject) {
+      changeProject(selected[0]!);
+    } else {
+      // Read again after the native dialog: another window may have changed the selection.
+      saveSessionAdditionalDirs(sessionId, project, [
+        ...additionalDirsForSession(sessionId, project),
+        ...selected,
+      ]);
+      setOpen(true);
+    }
+  } catch {
+    setError("Could not open the folder picker. Please try again.");
+    setOpen(true);
+  } finally {
+    pickingRef.current = false;
+    setPicking(false);
+  }
 }
 
 /** The working folder is always included; extra folders are scoped to this session. */
@@ -67,21 +132,15 @@ export function SessionDirsPicker({
   const pickingRef = useRef(false);
   const [error, setError] = useState<string>();
   const root = useRef<HTMLDivElement>(null);
-  useSyncExternalStore(
-    subscribeSessionAdditionalDirs,
-    () => (loadSessionAdditionalDirs(sessionId) ?? ["\0default"]).join("\n"),
-    () => "",
-  );
-  const overridden = loadSessionAdditionalDirs(sessionId) !== undefined;
-  const extras = additionalDirsForSession(sessionId, project).filter(
-    (path) => pathKey(path) !== pathKey(workingDirectory),
-  );
+  const { overridden, dirs, projectDirs } = useSessionAdditionalDirs(sessionId, project);
+  const storedRecents = useRecents();
+  const extras = dirs.filter((path) => pathKey(path) !== pathKey(workingDirectory));
   const effective = uniquePaths([workingDirectory, ...extras]);
   const effectiveKeys = new Set(effective.map(pathKey));
   const candidates = uniquePaths([
     workingDirectory,
     ...extras,
-    ...sessionDirCandidates(project, recents),
+    ...candidatesFrom(project, projectDirs, recents ?? storedRecents),
   ]);
   const needle = query.trim().toLocaleLowerCase();
   const matching = candidates.filter(
@@ -122,34 +181,16 @@ export function SessionDirsPicker({
     const choosingProject = mode === "project";
     setPicking(true);
     setError(undefined);
-    try {
-      const selected = await pickFolders(
-        choosingProject ? "Choose session project" : "Add folders to this session",
-        !choosingProject,
-      );
-      if (selected.length === 0) return;
-      if (selected.some((path) => !isLocalProject(path))) {
-        setError("Choose a local project folder rather than your home or drive root.");
-        setOpen(true);
-        return;
-      }
-      if (choosingProject) {
-        changeProject(selected[0]!);
-      } else {
-        // Read again after the native dialog: another window may have changed the selection.
-        saveSessionAdditionalDirs(sessionId, project, [
-          ...additionalDirsForSession(sessionId, project),
-          ...selected,
-        ]);
-        setOpen(true);
-      }
-    } catch {
-      setError("Could not open the folder picker. Please try again.");
-      setOpen(true);
-    } finally {
-      pickingRef.current = false;
-      setPicking(false);
-    }
+    await pickSessionFolders({
+      choosingProject,
+      sessionId,
+      project,
+      pickingRef,
+      setPicking,
+      setError,
+      setOpen,
+      changeProject,
+    });
   };
 
   return (

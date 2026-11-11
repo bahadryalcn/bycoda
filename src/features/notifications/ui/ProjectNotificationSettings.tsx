@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight, Folder } from "../../../shared/ui/icons";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -20,24 +20,23 @@ import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import {
-  useProjectNotificationPreferences,
+  useNotificationPreferencesView,
   useProjectNotificationPreferencesStatus,
 } from "../hooks/useProjectNotificationPreferences";
 import { useNotificationProjects } from "../hooks/useNotificationProjects";
 import {
   NOTIFICATION_CATEGORIES,
-  isProjectMuted,
   loadNotificationPreferences,
   updateNotificationPreferences,
   type NotificationCategory,
 } from "../model/notificationPreferences";
 import { pathKey, projectKey, projectName } from "../../../shared/lib/paths";
 import {
-  loadTabGroupColors,
-  loadTabGroupCustomColors,
-  loadTabGroupMascots,
+  useTabGroupColors,
+  useTabGroupCustomColors,
+  useTabGroupMascots,
   resolveTabGroupColor,
-  resolveTabGroupLogo,
+  useResolvedTabGroupLogos,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
 import type { RecentProject } from "../../projects/model/recents";
@@ -50,6 +49,29 @@ type Props = {
   highlighted?: boolean;
 };
 
+type CategoryError = { projectId: string; category: NotificationCategory; enabled: boolean };
+
+function saveCategory(
+  projectId: string,
+  category: NotificationCategory,
+  enabled: boolean,
+  setError: (
+    update: CategoryError | null | ((current: CategoryError | null) => CategoryError | null),
+  ) => void,
+) {
+  try {
+    const disabled = loadNotificationPreferences()[projectId]?.disabled ?? [];
+    updateNotificationPreferences([projectId], {
+      disabled: enabled ? disabled.filter((id) => id !== category) : [...disabled, category],
+    });
+    setError((current) =>
+      current?.projectId === projectId && current.category === category ? null : current,
+    );
+  } catch {
+    setError({ projectId, category, enabled });
+  }
+}
+
 export function ProjectNotificationSettings({
   cwd,
   recents = [],
@@ -57,7 +79,7 @@ export function ProjectNotificationSettings({
   notificationSettingsRequest = 0,
   highlighted = false,
 }: Props) {
-  useLocale();
+  const t = useT();
   const notificationProjects = useNotificationProjects([
     cwd,
     notificationProjectPath ?? "",
@@ -78,19 +100,15 @@ export function ProjectNotificationSettings({
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
-  const preferences = useProjectNotificationPreferences();
+  const { preferences, muted: mutedIds } = useNotificationPreferencesView();
   const { status: preferencesStatus, retry: retryPreferencesRead } =
     useProjectNotificationPreferencesStatus();
   const preferencesUnavailable = preferencesStatus === "unavailable";
   const groupLogos = useTabGroupLogos();
-  const groupColors = loadTabGroupColors();
-  const groupCustomColors = loadTabGroupCustomColors();
-  const groupMascots = loadTabGroupMascots();
-  const [error, setError] = useState<{
-    projectId: string;
-    category: NotificationCategory;
-    enabled: boolean;
-  } | null>(null);
+  const groupColors = useTabGroupColors();
+  const groupCustomColors = useTabGroupCustomColors();
+  const groupMascots = useTabGroupMascots();
+  const [error, setError] = useState<CategoryError | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [selecting, setSelecting] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -117,9 +135,18 @@ export function ProjectNotificationSettings({
       ) &&
       (scope === "all" ||
         (scope === "muted"
-          ? isProjectMuted(preferences[project.id] ?? { disabled: [] })
-          : (preferences[project.id]?.disabled.length ?? 0) > 0 ||
-            isProjectMuted(preferences[project.id] ?? { disabled: [] }))),
+          ? mutedIds.has(project.id)
+          : (preferences[project.id]?.disabled.length ?? 0) > 0 || mutedIds.has(project.id))),
+  );
+  const projectPathOf = (project: (typeof projects)[number]) =>
+    project.paths.find((path) => pathKey(path) === pathKey(notificationProjectPath || cwd)) ??
+    project.paths[0];
+  const resolvedLogos = useResolvedTabGroupLogos(
+    visibleProjects.flatMap((project) => {
+      const path = projectPathOf(project);
+      return path ? [projectKey(path)] : [];
+    }),
+    groupLogos,
   );
   const selectedIds = selected.filter((id) => projects.some((project) => project.id === id));
   const targetCard = useRef<HTMLFieldSetElement>(null);
@@ -150,17 +177,7 @@ export function ProjectNotificationSettings({
   }, [notificationProjectPath, notificationSettingsRequest, targetId, query]);
 
   function setCategory(projectId: string, category: NotificationCategory, enabled: boolean) {
-    try {
-      const disabled = loadNotificationPreferences()[projectId]?.disabled ?? [];
-      updateNotificationPreferences([projectId], {
-        disabled: enabled ? disabled.filter((id) => id !== category) : [...disabled, category],
-      });
-      setError((current) =>
-        current?.projectId === projectId && current.category === category ? null : current,
-      );
-    } catch {
-      setError({ projectId, category, enabled });
-    }
+    saveCategory(projectId, category, enabled, setError);
   }
 
   return (
@@ -291,13 +308,10 @@ export function ProjectNotificationSettings({
                 />
               ) : null}
               {visibleProjects.map((project) => {
-                const path =
-                  project.paths.find(
-                    (path) => pathKey(path) === pathKey(notificationProjectPath || cwd),
-                  ) ?? project.paths[0];
+                const path = projectPathOf(project);
                 const key = path ? projectKey(path) : null;
                 const seed = path ? projectName(path) : project.name;
-                const logoPath = key ? resolveTabGroupLogo(key, groupLogos) : null;
+                const logoPath = key ? (resolvedLogos[key] ?? null) : null;
                 const categories = NOTIFICATION_CATEGORIES.filter((category) => {
                   if (project.kind === "linear" || project.kind === "jira")
                     return category.id === "issues";
@@ -308,7 +322,7 @@ export function ProjectNotificationSettings({
                 const enabledCount = categories.filter(
                   (category) => !preferences[project.id]?.disabled.includes(category.id),
                 ).length;
-                const muted = isProjectMuted(preferences[project.id] ?? { disabled: [] });
+                const muted = mutedIds.has(project.id);
                 const isExpanded = expanded === project.id;
                 const panelId = `notification-categories-${encodeURIComponent(project.id)}`;
                 const muteHintId = `${panelId}-mute-hint`;

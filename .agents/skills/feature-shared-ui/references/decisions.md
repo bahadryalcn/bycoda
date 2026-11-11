@@ -57,3 +57,11 @@ Owner decision, 2026-11-11, source: owner chat:
 > Feature kodu görünüm seçmez; görünüm ortak bileşenden gelir. ... Kural yasaklanan özellik üzerinedir, bileşen adı üzerine değil. ... Her madde check-ui-drift'te ayrı kural; mevcut sayı baseline olur, sadece düşer.
 
 Recorded decision: in `src/features` and `src/app`, type, surfaces, interaction states, control sizes, truncation, motion, scrollbars and inline style properties come from shared components; layout stays in the feature; `var(--space-*)` is always allowed and only a literal off the spacing scale (Tailwind steps 0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6) is reported. Bespoke surfaces are exempt by explicit file path, never by a word in the file name. Each ban is its own `check:ui-drift` rule with the existing count as its baseline. An inline style carries custom properties only. Known empty, loading and failure shapes are rules; the rest is a review item. Breakpoint steps are deferred until a shared list exists. Migration does not start for a need the catalog cannot meet; `Text`, `ScrollArea` and `Motion` were written first, with variants taken from the existing feature usage and defaults equal to the most common value.
+
+## Toasts are one Arc-style stack
+
+Owner decision, 2026-11-11, source: owner chat, pointing at Arc's toast and toast-stack components:
+
+> toast yapımız çok basit eski tip gözüküyor bu tarz yapıya geçelim lütfen ortak bir yapı olsun heryer aynı şekilde kullanaiblsin.
+
+Recorded decision: every toast is the one shared card (tone glyph, title, description, one pill action at the end of the row, dismiss) in one stack per corner: newest in front, three visible, fanned out on hover or keyboard focus. Feature cards in `ToastSlot` share the corner but stay outside the stack.

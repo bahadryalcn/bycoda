@@ -2,15 +2,18 @@ import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
-import { ActionHost, InlineAction, InlineTextAction } from "../../../shared/ui/ActionHost";
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge, StatusBadge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { StatusDot } from "../../../shared/ui/StatusDot";
+import { Text } from "../../../shared/ui/Text";
 import {
   CheckCircle,
   CheckList,
   CircleX,
   Clock,
+  ExternalLink,
   MessageSquare,
   Shield,
   Sparkles,
@@ -24,7 +27,7 @@ import type {
 } from "../../notifications/model/notificationHistory";
 import { HARNESS_LABEL, sessionDisplayTitle, type HarnessId } from "../model/session";
 
-/** Same date-and-time wording in Pending rows and History rows. */
+/** Date and time of a pending request; log rows show a relative time instead. */
 export function NotificationTime({ at }: { at: number }) {
   return (
     <>
@@ -71,23 +74,53 @@ export function historyKindMeta(
   }
 }
 
-/** Longer or multi-line requests get a "Show more" toggle; shorter ones fit the clamp. */
-const LONG_REQUEST = 140;
+type HistoryActionContext = {
+  onOpen: (entry: NotificationHistoryEntry) => Promise<void>;
+  onRemove: (entry: NotificationHistoryEntry) => Promise<boolean>;
+  inFlight: { current: boolean };
+  setBusy: (busy: "open" | "remove" | null) => void;
+  setError: (error: string | null) => void;
+  t: (key: string) => string;
+};
+
+async function runHistoryAction(
+  action: "open" | "remove",
+  entry: NotificationHistoryEntry,
+  { onOpen, onRemove, inFlight, setBusy, setError, t }: HistoryActionContext,
+) {
+  if (inFlight.current) return;
+  inFlight.current = true;
+  setBusy(action);
+  setError(null);
+  try {
+    if (action === "open") await onOpen(entry);
+    else if (!(await onRemove(entry))) setError(t("This notification could not be removed."));
+  } catch (failure) {
+    setError(
+      failure instanceof Error && failure.message
+        ? failure.message
+        : t("This conversation is no longer available."),
+    );
+  } finally {
+    inFlight.current = false;
+    setBusy(null);
+  }
+}
 
 /**
- * A recorded arrival. It is never a live approval: the row opens its
- * conversation, and can be removed from the list on its own. `pending` marks a
- * request that is still waiting, which the Pending tab is the place to answer.
+ * A recorded arrival. It is never a live approval: the row expands to open its
+ * conversation, and can be removed from the list on its own. `isNew` marks an
+ * arrival the owner has not looked at yet.
  */
 export function HistoryItem({
   entry,
-  pending = false,
+  isNew = false,
   canOpen,
   onOpen,
   onRemove,
 }: {
   entry: NotificationHistoryEntry;
-  pending?: boolean;
+  isNew?: boolean;
   canOpen: boolean;
   onOpen: (entry: NotificationHistoryEntry) => Promise<void>;
   /** Resolves `false` when the entry could not be removed. */
@@ -98,110 +131,101 @@ export function HistoryItem({
   const [busy, setBusy] = useState<"open" | "remove" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
-  const run = async (action: "open" | "remove") => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setBusy(action);
-    setError(null);
-    try {
-      if (action === "open") await onOpen(entry);
-      else if (!(await onRemove(entry))) setError(t("This notification could not be removed."));
-    } catch (failure) {
-      setError(
-        failure instanceof Error && failure.message
-          ? failure.message
-          : t("This conversation is no longer available."),
-      );
-    } finally {
-      inFlight.current = false;
-      setBusy(null);
-    }
-  };
+  const run = (action: "open" | "remove") =>
+    runHistoryAction(action, entry, { onOpen, onRemove, inFlight, setBusy, setError, t });
   const kind = historyKindMeta(entry.kind, t);
-  const long = entry.label.length > LONG_REQUEST || /\n/.test(entry.label);
-  const content = (
-    <>
-      <span className="notification-history-head">
-        <span className="notification-history-title">{historyTitle(entry) || t("Untitled")}</span>
-        <span className="notification-history-time">
-          <NotificationTime at={entry.occurredAt} />
-        </span>
-      </span>
-      <span className={expanded ? "notification-history-label" : "notification-history-preview"}>
-        {entry.label}
-      </span>
-      {canOpen ? (
-        <span className="sr-only">{entry.target ? t("Open") : t("Open session")}</span>
-      ) : null}
-    </>
-  );
   return (
-    <ActionHost as="article" className="notification-history-item flex-col items-stretch gap-0">
-      {canOpen ? (
-        <Button
-          fullWidth
-          variant="item"
-          layout="stacked"
-          type="button"
-          aria-busy={busy === "open"}
-          className="notification-request-body"
-          onClick={() => void run("open")}
-        >
-          {content}
-        </Button>
-      ) : (
-        <div className="notification-history-static">{content}</div>
-      )}
-      <div className="notification-history-meta" data-no-drag="">
-        {entry.cwd ? (
-          <NotificationProjectLabel cwd={entry.cwd} />
-        ) : (
-          <span className="notification-project" />
-        )}
-        {entry.kind === "failed" || entry.kind === "finished" ? (
-          <StatusBadge
-            className="notification-history-kind"
-            size="xs"
-            status={entry.kind === "failed" ? "failed" : "done"}
+    <ActionHost as="article" className="notification-history-item" data-new={isNew || undefined}>
+      <Button
+        fullWidth
+        variant="item"
+        type="button"
+        aria-expanded={expanded}
+        className="notification-row-toggle"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <Badge
+          className="notification-history-icon"
+          tone={kind.tone}
+          size="md"
+          icon={<kind.Icon className="icon-sm" strokeWidth={1.75} aria-hidden />}
+          data-tone={kind.tone}
+          aria-hidden
+        />
+        <span className="notification-history-text">
+          <span className="notification-history-head">
+            <Text
+              className="notification-history-title"
+              size="inherit"
+              tone="inherit"
+              weight="medium"
+              truncate
+            >
+              {historyTitle(entry) || t("Untitled")}
+            </Text>
+            {isNew ? (
+              <>
+                <StatusDot className="notification-new-dot" tone="accent" />
+                <span className="sr-only">{t("New")}</span>
+              </>
+            ) : null}
+          </span>
+          {/* Expanded, the same line shows the whole text instead of repeating it below. */}
+          <Text
+            className={expanded ? "notification-history-label" : "notification-history-preview"}
+            leading="normal"
           >
-            {kind.label}
-          </StatusBadge>
-        ) : (
-          <Badge
-            className="notification-history-kind"
-            size="xs"
-            tone={kind.tone}
-            icon={<kind.Icon className="icon-sm" strokeWidth={1.75} aria-hidden />}
-          >
-            {kind.label}
-          </Badge>
-        )}
-        {pending ? <Badge tone="warning">{t("Waiting for you")}</Badge> : null}
-        <span className="notification-history-actions">
-          {long ? (
-            <InlineTextAction aria-expanded={expanded} onClick={() => setExpanded((open) => !open)}>
-              {expanded ? t("Show less") : t("Show more")}
-            </InlineTextAction>
-          ) : null}
-          <InlineAction
-            label={t("Remove")}
-            reveal="always"
-            loading={busy === "remove"}
-            onClick={() => void run("remove")}
-          >
-            <X className="icon-sm" strokeWidth={1.75} aria-hidden />
-          </InlineAction>
+            {entry.label}
+          </Text>
+          <Text className="notification-history-meta">
+            {entry.cwd ? (
+              <NotificationProjectLabel cwd={entry.cwd} />
+            ) : (
+              <span className="notification-project" />
+            )}
+            <span aria-hidden>·</span>
+            <span className="notification-history-kind" data-tone={kind.tone}>
+              {kind.label}
+            </span>
+          </Text>
         </span>
-      </div>
-      {expanded && entry.cwd ? (
-        <p className="notification-history-path" title={entry.cwd}>
-          {prettyCwd(entry.cwd)}
-        </p>
-      ) : null}
-      {error ? (
-        <Alert tone="warning" className="mx-3 mb-2">
-          {error}
-        </Alert>
+        <Text className="notification-history-time" tone="muted">
+          <Timestamp value={entry.occurredAt} format="relative" relativeStyle="narrow" />
+        </Text>
+      </Button>
+      {expanded ? (
+        <div className="notification-history-details" data-no-drag="">
+          {entry.cwd ? (
+            <Text as="p" className="notification-history-path" leading="normal" title={entry.cwd}>
+              {prettyCwd(entry.cwd)}
+            </Text>
+          ) : null}
+          <div className="notification-history-actions">
+            {canOpen ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                startIcon={<ExternalLink className="icon-sm" strokeWidth={1.75} aria-hidden />}
+                loading={busy === "open"}
+                onClick={() => void run("open")}
+              >
+                {entry.target ? t("Open") : t("Open conversation")}
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              startIcon={<X className="icon-sm" strokeWidth={1.75} aria-hidden />}
+              loading={busy === "remove"}
+              onClick={() => void run("remove")}
+            >
+              {t("Remove")}
+            </Button>
+          </div>
+          {error ? <Alert tone="warning">{error}</Alert> : null}
+        </div>
       ) : null}
     </ActionHost>
   );

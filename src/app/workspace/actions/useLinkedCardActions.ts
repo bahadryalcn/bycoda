@@ -37,7 +37,7 @@ export function useLinkedCardActions(deps: LinkedCardActionsDeps): {
       sessionsRef.current = next;
       setSessions(next);
     },
-    [],
+    [sessionsRef, setSessions],
   );
 
   const onLinkedWorkItemUpdateCardDismiss = useCallback(

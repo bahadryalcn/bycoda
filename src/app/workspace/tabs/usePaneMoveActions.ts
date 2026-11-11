@@ -72,7 +72,7 @@ export function usePaneMoveActions({
         return mergeOrderedSubset(prev, orderByIds(visibleTabs, ids));
       });
     },
-    [projectOfTab],
+    [projectOfTab, setTabs],
   );
 
   const onMovePane = useCallback(

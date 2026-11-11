@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { useStableCallback } from "../../shared/hooks/useStableCallback";
 import { tabCloseDuration } from "../../shared/lib/motion";
 
 type Props = {
@@ -12,14 +13,13 @@ type TabStyle = CSSProperties & { "--tab-slot-width"?: string };
 
 export function TabWidthMotion({ phase, width = 0, onFinish, children }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const onFinishRef = useRef(onFinish);
-  onFinishRef.current = onFinish;
+  const finish = useStableCallback(onFinish);
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      onFinishRef.current();
+      finish();
       return;
     }
 
@@ -29,7 +29,7 @@ export function TabWidthMotion({ phase, width = 0, onFinish, children }: Props) 
     const outerFrame = requestAnimationFrame(() => {
       innerFrame = requestAnimationFrame(() => {
         el.toggleAttribute("data-collapsed", phase === "closing");
-        timer = window.setTimeout(() => onFinishRef.current(), duration);
+        timer = window.setTimeout(() => finish(), duration);
       });
     });
     return () => {
@@ -37,7 +37,7 @@ export function TabWidthMotion({ phase, width = 0, onFinish, children }: Props) 
       cancelAnimationFrame(innerFrame);
       window.clearTimeout(timer);
     };
-  }, [phase]);
+  }, [phase, finish]);
 
   const style: TabStyle | undefined =
     phase === "closing" ? { "--tab-slot-width": width > 1 ? `${width}px` : "14rem" } : undefined;

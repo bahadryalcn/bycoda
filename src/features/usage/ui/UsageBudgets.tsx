@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -183,9 +184,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             ) : null;
           })}
           {!pending && !visible.length && !editor && !error ? (
-            <p className="text-ui-caption text-(--ui-text-secondary)">
-              {t("No usage budgets. Add a project, session or workspace budget.")}
-            </p>
+            <Text as="p">{t("No usage budgets. Add a project, session or workspace budget.")}</Text>
           ) : null}
         </div>
         <Button
@@ -238,11 +237,11 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 <SectionLabel as="h3" classNames={{ label: "usage-budget-title" }}>
                   {budget.label}
                 </SectionLabel>
-                <p className="text-ui-caption text-(--ui-text-secondary)">
+                <Text as="p">
                   {t(scopeLabel[budget.scope])} · {t(periodLabel[budget.period])} ·{" "}
                   {t(budget.action === "block" ? "Block new turns" : "Monitor only")}
-                </p>
-                <p className="break-all text-ui-caption text-(--ui-text-secondary)">
+                </Text>
+                <Text as="p" className="break-all">
                   {budget.scope === "machine"
                     ? t("Supported local Codex and Claude usage")
                     : budget.scope === "workspace"
@@ -252,7 +251,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                         ? (sessions.find((session) => session.id === budget.target)?.title ??
                           budget.target)
                         : budget.target}
-                </p>
+                </Text>
               </div>
               <div className="flex gap-1">
                 <Button
@@ -282,7 +281,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   compact
                   showRemaining={false}
                 />
-                <p className="text-ui-caption">
+                <Text as="p" tone="inherit">
                   {format(reading.used!)} / {format(reading.limit)} ·{" "}
                   {t(
                     reading.state === "exceeded"
@@ -291,7 +290,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                         ? "Approaching budget"
                         : "Within budget",
                   )}
-                </p>
+                </Text>
               </>
             ) : (
               <Alert tone="info">
@@ -311,12 +310,12 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
               </LoadingText>
             ) : null}
             {!pending && known ? (
-              <p className="text-ui-caption text-(--ui-text-secondary)">
+              <Text as="p">
                 {t("Last observed")}: <Timestamp value={now} format="relative" />
-              </p>
+              </Text>
             ) : null}
             {budget.metric === "accountPercent" ? (
-              <p className="text-ui-caption text-(--ui-text-secondary)">
+              <Text as="p">
                 {budget.provider} ·{" "}
                 {providerAccounts(budget.provider).find((a) => a.id === budget.accountId)?.label ??
                   t("Account unavailable")}{" "}
@@ -324,11 +323,13 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 {reading?.resetsAt != null
                   ? ` · ${formatResetCountdown(reading.resetsAt - now)}`
                   : null}
-              </p>
+              </Text>
             ) : null}
             {budget.scope === "workspace" &&
             !loadProjectGroups().some((g) => g.id === budget.target) ? (
-              <p className="text-ui-caption text-danger">{t("Workspace unavailable")}</p>
+              <Text as="p" tone="danger">
+                {t("Workspace unavailable")}
+              </Text>
             ) : null}
           </Surface>
         );
@@ -560,13 +561,13 @@ function BudgetEditor({
       </div>
       {error ? <Alert tone="danger">{error}</Alert> : null}
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-ui-secondary text-(--ui-text-secondary)">
+        <Text as="p" size="secondary">
           {metric === "tokens"
             ? `${t("Effective token limit")}: ${effectiveLimit}`
             : `${t("Account usage threshold (%)")}: ${percent}%`}
           {" · "}
           {t(action === "block" ? "Block new turns" : "Monitor only")}
-        </p>
+        </Text>
         <Button type="submit" variant="primary">
           {t("Save budget")}
         </Button>
@@ -589,10 +590,10 @@ function BudgetSelect({
 }: ComponentProps<typeof SearchableSelect> & { info?: ReactNode }) {
   return (
     <div className="space-y-1">
-      <span className="flex items-center gap-1 text-ui-caption font-medium">
+      <Text tone="inherit" weight="medium" className="flex items-center gap-1">
         {props.label}
         {info}
-      </span>
+      </Text>
       <SearchableSelect hideLabel {...props} />
     </div>
   );

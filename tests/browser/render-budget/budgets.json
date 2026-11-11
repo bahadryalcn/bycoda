@@ -1,0 +1,52 @@
+{
+  "note": "Upper bounds per scenario phase for total renders and named root components (react-scan composite renders). Bound = ceil(max over three reference runs (steps 4, 4a, 6 of the render audit) x 1.25) + 2; timing-noisy metrics such as the tasksBoard stay (2304 or 2816 renders depending on whether one more 15 s poll lands in the window) are covered by the margin. Bounds may only be lowered after a fix that removes renders; never raise a bound to make a failure pass without an owner decision.",
+  "scenarios": {
+    "idle60": {
+      "run": {
+        "renders": 422,
+        "SidebarComponent": 6
+      }
+    },
+    "streaming": {
+      "run": {
+        "renders": 12141,
+        "SidebarComponent": 14,
+        "SessionCard": 5,
+        "TitleBar": 12,
+        "SessionPane": 12,
+        "Composer": 12,
+        "AgentTranscript": 264,
+        "AgentTranscriptComponent": 264,
+        "Turn": 311,
+        "LiveSessionBlocks": 284,
+        "AgentMarkdown": 361
+      }
+    },
+    "composerTyping": {
+      "run": {
+        "renders": 332,
+        "SidebarComponent": 4,
+        "Composer": 79,
+        "LiveSessionBlocks": 6
+      }
+    },
+    "windowFocus": {
+      "run": {
+        "renders": 3676,
+        "SidebarComponent": 21,
+        "Composer": 21,
+        "LiveSessionBlocks": 40,
+        "AgentMarkdown": 252
+      }
+    },
+    "tasksBoard": {
+      "boardStay": {
+        "renders": 3522,
+        "TasksContent": 16
+      },
+      "newTaskFormTyping": {
+        "renders": 3565
+      }
+    }
+  }
+}

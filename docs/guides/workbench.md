@@ -6,6 +6,13 @@ countdown; returning resumes the remaining time. Hovering over a toast or focusi
 its controls also pauses it. Notices explicitly kept open for an action remain until
 their owner dismisses them; closing a notification never answers an approval request.
 
+Toasts in a corner form one stack: the newest sits in front and up to three show at once,
+with older ones tucked behind it. Moving the pointer over the stack, or moving keyboard
+focus into it, fans the stack out into a list and holds every countdown until you leave.
+A toast waiting behind the visible three keeps its countdown and returns as the ones in
+front close. Reminder and
+approval cards stay fully visible beside the stack.
+
 The compact rail keeps its width and uses standard-sized navigation targets and icons.
 The footer places the voice companion first, followed by GitHub and available updates,
 then Settings and Account. Hover or focus the GitHub star to reveal its corner dismiss

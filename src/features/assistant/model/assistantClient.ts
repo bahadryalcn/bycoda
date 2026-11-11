@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { hostToolRequest } from "../../connections/model/hostFeatureClient";
 import { t, useLocale } from "../../../shared/i18n";
 import { AssistantResponseValidationSchema } from "../../../shared/model/host-contracts/assistant";
@@ -84,6 +84,11 @@ function pollAssistant(): Promise<void> {
   return runRefresh(false);
 }
 
+/** Background refresh: awaits fresh data without flipping `loading`, so unchanged data wakes nobody. */
+export function refreshAssistantQuietly(): Promise<void> {
+  return runRefresh(false);
+}
+
 /** Mutation retries remain explicit. Callers retain their idempotency key and draft. */
 export async function assistantRequest(
   request: AssistantRequest,
@@ -123,8 +128,42 @@ export async function assistantRequest(
   return result;
 }
 
-export function useAssistantSnapshot() {
-  const value = useSyncExternalStore(subscribe, () => state);
+export type AssistantClientState = Readonly<State>;
+
+/** Calls `listener` on every snapshot change without rendering; returns the unsubscribe. */
+export function watchAssistantSnapshot(listener: (state: AssistantClientState) => void) {
+  let seen = state.snapshot;
+  return subscribe(() => {
+    if (state.snapshot === seen) return;
+    seen = state.snapshot;
+    listener(state);
+  });
+}
+
+/**
+ * Without arguments returns the whole state plus `refresh` and re-renders on every change.
+ * With a selector it returns only the selection and re-renders when `isEqual` says it changed.
+ */
+export function useAssistantSnapshot(): AssistantClientState & { refresh: typeof refreshAssistant };
+export function useAssistantSnapshot<T>(
+  select: (state: AssistantClientState) => T,
+  isEqual?: (a: T, b: T) => boolean,
+): T;
+export function useAssistantSnapshot<T>(
+  select?: (state: AssistantClientState) => T,
+  isEqual: (a: T, b: T) => boolean = Object.is,
+) {
+  const cache = useRef<{ state: State; select: unknown; value: T } | null>(null);
+  const value = useSyncExternalStore(subscribe, () => {
+    if (!select) return state;
+    const hit = cache.current;
+    if (hit && hit.state === state && hit.select === select) return hit.value;
+    const next = select(state);
+    // Reuse the previous selection when equal so useSyncExternalStore sees a stable snapshot.
+    const kept = hit && isEqual(hit.value, next) ? hit.value : next;
+    cache.current = { state, select, value: kept };
+    return kept;
+  });
   useEffect(() => {
     consumers++;
     if (consumers === 1) {
@@ -141,7 +180,8 @@ export function useAssistantSnapshot() {
       }
     };
   }, []);
-  return { ...value, refresh: refreshAssistant };
+  if (select) return value;
+  return { ...(value as State), refresh: refreshAssistant };
 }
 
 /** Turkish proper-name possessive; other locales use a suffix-free room title. */

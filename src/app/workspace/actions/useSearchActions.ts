@@ -52,17 +52,20 @@ export function useSearchActions(deps: SearchActionDeps): {
       setSearchDialogOpen(true);
       setSearchViewFocusToken((token) => token + 1);
     });
-  }, []);
+  }, [setSearchViewOpen, setSearchViewFocusToken, setFilePickerOpen]);
 
-  const onSearchConversations = useCallback((query?: string) => {
-    startTransition(() => {
-      setSearchRequest({ scope: "conversations", conversationScope: "project", query });
-      setFilePickerOpen(false);
-      setSearchViewOpen(false);
-      setSearchDialogOpen(true);
-      setSearchViewFocusToken((token) => token + 1);
-    });
-  }, []);
+  const onSearchConversations = useCallback(
+    (query?: string) => {
+      startTransition(() => {
+        setSearchRequest({ scope: "conversations", conversationScope: "project", query });
+        setFilePickerOpen(false);
+        setSearchViewOpen(false);
+        setSearchDialogOpen(true);
+        setSearchViewFocusToken((token) => token + 1);
+      });
+    },
+    [setSearchViewOpen, setSearchViewFocusToken, setFilePickerOpen],
+  );
 
   const onExpandSearch = useCallback(() => {
     startTransition(() => {
@@ -75,12 +78,20 @@ export function useSearchActions(deps: SearchActionDeps): {
       setSearchViewOpen(true);
       setSearchViewFocusToken((token) => token + 1);
     });
-  }, []);
+  }, [
+    setServersViewOpen,
+    setSearchViewOpen,
+    setInboxViewOpen,
+    setNotesViewOpen,
+    setSearchViewFocusToken,
+    setSettingsOpen,
+    setAutomationsViewOpen,
+  ]);
 
   const onLeaveSearch = useCallback(() => {
     setSearchDialogOpen(false);
     setSearchViewOpen(false);
-  }, []);
+  }, [setSearchViewOpen]);
 
   return {
     onCloseCurrentTab,

@@ -1,4 +1,4 @@
-import { useMemo, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import {
   REMOTE_PROJECTS_CHANGED,
   remoteProjectFor,
@@ -25,5 +25,5 @@ export function useRemoteProject(path: string): RemoteProject | undefined {
     () => JSON.stringify(remoteProjectFor(path) ?? null),
     () => "null",
   );
-  return useMemo(() => (JSON.parse(raw) as RemoteProject | null) ?? undefined, [raw]);
+  return (JSON.parse(raw) as RemoteProject | null) ?? undefined;
 }

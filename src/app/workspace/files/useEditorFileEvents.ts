@@ -31,55 +31,64 @@ export interface EditorFileEvents {
 export function useEditorFileEvents(deps: EditorFileEventDeps): EditorFileEvents {
   const { tabsRef, setTabs, setDirtyFiles, setComposerFocused } = deps;
 
-  const onFileMoved = useCallback((from: string, to: string) => {
-    invalidateProjectFiles();
-    setTabs((prev) =>
-      prev.map((tab) => {
-        return {
-          ...tab,
-          editorPanes: tab.editorPanes.map((pane) => ({
-            ...pane,
-            files: pane.files.map((file) => ({
-              ...file,
-              cwd: rebasePath(file.cwd, from, to),
-              ...(file.projectCwd ? { projectCwd: rebasePath(file.projectCwd, from, to) } : {}),
-              ...(isFilesystemTab(file) ? { path: rebasePath(file.path, from, to) } : {}),
+  const onFileMoved = useCallback(
+    (from: string, to: string) => {
+      invalidateProjectFiles();
+      setTabs((prev) =>
+        prev.map((tab) => {
+          return {
+            ...tab,
+            editorPanes: tab.editorPanes.map((pane) => ({
+              ...pane,
+              files: pane.files.map((file) => ({
+                ...file,
+                cwd: rebasePath(file.cwd, from, to),
+                ...(file.projectCwd ? { projectCwd: rebasePath(file.projectCwd, from, to) } : {}),
+                ...(isFilesystemTab(file) ? { path: rebasePath(file.path, from, to) } : {}),
+              })),
             })),
-          })),
-        };
-      }),
-    );
-  }, []);
+          };
+        }),
+      );
+    },
+    [setTabs],
+  );
 
-  const onFileDeleted = useCallback((path: string) => {
-    invalidateProjectFiles();
-    const dropped = new Set<string>();
-    for (const tab of tabsRef.current) {
-      for (const pane of tab.editorPanes) {
-        for (const file of pane.files) {
-          if (isFilesystemTab(file) && isEqualOrInside(file.path, path)) {
-            dropped.add(file.id);
+  const onFileDeleted = useCallback(
+    (path: string) => {
+      invalidateProjectFiles();
+      const dropped = new Set<string>();
+      for (const tab of tabsRef.current) {
+        for (const pane of tab.editorPanes) {
+          for (const file of pane.files) {
+            if (isFilesystemTab(file) && isEqualOrInside(file.path, path)) {
+              dropped.add(file.id);
+            }
           }
         }
       }
-    }
-    setTabs((prev) =>
-      prev.map((tab) => dropOpenFiles(tab, (filePath) => isEqualOrInside(filePath, path))),
-    );
-    if (dropped.size === 0) return;
-    setDirtyFiles((prev) => {
-      const next = new Set(prev);
-      for (const id of dropped) next.delete(id);
-      return next;
-    });
-  }, []);
+      setTabs((prev) =>
+        prev.map((tab) => dropOpenFiles(tab, (filePath) => isEqualOrInside(filePath, path))),
+      );
+      if (dropped.size === 0) return;
+      setDirtyFiles((prev) => {
+        const next = new Set(prev);
+        for (const id of dropped) next.delete(id);
+        return next;
+      });
+    },
+    [tabsRef, setDirtyFiles, setTabs],
+  );
 
-  const onPinFile = useCallback((fileId: string) => {
-    setTabs((prev) => {
-      const next = prev.map((tab) => pinEditorFile(tab, fileId));
-      return next.some((tab, index) => tab !== prev[index]) ? next : prev;
-    });
-  }, []);
+  const onPinFile = useCallback(
+    (fileId: string) => {
+      setTabs((prev) => {
+        const next = prev.map((tab) => pinEditorFile(tab, fileId));
+        return next.some((tab, index) => tab !== prev[index]) ? next : prev;
+      });
+    },
+    [setTabs],
+  );
 
   const onFileDirtyChange = useCallback(
     (fileId: string, dirty: boolean) => {
@@ -93,25 +102,28 @@ export function useEditorFileEvents(deps: EditorFileEventDeps): EditorFileEvents
         return next;
       });
     },
-    [onPinFile],
+    [onPinFile, setDirtyFiles],
   );
 
-  const onSelectFileSurface = useCallback((paneId: string, fileId: string) => {
-    setTabs((prev) =>
-      prev.map((tab) => {
-        const found = findSurfacePane(tab, paneId);
-        if (!found) return tab;
-        return withSurfacePanes(
-          { ...tab, layout: selectPaneTab(tab.layout, paneId), focusedId: paneId },
-          found.kind,
-          surfacePanes(tab, found.kind).map((pane) =>
-            pane.id === paneId ? { ...pane, activeFileId: fileId } : pane,
-          ),
-        );
-      }),
-    );
-    setComposerFocused(false);
-  }, []);
+  const onSelectFileSurface = useCallback(
+    (paneId: string, fileId: string) => {
+      setTabs((prev) =>
+        prev.map((tab) => {
+          const found = findSurfacePane(tab, paneId);
+          if (!found) return tab;
+          return withSurfacePanes(
+            { ...tab, layout: selectPaneTab(tab.layout, paneId), focusedId: paneId },
+            found.kind,
+            surfacePanes(tab, found.kind).map((pane) =>
+              pane.id === paneId ? { ...pane, activeFileId: fileId } : pane,
+            ),
+          );
+        }),
+      );
+      setComposerFocused(false);
+    },
+    [setComposerFocused, setTabs],
+  );
 
   return { onFileMoved, onFileDeleted, onPinFile, onFileDirtyChange, onSelectFileSurface };
 }

@@ -55,6 +55,7 @@ import type {
 import { allowedPiSkillPaths, discoverOmpCommands, ompCommandsFromRpcData } from "./piSkills";
 import { OMP_FLAVOR } from "./piFlavor";
 import { spawnChild, watchChild, writeChild } from "../../core/child";
+import { withSlowStartupNotice } from "../../core/providerStartupStatus";
 import type { PiFlavor } from "./piFlavor";
 import { PiRpc } from "./piClient";
 import { piSubagentEvents } from "./piSubagents";
@@ -327,7 +328,9 @@ export async function sendTurn(flavor: PiFlavor, input: SendTurnInput): Promise<
         const { cancelledThreads } = stateFor(flavor);
         let live: Live;
         try {
-          live = await ensureLive(flavor, input);
+          live = await withSlowStartupNotice(input.onEvent, flavor.label, () =>
+            ensureLive(flavor, input),
+          );
         } catch (error) {
           cancelledThreads.delete(input.sessionId);
           throw error;

@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
-import { useT } from "../../../shared/i18n";
-import { formatNumber } from "../../../shared/i18n/core";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Meter } from "../../../shared/ui/Meter";
@@ -8,7 +7,6 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Check, ChevronDown, Home } from "../../../shared/ui/icons";
-import { formatResetDuration } from "../../../shared/i18n/format";
 import { accountUsageKey, useProviderAccountUsage } from "../../providers/public/accountUsage";
 import {
   providerAccountColorValue,
@@ -47,10 +45,18 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
   useEffect(() => subscribeProviderAccounts(() => setVersion((value) => value + 1)), []);
   const provider = supportsProviderAccounts(harness) ? harness : undefined;
   const local = source.accounts === undefined;
+  // Local profiles live in browser storage, so React reads them through their store.
+  const localAccounts: ProviderAccount[] = JSON.parse(
+    useSyncExternalStore(
+      subscribeProviderAccounts,
+      () => (provider && local ? JSON.stringify(providerAccounts(provider)) : "[]"),
+      () => (provider && local ? JSON.stringify(providerAccounts(provider)) : "[]"),
+    ),
+  );
   const raw: readonly { id: string; label: string }[] = !provider
     ? []
     : local
-      ? providerAccounts(provider)
+      ? localAccounts
       : (source.accounts?.[provider] ?? []);
   const usage = useProviderAccountUsage(version, {
     provider,
@@ -92,6 +98,7 @@ function AccountDot({ account }: { account: PanelAccount }) {
 }
 
 function Percent({ value }: { value: number | null }) {
+  const { formatNumber } = useFormat();
   if (value == null) return null;
   return (
     <span className="shrink-0 tabular-nums ui-caption-text">
@@ -123,6 +130,7 @@ export function ModelAccountControl({
   onToggleList: () => void;
 }) {
   const t = useT();
+  const { formatNumber } = useFormat();
   const kind = accountSwitcherKind(accounts.length);
   const current = accounts.find((account) => account.id === accountId);
   if (kind === "none") return null;
@@ -211,6 +219,7 @@ export function ModelAccountList({
   onSelect: (accountId: string) => void;
 }) {
   const t = useT();
+  const { formatResetDuration } = useFormat();
   const [query, setQuery] = useState("");
   const searchable = accountSwitcherKind(accounts.length) === "search";
   const needle = query.trim().toLocaleLowerCase();

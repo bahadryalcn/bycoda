@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQueries } from "@tanstack/react-query";
 import {
   backgroundMachineFor,
@@ -55,15 +55,28 @@ export function useCrewManagedSessionsFeed(cwds: readonly string[], enabled = tr
   const signature = results
     .map((result, index) => `${keys[index]}=${result.dataUpdatedAt}`)
     .join("|");
+  // Last data pushed per project: a poll that returns the same (structurally shared) data must
+  // not rebuild the index, or every subscriber re-renders for nothing.
+  const pushed = useRef(new Map<string, CrewManagedSession[]>());
+  // Pushes query results into the external index; it renders nothing itself.
   useEffect(() => {
     pruneCrewManagedSources(new Set(keys));
+    for (const key of pushed.current.keys()) if (!keys.includes(key)) pushed.current.delete(key);
     results.forEach((result, index) => {
-      if (!result.data) return;
-      setCrewManagedSource(
-        keys[index]!,
-        new Map(result.data.map((item) => [item.sessionId, item])),
-      );
+      const key = keys[index]!;
+      if (!result.data || pushed.current.get(key) === result.data) return;
+      pushed.current.set(key, result.data);
+      setCrewManagedSource(key, new Map(result.data.map((item) => [item.sessionId, item])));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `signature` tracks the query results
   }, [signature, enabled]);
+}
+
+/**
+ * Hosts the feed outside the root component: `useQueries` re-renders its host on every poll, so
+ * mounting it here keeps those renders away from `Workspace`. Renders nothing.
+ */
+export function CrewManagedSessionsFeed({ cwds }: { cwds: readonly string[] }) {
+  useCrewManagedSessionsFeed(cwds);
+  return null;
 }

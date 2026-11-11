@@ -16,7 +16,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { Session } from "../../sessions/model/session";
+import type { Session } from "../../sessions/public/session";
 import { sessionsRef as liveSessions, useSession } from "../../sessions/model/sessionsStore";
 import { Button } from "../../../shared/ui/Button";
 import { useOverlay } from "../../../shared/ui/overlay";

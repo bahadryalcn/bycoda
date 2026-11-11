@@ -32,7 +32,6 @@ export function useTaskMutations({
   put,
   machines,
   visibleTasks,
-  draft,
   setDraft,
   currentSprint,
   sprintBoard,
@@ -46,7 +45,6 @@ export function useTaskMutations({
   };
   machines: RemoteMachine[];
   visibleTasks: readonly BoardTask[];
-  draft: TaskDraft | null;
   setDraft: (draft: TaskDraft | null) => void;
   currentSprint: { id: string } | undefined;
   sprintBoard: SprintBoardController;
@@ -135,8 +133,8 @@ export function useTaskMutations({
   };
 
   /** `queued` starts a new task right away; `save` keeps an edited task's status. */
-  const onSave = async (mode: "todo" | "queued" | "save") => {
-    if (saving || !draft) return;
+  const onSave = async (mode: "todo" | "queued" | "save", draft: TaskDraft) => {
+    if (saving) return;
     setSaving(true);
     try {
       let saved = await saveTask(machines, draft, mode === "todo" ? "todo" : "queued");

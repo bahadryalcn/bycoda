@@ -154,5 +154,5 @@ export function useWorkspaceSnapshotSync({
       .catch((error) => {
         console.warn("App operation failed", error);
       });
-  }, []);
+  }, [setProjectCwd, setRecents]);
 }

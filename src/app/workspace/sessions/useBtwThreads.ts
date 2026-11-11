@@ -95,7 +95,7 @@ export function useBtwThreads({
       persistSession(updatedSession);
       return updatedSession;
     },
-    [persistSession],
+    [persistSession, sessionsRef, setSessions],
   );
 
   const removeBtwThread = useCallback(
@@ -127,7 +127,7 @@ export function useBtwThreads({
       persistSession(updatedSession);
       return updatedSession;
     },
-    [persistSession],
+    [persistSession, sessionsRef, setSessions],
   );
 
   const runBtwRequest = useCallback(
@@ -336,7 +336,7 @@ export function useBtwThreads({
           }
         });
     },
-    [updateBtwThread],
+    [updateBtwThread, btwRequestsRef],
   );
   return { updateBtwThread, removeBtwThread, runBtwRequest };
 }

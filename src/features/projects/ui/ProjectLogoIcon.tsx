@@ -1,7 +1,7 @@
 import { Folder, type IconComponent } from "../../../shared/ui/icons";
 import { useEffect, useState } from "react";
-import { projectLogoSrc } from "../model/projectLogos";
-import { t, useLocale } from "../../../shared/i18n";
+import { projectLogoSrcAt } from "../model/projectLogos";
+import { useT } from "../../../shared/i18n";
 import { identityClassName, type IdentitySize } from "../../../shared/ui/identity/identitySize";
 import {
   TAB_GROUP_LOGOS_CHANGED,
@@ -26,7 +26,7 @@ export function ProjectLogoIcon({
   fallback: Fallback = Folder,
   fallbackStrokeWidth = 1.5,
 }: Props) {
-  useLocale();
+  const t = useT();
   const className = identityClassName(size, classNameProp, "size-3.5 shrink-0");
   const [revision, setRevision] = useState(tabGroupLogoDisplayRevision);
   const [failedImage, setFailedImage] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export function ProjectLogoIcon({
     return () => window.removeEventListener(TAB_GROUP_LOGOS_CHANGED, refresh);
   }, []);
 
-  const src = projectLogoSrc(path);
+  const src = projectLogoSrcAt(path, revision);
   const imageKey = `${path ?? ""}:${revision}`;
   if (src && failedImage !== imageKey) {
     return (

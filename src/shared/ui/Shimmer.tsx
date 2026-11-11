@@ -1,4 +1,4 @@
-import { memo, useMemo, type CSSProperties, type ElementType } from "react";
+import { memo, type CSSProperties, type ElementType } from "react";
 
 export interface ShimmerProps {
   children: string;
@@ -15,7 +15,7 @@ function ShimmerComponent({
   duration = 2,
   spread = 2,
 }: ShimmerProps) {
-  const dynamicSpread = useMemo(() => (children?.length ?? 0) * spread, [children, spread]);
+  const dynamicSpread = (children?.length ?? 0) * spread;
 
   return (
     <Component

@@ -50,6 +50,7 @@ beforeEach(() => {
         intersection = fn;
       }
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -57,6 +58,7 @@ beforeEach(() => {
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

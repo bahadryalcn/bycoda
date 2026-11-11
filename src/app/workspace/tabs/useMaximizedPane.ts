@@ -72,24 +72,42 @@ export function useToggleMaximizePane({
   setComposerFocused,
   setMaximizedPane,
 }: ToggleMaximizePaneDeps): (paneId?: string) => void {
-  return useCallback((paneId?: string) => {
-    const tab = tabsRef.current.find((entry) => entry.id === activeTabIdRef.current);
-    const id = paneId ?? tab?.focusedId;
-    if (!tab || !id || !leafIds(tab.layout).includes(id)) return;
-    if (windowTransferPendingRef.current || movingTabIds.current.has(tab.id)) return;
-    if (tab.focusedId !== id) {
-      const next = tabsRef.current.map((entry) =>
-        entry.id === tab.id
-          ? { ...entry, layout: selectPaneTab(entry.layout, id), focusedId: id, diffFocused: false }
-          : entry,
+  return useCallback(
+    (paneId?: string) => {
+      const tab = tabsRef.current.find((entry) => entry.id === activeTabIdRef.current);
+      const id = paneId ?? tab?.focusedId;
+      if (!tab || !id || !leafIds(tab.layout).includes(id)) return;
+      if (windowTransferPendingRef.current || movingTabIds.current.has(tab.id)) return;
+      if (tab.focusedId !== id) {
+        const next = tabsRef.current.map((entry) =>
+          entry.id === tab.id
+            ? {
+                ...entry,
+                layout: selectPaneTab(entry.layout, id),
+                focusedId: id,
+                diffFocused: false,
+              }
+            : entry,
+        );
+        tabsRef.current = next;
+        setTabs(next);
+        setProjectTerminalFocused(false);
+        setComposerFocused(sessionsRef.current.some((session) => session.id === id));
+      }
+      setMaximizedPane((current) =>
+        current?.tabId === tab.id && current.paneId === id ? null : { tabId: tab.id, paneId: id },
       );
-      tabsRef.current = next;
-      setTabs(next);
-      setProjectTerminalFocused(false);
-      setComposerFocused(sessionsRef.current.some((session) => session.id === id));
-    }
-    setMaximizedPane((current) =>
-      current?.tabId === tab.id && current.paneId === id ? null : { tabId: tab.id, paneId: id },
-    );
-  }, []);
+    },
+    [
+      windowTransferPendingRef,
+      movingTabIds,
+      setComposerFocused,
+      setTabs,
+      setProjectTerminalFocused,
+      tabsRef,
+      sessionsRef,
+      setMaximizedPane,
+      activeTabIdRef,
+    ],
+  );
 }

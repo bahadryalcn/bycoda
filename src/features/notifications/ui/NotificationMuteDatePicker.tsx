@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
@@ -20,7 +20,7 @@ type Props = {
 
 /** Custom timing is a complete step, separate from the duration presets. */
 export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: Props) {
-  useLocale();
+  const t = useT();
   const [value, setValue] = useState(() => {
     const until =
       projectIds.length === 1

@@ -5,6 +5,7 @@ import { Link } from "../../../shared/ui/Link";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -524,14 +525,13 @@ function MarkdownCodeShell({
   const label = collapsed ? t("Expand code block") : t("Collapse code block");
   // Only a collapsed block shows its summary; a streaming one would otherwise
   // split every line on every frame for nothing.
-  const summary = useMemo(() => {
-    if (!collapsed) return { preview: "", lineCount: 0 };
-    const lines = code.replace(/\r?\n$/, "").split(/\r?\n/);
-    return {
-      preview: (lines.find((line) => line.trim())?.trim() || t("Code block")).slice(0, 160),
-      lineCount: code ? lines.length : 0,
-    };
-  }, [code, collapsed, t]);
+  const codeLines = collapsed ? code.replace(/\r?\n$/, "").split(/\r?\n/) : [];
+  const summary = collapsed
+    ? {
+        preview: (codeLines.find((line) => line.trim())?.trim() || t("Code block")).slice(0, 160),
+        lineCount: code ? codeLines.length : 0,
+      }
+    : { preview: "", lineCount: 0 };
   return (
     <div
       className="markdown-code-shell markdown-code-resizable"
@@ -823,7 +823,7 @@ const DirectionalBlock = memo(function DirectionalBlock({ dir, ...props }: Block
   useLocale();
   // Streamdown's dir="auto" scans every historical block on each token. Use
   // the same detector here, where unchanged blocks can retain their result.
-  const direction = useMemo(() => dir ?? detectTextDirection(props.content), [dir, props.content]);
+  const direction = dir ?? detectTextDirection(props.content);
   const ctx = useContext(BlockPluginContext);
   // Only the block still being written fades its words: it is the only one
   // whose text changes, and a block that has been passed is re-parsed once,
@@ -890,17 +890,16 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   const [remoteFolder, setRemoteFolder] = useState<string>();
   const [revealRemoteOnOpen, setRevealRemoteOnOpen] = useState(false);
   // Read at click time so streaming text does not recreate the file callbacks.
-  const textRef = useRef(text);
-  textRef.current = text;
+  const readText = useStableCallback(() => text);
   const resolveInMessage = useCallback(
-    (path: string) => resolveMessageFileReference(path, cwd, textRef.current),
-    [cwd],
+    (path: string) => resolveMessageFileReference(path, cwd, readText()),
+    [cwd, readText],
   );
   const openFile = useCallback<OpenFileFn>(
     (...args) => {
       const [path, ...rest] = args;
       if (!path.startsWith("remote://")) {
-        if (!cwd || messageFileCandidates(path, cwd, textRef.current).length === 0) {
+        if (!cwd || messageFileCandidates(path, cwd, readText()).length === 0) {
           onOpenFile?.(...args);
           return;
         }
@@ -916,7 +915,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
         () => onOpenFile?.(...args),
       );
     },
-    [cwd, onOpenFile, resolveInMessage],
+    [cwd, onOpenFile, resolveInMessage, readText],
   );
   const onRevealFile = useCallback(
     (path: string, revealLocal = false) => {
@@ -1023,7 +1022,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   const parseBlocks = useCallback(() => markdownBlocks, [markdownBlocks]);
   // Streamdown's memo comparator ignores the parser callback. Its children must
   // change when a worker parse arrives, even when the original source is unchanged.
-  const parsedSource = useMemo(() => markdownBlocks.join(""), [markdownBlocks]);
+  const parsedSource = markdownBlocks.join("");
   const pacedFadeOptions = useWordFadeWindow(paced.text);
   const arrivalFadeOptions = useArrivalFadeWindow(
     text,
@@ -1240,6 +1239,9 @@ export function MarkdownSourceHighlight({ text }: { text: string }) {
 }
 
 let mermaidRenderSequence = 0;
+function nextMermaidRenderId() {
+  return ++mermaidRenderSequence;
+}
 
 function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean }) {
   useLocale();
@@ -1260,7 +1262,7 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
   useEffect(() => {
     if (incomplete) return;
     let cancelled = false;
-    const id = `mermaid-${Math.abs(hashCode(code)).toString(36)}-${++mermaidRenderSequence}`;
+    const id = `mermaid-${Math.abs(hashCode(code)).toString(36)}-${nextMermaidRenderId()}`;
     void mermaid
       .getMermaid({
         ...MERMAID_BASE_CONFIG,

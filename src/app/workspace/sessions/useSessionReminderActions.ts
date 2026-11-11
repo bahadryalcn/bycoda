@@ -56,17 +56,33 @@ export function useSessionReminderActions({
       setProjectCwd(session.cwd);
       setRecents(await rememberProject(session.cwd));
     },
-    [ensureOpenSession, openSession],
+    [
+      ensureOpenSession,
+      openSession,
+      setAutomationsViewOpen,
+      setSearchViewOpen,
+      setServersViewOpen,
+      setNotesViewOpen,
+      setProjectCwd,
+      setSidebarTab,
+      setSettingsOpen,
+      setRecents,
+      setFilePickerOpen,
+      setInboxViewOpen,
+    ],
   );
 
-  const ensureReminderSessionsSaved = useCallback(async (ids: readonly string[]) => {
-    for (const id of ids) {
-      const session = sessionsRef.current.find((session) => session.id === id);
-      if (session && !(await upsertSession(session))) {
-        throw new Error("Send a message in this conversation before setting a reminder.");
+  const ensureReminderSessionsSaved = useCallback(
+    async (ids: readonly string[]) => {
+      for (const id of ids) {
+        const session = sessionsRef.current.find((session) => session.id === id);
+        if (session && !(await upsertSession(session))) {
+          throw new Error("Send a message in this conversation before setting a reminder.");
+        }
       }
-    }
-  }, []);
+    },
+    [sessionsRef],
+  );
 
   const sessionReminders = useSessionReminders(
     openReminderSession,

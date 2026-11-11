@@ -11,8 +11,7 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Switch } from "../../../shared/ui/Switch";
-import { getLocale, useT } from "../../../shared/i18n";
-import { formatImportDate as formatDate } from "../../../shared/i18n/format";
+import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   discoverImportableSessions,
@@ -90,6 +89,64 @@ function driveRoots(candidates: readonly ImportCandidate[]): string[] {
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([root]) => root);
 }
 
+async function performImport({
+  candidates,
+  groupProjects,
+  controller,
+  abort,
+  setRun,
+  setLoad,
+  onImported,
+}: {
+  candidates: ImportCandidate[];
+  groupProjects: boolean;
+  controller: AbortController;
+  abort: { current: AbortController | null };
+  setRun: (run: Run) => void;
+  setLoad: (update: (current: Load) => Load) => void;
+  onImported: () => void;
+}) {
+  const toImport = candidates;
+  try {
+    const summary = await runSessionImport({
+      candidates: toImport,
+      groupProjects,
+      signal: controller.signal,
+      onProgress: (progress) => setRun({ status: "running", progress }),
+    });
+    setRun({ status: "done", summary });
+  } catch (error) {
+    setRun({
+      status: "done",
+      summary: {
+        imported: 0,
+        skipped: 0,
+        failed: [
+          {
+            candidate: toImport[0],
+            error: error instanceof Error ? error.message : String(error),
+          },
+        ],
+        cancelled: false,
+        readOnly: 0,
+        truncated: 0,
+        projects: 0,
+        groups: [],
+      },
+    });
+  } finally {
+    abort.current = null;
+    // Imports already stored show as imported if the dialog stays open.
+    const keys = await importedSessionKeys().catch(() => null);
+    if (keys) {
+      setLoad((current) =>
+        current.status === "ready" ? { ...current, stored: new Set(keys) } : current,
+      );
+    }
+    onImported();
+  }
+}
+
 /**
  * Bring the conversations Claude Code and Codex stored on disk into Bycoda,
  * grouped by the folder each ran in. Nothing is touched until Import is
@@ -97,6 +154,8 @@ function driveRoots(candidates: readonly ImportCandidate[]): string[] {
  */
 export function SessionImportDialog({ onClose, onImported, initialContext }: Props) {
   const t = useT();
+  const locale = useLocale();
+  const { formatNumber } = useFormat();
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [providers, setProviders] = useState<ReadonlySet<ImportProvider>>(
     () => new Set(initialContext ? [initialContext.provider] : PROVIDERS),
@@ -278,44 +337,15 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
         current: null,
       },
     });
-    try {
-      const summary = await runSessionImport({
-        candidates: toImport,
-        groupProjects,
-        signal: controller.signal,
-        onProgress: (progress) => setRun({ status: "running", progress }),
-      });
-      setRun({ status: "done", summary });
-    } catch (error) {
-      setRun({
-        status: "done",
-        summary: {
-          imported: 0,
-          skipped: 0,
-          failed: [
-            {
-              candidate: toImport[0],
-              error: error instanceof Error ? error.message : String(error),
-            },
-          ],
-          cancelled: false,
-          readOnly: 0,
-          truncated: 0,
-          projects: 0,
-          groups: [],
-        },
-      });
-    } finally {
-      abort.current = null;
-      // Imports already stored show as imported if the dialog stays open.
-      const keys = await importedSessionKeys().catch(() => null);
-      if (keys) {
-        setLoad((current) =>
-          current.status === "ready" ? { ...current, stored: new Set(keys) } : current,
-        );
-      }
-      onImported();
-    }
+    await performImport({
+      candidates: toImport,
+      groupProjects,
+      controller,
+      abort,
+      setRun,
+      setLoad,
+      onImported,
+    });
   };
 
   return (
@@ -341,7 +371,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               disabled={counts.toImport === 0}
               onClick={() => void start()}
             >
-              {t("Import")} {counts.toImport > 0 ? counts.toImport.toLocaleString(getLocale()) : ""}
+              {t("Import")} {counts.toImport > 0 ? counts.toImport.toLocaleString(locale) : ""}
             </Button>
           </ModalActions>
         ) : run.status === "running" ? (
@@ -401,7 +431,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                       <HarnessIcon harness={provider} className="size-3" />
                       {PROVIDER_LABEL[provider]}
                       <span className="tabular-nums text-(--ui-text-muted)">
-                        {providerCounts[provider].toLocaleString(getLocale())}
+                        {providerCounts[provider].toLocaleString(locale)}
                       </span>
                     </Button>
                   );
@@ -456,7 +486,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                     description={
                       temporaryCount > 0
                         ? t("{p0} in scratch folders. They are never deleted.", {
-                            p0: plural(temporaryCount, "conversation"),
+                            p0: plural(formatNumber, temporaryCount, "conversation"),
                           })
                         : t("Scratch folders such as the system temp directory.")
                     }
@@ -496,9 +526,10 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                   }
                 />
                 <span className="min-w-0 flex-1 truncate">
-                  {plural(folders.length, "folder")} · {plural(visible.length, "conversation")}
+                  {plural(formatNumber, folders.length, "folder")} ·{" "}
+                  {plural(formatNumber, visible.length, "conversation")}
                   {report.candidates.length !== visible.length
-                    ? t(" (of {p0})", { p0: report.candidates.length.toLocaleString(getLocale()) })
+                    ? t(" (of {p0})", { p0: report.candidates.length.toLocaleString(locale) })
                     : ""}
                 </span>
               </div>
@@ -555,7 +586,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                             )}
                             <span className="min-w-0 flex-1 truncate text-ui-secondary text-(--ui-text-secondary)">
                               {t("Missing folders ({p0})", {
-                                p0: missingFolders.length.toLocaleString(getLocale()),
+                                p0: missingFolders.length.toLocaleString(locale),
                               })}
                             </span>
                           </Button>
@@ -593,7 +624,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                     <span className="shrink-0 text-ui-micro text-(--ui-text-muted)">
                       {groupPreview.length === 0
                         ? t("No groups")
-                        : plural(groupPreview.length, "group")}
+                        : plural(formatNumber, groupPreview.length, "group")}
                     </span>
                     <InfoPopover label={t("Sidebar groups")}>
                       <p>
@@ -612,20 +643,20 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                   {counts.toImport === 0
                     ? t("Nothing selected to import.")
                     : t("{p0} in {p1} will be imported ({p2} on disk).", {
-                        p0: plural(counts.toImport, "conversation"),
-                        p1: plural(counts.folders, "folder"),
+                        p0: plural(formatNumber, counts.toImport, "conversation"),
+                        p1: plural(formatNumber, counts.folders, "folder"),
                         p2: formatBytes(counts.bytes),
                       })}
                   {counts.alreadyImported > 0
                     ? t(" {p0} already imported will be skipped.", {
-                        p0: plural(counts.alreadyImported, "conversation"),
+                        p0: plural(formatNumber, counts.alreadyImported, "conversation"),
                       })
                     : ""}
                   {hiddenSelected > 0 ? (
                     <span className="text-(--ui-text-muted)">
                       {" "}
                       {t("{p0} hidden by filters will not be imported.", {
-                        p0: hiddenSelected.toLocaleString(getLocale()),
+                        p0: hiddenSelected.toLocaleString(locale),
                       })}
                     </span>
                   ) : null}
@@ -633,8 +664,8 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                 <InfoPopover label={t("Scan details")}>
                   <p>
                     {t("Scanned {p0} files in {p1} ms.", {
-                      p0: report.filesScanned.toLocaleString(getLocale()),
-                      p1: report.elapsedMs.toLocaleString(getLocale()),
+                      p0: report.filesScanned.toLocaleString(locale),
+                      p1: report.elapsedMs.toLocaleString(locale),
                     })}
                   </p>
                   <p>{t("Conversations hidden by a filter are not imported.")}</p>
@@ -696,6 +727,8 @@ function FolderSection({
   selectable: (items: ImportCandidate[]) => string[];
 }) {
   const t = useT();
+  const locale = useLocale();
+  const { formatImportDate } = useFormat();
   const [limit, setLimit] = useState(ITEM_PAGE);
   const keys = selectable(folder.items);
   const chosen = keys.filter((key) => selected.has(key)).length;
@@ -751,8 +784,8 @@ function FolderSection({
           ) : null}
           <span className="w-16 shrink-0 text-right text-ui-micro tabular-nums text-(--ui-text-muted)">
             {chosen > 0 && chosen < keys.length
-              ? `${chosen.toLocaleString(getLocale())} / ${folder.items.length.toLocaleString(getLocale())}`
-              : folder.items.length.toLocaleString(getLocale())}
+              ? `${chosen.toLocaleString(locale)} / ${folder.items.length.toLocaleString(locale)}`
+              : folder.items.length.toLocaleString(locale)}
           </span>
         </Button>
       </div>
@@ -798,7 +831,7 @@ function FolderSection({
                         </span>
                       ) : null}
                       <span className="w-24 shrink-0 text-right text-ui-micro text-(--ui-text-secondary)">
-                        {formatDate(item.lastAt)}
+                        {formatImportDate(item.lastAt)}
                       </span>
                       <span className="w-14 shrink-0 text-right text-ui-micro text-(--ui-text-secondary)">
                         {formatBytes(item.sizeBytes)}
@@ -816,7 +849,7 @@ function FolderSection({
             <li className="pl-9 pr-3 pt-1">
               <Button variant="ghost" type="button" onClick={() => setLimit(limit + ITEM_PAGE)}>
                 {t("Show {p0} more", {
-                  p0: Math.min(ITEM_PAGE, folder.items.length - limit).toLocaleString(getLocale()),
+                  p0: Math.min(ITEM_PAGE, folder.items.length - limit).toLocaleString(locale),
                 })}
               </Button>
             </li>

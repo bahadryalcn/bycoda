@@ -21,7 +21,6 @@ function isDismissed(version: string) {
 
 function useGithubStar(version: string) {
   const [dismissed, setDismissed] = useState(() => isDismissed(version));
-  const [seen, setSeen] = useState(version);
   useEffect(() => {
     const onDismiss = (event: Event) => {
       if ((event as CustomEvent<string>).detail === version) setDismissed(true);
@@ -29,41 +28,40 @@ function useGithubStar(version: string) {
     window.addEventListener(DISMISS_EVENT, onDismiss);
     return () => window.removeEventListener(DISMISS_EVENT, onDismiss);
   }, [version]);
-  if (seen !== version) {
-    setSeen(version);
-    setDismissed(isDismissed(version));
-  }
   const repositoryUrl = PRODUCT_IDENTITY.repositoryUrl;
+  const handleDismiss = () => {
+    try {
+      localStorage.setItem(dismissedKey(version), "1");
+    } catch {
+      /* session dismissal still works */
+    }
+    setDismissed(true);
+    window.dispatchEvent(new CustomEvent(DISMISS_EVENT, { detail: version }));
+  };
   return {
     visible: !!repositoryUrl && !dismissed,
     open: () => void openUrl(repositoryUrl!).catch(() => undefined),
-    dismiss: () => {
-      try {
-        localStorage.setItem(dismissedKey(version), "1");
-      } catch {
-        /* session dismissal still works */
-      }
-      setDismissed(true);
-      window.dispatchEvent(new CustomEvent(DISMISS_EVENT, { detail: version }));
-    },
+    dismiss: handleDismiss,
   };
 }
 
 /** Retained for callers resetting the former request cache. No network cache remains. */
 export function resetGithubStarPromptCacheForTest() {}
 
-/** Opens only the configured product repository; never acts on an upstream account. */
-export function GithubStarPrompt({
-  version = appVersion,
-  action,
-  icon = false,
-  compact = false,
-}: {
-  version?: string;
+type PromptProps = {
+  version: string;
   action?: ReactNode;
   icon?: boolean;
   compact?: boolean;
-}) {
+};
+
+/** Opens only the configured product repository; never acts on an upstream account. */
+export function GithubStarPrompt({ version = appVersion, ...rest }: Partial<PromptProps>) {
+  // A new version remounts, so the dismissal is read again for it.
+  return <GithubStarPromptBody key={version} version={version} {...rest} />;
+}
+
+function GithubStarPromptBody({ version, action, icon = false, compact = false }: PromptProps) {
   const t = useT();
   const star = useGithubStar(version);
   const { visible } = star;

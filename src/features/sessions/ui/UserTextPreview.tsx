@@ -1,6 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
-import { useLocale, getLocale, useT } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { memo, useRef, useState, type ReactNode } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Modal } from "../../../shared/ui/Modal";
 import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { boundedTextPreview, type UserTextPart } from "../model/userTextPreview";
@@ -22,8 +23,10 @@ function TextCard({
   renderActions: (dismiss: () => void, showLabels?: boolean) => ReactNode;
 }) {
   const t = useT();
+  const locale = useLocale();
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const focusTrigger = useStableCallback(() => trigger.current?.focus());
   // A rested pointer or keyboard focus previews the text; a click opens the full content.
   const hover = useHoverCard({
     side: "bottom",
@@ -40,7 +43,7 @@ function TextCard({
   const dismiss = () => {
     hover.close();
     setOpen(false);
-    trigger.current?.focus();
+    focusTrigger();
   };
   return (
     <>
@@ -59,7 +62,7 @@ function TextCard({
         <span className="flex items-center justify-between gap-6 text-ui-caption">
           <span className="font-medium text-(--ui-text-secondary)">{label}</span>
           <span className="text-(--ui-text-secondary)">
-            {part.text.length.toLocaleString(getLocale())}
+            {part.text.length.toLocaleString(locale)}
             {t(" characters")}
           </span>
         </span>

@@ -24,7 +24,7 @@ import {
   Info,
   MoreHorizontal,
 } from "../../../shared/ui/icons";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { LocalTerminalSuggestions } from "./LocalTerminalSuggestions";
 import { TerminalCursorPopover } from "./TerminalCursorPopover";
 import styles from "./TerminalTools.module.css";
@@ -71,7 +71,7 @@ export function TerminalTools({
   /** Resolved shared semantic colors; the terminal owner refreshes these with its theme. */
   searchDecorations?: ISearchOptions["decorations"];
 }) {
-  useLocale();
+  const t = useT();
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchor = useRef<HTMLButtonElement>(null);

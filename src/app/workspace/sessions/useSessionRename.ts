@@ -69,7 +69,15 @@ export function useSessionRename({
       }
       void refreshHistory(sidebarCwd);
     },
-    [invalidateLoadedSession, refreshHistory, sidebarCwd],
+    [
+      invalidateLoadedSession,
+      refreshHistory,
+      sidebarCwd,
+      sessionsRef,
+      lastPersisted,
+      setSessions,
+      loadedSessionCache,
+    ],
   );
 
   return { onRenameHistorySession };

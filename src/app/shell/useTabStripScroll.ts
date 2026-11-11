@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useStableCallback } from "../../shared/hooks/useStableCallback";
 
 /** Which tab-strip edges still have overflow to scroll toward. */
 export function tabStripOverflow(
@@ -32,19 +33,20 @@ export function useTabStripScroll({
   dragging: boolean;
 }) {
   const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
-  const syncTabOverflow = useCallback(() => {
+  // Stable without the compiler too: the observer effect below depends on this identity.
+  const syncTabOverflow = useStableCallback(() => {
     const el = tabStripRef.current;
     const next = el
       ? tabStripOverflow(el.scrollLeft, el.clientWidth, el.scrollWidth)
       : { left: false, right: false };
     setTabOverflow((prev) => (prev.left === next.left && prev.right === next.right ? prev : next));
-  }, []);
-  const scrollTabsBy = useCallback((direction: -1 | 1) => {
+  });
+  const scrollTabsBy = useStableCallback((direction: -1 | 1) => {
     const el = tabStripRef.current;
     if (!el) return;
     const amount = Math.max(el.clientWidth * 0.6, 112);
     el.scrollBy({ left: direction * amount, behavior: "smooth" });
-  }, []);
+  });
   const activeTabRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -66,7 +68,7 @@ export function useTabStripScroll({
       el.removeEventListener("scroll", syncTabOverflow);
       ro.disconnect();
     };
-  }, [syncTabOverflow]);
+  }, [syncTabOverflow, tabStripRef]);
 
   useLayoutEffect(() => {
     syncTabOverflow();
