@@ -101,3 +101,52 @@ it("ignores a late storage result after changing the conversation", async () => 
     { id: "new", text: "new", attachments: [] },
   ]);
 });
+
+it("undoes removal once with a new identity and preserves a restored hold", async () => {
+  const stored = [{ id: "old", text: "saved", attachments: [], deliveryUnknown: true as const }];
+  vi.mocked(loadStoredQueue).mockResolvedValueOnce(stored);
+  await act(async () => root.render(createElement(Probe, { owner: "undo" })));
+  let receipt!: Exclude<ReturnType<typeof queue.removeUndoable>, false>;
+  await act(async () => {
+    const removed = queue.removeUndoable("old");
+    if (!removed) throw new Error("removal failed");
+    receipt = removed;
+  });
+  expect(queue.queue.messages).toEqual([]);
+  await act(async () => {
+    expect(receipt.undo()).toBe(true);
+  });
+  expect(queue.queue.messages).toHaveLength(1);
+  expect(queue.queue.messages[0]).toMatchObject({ text: "saved", deliveryUnknown: true });
+  expect(queue.queue.messages[0].id).not.toBe("old");
+  expect(queue.queue.status).toBe("restored");
+  const restoredId = queue.queue.messages[0].id;
+  await act(async () => {
+    queue.remove(restoredId);
+    receipt.undo();
+  });
+  expect(queue.queue.messages).toEqual([]);
+});
+
+it.each(["chronological", "reverse"] as const)(
+  "keeps the original order across several removals undone in %s order",
+  async (order) => {
+    const rows = ["a", "b", "c"].map((id) => ({ id, text: id, attachments: [] }));
+    vi.mocked(loadStoredQueue).mockResolvedValueOnce(rows);
+    await act(async () => root.render(createElement(Probe, { owner: `undo-${order}` })));
+    const receipts: Exclude<ReturnType<typeof queue.removeUndoable>, false>[] = [];
+    await act(async () => {
+      for (const row of rows) {
+        const receipt = queue.removeUndoable(row.id);
+        if (!receipt) throw new Error("removal failed");
+        receipts.push(receipt);
+      }
+    });
+    if (order === "reverse") receipts.reverse();
+    for (const receipt of receipts)
+      await act(async () => {
+        expect(receipt.undo()).toBe(true);
+      });
+    expect(queue.queue.messages.map((row) => row.text)).toEqual(["a", "b", "c"]);
+  },
+);

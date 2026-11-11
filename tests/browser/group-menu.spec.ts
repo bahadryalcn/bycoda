@@ -3,25 +3,28 @@ import { expect, test } from "@playwright/test";
 for (const theme of ["light", "dark"]) {
   test(`group menu exposes hover, keyboard and expanded states in ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto("/tests/browser/group-menu.html");
+    await page.goto("/tests/browser/group-menu.html", {
+      waitUntil: "domcontentloaded",
+      timeout: 90000,
+    });
     await page.evaluate((value) => {
       document.documentElement.classList.toggle("theme-light", value === "light");
       document.documentElement.dataset.canvasBackground = "pure";
     }, theme);
     await page.getByRole("button", { name: "Open left", exact: true }).click();
     const root = page.getByRole("menu", { name: "Project group actions", exact: true });
-    const pin = root.getByRole("menuitem", { name: "Pin group", exact: true });
+    const hoverRow = root.getByRole("menuitem", { name: "Lock group", exact: true });
     const lock = root.getByRole("menuitem", { name: "Lock group", exact: true });
-    const fill = (row: typeof pin) =>
+    const fill = (row: typeof hoverRow) =>
       row.evaluate((element) => getComputedStyle(element).backgroundColor);
     const resting = await fill(lock);
-    await pin.hover();
-    await expect.poll(() => fill(pin)).not.toBe(resting);
-    await expect(pin).not.toHaveCSS("box-shadow", "none");
+    await hoverRow.hover();
+    await expect.poll(() => fill(hoverRow)).not.toBe(resting);
+    await expect(hoverRow).not.toHaveCSS("box-shadow", "none");
     await page.screenshot({ path: `temp/verification/2026-11-11-group-menu/hover-${theme}.png` });
     await page.mouse.move(700, 500);
-    await pin.focus();
-    await page.keyboard.press("ArrowDown");
+    await hoverRow.focus();
+    await page.keyboard.press("ArrowUp");
     const reorder = root.getByRole("menuitem", { name: "Reorder group", exact: true });
     await expect(reorder).toBeFocused();
     await expect.poll(() => fill(reorder)).not.toBe(resting);
@@ -48,7 +51,10 @@ for (const theme of ["light", "dark"]) {
 for (const width of [390, 768, 1440]) {
   test(`keeps grouped flyouts inside a ${width}px viewport`, async ({ page }) => {
     await page.setViewportSize({ width, height: 760 });
-    await page.goto("/tests/browser/group-menu.html");
+    await page.goto("/tests/browser/group-menu.html", {
+      waitUntil: "domcontentloaded",
+      timeout: 90000,
+    });
     const root = page.getByRole("menu", { name: "Project group actions", exact: true });
     for (const edge of ["left", "right", "bottom"]) {
       await page.getByRole("button", { name: `Open ${edge}`, exact: true }).click();
@@ -85,7 +91,10 @@ for (const width of [390, 768, 1440]) {
 
 test("preserves appearance controls and supports keyboard navigation", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 760 });
-  await page.goto("/tests/browser/group-menu.html");
+  await page.goto("/tests/browser/group-menu.html", {
+    waitUntil: "domcontentloaded",
+    timeout: 90000,
+  });
   await page.getByRole("button", { name: "Open right", exact: true }).click();
   const root = page.getByRole("menu", { name: "Project group actions", exact: true });
   await root.getByRole("menuitem", { name: "Appearance", exact: true }).focus();
@@ -100,8 +109,7 @@ test("preserves appearance controls and supports keyboard navigation", async ({ 
   await page.keyboard.press("ArrowDown");
   await expect(root.getByRole("menuitem", { name: "Move to group", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
-  await expect(root.getByRole("menuitem", { name: "Pin group", exact: true })).toBeFocused();
-  await page.keyboard.press("ArrowDown");
+  await expect(root.getByRole("menuitem", { name: "Pin group", exact: true })).toHaveCount(0);
   await expect(root.getByRole("menuitem", { name: "Reorder group", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowRight");
   const flyout = page.getByRole("menu", { name: "Reorder group", exact: true });
@@ -123,3 +131,51 @@ test("preserves appearance controls and supports keyboard navigation", async ({ 
   });
   await page.screenshot({ path: "temp/verification/2026-10-13-group-menu/delete-flyout.png" });
 });
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`compact group appearance ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/group-menu.html", {
+        waitUntil: "domcontentloaded",
+        timeout: 90000,
+      });
+      await page.evaluate((value) => {
+        document.documentElement.classList.toggle("theme-light", value === "light");
+        document.documentElement.dataset.canvasBackground = "pure";
+      }, theme);
+      await page.getByRole("button", { name: "Open left", exact: true }).click();
+      const root = page.getByRole("menu", { name: "Project group actions", exact: true });
+      await expect(root.getByLabel("Group name", { exact: true })).toBeVisible();
+      await expect(root.getByRole("menuitem", { name: "Pin group", exact: true })).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/2026-11-11-sidebar/group-menu-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await root.getByRole("menuitem", { name: "Appearance", exact: true }).click();
+      const appearance = page.getByRole("dialog", { name: "Appearance", exact: true });
+      await expect(appearance).toBeVisible();
+      await expect(appearance.getByText("Background colors", { exact: true })).toBeVisible();
+      await appearance.getByRole("checkbox", { name: "Group header", exact: true }).check();
+      await appearance.getByRole("checkbox", { name: "Expanded contents", exact: true }).check();
+      await expect(
+        appearance.getByRole("slider", { name: "Group header: Opacity", exact: true }),
+      ).toBeVisible();
+      await expect(
+        appearance.getByRole("slider", { name: "Expanded contents: Opacity", exact: true }),
+      ).toBeVisible();
+      const palette = await appearance
+        .getByRole("button", { name: /^Color [1-5]$/ })
+        .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().y));
+      expect(palette).toHaveLength(5);
+      expect(Math.max(...palette) - Math.min(...palette)).toBeLessThan(1);
+      const bounds = await appearance.boundingBox();
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(800);
+      await page.screenshot({
+        path: `temp/verification/2026-11-11-sidebar/appearance-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+}

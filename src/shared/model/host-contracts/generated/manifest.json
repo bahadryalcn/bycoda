@@ -821,7 +821,7 @@
               "chiefSoftContext": { "maximum": 1000000, "minimum": 10000, "type": "integer" },
               "chiefWakeLimit": { "maximum": 120, "minimum": 1, "type": "integer" },
               "confirmJobs": { "type": "boolean" },
-              "dailyTokenBudget": { "maximum": 1000000000, "minimum": 1, "type": "integer" },
+              "dailyTokenBudget": { "maximum": 1000000000, "minimum": 20000, "type": "integer" },
               "idleMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
               "keepAwakeWhileWorking": { "type": "boolean" },
               "language": { "maxLength": 40, "type": "string" },
@@ -935,7 +935,11 @@
                   "chiefSoftContext": { "maximum": 1000000, "minimum": 10000, "type": "integer" },
                   "chiefWakeLimit": { "maximum": 120, "minimum": 1, "type": "integer" },
                   "confirmJobs": { "type": "boolean" },
-                  "dailyTokenBudget": { "maximum": 1000000000, "minimum": 1, "type": "integer" },
+                  "dailyTokenBudget": {
+                    "maximum": 1000000000,
+                    "minimum": 20000,
+                    "type": "integer"
+                  },
                   "idleMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
                   "keepAwakeWhileWorking": { "type": "boolean" },
                   "language": { "maxLength": 40, "type": "string" },
@@ -1538,7 +1542,7 @@
                       "confirmJobs": { "type": "boolean" },
                       "dailyTokenBudget": {
                         "maximum": 1000000000,
-                        "minimum": 1,
+                        "minimum": 20000,
                         "type": "integer"
                       },
                       "enabled": { "type": "boolean" },
@@ -53522,7 +53526,7 @@
                             "confirmJobs": { "type": "boolean" },
                             "dailyTokenBudget": {
                               "maximum": 1000000000,
-                              "minimum": 1,
+                              "minimum": 20000,
                               "type": "integer"
                             },
                             "enabled": { "type": "boolean" },
@@ -58209,7 +58213,11 @@
                     "chiefSoftContext": { "maximum": 1000000, "minimum": 10000, "type": "integer" },
                     "chiefWakeLimit": { "maximum": 120, "minimum": 1, "type": "integer" },
                     "confirmJobs": { "type": "boolean" },
-                    "dailyTokenBudget": { "maximum": 1000000000, "minimum": 1, "type": "integer" },
+                    "dailyTokenBudget": {
+                      "maximum": 1000000000,
+                      "minimum": 20000,
+                      "type": "integer"
+                    },
                     "idleMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
                     "keepAwakeWhileWorking": { "type": "boolean" },
                     "language": { "maxLength": 40, "type": "string" },
@@ -70762,5 +70770,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "75dcadf4cf1f9499b3d77e20ccdc8d2f9ef532c7b4fa0ed72067d398fa1a39bc"
+  "schemaHash": "2ccf84f4bdf2fe4d39f9ee9d66fc477dd4332268b1bbf8ab6619d3b8f53325d9"
 }

@@ -167,7 +167,7 @@ it("shows a rejected delivery once inside the queue and retains named icon actio
     expect(container.querySelector('button[aria-label="Steer"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="Edit queued message"]')).not.toBeNull();
     expect(button("Resume")).toBeDefined();
-    expect(button("Remove")).toBeDefined();
+    expect(container.querySelector('button[aria-label="Remove queued message"]')).not.toBeNull();
   } finally {
     clearDeliveryProgress("s1", progress);
   }

@@ -13394,5 +13394,6 @@
   "Worker new tokens": "Worker new tokens",
   "Worker tokens total {p0}, including {p1} cache reads. Cache reads re-read earlier context and cost far less than new tokens.": "Worker tokens total {p0}, including {p1} cache reads. Cache reads re-read earlier context and cost far less than new tokens.",
   "How freely may it work?": "How freely may it work?",
-  "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000.": "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000."
+  "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000.": "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000.",
+  "Message removed": "Message removed"
 }

@@ -222,7 +222,10 @@ export type SessionPaneProps = {
     sessionId: string,
     target: SessionFolderTarget,
   ) => void | Promise<void | SessionOrganizationResult>;
-  onDeleteQueuedMessage: (sessionId: string, messageId: string) => void;
+  onDeleteQueuedMessage: (
+    sessionId: string,
+    messageId: string,
+  ) => import("../model/queueAction").QueueRemoval;
   onEditQueuedMessage: (
     sessionId: string,
     messageId: string,
@@ -549,6 +552,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const title = sessionDisplayTitle(session.title, session.harness);
   const isEmpty = session.blocks.length === 0;
+  const hasMessages = session.blocks.some(
+    (block) =>
+      (block.role === "user" || block.role === "assistant") && !block.draft && !block.internal,
+  );
   const remote = remoteSession;
   const activeSessionIdRef = useRef(session.id);
   activeSessionIdRef.current = session.id;
@@ -1518,6 +1525,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           <div className="session-pane-header-actions">
             <AssistantManagedBadge management={session.managedBy} local={!remote} />
             <AssistantSessionControl
+              hasMessages={hasMessages}
               sessionId={session.id}
               cwd={session.cwd}
               management={session.managedBy}
@@ -1538,6 +1546,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 {workingBadge ? <div className="min-w-0 max-w-56">{workingBadge}</div> : null}
                 <AssistantManagedBadge management={session.managedBy} local={!remote} />
                 <AssistantSessionControl
+                  hasMessages={hasMessages}
                   sessionId={session.id}
                   cwd={session.cwd}
                   management={session.managedBy}
@@ -1556,6 +1565,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             {workingBadge ? <div className="me-auto min-w-0">{workingBadge}</div> : null}
             <AssistantManagedBadge management={session.managedBy} local={!remote} />
             <AssistantSessionControl
+              hasMessages={hasMessages}
               sessionId={session.id}
               cwd={session.cwd}
               management={session.managedBy}

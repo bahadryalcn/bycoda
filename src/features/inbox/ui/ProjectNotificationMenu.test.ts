@@ -31,6 +31,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("../../source-control/hooks/useProjectDiffStats", () => ({
   useProjectDiffStats: () => null,
+  useProjectsDiffStats: () => [],
 }));
 
 let container: HTMLDivElement;

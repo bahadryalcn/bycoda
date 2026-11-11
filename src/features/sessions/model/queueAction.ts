@@ -2,6 +2,9 @@
 export type QueueActionResult = boolean | void | { kind: "accepted" | "waiting"; message?: string };
 export type QueueAction = QueueActionResult | Promise<QueueActionResult>;
 
+/** Removal may return an owner-scoped receipt that restores the retained message. */
+export type QueueRemoval = void | boolean | { undo: () => QueueAction; dispose?: () => void };
+
 /** Restart/switch starts a distinct turn and does not need mid-turn input support. */
 export function canSendQueueMessage(
   message: { intent?: string; deliveryUnknown?: boolean },

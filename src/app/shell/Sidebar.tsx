@@ -2573,13 +2573,6 @@ function SidebarComponent({
     onSelectSession(sessionId, { keepOpen: (event.detail ?? 0) > 1 });
   };
 
-  // Last sessions rows may sit outside the current project's history, so reload the list.
-  const afterListedChange = (work: void | Promise<unknown>) => {
-    void Promise.resolve(work)
-      .finally(() => lastSessionsData?.refresh())
-      .catch((error: unknown) => console.error("Last sessions action failed", error));
-  };
-
   // Cards are memoized. Their handlers go through one stable set that calls
   // the latest version, so a sidebar render no longer re-renders every card.
   const onSessionCardDelete = (sessionId: string) => {
@@ -3667,22 +3660,6 @@ function SidebarComponent({
                           showModel={listDisplay.showModel}
                           showBranch={listDisplay.showBranch}
                           showProjectAppearance
-                          settleable={!isRemoteProjectPath(session.cwd)}
-                          onArchive={
-                            !isRemoteProjectPath(session.cwd) &&
-                            onArchiveLocalSession &&
-                            !crewManagedIndex.has(session.id)
-                              ? (id, archived) =>
-                                  afterListedChange(onArchiveLocalSession(id, archived, session))
-                              : undefined
-                          }
-                          onDelete={
-                            !isRemoteProjectPath(session.cwd) &&
-                            onDeleteLocalSession &&
-                            !crewManagedIndex.has(session.id)
-                              ? (id) => afterListedChange(onDeleteLocalSession(id, session))
-                              : undefined
-                          }
                           onSelect={(id, event) =>
                             onSelectListedSession?.(id, session.cwd, {
                               keepOpen: (event.detail ?? 0) > 1,

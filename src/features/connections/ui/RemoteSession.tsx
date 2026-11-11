@@ -3929,7 +3929,7 @@ function ConnectedRemoteSession({
     onSaveDraft: (_, text, attachments) => saveDraft(text, attachments),
     onRemoveDraft: (_, draftBlockId) => removeDraft(draftBlockId),
     onPlaceSessionInFolder: noop,
-    onDeleteQueuedMessage: (_, id) => queue.remove(id),
+    onDeleteQueuedMessage: (_, id) => queue.removeUndoable(id),
     onEditQueuedMessage: (_, id, text, attachments) => queue.edit(id, text, attachments),
     onQueuedMessageEditingChange: (_, id) => queue.setEditing(id),
     onReorderQueuedMessages: (_, ids) => queue.reorder(ids),

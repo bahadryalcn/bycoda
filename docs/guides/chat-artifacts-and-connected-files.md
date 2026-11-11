@@ -56,7 +56,13 @@ While a turn is open, **Queue message** or **Shift+Tab** saves your message for
 after that turn finishes, including while the AI waits for background commands.
 **Steer** sends a follow-up to the current turn instead. If a server or watcher
 keeps the turn open, queued messages keep waiting; use the queued row's **Steer**
-action to send one immediately.
+action to send one immediately. Each queued row shows its saved model, account and
+reasoning effort beside the provider icon. The drag handle stays visible for a
+single message, but reordering is disabled until another message is queued.
+Remove takes a message out immediately. A small **Message removed · Undo** notice
+below the queue restores its text, attachments, saved target and original position.
+The notice closes after five seconds; keyboard focus or a pending/failed restore
+keeps the recovery action available. Removing several messages gives each its own Undo.
 
 When the AI asks a question with a free-text answer, use **Attach files**, paste copied files or images, or drop files onto the question card. Attached items appear below the answer; remove an item before sending if needed. You can send files without adding text. Unfinished attachments stay with that question when you leave and return, and failed delivery keeps them for retry.
 

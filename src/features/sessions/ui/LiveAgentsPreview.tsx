@@ -106,24 +106,20 @@ export function LiveAgentsPreview({
   const extra = listedAgents.length - cap;
   const visible = expanded || extra <= 0 ? listedAgents : listedAgents.slice(0, cap);
   const { title, count: headlineCount } = liveHeadline(summary, t);
-  // The headline names one real state and counts only the agents in it. What needs the user
-  // follows as short text, so "Working 3 · 2 need attention" never reads as five agents working.
-  // Finished rows are listed below; they only join the line when nothing else is running.
-  const tail = [
-    summary.headline !== "attention" && summary.attention > 0
-      ? t(summary.attention === 1 ? "{p0} needs attention" : "{p0} need attention", {
-          p0: summary.attention,
-        })
-      : null,
-    summary.headline === "attention" && summary.finished > 0
-      ? t("{p0} finished", { p0: summary.finished })
-      : null,
-  ].filter(Boolean);
+  const attentionAgents = agents.filter((agent) => agent.issue || agent.needsApproval);
+  const attentionTone =
+    attentionAgents.length === 1 && attentionAgents[0].issue === "failed" ? "danger" : "warning";
+  const attentionLabel = t(
+    summary.attention === 1 ? "{p0} needs attention" : "{p0} need attention",
+    {
+      p0: summary.attention,
+    },
+  );
   const statusMark =
     summary.headline === "attention" ? (
       <CircleAlert
         aria-hidden
-        className="icon-sm shrink-0 text-(--ui-tone-warning-fg)"
+        className={`icon-sm shrink-0 ${attentionTone === "danger" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-tone-warning-fg)"}`}
         strokeWidth={1.75}
       />
     ) : summary.headline === "finished" ? (
@@ -139,38 +135,26 @@ export function LiveAgentsPreview({
         <StatusDot label={t("Working")} aria-hidden />
       </span>
     );
-  const attentionNote =
-    tail.length > 0 ? (
-      <>
-        {/* A rail too narrow for the sentence keeps a marked number instead. */}
-        <span className="font-normal text-(--ui-text-secondary) @max-[220px]/rail:hidden">
-          {" "}
-          · {tail.join(" · ")}
-        </span>
-        {summary.headline !== "attention" && summary.attention > 0 ? (
-          <Badge
-            variant="count"
-            tone="warning"
-            size="xs"
-            title={tail[0] ?? undefined}
-            icon={<CircleAlert aria-hidden className="icon-xs" strokeWidth={1.75} />}
-            className="hidden ms-1 @max-[220px]/rail:inline-flex"
-          >
-            {summary.attention}
-          </Badge>
-        ) : null}
-      </>
-    ) : null;
   const countText = (
-    <span className="whitespace-nowrap">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
       <Badge
         variant="count"
         size="xs"
-        tone={summary.headline === "attention" ? "warning" : "accent"}
+        tone={summary.headline === "attention" ? attentionTone : "accent"}
       >
         {headlineCount}
       </Badge>
-      {attentionNote}
+      {summary.headline !== "attention" && summary.attention > 0 ? (
+        <Badge
+          variant="count"
+          tone={attentionTone}
+          size="xs"
+          title={attentionLabel}
+          icon={<CircleAlert aria-hidden className="icon-xs" strokeWidth={1.75} />}
+        >
+          <span aria-label={attentionLabel}>{summary.attention}</span>
+        </Badge>
+      ) : null}
     </span>
   );
   // Announced when a count changes, never per second: elapsed times stay out of this text.

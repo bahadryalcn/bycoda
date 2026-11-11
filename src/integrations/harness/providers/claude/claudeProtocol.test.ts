@@ -358,6 +358,18 @@ describe("usage limits", () => {
       }),
     ).toBe(false);
   });
+
+  it.each(["result", "errors"])("recognizes a weekly limit in %s", (field) => {
+    const message = "You've hit your weekly limit · resets Nov 14, 8am (Europe/Istanbul)";
+    expect(
+      isUsageLimitResult({
+        type: "result",
+        is_error: true,
+        [field]: field === "errors" ? [message] : message,
+      }),
+    ).toBe(true);
+    expect(isUsageLimitResult({ type: "result", is_error: false, result: message })).toBe(false);
+  });
 });
 
 describe("turnStatusFromResult", () => {

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, Fragment } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -98,4 +98,25 @@ it("keeps the adjacent update action when the repository prompt is dismissed", a
   expect(container.querySelector('[aria-label="View bycoda on GitHub"]')).toBeNull();
   act(() => container.querySelector<HTMLButtonElement>("button")!.click());
   expect(update).toHaveBeenCalledOnce();
+});
+
+it("dismisses mounted compact and wide copies together", async () => {
+  mocks.identity.repositoryUrl = "https://github.com/example/bycoda";
+  await act(async () =>
+    root.render(
+      createElement(
+        Fragment,
+        null,
+        createElement(GithubStarPrompt, { icon: true, compact: true }),
+        createElement(GithubStarPrompt, { icon: true }),
+      ),
+    ),
+  );
+  expect(container.querySelectorAll('[aria-label="View bycoda on GitHub"]')).toHaveLength(2);
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Dismiss GitHub repository prompt"]')!
+      .click(),
+  );
+  expect(container.querySelectorAll('[aria-label="View bycoda on GitHub"]')).toHaveLength(0);
 });

@@ -5,21 +5,22 @@ import { ContinuousList } from "../../shared/ui/ContinuousList";
 import { ActionHost } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import { getLocale, useT } from "../../shared/i18n";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { ChevronDown, CircleAlert, FolderOpen, Internet, PenLine } from "../../shared/ui/icons";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronDown,
+  CircleAlert,
+  Clock,
+  FolderOpen,
+  Internet,
+  PenLine,
+} from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import type { useTabGroupLogos } from "../../features/projects/hooks/useTabGroupLogos";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
-import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
-import {
-  RAIL_SECTION_BLOCK,
-  RAIL_SECTION_LABEL,
-  SectionMenuButton,
-  type RailSectionDrag,
-} from "./useRailSections";
+import { RAIL_SECTION_BLOCK, RailSectionHeader, type RailSectionDrag } from "./useRailSections";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import { useRecentSessions } from "../../features/sessions/hooks/useRecentSessions";
 import { useUnsentComposerDraft } from "../../features/sessions/hooks/useUnsentComposerDraft";
@@ -158,48 +159,20 @@ export function LastSessionsSection({
       className={RAIL_SECTION_BLOCK}
       data-collapsed={prefs.collapsed || undefined}
     >
-      {/* One header surface: ActionHost paints hover and the open state for chevron, label and
-          actions together, so the open list reads as a row, not as two pills. */}
-      <ActionHost
-        {...drag?.headerProps}
+      <RailSectionHeader
+        label={t("Last sessions")}
         selected={lastSessionsOpen}
-        className="group min-h-(--ui-control-height-compact) gap-0 px-2"
-      >
-        {/* A direct, non-inset child: the host owns its fills, so an expanded section shows
-            no separate chip (inset actions paint aria-expanded as an open menu). */}
-        <Button
-          variant="ghost"
-          iconOnly
-          size="sm"
-          motion="none"
-          type="button"
-          data-no-drag
-          label={t(prefs.collapsed ? "Expand" : "Collapse")}
-          aria-expanded={!prefs.collapsed}
-          onClick={() => update({ ...prefs, collapsed: !prefs.collapsed })}
-        >
-          <ChevronDown className={`icon-xs ${prefs.collapsed ? "-rotate-90" : ""}`} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          motion="none"
-          type="button"
-          data-no-drag
-          tooltip={t("All sessions across your projects")}
-          onClick={onOpenLastSessions}
-          aria-current={lastSessionsOpen ? "page" : undefined}
-          className={`min-w-0 flex-1 justify-start px-1 ${RAIL_SECTION_LABEL} ${
-            lastSessionsOpen ? "text-content" : ""
-          }`}
-        >
-          <span className="truncate">{t("Last sessions")}</span>
-        </Button>
-        {!prefs.collapsed && hasRows ? (
-          <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
-        ) : null}
-        {drag ? <SectionMenuButton label={t("Last sessions")} onOpen={drag.openMenu} /> : null}
-      </ActionHost>
+        drag={drag}
+        icon={<Clock className="icon-sm" />}
+        collapsed={prefs.collapsed}
+        onToggleCollapsed={() => update({ ...prefs, collapsed: !prefs.collapsed })}
+        onLabelClick={onOpenLastSessions}
+        actions={
+          !prefs.collapsed && hasRows ? (
+            <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
+          ) : undefined
+        }
+      />
       {prefs.collapsed ? null : (
         <LastSessionsRows
           rows={rows}
@@ -216,13 +189,12 @@ export function LastSessionsSection({
   );
 }
 
-/** The rows of a "Last sessions" list and their context menu; shared by the rail section and the compact rail's popover. */
+/** Navigation-only recent rows, shared by the rail section and compact rail popover. */
 export function LastSessionsRows({
   rows,
   activeSessionId,
   searchActive,
   onOpenSession,
-  onOpenProject,
   className,
   listScopeKey,
   ...appearance
@@ -236,13 +208,7 @@ export function LastSessionsRows({
   listScopeKey?: string;
 } & Appearance) {
   const t = useT();
-  const [menu, setMenu] = useState<{
-    x: number;
-    y: number;
-    row: RecentSessionRow;
-  } | null>(null);
   const now = useMinuteNow();
-  const menuRow = menu?.row;
 
   return (
     <>
@@ -264,45 +230,11 @@ export function LastSessionsRows({
               selected={!searchActive && row.id === activeSessionId}
               onOpen={() => onOpenSession?.(row.id, row.cwd)}
               onKeepOpen={() => onOpenSession?.(row.id, row.cwd, { keepOpen: true })}
-              onOpenMenu={(x, y) => setMenu({ x, y, row })}
               {...appearance}
             />
           )}
         />
       </div>
-      {menu && menuRow ? (
-        <ExplorerMenu
-          x={menu.x}
-          y={menu.y}
-          ariaLabel="Session actions"
-          items={[
-            {
-              kind: "item",
-              id: "open",
-              get label() {
-                return t("Open");
-              },
-            },
-            ...(isProjectlessCwd(menuRow.cwd)
-              ? []
-              : [
-                  {
-                    kind: "item" as const,
-                    id: "project",
-                    get label() {
-                      return t("Open project");
-                    },
-                  },
-                ]),
-          ]}
-          onPick={(id) => {
-            setMenu(null);
-            if (id === "open") onOpenSession?.(menuRow.id, menuRow.cwd);
-            else if (id === "project") onOpenProject(menuRow.cwd);
-          }}
-          onClose={() => setMenu(null)}
-        />
-      ) : null}
     </>
   );
 }
@@ -364,7 +296,6 @@ function SessionRow({
   selected,
   onOpen,
   onKeepOpen,
-  onOpenMenu,
   groupLabels,
   groupColors,
   groupCustomColors,
@@ -376,7 +307,6 @@ function SessionRow({
   selected: boolean;
   onOpen: () => void;
   onKeepOpen: () => void;
-  onOpenMenu: (x: number, y: number) => void;
 } & Appearance) {
   const t = useT();
   const key = projectKey(row.cwd);
@@ -406,18 +336,11 @@ function SessionRow({
     .filter(Boolean)
     .join("\n");
 
-  const openMenuAt = (event: MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    onOpenMenu(event.clientX, event.clientY);
-  };
-
   return (
     <ActionHost
       role="listitem"
       selected={selected}
       className="group relative flex min-w-0 items-center rounded-md"
-      onContextMenu={openMenuAt}
     >
       {/* One 28px row on the rail grid, like the tool and project rows: a 14px project mark,
           the title, then quiet trailing state. Project and agent live in the tooltip and name. */}
@@ -439,12 +362,6 @@ function SessionRow({
           .join(", ")}
         onClick={onOpen}
         onDoubleClick={onKeepOpen}
-        onKeyDown={(event) => {
-          if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
-          event.preventDefault();
-          const rect = event.currentTarget.getBoundingClientRect();
-          onOpenMenu(rect.left, rect.bottom);
-        }}
         className="flex min-w-0 flex-1 items-center gap-1.5"
       >
         <span className="grid icon-sm shrink-0 place-items-center" aria-hidden="true">

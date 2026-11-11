@@ -52,6 +52,8 @@ export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> &
   /** Render the row as an `ActionHost`: the whole header paints hover, focus and press fills
    *  (rail and tree section headers). Combine with `headerProps` for drag handles. */
   host?: boolean;
+  /** Selected navigation page, painted by the row host. */
+  selected?: boolean;
   /** Extra props for the row element (`tabIndex`, `aria-keyshortcuts`, drag handle props,
    *  `data-*`), for example `drag.headerProps`. Rest props win on conflict. */
   headerProps?: ComponentPropsWithRef<"div"> & DataAttributes;
@@ -70,7 +72,7 @@ export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> &
    *  section's page) while the chevron button keeps collapsing. `label` names the label button
    *  ("Open Crews"); `toggleLabel` names the chevron button ("Crews"), since it no longer
    *  contains the text. */
-  labelAction?: { label: string; toggleLabel: string; onClick: () => void };
+  labelAction?: { label: string; toggleLabel: string; onClick: () => void; current?: boolean };
 };
 
 /**
@@ -104,6 +106,7 @@ export function SectionLabel({
   leading,
   chevron = "always",
   host = false,
+  selected = false,
   headerProps,
   classNames,
   compactRail = false,
@@ -133,7 +136,11 @@ export function SectionLabel({
   const hasCount = count !== null && count !== undefined;
   const swap = collapsible && icon != null && chevron === "hover";
   const mark = (extra?: string) => (
-    <span className={[styles.mark, extra].filter(Boolean).join(" ")} data-swap={swap || undefined}>
+    <span
+      className={[styles.mark, extra].filter(Boolean).join(" ")}
+      data-rail-section-mark={compactRail || undefined}
+      data-swap={swap || undefined}
+    >
       {collapsible ? (
         <span
           className={[styles.chevron, classNames?.icon].filter(Boolean).join(" ")}
@@ -155,7 +162,11 @@ export function SectionLabel({
   );
   const label = (
     <>
-      <span id={labelId} className={[styles.text, classNames?.label].filter(Boolean).join(" ")}>
+      <span
+        data-rail-section-text={compactRail || undefined}
+        id={labelId}
+        className={[styles.text, classNames?.label].filter(Boolean).join(" ")}
+      >
         {children}
       </span>
       {hasCount ? (
@@ -178,6 +189,7 @@ export function SectionLabel({
     <Row
       {...headerProps}
       {...props}
+      {...(host ? { selected } : {})}
       data-section-label=""
       data-compact-rail={compactRail || undefined}
       className={[styles.root, headerProps?.className, className].filter(Boolean).join(" ")}
@@ -193,6 +205,7 @@ export function SectionLabel({
               aria-expanded={expanded}
               aria-controls={controls}
               aria-label={split ? labelAction.toggleLabel : undefined}
+              data-rail-section-primary={compactRail || undefined}
               data-split={split || undefined}
               className={[styles.toggle, classNames?.toggle].filter(Boolean).join(" ")}
               onClick={() => onExpandedChange?.(!expanded)}
@@ -206,6 +219,8 @@ export function SectionLabel({
                 size="sm"
                 motion="none"
                 aria-label={labelAction.label}
+                aria-current={labelAction.current ? "page" : undefined}
+                data-rail-section-primary={compactRail || undefined}
                 className={styles.labelButton}
                 onClick={labelAction.onClick}
               >

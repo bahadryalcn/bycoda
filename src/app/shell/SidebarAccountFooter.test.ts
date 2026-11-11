@@ -58,17 +58,24 @@ const render = (props = {}) =>
   act(async () => root.render(createElement(SidebarAccountFooter, props)));
 const byLabel = (label: string) => container.querySelector<HTMLElement>(`[aria-label="${label}"]`);
 
-it("shows the guest account with the Settings button only, no feedback, star or update", async () => {
+it("keeps the repository actions before Settings and account", async () => {
   const onOpenSettings = vi.fn();
   await render({ onOpenSettings });
   expect(byLabel("Account: Guest. Away")).not.toBeNull();
   await act(async () => byLabel("Settings")!.click());
   expect(onOpenSettings).toHaveBeenCalledOnce();
   expect(byLabel("Send feedback")).toBeNull();
-  expect(byLabel("View bycoda on GitHub")).toBeNull();
-  expect(byLabel("Dismiss GitHub repository prompt")).toBeNull();
+  expect(byLabel("View bycoda on GitHub")).not.toBeNull();
+  expect(byLabel("Dismiss GitHub repository prompt")).not.toBeNull();
   expect(container.querySelector('[aria-label^="Update"]')).toBeNull();
-  expect(container.querySelectorAll("button")).toHaveLength(2);
+  expect(
+    [...container.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
+  ).toEqual([
+    "View bycoda on GitHub",
+    "Dismiss GitHub repository prompt",
+    "Settings",
+    "Account: Guest. Away",
+  ]);
 });
 
 it("marks a waiting update with a dot", async () => {
@@ -91,9 +98,19 @@ it("uses the signed-in name", async () => {
   expect(byLabel("Account: Ada. Away")).not.toBeNull();
 });
 
-it("stacks the compact variant with account and Settings only", async () => {
+it("stacks the compact variant with the same action order", async () => {
   await render({ compact: true });
   expect(container.querySelector('[data-sidebar-account-footer="compact"]')).not.toBeNull();
   expect(byLabel("Send feedback")).toBeNull();
+  expect(byLabel("Settings")).not.toBeNull();
+  expect(container.querySelector("[data-github-star-prompt][data-compact]")).not.toBeNull();
+});
+
+it("dismisses the repository prompt while retaining the update action", async () => {
+  mocks.snapshot = { phase: "available", currentVersion: "1.0.0", availableVersion: "1.1.0" };
+  await render({ compact: true });
+  act(() => byLabel("Dismiss GitHub repository prompt")!.click());
+  expect(byLabel("View bycoda on GitHub")).toBeNull();
+  expect(byLabel("Update to 1.1.0")).not.toBeNull();
   expect(byLabel("Settings")).not.toBeNull();
 });

@@ -18,7 +18,6 @@ import {
   saveProjectGroupAssignments,
   saveProjectGroups,
   setProjectGroupAssignment,
-  toggleProjectGroupPin,
   unlinkProjectGroup,
 } from "./projectGroups";
 
@@ -148,24 +147,18 @@ describe("project groups", () => {
     expect(loadProjectGroups()).toEqual([]);
   });
 
-  it("lists pinned groups first and toggles the pin", async () => {
-    saveProjectGroups([
-      { id: "a", name: "A", collapsed: false },
-      { id: "b", name: "B", collapsed: false, pinned: true },
-      { id: "c", name: "C", collapsed: false, pinned: "yes" as unknown as boolean },
-    ]);
-    expect(loadProjectGroups().map((group) => [group.id, group.pinned])).toEqual([
-      ["b", true],
-      ["a", undefined],
-      ["c", undefined],
-    ]);
-
-    await expect(toggleProjectGroupPin("c")).resolves.toBe(true);
-    expect(loadProjectGroups().map((group) => group.id)).toEqual(["b", "c", "a"]);
-    await expect(toggleProjectGroupPin("b")).resolves.toBe(true);
-    expect(loadProjectGroups().map((group) => group.id)).toEqual(["c", "b", "a"]);
-    expect(loadProjectGroups().find((group) => group.id === "b")?.pinned).toBeUndefined();
-    await expect(toggleProjectGroupPin("missing")).resolves.toBe(false);
+  it("ignores legacy group pins while preserving saved order and group data", () => {
+    localStorage.setItem(
+      "bycoda.projectGroups",
+      JSON.stringify([
+        { id: "a", name: "A", collapsed: false },
+        { id: "b", name: "B", collapsed: true, pinned: true, colorIndex: 3 },
+        { id: "c", name: "C", collapsed: false, pinned: "yes" },
+      ]),
+    );
+    expect(loadProjectGroups().map((group) => group.id)).toEqual(["a", "b", "c"]);
+    expect(loadProjectGroups().some((group) => "pinned" in group)).toBe(false);
+    expect(loadProjectGroups()[1]).toMatchObject({ name: "B", collapsed: true, colorIndex: 3 });
   });
 });
 

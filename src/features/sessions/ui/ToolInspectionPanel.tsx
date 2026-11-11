@@ -10,6 +10,8 @@ import type { Block } from "../model/session";
 import { toolResultTexts } from "../model/commandInspection";
 import { boundedToolPreview } from "../model/toolInspection";
 import { JsonViewer } from "../../../shared/ui/JsonViewer";
+import { AnsiText } from "../../../shared/ui/AnsiText";
+import { stripAnsi } from "../../../shared/lib/ansi";
 import "./chat-controls.css";
 
 // Long commands and output wrap by default; aligned output (tables, diffs) can opt out, and the choice persists.
@@ -109,7 +111,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
       : null,
     block.remoteContent ? t("[Only a summary of the output is kept here.]") : null,
   ].filter((notice): notice is string => !!notice);
-  const bodyText = sections.map((section) => section.text).join("\n\n");
+  const bodyText = sections.map((section) => stripAnsi(section.text)).join("\n\n");
   const copyText = bodyText ? [bodyText, ...copyNotices].join("\n\n") : "";
   // Streaming output changes the copied text, so any outcome or copy in flight belongs to the old text.
   const feedback = useCopyFeedback({ resetKeys: [block.id, copyText], successMs: 2000 });
@@ -206,24 +208,27 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                 tabIndex={0}
                 className={`max-h-80 min-w-0 select-text overflow-auto overscroll-contain ${wrap ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre"} px-3 py-1 font-mono text-ui-caption leading-5 ${section.error ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)`}
               >
-                {section.diff
-                  ? section.text.split("\n").map((line, lineIndex) => (
-                      <span
-                        key={lineIndex}
-                        className={
-                          line.startsWith("+")
-                            ? "text-diff-add-fg"
-                            : line.startsWith("-")
-                              ? "text-diff-del-fg"
-                              : undefined
-                        }
-                      >
-                        {line}
-                        {"\n"}
-                      </span>
-                    ))
-                  : section.text ||
-                    t(section.truncated ? "Output left out to keep this run small." : "Empty file")}
+                {section.diff ? (
+                  section.text.split("\n").map((line, lineIndex) => (
+                    <span
+                      key={lineIndex}
+                      className={
+                        line.startsWith("+")
+                          ? "text-diff-add-fg"
+                          : line.startsWith("-")
+                            ? "text-diff-del-fg"
+                            : undefined
+                      }
+                    >
+                      {line}
+                      {"\n"}
+                    </span>
+                  ))
+                ) : section.text ? (
+                  <AnsiText text={section.text} />
+                ) : (
+                  t(section.truncated ? "Output left out to keep this run small." : "Empty file")
+                )}
               </pre>
             )}
             {section.truncated || section.legacy ? (

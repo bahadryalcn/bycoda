@@ -13,7 +13,7 @@ export type { SessionWait, SessionWakeSource } from "./model/sessionWaitRules";
 export type { AgentModel, ModelSetting, ModelSettingChoice } from "./model/models";
 export type { ProjectProviderSettings, ProviderSessionDefaults } from "./model/projectProviders";
 export type { PromptTemplate } from "./model/promptTemplates";
-export type { QueueActionResult } from "./model/queueAction";
+export type { QueueActionResult, QueueRemoval } from "./model/queueAction";
 export type { LiveSessionInfo } from "./model/recentSessions";
 export type {
   AdoptedDivergence,

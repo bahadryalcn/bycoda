@@ -187,6 +187,30 @@ export function dequeueQueuedMessage(session: Session, messageId: string): Sessi
   };
 }
 
+/** Restore beside surviving original neighbours without reordering concurrent additions. */
+export function restoreQueuedMessage(
+  current: QueuedMessage[],
+  restored: QueuedMessage,
+  originalIds: readonly string[],
+  originalId: string,
+): QueuedMessage[] {
+  if (current.some((message) => message.id === restored.id)) return current;
+  const originalIndex = originalIds.indexOf(originalId);
+  const nextId = originalIds
+    .slice(originalIndex + 1)
+    .find((id) => current.some((row) => row.id === id));
+  const previousId = originalIds
+    .slice(0, Math.max(0, originalIndex))
+    .reverse()
+    .find((id) => current.some((row) => row.id === id));
+  const index = nextId
+    ? current.findIndex((row) => row.id === nextId)
+    : previousId
+      ? current.findIndex((row) => row.id === previousId) + 1
+      : Math.min(Math.max(0, originalIndex), current.length);
+  return [...current.slice(0, index), restored, ...current.slice(index)];
+}
+
 /**
  * Move one queued row to `toIndex` (clamped to the queue). Returns the same
  * array when the row is unknown or already there, so callers can skip a write.

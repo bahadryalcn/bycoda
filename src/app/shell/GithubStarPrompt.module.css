@@ -1,0 +1,52 @@
+.icons {
+  flex: none;
+  align-items: center;
+}
+.icons[data-compact] {
+  flex-direction: column;
+  background: transparent;
+}
+.icons[data-compact]::after {
+  display: none;
+}
+.star {
+  position: relative;
+  flex: none;
+}
+.dismiss {
+  position: absolute;
+  inset-inline-end: calc(-1 * var(--space-2));
+  inset-block-end: calc(-1 * var(--space-1));
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    visibility 0s var(--motion-duration-fast);
+}
+.star:is(:hover, :focus-within) .dismiss {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: var(--motion-duration-standard);
+}
+/* Reserve the corner for dismiss without putting it over the star's hit target. */
+.star:is(:hover, :focus-within) .open {
+  clip-path: polygon(0 0, 100% 0, 100% 55%, 65% 55%, 65% 100%, 0 100%);
+}
+@media (hover: none), (pointer: coarse) {
+  .dismiss {
+    opacity: 1;
+    visibility: visible;
+  }
+  .open {
+    clip-path: polygon(0 0, 100% 0, 100% 55%, 65% 55%, 65% 100%, 0 100%);
+  }
+  /* Keep the shared inset action's extra touch area off the star. */
+  .star .dismiss[data-button-hierarchy]::before {
+    inset: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dismiss {
+    transition: none;
+  }
+}

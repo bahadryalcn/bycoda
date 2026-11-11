@@ -75,6 +75,8 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   disabledReason?: string;
   startIcon?: ReactNode;
   endIcon?: ReactNode;
+  /** Keep the start icon visible and reveal the text on hover/focus. Use with motion="none" in a bounded toolbar. */
+  revealLabel?: boolean;
   fullWidth?: boolean;
   /** Disable label/press motion for controls that require a stable, direct DOM layout. */
   motion?: "auto" | "none";
@@ -165,6 +167,7 @@ export function Button({
   disabledReason,
   startIcon,
   endIcon,
+  revealLabel = false,
   fullWidth = false,
   motion = "auto",
   layout,
@@ -368,6 +371,7 @@ export function Button({
     "data-button-layout":
       structural || variant === "link" || layout === "media" ? layout : undefined,
     "data-button-size": size,
+    "data-button-reveal-label": revealLabel || undefined,
     // Any explicit alignment is authoritative over structural (item/tab) defaults.
     "data-button-align": align,
     // Controls that do not scale on press (native renderer, popup anchors) step their tone instead.

@@ -13394,5 +13394,6 @@
   "Worker new tokens": "Neue Worker-Tokens",
   "Worker tokens total {p0}, including {p1} cache reads. Cache reads re-read earlier context and cost far less than new tokens.": "Worker-Tokens insgesamt {p0}, einschließlich {p1} Cache-Lesevorgänge. Cache-Lesevorgänge lesen früheren Kontext erneut und kosten deutlich weniger als neue Tokens.",
   "How freely may it work?": "Wie frei darf er arbeiten?",
-  "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000.": "Umfasst Chat- und Sprachantworten, Überprüfungen durch den Supervisor und die Aufträge, die der Assistent startet. Ihre eigenen Sitzungen zählen nicht. Bei 80 % berichtet er nur noch, bei 100 % pausiert er. Mindestens 20.000."
+  "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000.": "Umfasst Chat- und Sprachantworten, Überprüfungen durch den Supervisor und die Aufträge, die der Assistent startet. Ihre eigenen Sitzungen zählen nicht. Bei 80 % berichtet er nur noch, bei 100 % pausiert er. Mindestens 20.000.",
+  "Message removed": "Nachricht entfernt"
 }

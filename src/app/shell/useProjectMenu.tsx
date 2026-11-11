@@ -5,6 +5,15 @@ import {
   newLocalHostSession,
 } from "../../features/connections/model/newLocalHostSession";
 import { t, useT } from "../../shared/i18n";
+import {
+  useProjectDiffStats,
+  useProjectsDiffStats,
+} from "../../features/source-control/hooks/useProjectDiffStats";
+import {
+  projectGitChange,
+  projectGitChangeSummary,
+  type ProjectGitStats,
+} from "../../features/projects/ui/projectGitChange";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMenuError } from "./useMenuError";
 import {
@@ -21,6 +30,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderTree,
+  GitBranch,
   ImagePlus,
   Lock,
   LockOpen,
@@ -80,7 +90,6 @@ import {
   saveProjectGroups,
   setProjectGroupAssignment,
   unlinkProjectGroup,
-  toggleProjectGroupPin,
   updateProjectGroup,
   type ProjectGroup,
 } from "../../features/projects/model/projectGroups";
@@ -164,15 +173,6 @@ function projectMenuExtraItems(
       label: group.name,
       checked: group.id === currentProjectGroupId,
     })),
-    ...(projectGroups.length > 0 ? [{ kind: "sep" } as const] : []),
-    {
-      kind: "item",
-      id: "project-group:none",
-      get label() {
-        return t("Ungrouped");
-      },
-      checked: currentProjectGroupId == null,
-    },
   ];
   const items: TabGroupMenuExtraItem[] = [
     {
@@ -377,6 +377,8 @@ export function useProjectMenu({
       })
     | null
   >(null);
+  const menuStats = useProjectDiffStats(projectMenu?.path ?? "", projectMenu != null);
+  const menuChange = projectGitChange(menuStats);
   const [removingGroup, setRemovingGroup] = useState<{
     id: string;
     name: string;
@@ -408,8 +410,26 @@ export function useProjectMenu({
     );
   };
   const [groupMenu, setGroupMenu] = useState<
-    (Point & { id: string; move?: ProjectMenuMove }) | null
+    (Point & { id: string; move?: ProjectMenuMove; onOpenGitOverview?: () => void }) | null
   >(null);
+  const groupMenuReadable =
+    groupMenu != null && !getGroupLockView().lock.lockedGroupIds.has(groupMenu.id);
+  const groupMenuPaths = groupMenuReadable
+    ? pathsForGroup(groupMenu.id).filter(isLocalProject)
+    : [];
+  const groupMenuStats = useProjectsDiffStats(groupMenuPaths, groupMenuReadable);
+  const groupMenuChange = groupMenuReadable
+    ? projectGitChange(
+        groupMenuStats.reduce<ProjectGitStats>(
+          (total, stats) => ({
+            files: total.files + (stats?.files ?? 0),
+            additions: total.additions + (stats?.additions ?? 0),
+            deletions: total.deletions + (stats?.deletions ?? 0),
+          }),
+          { files: 0, additions: 0, deletions: 0 },
+        ),
+      )
+    : null;
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [fetchAll, setFetchAll] = useState<(Point & { id: string; paths: string[] }) | null>(null);
   const [notificationMenu, setNotificationMenu] = useState<
@@ -499,14 +519,20 @@ export function useProjectMenu({
     setProjectMenu({ x, y, path, projectKey: projectKey(path), onSelectForBulk, move });
   };
 
-  const openGroupMenu = (id: string, x: number, y: number, move?: ProjectMenuMove) => {
+  const openGroupMenu = (
+    id: string,
+    x: number,
+    y: number,
+    move?: ProjectMenuMove,
+    onOpenGitOverview?: () => void,
+  ) => {
     captureTrigger();
     onOpen?.();
     setProjectMenu(null);
     setNotificationMenu(null);
     setFetchAll(null);
     clearMenuError();
-    setGroupMenu({ x, y, id, move });
+    setGroupMenu({ x, y, id, move, onOpenGitOverview });
   };
 
   const createGroup = (x: number, y: number, projectPath?: string) => {
@@ -617,7 +643,8 @@ export function useProjectMenu({
           !loadProjectGroups().some((group) => group.id === groupId)
         )
           throw new Error("Project group is unavailable.");
-        return setProjectGroupAssignment(path, groupId);
+        const currentId = projectGroupIdForPath(path, loadProjectGroupAssignments());
+        return setProjectGroupAssignment(path, currentId === groupId ? null : groupId);
       }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
     } else if (action === "mute:custom") {
       if (!readyNotificationProject) return false;
@@ -792,7 +819,21 @@ export function useProjectMenu({
             Boolean(onRenameProjectFolder && isLocalProject(projectMenu.path)),
           ),
         ]}
-        footer={menuError ? <Alert tone="danger">{menuError}</Alert> : null}
+        footer={
+          menuChange || menuError ? (
+            <>
+              {menuChange ? (
+                <div
+                  data-project-menu-git=""
+                  className="border-t border-(--ui-border) px-3 py-2 text-ui-caption text-(--ui-text-secondary)"
+                >
+                  {projectGitChangeSummary(menuChange, t)}
+                </div>
+              ) : null}
+              {menuError ? <Alert tone="danger">{menuError}</Alert> : null}
+            </>
+          ) : null
+        }
         onExtraPick={onPick}
       />
     );
@@ -1052,7 +1093,21 @@ export function useProjectMenu({
         }}
         showActions={false}
         ariaLabel={t("Project group actions")}
-        footer={menuError ? <Alert tone="danger">{menuError}</Alert> : undefined}
+        footer={
+          groupMenuChange || menuError ? (
+            <>
+              {groupMenuChange ? (
+                <div
+                  data-group-menu-git=""
+                  className="border-t border-(--ui-border) px-3 py-2 text-ui-caption text-(--ui-text-secondary)"
+                >
+                  {projectGitChangeSummary(groupMenuChange, t)}
+                </div>
+              ) : null}
+              {menuError ? <Alert tone="danger">{menuError}</Alert> : null}
+            </>
+          ) : undefined
+        }
         compactAppearance
         extraItems={[
           ...(workspaceRoot && !locked
@@ -1070,22 +1125,10 @@ export function useProjectMenu({
                       label: item.name,
                       checked: item.id === parentId,
                     })),
-                    ...(workspaceDestinations.length ? [{ kind: "sep" as const }] : []),
-                    {
-                      kind: "item" as const,
-                      id: "workspace-parent:none",
-                      label: t("Ungrouped"),
-                      checked: !parentId,
-                    },
                   ],
                 },
               ]
             : []),
-          {
-            id: "toggle-group-pin",
-            label: group.pinned ? t("Unpin group") : t("Pin group"),
-            icon: group.pinned ? PinOff : Pin,
-          },
           branch("order", t("Reorder group"), ArrowUp, moveItems),
           ...lockItems.filter((item) => item.id === "lock-group" || item.id === "unlock-group"),
           branch("privacy", t("Group privacy"), Lock, privacyItems),
@@ -1100,6 +1143,9 @@ export function useProjectMenu({
                 ),
               ]
             : []),
+          ...(!locked && groupMenu.onOpenGitOverview
+            ? [{ id: "git-overview", label: t("Changes"), icon: GitBranch }]
+            : []),
           ...groupItems.filter((item) => item.id === "fetch-all"),
           ...(!locked
             ? [
@@ -1112,6 +1158,11 @@ export function useProjectMenu({
             : []),
         ]}
         onExtraPick={(action) => {
+          if (action === "git-overview") {
+            if (getGroupLockView().lock.lockedGroupIds.has(group.id)) return false;
+            groupMenu.onOpenGitOverview?.();
+            return;
+          }
           const file = group.workspaceFile;
           if (action.startsWith("workspace-parent:") && workspaceRoot && !locked) {
             const targetId = action.slice("workspace-parent:".length);
@@ -1141,8 +1192,14 @@ export function useProjectMenu({
                     getGroupLockView().lock.lockedGroupIds.has(targetId)))
               )
                 throw new Error("Project group is unavailable.");
-              setProjectGroupAssignment(workspaceRoot, targetId === "none" ? null : targetId);
-              if (targetId !== "none")
+              const currentParent = projectGroupIdForPath(
+                workspaceRoot,
+                loadProjectGroupAssignments(),
+              );
+              const destination =
+                targetId === "none" || targetId === currentParent ? null : targetId;
+              setProjectGroupAssignment(workspaceRoot, destination);
+              if (destination)
                 updateProjectGroup(targetId, (current) => ({ ...current, collapsed: false }));
             }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
             return;
@@ -1187,14 +1244,6 @@ export function useProjectMenu({
           if (action === "unlock-group") {
             requestUnlock(group.id);
             return;
-          }
-          if (action === "toggle-group-pin") {
-            const failed = () => setMenuError(t("Could not save project changes. Try again."));
-            void toggleProjectGroupPin(group.id).then(
-              (saved) => (saved ? setGroupMenu(null) : failed()),
-              failed,
-            );
-            return false;
           }
           if (action === "lock-group") {
             toggleGroupLock(group.id);

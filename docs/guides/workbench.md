@@ -1,5 +1,18 @@
 # Workbench navigation
 
+Transient toast messages, including errors, close automatically after ten seconds
+while the Bycoda window is focused. Switching away or hiding the window pauses the
+countdown; returning resumes the remaining time. Hovering over a toast or focusing
+its controls also pauses it. Notices explicitly kept open for an action remain until
+their owner dismisses them; closing a notification never answers an approval request.
+
+The compact rail keeps its width while using larger navigation targets and icons.
+The footer places the voice companion first, followed by GitHub and available updates,
+then Settings and Account. Hover or focus the GitHub star to reveal its corner dismiss
+button. Dismissal applies to both compact and expanded footers for the current version.
+In an expanded footer with enough room, hovering or focusing the update icon reveals
+its label. Clicking it opens the existing update dialog.
+
 Collapsed project navigation uses a 56px icon rail with a centered divider and a
 small-size vector mark. Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
@@ -10,7 +23,17 @@ same controls immediately below, so every action stays inside the pane. Crews, S
 Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
 Hover or focus an icon for its name and shortcut. The rail scrolls in short windows
 while Account and Settings remain at the bottom. Recovered work uses a restore
-arrow; Last sessions uses a clock.
+arrow; Last sessions uses a clock. Rail section headings share one icon and label grid;
+hover or keyboard focus replaces a collapsible section's icon with its disclosure arrow.
+Pinned also collapses and remembers that choice.
+Working shows attention as an icon and count: one failure is red, warnings and multiple
+attention items are yellow. Last sessions rows in the rail and combined list only open conversations; they have
+no pin, settle, archive, delete controls or action menu. Crew Start stays at the right edge, with options to its left.
+Project Git totals occupy the right edge until hover or focus reveals options; opening
+those options keeps the Git summary in the menu. Narrow group and workspace rows keep secondary
+shortcuts in that menu: **Changes** opens the existing Git overview, and **Lock group**
+retains the same lock action. Appearance exposes background controls
+directly below the compact icon picker.
 
 GitHub Inbox discovers repositories from local remembered projects. Its **Local
 repositories** filter shows each `owner/repo` once, even when several checkouts
@@ -231,6 +254,7 @@ settled conversations. It does not lock anything: the conversation stays writabl
 message moves it back to the active list. Settling while a turn runs waits for
 the turn; a failed turn or a queued message leaves it active. **Un-settle**
 brings it back and keeps it out of automatic settling until its next message.
+Settle stays disabled in a new conversation until it has a submitted message; unsent drafts do not enable it.
 Conversations idle for three days settle on their own; change or turn this off
 in Settings → Session list → **Auto-settle after**. Pinned, archived, running and
 waiting conversations never settle automatically, and pinned, foldered or
@@ -273,8 +297,8 @@ A workspace group is identified by its Workspace icon and tooltip. Its linked
 file, Git and lock controls appear with row interaction; Git change counts and
 link warnings stay visible. Narrow rail layouts retain their compact presentation.
 
-Pin a group or workspace from its group menu; pinned groups list first and show
-a pin in their header, which unpins them. Projects inside a group cannot be pinned on their own,
+In **Move to group**, clicking the checked group again removes the project or workspace from that group.
+Only ungrouped projects can be pinned. Groups and linked workspaces have no pin action. Projects inside a group cannot be pinned on their own,
 and a project's earlier pin is dropped when it joins a group. Group members are
 indented under the header on a guide line.
 

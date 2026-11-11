@@ -14,12 +14,46 @@ import { languageReady } from "../../src/shared/i18n";
 import { Button } from "../../src/shared/ui/Button";
 import { TextareaField } from "../../src/shared/ui/TextareaField";
 import { setComposerDraft } from "../../src/features/sessions/model/draftCache";
+import { savePinnedProjects } from "../../src/features/projects/model/recents";
+import { setLinkedGroupStatus } from "../../src/features/projects/model/linkedWorkspace";
+import type { LiveAgent } from "../../src/features/sessions/model/liveAgents";
 import "./compact-navigation.css";
 
 // Browser-local fixture only. Actions record selections; no Host, filesystem or provider writes.
-const projects = ["/fixture/bycoda", "/fixture/mobile", "/fixture/service"];
-saveProjectGroups([{ id: "product", name: "Product team", collapsed: false }]);
-saveProjectGroupAssignments({ "/fixture/bycoda": "product", "/fixture/mobile": "product" });
+const railPolish = new URLSearchParams(location.search).has("railPolish");
+const projects = [
+  "/fixture/bycoda",
+  "/fixture/mobile",
+  "/fixture/service",
+  ...(railPolish ? ["/fixture/workspace", "/fixture/workspace/core"] : []),
+];
+if (new URLSearchParams(location.search).has("railPolish")) savePinnedProjects([projects[2]]);
+saveProjectGroups([
+  { id: "product", name: "Product team", collapsed: false },
+  ...(railPolish
+    ? [
+        {
+          id: "workspace",
+          name: "Linked workspace",
+          collapsed: false,
+          workspaceFile: "/fixture/workspace/project.code-workspace",
+          workspaceFolders: ["/fixture/workspace/core"],
+        },
+      ]
+    : []),
+]);
+saveProjectGroupAssignments({
+  "/fixture/bycoda": "product",
+  "/fixture/mobile": "product",
+  ...(railPolish
+    ? { "/fixture/workspace": "product", "/fixture/workspace/core": "workspace" }
+    : {}),
+});
+if (railPolish)
+  setLinkedGroupStatus("workspace", {
+    state: "missing",
+    message: "Workspace file not found or unreadable: /fixture/workspace/project.code-workspace",
+  });
 const history = Array.from({ length: 9 }, (_, index) => ({
   id: `discussion-${index}`,
   cwd: projects[0],
@@ -40,6 +74,43 @@ const history = Array.from({ length: 9 }, (_, index) => ({
 // ?draft=1 leaves unsent composer text in a listed, idle discussion.
 if (new URLSearchParams(location.search).has("draft"))
   setComposerDraft(history[7].id, "Unsent follow-up");
+const attentionCase = new URLSearchParams(location.search).get("attention") ?? "failed";
+const railAgents: LiveAgent[] = railPolish
+  ? [
+      {
+        id: "running",
+        cwd: projects[0],
+        title: "Implement sidebar alignment",
+        harness: "codex",
+        activity: "Editing",
+        needsApproval: false,
+        done: false,
+      },
+      {
+        id: "attention",
+        cwd: projects[0],
+        title: "Review interrupted work",
+        harness: "codex",
+        activity: "Needs review",
+        needsApproval: attentionCase === "warning",
+        done: false,
+        ...(attentionCase === "warning" ? {} : { issue: "failed" as const }),
+      },
+      ...(attentionCase === "multiple"
+        ? [
+            {
+              id: "approval",
+              cwd: projects[0],
+              title: "Approve next step",
+              harness: "codex" as const,
+              activity: "Needs permission",
+              needsApproval: true,
+              done: false,
+            },
+          ]
+        : []),
+    ]
+  : [];
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const badgeCount = Number(new URLSearchParams(location.search).get("badgeCount"));
 const expandedRail = new URLSearchParams(location.search).has("expandedRail");
@@ -75,6 +146,19 @@ function Fixture() {
           canGoForward={headerNavigation}
           onGoForward={() => setSelected("Forward")}
           sessions={history}
+          liveAgents={railAgents}
+          recentSessions={
+            railPolish
+              ? {
+                  history,
+                  live: history.map((session) => ({
+                    ...session,
+                    status: "done" as const,
+                    activityAt: session.updatedAt,
+                  })),
+                }
+              : undefined
+          }
           busySessionIds={new Set(history.slice(0, badgeCount || 6).map((session) => session.id))}
           recoveryControl={
             badgeCount ? (

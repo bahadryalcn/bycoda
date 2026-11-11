@@ -411,7 +411,7 @@ type Props = {
   ) => void | false | Promise<void | SessionOrganizationResult>;
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: (parentAdmission?: ParentAdmission) => void;
-  onDeleteQueuedMessage?: (messageId: string) => void;
+  onDeleteQueuedMessage?: (messageId: string) => import("../model/queueAction").QueueRemoval;
   onEditQueuedMessage?: (messageId: string, text: string, attachments: Attachment[]) => void;
   onQueuedMessageEditingChange?: (messageId?: string) => void;
   /** The queue in its new order, as ids; resolved against the live queue by the owner. */

@@ -13,6 +13,7 @@ import {
   queuedTargetSummary,
   reorderQueuedMessages,
   reorderSessionQueue,
+  restoreQueuedMessage,
   resolveFollowUpRoute,
   failedTurnQueueNotice,
   holdQueueAfterFailedTurn,
@@ -524,4 +525,33 @@ it("waits while the host runs the conversation or its turn has not arrived here"
   expect(canDispatchQueuedHead(session)).toBe(true);
   expect(canDispatchQueuedHead({ ...session, continuingElsewhere: true })).toBe(false);
   expect(canDispatchQueuedHead({ ...session, adoptedSyncConflict: true })).toBe(false);
+});
+
+describe("restoring a removed queue row", () => {
+  it("keeps concurrent additions and places the complete retained row before its next neighbour", () => {
+    const row = {
+      ...queued("restored"),
+      deliveryUnknown: true as const,
+      modelTarget: queuedModelTarget(chat()),
+    };
+    const next = restoreQueuedMessage(
+      [queued("new"), queued("a"), queued("c")],
+      row,
+      ["a", "b", "c"],
+      "b",
+    );
+    expect(next.map((entry) => entry.id)).toEqual(["new", "a", "restored", "c"]);
+    expect(next[2]).toBe(row);
+    expect(restoreQueuedMessage(next, row, ["a", "b", "c"], "b")).toBe(next);
+  });
+  it("uses a previous neighbour or bounded original position when neighbours have gone", () => {
+    expect(
+      restoreQueuedMessage([queued("a"), queued("new")], queued("r"), ["a", "b", "c"], "b").map(
+        (row) => row.id,
+      ),
+    ).toEqual(["a", "r", "new"]);
+    expect(
+      restoreQueuedMessage([], queued("r"), ["a", "b", "c"], "b").map((row) => row.id),
+    ).toEqual(["r"]);
+  });
 });

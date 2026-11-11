@@ -269,6 +269,15 @@ export function CrewRailSection({
               </Button>
               <span className="flex shrink-0 items-center gap-px @max-[140px]/rail:hidden!">
                 {/* Start is the rail's frequent action, visible at rest as before; More reveals. */}
+                <InlineMoreAction
+                  label={t("{p0} options", { p0: crew.name })}
+                  tooltip={t("More actions")}
+                  motion="none"
+                  type="button"
+                  data-no-drag
+                  expanded={menu?.kind === "crew" && menu.crewId === crew.id}
+                  onOpen={(anchor) => setMenu({ kind: "crew", crewId: crew.id, anchor })}
+                />
                 <InlineAction
                   reveal="always"
                   label={t("New work with {p0}", { p0: crew.name })}
@@ -281,15 +290,6 @@ export function CrewRailSection({
                 >
                   <Play className="icon-sm" strokeWidth={1.75} />
                 </InlineAction>
-                <InlineMoreAction
-                  label={t("{p0} options", { p0: crew.name })}
-                  tooltip={t("More actions")}
-                  motion="none"
-                  type="button"
-                  data-no-drag
-                  expanded={menu?.kind === "crew" && menu.crewId === crew.id}
-                  onOpen={(anchor) => setMenu({ kind: "crew", crewId: crew.id, anchor })}
-                />
               </span>
             </ActionHost>
           );

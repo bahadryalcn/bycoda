@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
+import { Button, type ButtonSize } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import type { AccountState } from "../model/accountState";
@@ -25,6 +25,7 @@ export type AccountMenuPresence = {
 };
 
 type Props = {
+  size?: ButtonSize;
   state: AccountState;
   presence?: AccountMenuPresence;
   onSignIn: () => void;
@@ -38,6 +39,7 @@ function userOf(state: AccountState): AccountAvatarUser | null {
 
 /** Sidebar account button and its menu: identity, availability, account pages, sign in/out. */
 export function AccountMenu({
+  size,
   state,
   presence,
   onSignIn,
@@ -104,6 +106,7 @@ export function AccountMenu({
   return (
     <>
       <Button
+        size={size}
         ref={trigger}
         iconOnly
         variant="ghost"

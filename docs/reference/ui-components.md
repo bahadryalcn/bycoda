@@ -154,6 +154,7 @@ Parts: DescriptionItem
 
 | Component | Use for | Not for | Replaces |
 | --- | --- | --- | --- |
+| [AnsiText](../../src/shared/ui/AnsiText.tsx) | Command, log or tool output that may carry terminal color codes. | Interactive terminals: TerminalView. Search excerpts: terminalText. Copy text: stripAnsi. |  |
 | [MatchText](../../src/shared/ui/MatchText.tsx) | Highlight why a row matched a search query in file pickers, search results and lists. | Search-in-document highlighting or markdown: do it in the renderer. Plain emphasis: a styled span. |  |
 | [MiddleTruncate](../../src/shared/ui/MiddleTruncate.tsx) | Paths, branches, model ids and file names in rows or chips where the end matters. | Prose or titles where the start matters: `truncate` class. Multi-line clamping: line-clamp. |  |
 | [ParticleText](../../src/shared/ui/ParticleText.tsx) | A session or view title whose text changes and should softly re-enter. | Ordinary static text or headings. Do not add continuous or canvas text effects. |  |

@@ -281,7 +281,21 @@ describe("Codex TOML subset", () => {
 
   it("rejects syntax it does not understand instead of guessing", () => {
     expect(() => parseTomlSubset('[mcp_servers.a]\ncommand = """\nnode\n"""')).toThrow();
-    expect(() => parseTomlSubset("[[mcp_servers]]\nname = 'x'")).toThrow();
+    expect(() => parseTomlSubset("[skills.config]\n[[skills.config]]")).toThrow();
+    expect(() => parseTomlSubset("[[skills.config]\nname = 'x'")).toThrow();
+  });
+
+  it("reads repeated skill tables and their nested settings without losing MCP tables", () => {
+    expect(
+      parseTomlSubset(
+        "[mcp_servers.clef]\ncommand = 'python'\n" +
+          "[[skills.config]]\npath = '/first'\n[skills.config.settings]\nenabled = false\n" +
+          "[[skills.config]]\npath = '/second'\n",
+      ),
+    ).toEqual({
+      mcp_servers: { clef: { command: "python" } },
+      skills: { config: [{ path: "/first", settings: { enabled: false } }, { path: "/second" }] },
+    });
   });
 });
 

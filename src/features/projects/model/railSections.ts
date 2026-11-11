@@ -4,18 +4,19 @@ import { notifyProjectPathsChanged, subscribeProjectPathsChanged } from "./recen
 const SECTION_ORDER_KEY = "bycoda.projectRailSectionOrder";
 const SECTION_COLLAPSE_KEY = "bycoda.projectRailSectionCollapse";
 
-export type CollapsibleRailSection = "groups" | "crews" | "projects";
+export type CollapsibleRailSection = "pinned" | "groups" | "crews" | "projects";
 
 export function loadRailSectionCollapse(): Record<CollapsibleRailSection, boolean> {
   try {
     const stored = JSON.parse(localStorage.getItem(SECTION_COLLAPSE_KEY) ?? "null");
     return {
+      pinned: stored?.pinned === true,
       groups: stored?.groups === true,
       crews: stored?.crews === true,
       projects: stored?.projects === true,
     };
   } catch {
-    return { groups: false, crews: false, projects: false };
+    return { pinned: false, groups: false, crews: false, projects: false };
   }
 }
 

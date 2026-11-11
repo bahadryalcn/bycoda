@@ -18,10 +18,16 @@ export function AssistantSessionControl(props: {
   cwd: string;
   management?: AssistantSessionManagement;
   local: boolean;
+  hasMessages: boolean;
 }) {
   return (
     <>
-      <SessionLifecycleControl sessionId={props.sessionId} cwd={props.cwd} local={props.local} />
+      <SessionLifecycleControl
+        sessionId={props.sessionId}
+        cwd={props.cwd}
+        local={props.local}
+        hasMessages={props.hasMessages}
+      />
       {props.local && props.management?.assistant && props.management.detachedAt === undefined ? (
         <LocalControl
           key={`${props.sessionId}:${props.management.jobId ?? props.management.supervisionId}`}

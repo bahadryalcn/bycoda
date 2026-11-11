@@ -25,6 +25,7 @@ vi.mock("../../source-control/hooks/useProjectBranches", () => ({
   }),
 }));
 
+import { saveProviderAccount } from "../../providers/model/providerAccounts";
 import { Composer, ComposerAction } from "./Composer";
 import { setHarnessModeLimits, type ComposerTurnOptions } from "../model/session";
 import { submitAfterProjectSync } from "../../../app/model/submissionAcceptance";
@@ -596,6 +597,36 @@ describe("a queue restored after a restart", () => {
   });
 });
 
+it("shows the queued model, saved account and effort in order", async () => {
+  saveProviderAccount({ id: "personal", provider: "claude", label: "Personal" });
+  await renderComposer(
+    {
+      queuedMessages: [
+        {
+          id: "q1",
+          text: "queued",
+          attachments: [],
+          modelTarget: {
+            harness: "claude",
+            model: "claude:test",
+            providerAccountId: "personal",
+            modelSettings: {},
+          },
+        },
+      ],
+    },
+    vi.fn(),
+  );
+  const label = container.querySelector("[data-queue-target]")!.textContent!;
+  expect(label).toContain(" · Personal");
+  expect(label).not.toContain("Claude Code");
+  const remove = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Remove queued message"]',
+  )!;
+  expect(remove).not.toBeNull();
+  expect(remove.getAttribute("data-button-variant")).toBe("ghost");
+});
+
 describe("reordering queued messages", () => {
   async function renderReorder(onReorder = vi.fn(), count = 3) {
     const queuedMessages = ["q1", "q2", "q3"]
@@ -654,8 +685,11 @@ describe("reordering queued messages", () => {
     expect(onReorder).not.toHaveBeenCalled();
   });
 
-  it("offers no handle for a single message", async () => {
-    await renderReorder(vi.fn(), 1);
-    expect(container.querySelector("[data-queue-handle]")).toBeNull();
+  it("keeps the same disabled handle for a single message", async () => {
+    const onReorder = await renderReorder(vi.fn(), 1);
+    expect(handle("q1")).not.toBeNull();
+    expect((handle("q1") as HTMLButtonElement).disabled).toBe(true);
+    key("q1", { key: "ArrowDown", altKey: true });
+    expect(onReorder).not.toHaveBeenCalled();
   });
 });

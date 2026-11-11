@@ -291,3 +291,62 @@ describe("settling an unconfirmed delivery from this computer", () => {
     expect(saved.status).toBe("paused");
   });
 });
+
+it("restores an explicitly removed row with a fresh identity and keeps the empty queue's pause", async () => {
+  let receipt!: Exclude<ReturnType<typeof current.removeUndoable>, false>;
+  await act(async () => {
+    const removed = current.removeUndoable("a");
+    if (!removed) throw new Error("removal failed");
+    receipt = removed;
+  });
+  expect(saved.messages).toEqual([]);
+  await act(async () => {
+    expect(await receipt.undo()).toBe(true);
+  });
+  expect(saved.messages).toHaveLength(1);
+  expect(saved.messages[0].id).not.toBe("a");
+  expect(saved.messages[0].text).toBe("task");
+  expect(saved.status).toBe("paused");
+});
+
+it("keeps a stable restoration identity when an undo synchronization fails and retries", async () => {
+  let receipt!: Exclude<ReturnType<typeof current.removeUndoable>, false>;
+  await act(async () => {
+    const removed = current.removeUndoable("a");
+    if (!removed) throw new Error("removal failed");
+    receipt = removed;
+  });
+  mocks.request.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => {
+    await expect(receipt.undo()).rejects.toThrow("offline");
+  });
+  const id = current.queue.messages[0]?.id;
+  expect(id).toBeTruthy();
+  await act(async () => {
+    expect(await receipt.undo()).toBe(true);
+  });
+  expect(saved.messages.map((row) => row.id)).toEqual([id]);
+});
+
+it.each(["chronological", "reverse"] as const)(
+  "keeps the original order across shared removals undone in %s order",
+  async (order) => {
+    await act(async () => {
+      current.enqueue({ id: "b", text: "b", attachments: [] });
+      current.enqueue({ id: "c", text: "c", attachments: [] });
+    });
+    const receipts: Exclude<ReturnType<typeof current.removeUndoable>, false>[] = [];
+    for (const id of ["a", "b", "c"])
+      await act(async () => {
+        const receipt = current.removeUndoable(id);
+        if (!receipt) throw new Error("removal failed");
+        receipts.push(receipt);
+      });
+    if (order === "reverse") receipts.reverse();
+    for (const receipt of receipts)
+      await act(async () => {
+        expect(await receipt.undo()).toBe(true);
+      });
+    expect(saved.messages.map((row) => row.text)).toEqual(["task", "b", "c"]);
+  },
+);

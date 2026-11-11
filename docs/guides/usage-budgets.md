@@ -13,6 +13,9 @@ The **Limits & budgets** view compares provider accounts in compact rows. Each r
 keeps its account identity, observation time, available quota windows, reset times,
 color menu and retry together. Failed refreshes keep the last known limits visible.
 
+Claude weekly-limit rejections mark the affected conversation as usage-limited.
+Desktop alerts show **Usage limit reached** and retain the provider's error detail.
+
 Grok shows the signed-in Grok Build CLI's plan quota in this view and the workspace
 footer. The used/remaining preference applies to its provider-reported credit usage
 percentage; the quota window and reset come from its current billing period.

@@ -25,7 +25,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - Mounted rail snapshots observe cross-window project and tab-group appearance storage keys, including removal/reset. Reuse unchanged collection identities while refreshing labels, colors and mascots.
 - Project identity, selected workspace and actual execution directory are different. Preserve worktree/remote identity, full paths and duplicate-name context.
 - Retain groups, ordering/pinning, selection, drafts, keyboard/context menus, drag/drop and compact/wide navigation capabilities.
-- Pins belong to ungrouped projects and to groups (`ProjectGroup.pinned`, listed first); a grouped project is never pinned and its old pin is pruned.
+- Pins belong only to ungrouped projects. Groups and linked workspaces have no pin action; a grouped project is never pinned and its old pin is pruned.
 - Remove/archive/delete/open are distinct operations with their own dirty/busy/count/confirmation/lock gates. UI filtering grants no new operation scope.
 - Compact flyout search filters that list without a second competing picker; keep per-project actions reachable.
 - A working project row (`data-project-working`) shows a translucent active tint with a light sweep (`projectRailRow.css`, `--ui-working-row-*` in `src/styles/index.css`) above custom grounds and state fills, below content. Reduced motion and `data-performance-no-shimmer` keep the static tint; the spinner, tooltip and accessible name still say "Working".
@@ -44,6 +44,8 @@ For shell identity/search changes, run `pnpm exec vitest run src/app/shell/Sideb
 Inspect compact/wide rail, keyboard context actions, full-path identity, hidden/locked projects and removal recovery using disposable data. Validate shared operation contracts at their Host/Native boundary when changed.
 
 ## Read when needed
+
+- [Owner decisions](references/decisions.md) for group pinning and move toggles.
 
 - [Workbench navigation](../../../docs/guides/workbench.md) for rail behavior.
 - [Managed workspaces](../feature-managed-workspaces/SKILL.md), [Sidebar](../feature-sessions-sidebar/SKILL.md), [Archive](../feature-archive/SKILL.md) for their operation contracts.

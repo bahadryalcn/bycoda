@@ -1,4 +1,8 @@
-import { canDispatchQueuedHead, reorderQueuedMessages } from "../../sessions/public/messageQueue";
+import {
+  canDispatchQueuedHead,
+  reorderQueuedMessages,
+  restoreQueuedMessage,
+} from "../../sessions/public/messageQueue";
 import { applyQueuedEdit } from "../../sessions/public/queuedMessageEdit";
 import { nextQueueStatus } from "./queueState";
 import type {
@@ -82,6 +86,24 @@ export function enqueueRemoteMessage(queue: RemoteQueue, message: RemoteQueueDra
     messages: [...queue.messages, message],
     // Adding work never releases a queue held for owner review.
     status: queue.status === "paused" || queue.status === "restored" ? queue.status : "active",
+  };
+}
+
+/** Restore an explicitly removed row without releasing an existing queue hold. */
+export function restoreRemoteMessage(
+  queue: RemoteQueue,
+  message: QueuedMessage,
+  originalIds: readonly string[],
+  originalId: string,
+  originalStatus: MessageQueueStatus | undefined,
+): RemoteQueue {
+  if (queue.messages.some((entry) => entry.id === message.id || entry.id === originalId))
+    return queue;
+  if (!canEnqueueRemoteMessage(queue, message)) throw new Error("Remote queue is full");
+  return {
+    ...queue,
+    messages: restoreQueuedMessage(queue.messages, message, originalIds, originalId),
+    status: queue.status ?? originalStatus ?? "restored",
   };
 }
 

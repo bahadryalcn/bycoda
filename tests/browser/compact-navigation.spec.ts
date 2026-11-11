@@ -4,6 +4,8 @@ async function installNavigationFixture(page: Page) {
   await page.addInitScript(() => {
     localStorage.clear();
     localStorage.setItem("bycoda.language", "en");
+    if (new URLSearchParams(location.search).has("railPolish"))
+      localStorage.setItem("bycoda.projectRailWidth", "320");
     Object.assign(window, {
       __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
       __TAURI_INTERNALS__: {
@@ -13,13 +15,47 @@ async function installNavigationFixture(page: Page) {
         },
         transformCallback: () => 1,
         invoke: async (command: string, args?: { method?: string }) => {
+          if (
+            command === "session_list_recent" &&
+            new URLSearchParams(location.search).has("railPolish")
+          )
+            return Array.from({ length: 9 }, (_, index) => ({
+              id: `discussion-${index}`,
+              cwd: "/fixture/bycoda",
+              harness: "codex",
+              model: "gpt-6.1",
+              runtimeMode: "supervised",
+              title:
+                index === 0
+                  ? "Review compact navigation and unified search"
+                  : `Product discussion ${index + 1}`,
+              createdAt: Date.now() - index * 60000,
+              updatedAt: Date.now() - index * 60000,
+            }));
+          if (command === "git_diff_stats")
+            return new URLSearchParams(location.search).has("railPolish")
+              ? { files: 3, additions: 364, deletions: 12 }
+              : { files: 0, additions: 0, deletions: 0 };
           if (command === "git_diff_index")
             return {
               repository: true,
               branch: "main",
-              files: [],
-              additions: 0,
-              deletions: 0,
+              files: new URLSearchParams(location.search).has("railPolish")
+                ? Array.from({ length: 3 }, (_, index) => ({
+                    path: `/fixture/file-${index}.ts`,
+                    relative: `file-${index}.ts`,
+                    status: "modified",
+                    additions: index === 0 ? 364 : 0,
+                    deletions: index === 0 ? 12 : 0,
+                    staged: false,
+                    unstaged: true,
+                  }))
+                : [],
+              additions: new URLSearchParams(location.search).has("railPolish") ? 364 : 0,
+              deletions: new URLSearchParams(location.search).has("railPolish") ? 12 : 0,
+              ahead: 0,
+              behind: 0,
+              upstream: null,
             };
           if (command === "git_branches") return { current: "main", detached: false, branches: [] };
           if (command === "git_worktrees") return { defaultRoot: "/fixture", worktrees: [] };
@@ -42,7 +78,39 @@ async function installNavigationFixture(page: Page) {
                 name,
                 cwd: `/fixture/${name}`,
               }));
-            if (args?.method === "crews.list") return { definitions: [], agents: [], runs: [] };
+            if (args?.method === "crews.list")
+              return {
+                definitions: new URLSearchParams(location.search).has("railPolish")
+                  ? [
+                      {
+                        id: "navigation-crew",
+                        name: "Product Team",
+                        projectId: "bycoda",
+                        updatedAt: 1,
+                        policy: {
+                          preset: "balanced",
+                          maxParallel: 2,
+                          maxAssignments: 8,
+                          maxRunMinutes: 30,
+                          allowUnknownCost: true,
+                          allowSubagents: false,
+                        },
+                        agents: [
+                          {
+                            id: "lead",
+                            name: "Lead",
+                            role: "coordinator",
+                            selection: "fixed",
+                            instructions: "Coordinate",
+                            candidates: [],
+                          },
+                        ],
+                      },
+                    ]
+                  : [],
+                agents: [],
+                runs: [],
+              };
             if (args?.method === "models.list") return { models: {}, errors: {} };
             return [];
           }
@@ -238,6 +306,8 @@ test("compact navigation keeps workspace tabs in place and stacks app tool short
         }
       }
       const initialTabs = await tabs.boundingBox();
+      const workspaceHeader = (await page.locator("[data-workspace-header]").boundingBox())!;
+      expect(workspaceHeader.y + workspaceHeader.height).toBeLessThanOrEqual(initialTabs!.y + 1);
       await tabNamed("Explorer").click();
       await expect(tabNamed("Explorer")).toHaveAttribute("aria-selected", "true");
       expect(await tabs.boundingBox()).toEqual(initialTabs);
@@ -519,5 +589,173 @@ test("session rows mark discussions that hold unsent composer text", async ({ pa
       theme === "light",
     );
     await sidebar.screenshot({ path: testInfo.outputPath(`session-draft-row-${theme}.png`) });
+  }
+});
+
+test("rail polish aligns sections and swaps row actions without losing identity", async ({
+  page,
+}, testInfo) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/compact-navigation.html?expandedRail&railPolish&badgeCount=8", {
+    waitUntil: "domcontentloaded",
+  });
+  const project = page.locator('[data-project-path="/fixture/service"]');
+  await expect(project).toBeVisible({ timeout: 90_000 });
+  const crewStart = page.getByRole("button", { name: "New work with Product Team", exact: true });
+  await expect(crewStart).toBeVisible();
+  const crewOptions = page.getByRole("button", { name: "Product Team options", exact: true });
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.mouse.move(width - 20, 900);
+      const headings = page.locator("[data-section-label][data-compact-rail]");
+      const positions: number[] = [];
+      for (const label of ["Working", "Pinned", "Groups", "Projects", "Last sessions", "Crews"]) {
+        const heading = headings.filter({ has: page.getByText(label, { exact: true }) }).first();
+        await expect(heading).toBeVisible();
+        const mark = heading.locator("[data-rail-section-mark]").first();
+        await expect(mark).toBeVisible();
+        const text = heading.getByText(label, { exact: true });
+        positions.push((await text.boundingBox())!.x);
+      }
+      expect(Math.max(...positions) - Math.min(...positions)).toBeLessThanOrEqual(1);
+      const stats = project.locator("[data-project-git]");
+      const options = project.locator("[data-project-options]");
+      const pin = project.locator("[data-project-pin]");
+      const avatar = project.locator(".project-card-logo");
+      await expect(stats).toHaveCSS("opacity", "1");
+      await expect(options).toHaveCSS("opacity", "0");
+      const avatarBounds = (await avatar.boundingBox())!;
+      const pinBounds = (await pin.boundingBox())!;
+      expect(
+        Math.abs(avatarBounds.x + avatarBounds.width / 2 - pinBounds.x - pinBounds.width / 2),
+      ).toBeLessThanOrEqual(1);
+      const rowBounds = (await project.boundingBox())!;
+      const statsBounds = (await stats.boundingBox())!;
+      expect(rowBounds.x + rowBounds.width - statsBounds.x - statsBounds.width).toBeLessThanOrEqual(
+        10,
+      );
+      await page.screenshot({ path: testInfo.outputPath(`rail-rest-${theme}-${width}.png`) });
+      await project.hover();
+      await expect(stats).toHaveCSS("opacity", "0");
+      await expect(options).toHaveCSS("opacity", "1");
+      await expect(pin).toHaveCSS("opacity", "1");
+      await expect(avatar).toHaveCSS("opacity", "0");
+      await page.screenshot({ path: testInfo.outputPath(`rail-hover-${theme}-${width}.png`) });
+      await crewStart.hover();
+      await expect(crewOptions).toHaveCSS("opacity", "1");
+      expect((await crewOptions.boundingBox())!.x).toBeLessThan((await crewStart.boundingBox())!.x);
+      await page.screenshot({ path: testInfo.outputPath(`crew-hover-${theme}-${width}.png`) });
+      const workspace = page.locator('[data-project-group="workspace"]');
+      const warning = workspace.locator('[aria-label^="Linked workspace file problem:"]');
+      await expect(warning).toBeVisible();
+      await warning.hover();
+      const workspaceRow = workspace.locator("[data-group-row]");
+      const workspaceBounds = (await workspaceRow.boundingBox())!;
+      const workspaceName = (await workspaceRow.locator("[data-action-primary]").boundingBox())!;
+      expect(workspaceName.width).toBeGreaterThanOrEqual(40);
+      for (const control of await workspaceRow.getByRole("button").all()) {
+        if (!(await control.isVisible())) continue;
+        const bounds = (await control.boundingBox())!;
+        expect(bounds.x).toBeGreaterThanOrEqual(workspaceBounds.x - 1);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(
+          workspaceBounds.x + workspaceBounds.width + 1,
+        );
+      }
+      await expect(
+        page.getByRole("tooltip").filter({ hasText: "Workspace file not found" }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath(`workspace-warning-${theme}-${width}.png`),
+      });
+      const workspaceToggle = workspace.locator("[data-group-row] > button[aria-expanded]");
+      await workspaceToggle.click();
+      await expect(workspaceToggle).toHaveAttribute("aria-expanded", "false");
+      await expect(warning).toBeVisible();
+      await page.mouse.move(width - 20, 900);
+      await page.screenshot({
+        path: testInfo.outputPath(`workspace-collapsed-${theme}-${width}.png`),
+      });
+      await workspaceToggle.click();
+      await expect(workspaceToggle).toHaveAttribute("aria-expanded", "true");
+      const lastSection = headings
+        .filter({ has: page.getByText("Last sessions", { exact: true }) })
+        .first()
+        .locator("..");
+      const rows = lastSection.getByRole("listitem");
+      expect(await rows.count()).toBeGreaterThan(0);
+      for (const row of await rows.all()) {
+        await page.mouse.move(width - 20, 900);
+        await page.keyboard.press("Escape");
+        await row.hover();
+        await expect(row.getByRole("button")).toHaveCount(1);
+        await expect(row.locator("[data-action-reveal]")).toHaveCount(0);
+      }
+      await page.mouse.move(width - 20, 900);
+      await page.keyboard.press("Escape");
+      const ordinaryGroup = page.locator('[data-project-group="product"] > [data-group-row]');
+      await ordinaryGroup.hover();
+      const groupOptions = ordinaryGroup.getByRole("button", {
+        name: "Product team group options",
+        exact: true,
+      });
+      const triggerBounds = (await groupOptions.boundingBox())!;
+      await groupOptions.click();
+      await expect(page.getByRole("menuitem", { name: "Lock group", exact: true })).toBeVisible();
+      await page.getByRole("menuitem", { name: "Changes", exact: true }).click();
+      const overview = page.getByRole("dialog", { name: "Product team git overview", exact: true });
+      await expect(overview).toBeVisible();
+      const overviewBounds = (await overview.boundingBox())!;
+      expect(overviewBounds.x).toBeGreaterThanOrEqual(triggerBounds.x);
+      expect(overviewBounds.x + overviewBounds.width).toBeLessThanOrEqual(width);
+      expect(overviewBounds.y).toBeGreaterThanOrEqual(0);
+      expect(overviewBounds.y).toBeLessThanOrEqual(triggerBounds.y + triggerBounds.height + 8);
+      expect(overviewBounds.y + overviewBounds.height).toBeGreaterThanOrEqual(triggerBounds.y - 8);
+      await page.screenshot({
+        path: testInfo.outputPath(`group-menu-overview-${theme}-${width}.png`),
+      });
+      await page.keyboard.press("Escape");
+    }
+  }
+});
+
+test("rail attention uses red for one failed item and yellow for warnings or several items", async ({
+  page,
+}, testInfo) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const attention of ["failed", "warning", "multiple"]) {
+    await page.goto(
+      `/tests/browser/compact-navigation.html?expandedRail&railPolish&attention=${attention}&badgeCount=8`,
+      { waitUntil: "domcontentloaded" },
+    );
+    const heading = page
+      .locator("[data-rail-section-header]")
+      .filter({ has: page.getByText("Working", { exact: true }) })
+      .first();
+    await expect(heading).toBeVisible();
+    const tone = attention === "failed" ? "danger" : "warning";
+    await expect(heading.locator(`[data-tone="${tone}"]`)).toHaveCount(1);
+    await expect(heading).not.toContainText("needs attention");
+    const count = attention === "multiple" ? "2" : "1";
+    await expect(heading.locator(`[data-tone="${tone}"]`)).toContainText(count);
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      for (const width of [1280, 800]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await page.mouse.move(width - 20, 900);
+        await page.screenshot({
+          path: testInfo.outputPath(`attention-${attention}-${theme}-${width}.png`),
+        });
+      }
+    }
   }
 });

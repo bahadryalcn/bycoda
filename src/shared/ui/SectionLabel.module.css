@@ -141,3 +141,55 @@
     display: none;
   }
 }
+
+/* One anatomy for rail captions, disclosure headers, split navigation headers
+   and Recovery's asynchronous primary action. Ordinary captions stay unchanged. */
+:global([data-rail-section-header]) {
+  padding-inline: var(--space-2);
+}
+:global(.bycoda-rail-status):has(:global([data-rail-section-header])) {
+  padding-inline: 0;
+}
+.root[data-compact-rail] .heading {
+  gap: var(--space-2);
+  padding-inline: var(--space-2);
+}
+.root[data-compact-rail] .heading:has(.toggle) {
+  gap: 0;
+  padding-inline: 0;
+}
+:global([data-rail-section-header]) :global([data-rail-section-primary]) {
+  border-width: 0;
+  padding-inline: var(--space-2);
+  gap: var(--space-2);
+}
+.root[data-compact-rail] .toggle[data-split] {
+  padding-inline-end: 0;
+}
+:global([data-rail-section-header]) :global([data-rail-section-mark]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
+}
+:global([data-rail-section-header]) :global([data-rail-section-mark]) svg {
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
+}
+:global([data-rail-section-header]) :global([data-rail-section-text]) {
+  font-size: var(--ui-font-body);
+  line-height: var(--ui-leading-body);
+  font-weight: 600;
+  color: var(--ui-text);
+}
+@container rail (max-width: 140px) {
+  :global([data-rail-section-header]) {
+    padding-inline: 0;
+  }
+  .root[data-compact-rail] .heading,
+  :global([data-rail-section-header]) :global([data-rail-section-primary]) {
+    padding-inline: 0;
+  }
+}

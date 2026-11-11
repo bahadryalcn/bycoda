@@ -1,7 +1,7 @@
 import { activeQueueFeedback, type QueueFeedback } from "./queueFeedback";
 import { canSendQueueMessage } from "../model/queueAction";
 import { useAcceptedQueueDeparture, type MessageQueueProps } from "./useAcceptedQueueDeparture";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import {
@@ -36,10 +36,24 @@ import {
   Play,
   Trash2,
 } from "../../../shared/ui/icons";
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+} from "react";
 import type { QueuedMessage } from "../model/session";
 import { steerAppliesModelSettings } from "../../../integrations/harness/core/registry";
-import { HARNESS_TITLE } from "../model/session";
+import { accountChoicesSnapshot, accountDisplayLabel } from "../model/accountModelChoices";
+import {
+  providerAccounts,
+  providerAccountLabel,
+  subscribeProviderAccounts,
+  supportsProviderAccounts,
+} from "../../providers/public/providerAccounts";
 import { hasMissingAttachment } from "../model/queuePersistence";
 import { useQueuedSteerRoute, useQueuedTargetSummary } from "../model/reactiveReads";
 import { moveQueuedMessage, runningTargetOf } from "../model/messageQueue";
@@ -48,7 +62,7 @@ import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import { announceDrag } from "../../../shared/lib/drag";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
 import { Button } from "../../../shared/ui/Button";
-import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
+import { QueueRemovalNotice } from "./QueueRemovalNotice";
 export function MessageQueue({
   sessionId,
   parentSessionId,
@@ -67,6 +81,7 @@ export function MessageQueue({
   onResume,
 }: MessageQueueProps) {
   const t = useT();
+  useSyncExternalStore(subscribeProviderAccounts, accountChoicesSnapshot, accountChoicesSnapshot);
   const delivery = useDeliveryProgress(sessionId);
   const pendingDelivery = deliveryIsPending(delivery?.stage);
   const departing = useAcceptedQueueDeparture(messages, delivery);
@@ -90,6 +105,23 @@ export function MessageQueue({
     [],
   );
   const [feedback, setFeedback] = useState<QueueFeedback>();
+  const [removals, setRemovals] = useState<
+    { id: string; undo: () => QueueAction; dispose?: () => void }[]
+  >([]);
+  const removalsRef = useRef(removals);
+  useLayoutEffect(() => {
+    removalsRef.current = removals;
+  }, [removals]);
+  useEffect(
+    () => () => {
+      for (const entry of removalsRef.current) entry.dispose?.();
+    },
+    [],
+  );
+  const dismissRemoval = useCallback((id: string) => {
+    removalsRef.current.find((entry) => entry.id === id)?.dispose?.();
+    setRemovals((current) => current.filter((entry) => entry.id !== id));
+  }, []);
   const queueClosed = useParentInputsClosed(parentSessionId);
   const queueOwner = useParentInputClosure({
     kind: "queue-edit",
@@ -110,9 +142,9 @@ export function MessageQueue({
     return () => window.clearTimeout(timer);
   }, [feedback]);
   const perform = async (id: string, action: (() => QueueAction) | undefined) => {
-    if (actionRef.current) return;
+    if (actionRef.current) return false;
     const admitted = queueOwner.admit();
-    if (!admitted) return;
+    if (!admitted) return false;
     return admitted.run(async () => {
       actionRef.current = true;
       setPendingAction(id);
@@ -123,15 +155,17 @@ export function MessageQueue({
             t("This queue action is unavailable. Reopen the conversation and try again."),
           );
         const result = await action();
-        if (result === false) return;
+        if (result === false) return false;
         if (id === "takeover" && typeof result === "object" && result?.message)
           setFeedback({ error: false, actionId: id, text: t(result.message) });
+        return true;
       } catch (error) {
         setFeedback({
           error: true,
           actionId: id,
           text: t(String(error).replace(/^Error: /, "")),
         });
+        return false;
       } finally {
         actionRef.current = false;
         setPendingAction(undefined);
@@ -147,6 +181,23 @@ export function MessageQueue({
       }),
     );
   };
+  const removeMessage = (id: string) =>
+    trigger(
+      `remove:${id}`,
+      onDelete
+        ? () => {
+            const result = onDelete(id);
+            if (result === false) return false;
+            if (result && typeof result === "object") {
+              setRemovals((current) => [
+                ...current,
+                { id: crypto.randomUUID(), undo: result.undo, dispose: result.dispose },
+              ]);
+            }
+            return true;
+          }
+        : undefined,
+    );
   const sortable = useAnimatedReorder(
     messages.map((message) => message.id),
     (ids) => {
@@ -238,7 +289,8 @@ export function MessageQueue({
     runningTarget ? { ...runningTarget, busy } : undefined,
     runningTarget ? steerAppliesModelSettings(runningTargetOf(runningTarget).harness) : false,
   );
-  if (messages.length === 0 && !pendingAction && !activeFeedback && !departing) return null;
+  if (messages.length === 0 && !pendingAction && !activeFeedback && !departing && !removals.length)
+    return null;
   const paused = (status === "paused" || status === "resuming") && messages.length > 0;
   const hold = queueState({
     status,
@@ -370,7 +422,7 @@ export function MessageQueue({
             </Button>
           </div>
         ) : null}
-        {!paused && !restored && !leaseHeld ? (
+        {messages.length > 0 && !paused && !restored && !leaseHeld ? (
           <div className="flex min-h-7 items-center gap-2 px-1 text-ui-caption" data-queue-summary>
             <ListEnd className="icon-sm shrink-0" />
             {messages.length > 0 ? <DeliveryProgressIndicator sessionId={sessionId} /> : null}
@@ -409,13 +461,22 @@ export function MessageQueue({
             const route = attachmentGone ? "join" : steerRoute(message);
             const target = message.modelTarget;
             const summary = target ? targetSummary(target) : undefined;
+            const accounts =
+              target && supportsProviderAccounts(target.harness)
+                ? providerAccounts(target.harness)
+                : [];
+            const account = accounts.find(
+              (account) => account.id === (target?.providerAccountId ?? "default"),
+            );
+            const accountLabel =
+              target && supportsProviderAccounts(target.harness)
+                ? account
+                  ? accountDisplayLabel(accounts, account)
+                  : providerAccountLabel(target.harness, target.providerAccountId)
+                : undefined;
             const targetLabel =
               target && summary
-                ? [
-                    HARNESS_TITLE[target.harness],
-                    summary.model,
-                    summary.effort && t(summary.effort),
-                  ]
+                ? [summary.model, accountLabel, summary.effort && t(summary.effort)]
                     .filter(Boolean)
                     .join(" · ")
                 : undefined;
@@ -435,44 +496,42 @@ export function MessageQueue({
                 ref={(node) => sortable.setItemRef(message.id, node)}
                 className="reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-ui-caption data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg"
               >
-                {messages.length > 1 ? (
-                  <Button
-                    iconOnly
-                    label={t("Reorder queued message")}
-                    disabled={queueClosed || !!pendingAction || pendingDelivery}
-                    variant="ghost"
-                    type="button"
-                    data-queue-handle={message.id}
-                    tooltip={t("Drag to reorder")}
-                    shortcut="Alt+↑ / Alt+↓"
-                    aria-label={t("Reorder queued message")}
-                    aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                    onPointerDown={(event) => {
-                      if (event.button !== 0) return;
-                      if (dragAdmission.current && !dragAdmission.current.ended) return;
-                      const admitted = queueOwner.admit();
-                      if (!admitted) return;
-                      // This may synchronously finish the previous settling
-                      // drag. Its callback must still see its original ticket.
-                      if (sortable.onItemPointerDown(message.id, event) !== true) {
-                        admitted.finish();
-                        return;
-                      }
-                      dragAdmission.current = {
-                        admission: admitted,
-                        identity: queueOwner.identity(),
-                        committed: false,
-                        ended: false,
-                      };
-                    }}
-                    onKeyDown={(event) => moveByKey(event, message.id, index)}
-                    className="shrink-0"
-                  >
-                    <GripVertical className="icon-sm" />
-                  </Button>
-                ) : (
-                  <ListEnd className="icon-sm shrink-0" />
-                )}
+                <Button
+                  iconOnly
+                  label={t("Reorder queued message")}
+                  disabled={
+                    messages.length < 2 || queueClosed || !!pendingAction || pendingDelivery
+                  }
+                  variant="ghost"
+                  type="button"
+                  data-queue-handle={message.id}
+                  tooltip={t("Drag to reorder")}
+                  shortcut="Alt+↑ / Alt+↓"
+                  aria-label={t("Reorder queued message")}
+                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                  onPointerDown={(event) => {
+                    if (messages.length < 2 || event.button !== 0) return;
+                    if (dragAdmission.current && !dragAdmission.current.ended) return;
+                    const admitted = queueOwner.admit();
+                    if (!admitted) return;
+                    // This may synchronously finish the previous settling
+                    // drag. Its callback must still see its original ticket.
+                    if (sortable.onItemPointerDown(message.id, event) !== true) {
+                      admitted.finish();
+                      return;
+                    }
+                    dragAdmission.current = {
+                      admission: admitted,
+                      identity: queueOwner.identity(),
+                      committed: false,
+                      ended: false,
+                    };
+                  }}
+                  onKeyDown={(event) => moveByKey(event, message.id, index)}
+                  className="shrink-0"
+                >
+                  <GripVertical className="icon-sm" />
+                </Button>
                 <div className="min-w-0 py-1">
                   <OverflowTooltip label={label}>
                     <div className="truncate text-(--ui-text-secondary)">{label}</div>
@@ -493,6 +552,7 @@ export function MessageQueue({
                       data-queue-target
                     >
                       <HarnessIcon harness={target.harness} className="size-3 shrink-0" />
+                      <span aria-hidden="true">·</span>
                       <span className="truncate" title={t("Queued for {p0}", { p0: targetLabel })}>
                         {targetLabel}
                       </span>
@@ -552,22 +612,29 @@ export function MessageQueue({
                   >
                     <Pencil className="icon-sm" />
                   </Button>
-                  <Tooltip label={t("Remove queued message")}>
-                    <ConfirmMorph
-                      label={<span className="sr-only">{t("Remove")}</span>}
-                      icon={<Trash2 className="icon-sm" />}
-                      prompt={t("Remove queued message")}
-                      disabled={queueClosed || !!pendingAction || pendingDelivery}
-                      onConfirm={() => {
-                        mutateParentInput(queueOwner, () => onDelete?.(message.id));
-                      }}
-                    />
-                  </Tooltip>
+                  <Button
+                    variant="ghost"
+                    iconOnly
+                    label={t("Remove queued message")}
+                    disabled={queueClosed || !!pendingAction || pendingDelivery}
+                    onClick={() => removeMessage(message.id)}
+                  >
+                    <Trash2 className="icon-sm" />
+                  </Button>
                 </div>
               </div>
             );
           })}
         </div>
+        {removals.map((entry) => (
+          <QueueRemovalNotice
+            key={entry.id}
+            id={entry.id}
+            onUndo={() => perform(`undo:${entry.id}`, entry.undo).then((value) => value === true)}
+            onDismiss={dismissRemoval}
+            disabled={queueClosed || !!pendingAction || pendingDelivery}
+          />
+        ))}
         {!delivery && activeFeedback?.error ? (
           <InlineError className="py-1">{activeFeedback.text}</InlineError>
         ) : null}
@@ -590,7 +657,7 @@ export function MessageQueue({
             onEdit?.(editingMessage.id, text, attachments);
             setEditingId(undefined);
           }}
-          onRemove={() => mutateParentInput(queueOwner, () => onDelete?.(editingMessage.id))}
+          onRemove={() => removeMessage(editingMessage.id)}
           onCancel={cancelEdit}
         />
       ) : null}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newSession, type Session } from "../../sessions/model/session";
+import { newSession, type Session, type QueuedMessage } from "../../sessions/model/session";
 import {
   EMPTY_REMOTE_QUEUE,
   REMOTE_QUEUE_MAX_BYTES,
@@ -12,6 +12,7 @@ import {
   queueSessionFields,
   releaseRemoteQueue,
   removeRemoteMessage,
+  restoreRemoteMessage,
   reorderRemoteMessages,
   sentRemoteMessage,
   setRemoteEditing,
@@ -270,5 +271,48 @@ describe("waiting for a desktop's turn", () => {
     expect([0, 1, 2, 3, 4].map(leaseRetryDelay)).toEqual([2_000, 4_000, 8_000, 16_000, 32_000]);
     expect(leaseRetryDelay(5)).toBe(LEASE_RETRY_MAX_MS);
     expect(leaseRetryDelay(50)).toBe(LEASE_RETRY_MAX_MS);
+  });
+});
+
+describe("undoing removed remote messages", () => {
+  it("restores the saved row between surviving anchors without losing concurrent rows or metadata", () => {
+    const removed: QueuedMessage = {
+      ...draft("b-new"),
+      text: "original draft",
+      deliveryUnknown: true,
+      modelTarget: {
+        harness: "claude" as const,
+        model: "opus",
+        providerAccountId: "personal",
+        modelSettings: { effort: "medium" },
+      },
+      attachments: [
+        {
+          id: "file",
+          name: "notes.txt",
+          path: "/notes.txt",
+          mimeType: "text/plain",
+          kind: "file",
+          size: 5,
+        },
+      ],
+    };
+    const current = { ...queueOf("a", "concurrent", "c"), status: "paused" as const };
+    const next = restoreRemoteMessage(current, removed, ["a", "b", "c"], "b", "active");
+    expect(next.messages.map((row) => row.id)).toEqual(["a", "concurrent", "b-new", "c"]);
+    expect(next.messages[2]).toEqual(removed);
+    expect(next.status).toBe("paused");
+    expect(restoreRemoteMessage(next, removed, ["a", "b", "c"], "b", "active")).toBe(next);
+  });
+
+  it("restores the last removed row's original hold and rejects a full queue", () => {
+    const row = draft("restored");
+    expect(restoreRemoteMessage(EMPTY_REMOTE_QUEUE, row, ["old"], "old", "restored").status).toBe(
+      "restored",
+    );
+    const full = queueOf(...Array.from({ length: 100 }, (_, i) => String(i)));
+    expect(() => restoreRemoteMessage(full, row, ["old"], "old", "paused")).toThrow(
+      "Remote queue is full",
+    );
   });
 });

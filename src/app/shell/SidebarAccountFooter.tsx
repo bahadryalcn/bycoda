@@ -7,12 +7,11 @@ import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { Settings } from "../../shared/ui/icons";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
+import styles from "./SidebarAccountFooter.module.css";
 
 /**
- * Bottom of the sidebar: account (avatar with availability dot), Settings and the docked voice
- * companion on the left, the update icon (only while an update waits) on the right. Feedback and the GitHub project links live
- * in the account menu and Settings. `compact` stacks account, Settings and the update icon for the
- * narrow rail.
+ * Voice first, repository/update actions next, then Settings and account at the edge.
+ * `compact` preserves the same order vertically within the existing narrow rail.
  */
 export function SidebarAccountFooter({
   compact = false,
@@ -29,6 +28,7 @@ export function SidebarAccountFooter({
   const settingsShortcut = useKeybindingShortcut("App: Settings");
   const account = (
     <AccountMenu
+      size="lg"
       state={state}
       presence={{
         hidden: presence.hidden,
@@ -47,6 +47,7 @@ export function SidebarAccountFooter({
   const settings = (
     <Button
       iconOnly
+      size="lg"
       variant="ghost"
       motion="none"
       label={t("Settings")}
@@ -55,33 +56,18 @@ export function SidebarAccountFooter({
       onClick={onOpenSettings}
       disabled={!onOpenSettings}
     >
-      <Settings className="icon-md" aria-hidden />
+      <Settings className="icon-lg" aria-hidden />
     </Button>
   );
-  if (compact)
-    return (
-      <div
-        data-sidebar-account-footer="compact"
-        className="flex w-full shrink-0 flex-col items-center gap-1 py-1.5"
-      >
-        {account}
-        {settings}
-        <VoiceLauncherSlot compact />
-        <SidebarUpdateFooter icon />
-      </div>
-    );
   return (
-    <div
-      data-sidebar-account-footer
-      className="flex shrink-0 items-center justify-between gap-1 p-2"
-    >
-      <div className="flex min-w-0 items-center gap-1">
-        {account}
-        {settings}
-        <VoiceLauncherSlot />
-      </div>
-      <div className="flex min-w-0 items-center gap-1">
-        <SidebarUpdateFooter icon />
+    <div data-sidebar-account-footer={compact ? "compact" : ""} className={styles.footer}>
+      <VoiceLauncherSlot compact={compact} />
+      <div className={styles.actions}>
+        <SidebarUpdateFooter repositoryPrompt icon compact={compact} />
+        <div className={styles.personal}>
+          {settings}
+          {account}
+        </div>
       </div>
     </div>
   );

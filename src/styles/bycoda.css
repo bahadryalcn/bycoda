@@ -643,6 +643,56 @@ html.theme-light .project-sigil {
 .bycoda-rail-tools > button > span {
   font-size: 12px;
 }
+/* Keep the collapsed rail width; give its navigation the larger shared targets. */
+@container rail (width <= 140px) {
+  .bycoda-rail-tools:not(.bycoda-rail-tools--footer) > button,
+  .bycoda-rail-brand [data-rail-search],
+  .bycoda-project-rail [data-rail-section-header],
+  .bycoda-project-rail [data-rail-section-header] [data-rail-section-primary] {
+    block-size: var(--ui-control-height-lg);
+    min-block-size: var(--ui-control-height-lg);
+  }
+  .bycoda-rail-tools:not(.bycoda-rail-tools--footer) > button,
+  .bycoda-rail-brand [data-rail-search] {
+    padding-inline: var(--space-2);
+  }
+  .bycoda-project-rail [data-rail-section-header] [data-rail-section-primary] {
+    inline-size: var(--ui-control-height-lg);
+    max-inline-size: 100%;
+  }
+  .bycoda-rail-visit-nav button:last-child {
+    inline-size: var(--ui-control-height-lg);
+    block-size: min(var(--ui-control-height-lg), calc(var(--ui-control-height-compact) + 0.5rem));
+    min-block-size: min(
+      var(--ui-control-height-lg),
+      calc(var(--ui-control-height-compact) + 0.5rem)
+    );
+  }
+  .bycoda-rail-tools:not(.bycoda-rail-tools--footer) > button > svg,
+  .bycoda-rail-brand [data-rail-search] svg,
+  .bycoda-rail-visit-nav button:last-child svg,
+  .bycoda-project-rail [data-rail-section-header] [data-rail-section-mark],
+  .bycoda-project-rail [data-rail-section-header] [data-rail-section-mark] svg {
+    inline-size: var(--ui-icon-lg);
+    block-size: var(--ui-icon-lg);
+  }
+}
+
+/* The workspace-only compact rail has its own entry point and no rail container. */
+[data-compact-rail-actions] > button,
+[data-compact-project-rail] [data-rail-section-header],
+[data-compact-project-rail] [data-rail-section-primary] {
+  inline-size: var(--ui-control-height-lg);
+  max-inline-size: 100%;
+  block-size: var(--ui-control-height-lg);
+  min-block-size: var(--ui-control-height-lg);
+}
+[data-compact-rail-actions] > button svg,
+[data-compact-project-rail] [data-rail-section-mark],
+[data-compact-project-rail] [data-rail-section-mark] svg {
+  inline-size: var(--ui-icon-lg);
+  block-size: var(--ui-icon-lg);
+}
 
 html.theme-light {
   --glass-blur: 8px;

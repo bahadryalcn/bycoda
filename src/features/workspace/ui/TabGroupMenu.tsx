@@ -5,6 +5,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import {
   AppWindow,
   ImagePlus,
+  Pencil,
   SquarePlus,
   Trash2,
   Ungroup,
@@ -292,6 +293,7 @@ export function TabGroupMenu({
       </SectionLabel>
       <div className="mb-3">
         <ColorSwatchRow
+          className="grid grid-cols-5 justify-items-center gap-1"
           colors={TAB_GROUP_COLORS}
           colorIndex={colorIndex}
           customColor={customColor}
@@ -368,8 +370,8 @@ export function TabGroupMenu({
         <>
           <TextField
             fieldClassName="min-w-0 flex-1"
-            hideLabel
             label={t("Group name")}
+            startAdornment={<Pencil className="icon-sm" strokeWidth={1.75} />}
             ref={input}
             value={name}
             onChange={(e) => setName(e.target.value)}

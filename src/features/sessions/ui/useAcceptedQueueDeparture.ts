@@ -8,7 +8,7 @@ import type {
   QueuedMessage,
 } from "../model/session";
 import type { ParentAdmission } from "../data/parentInputClosure";
-import type { QueueAction } from "../model/queueAction";
+import type { QueueAction, QueueRemoval } from "../model/queueAction";
 
 /** Only animate a row when this mounted queue observed its authoritative acceptance. */
 export function useAcceptedQueueDeparture(messages: QueuedMessage[], delivery?: DeliveryProgress) {
@@ -61,7 +61,7 @@ export type MessageQueueProps = {
     runningModelTarget?: ModelTarget;
   };
   steerSupported?: boolean;
-  onDelete?: (messageId: string) => void;
+  onDelete?: (messageId: string) => QueueRemoval;
   onEdit?: (messageId: string, text: string, attachments: Attachment[]) => void;
   onEditingChange?: (messageId?: string) => void;
   onReorder?: (messageIds: string[], parentAdmission?: ParentAdmission) => void;

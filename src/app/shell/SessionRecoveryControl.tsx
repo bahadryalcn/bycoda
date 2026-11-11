@@ -53,11 +53,13 @@ export function SessionRecoveryControl({
   };
   return (
     <ActionHost
+      data-rail-section-header
       className={`recovery-rail-row ${RAIL_SECTION_HEADER}`}
       aria-busy={pending}
       style={{ "--recovery-count-width": `${String(count).length}ch` } as CSSProperties}
     >
       <Button
+        data-rail-section-primary
         variant="item"
         motion="none"
         size="sm"
@@ -70,8 +72,13 @@ export function SessionRecoveryControl({
         disabled={pending}
         onClick={onOpen}
       >
-        <RotateCcw className="icon-sm shrink-0" aria-hidden="true" />
-        <span className="recovery-rail-label min-w-0 flex-1 truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden">
+        <span data-rail-section-mark aria-hidden="true">
+          <RotateCcw className="icon-sm shrink-0" />
+        </span>
+        <span
+          data-rail-section-text
+          className="recovery-rail-label min-w-0 flex-1 truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden"
+        >
           {label}
         </span>
         {count > 0 ? (

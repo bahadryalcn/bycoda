@@ -53,11 +53,14 @@ it("shows all 32 choices and retains the selected icon", () => {
   expect(onPick).toHaveBeenLastCalledWith(null);
 });
 it("filters categories without changing the persisted selection", () => {
-  const select = container.querySelector("select")!;
-  act(() => {
-    select.value = "Creative";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  const select = container.querySelector<HTMLButtonElement>(
+    '[aria-label^="Project icon category:"]',
+  )!;
+  act(() => select.click());
+  const creative = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (option) => option.textContent?.trim() === "Creative",
+  )!;
+  act(() => creative.click());
   expect(choices()).toHaveLength(4);
   expect(container.textContent).toContain("Security");
   expect(onPick).not.toHaveBeenCalled();

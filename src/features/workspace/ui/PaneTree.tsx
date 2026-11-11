@@ -144,7 +144,10 @@ type Shared = {
     target: SessionFolderTarget,
   ) => void | Promise<void | SessionOrganizationResult>;
   onResumeProviderSession?: (sessionId: string) => void;
-  onDeleteQueuedMessage: (sessionId: string, messageId: string) => void;
+  onDeleteQueuedMessage: (
+    sessionId: string,
+    messageId: string,
+  ) => import("../../sessions").QueueRemoval;
   onEditQueuedMessage: (
     sessionId: string,
     messageId: string,

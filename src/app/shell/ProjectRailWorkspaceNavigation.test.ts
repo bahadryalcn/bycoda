@@ -300,3 +300,22 @@ it("narrows the listed projects by name or group without touching the saved list
   expect(listed()).toEqual([]);
   expect(host.textContent).toContain("No projects found");
 });
+
+it("keeps workspace Changes reachable from the row menu when shortcuts cannot fit", async () => {
+  await render();
+  const opened = vi.fn();
+  window.addEventListener(OPEN_PROJECT_CHANGES_EVENT, opened);
+  try {
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[aria-label="Wallet group options"]')!.click(),
+    );
+    const changes = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Changes",
+    )!;
+    expect(changes).toBeDefined();
+    await act(async () => changes.click());
+    expect(opened.mock.calls[0][0].detail).toBe("G:/wallet");
+  } finally {
+    window.removeEventListener(OPEN_PROJECT_CHANGES_EVENT, opened);
+  }
+});

@@ -168,7 +168,6 @@ import { useRemoteConnection } from "../../features/connections/model/useRemoteC
 import { useProjectMenu, type ProjectMenuMove } from "./useProjectMenu";
 import { sidePaneMaxWidth } from "./sidePaneWidth";
 import { GroupGitPopover } from "../../features/projects/ui/GroupGitPopover";
-import { ProjectGroupPinAction } from "../../features/projects/ui/ProjectGroupPinAction";
 import {
   projectGitChange,
   projectGitChangeSpoken,
@@ -806,11 +805,17 @@ export function ProjectRail({
             }))
       }
       onToggleLock={() => projectMenu.toggleGroupLock(group.id)}
-      onOpenGroupMenu={(x, y) =>
-        projectMenu.openGroupMenu(group.id, x, y, {
-          up: () => sortableGroups.moveBy(group.id, -1),
-          down: () => sortableGroups.moveBy(group.id, 1),
-        })
+      onOpenGroupMenu={(x, y, onOpenGitOverview) =>
+        projectMenu.openGroupMenu(
+          group.id,
+          x,
+          y,
+          {
+            up: () => sortableGroups.moveBy(group.id, -1),
+            down: () => sortableGroups.moveBy(group.id, 1),
+          },
+          onOpenGitOverview,
+        )
       }
       groupLabels={groupLabels}
       groupColors={groupColors}
@@ -857,6 +862,8 @@ export function ProjectRail({
       pinnedProjects.length > 0 ? (
         <ProjectSection
           label={t("Pinned")}
+          collapsed={rail.collapsed.pinned}
+          onToggleCollapsed={() => rail.toggleCollapsed("pinned")}
           items={pinnedProjects}
           muteStatuses={muteStatuses}
           nameCollisions={nameCollisions}
@@ -1765,7 +1772,7 @@ function ProjectGroupSection({
   onReorder: (ids: string[]) => void;
   onToggleCollapsed: () => void;
   onToggleLock: () => void;
-  onOpenGroupMenu: (x: number, y: number) => void;
+  onOpenGroupMenu: (x: number, y: number, onOpenGitOverview?: () => void) => void;
   groupLabels: Record<string, string>;
   groupColors: Record<string, number>;
   groupCustomColors: Record<string, string>;
@@ -1809,13 +1816,29 @@ function ProjectGroupSection({
   );
   const [overviewOpen, setOverviewOpen] = useState(false);
   const gitAnchor = useRef<HTMLButtonElement>(null);
+  const groupOptionsAnchor = useRef<HTMLButtonElement>(null);
+  const [overviewFromMenu, setOverviewFromMenu] = useState(false);
   const gitTitle =
     gitSummary.known > 0
       ? `${gitSummary.dirty} of ${gitSummary.local} ${gitSummary.local === 1 ? "project has" : "projects have"} uncommitted changes`
       : "Git overview";
+  const openGitOverview = (fromMenu = false) => {
+    if (workspaceRoot)
+      window.dispatchEvent(new CustomEvent(OPEN_PROJECT_CHANGES_EVENT, { detail: workspaceRoot }));
+    else {
+      setOverviewFromMenu(fromMenu);
+      setOverviewOpen(true);
+    }
+  };
   const openMenu = (target: HTMLElement, x?: number, y?: number) => {
     const rect = target.getBoundingClientRect();
-    onOpenGroupMenu(x ?? rect.left, y ?? rect.bottom);
+    onOpenGroupMenu(
+      x ?? rect.left,
+      y ?? rect.bottom,
+      !locked && (localPaths.length > 0 || !!workspaceRoot)
+        ? () => openGitOverview(true)
+        : undefined,
+    );
   };
 
   return (
@@ -1832,6 +1855,9 @@ function ProjectGroupSection({
     >
       <ActionHost
         selected={workspaceSelected}
+        hoverReveal
+        data-group-row
+        data-group-overview-open={overviewOpen || undefined}
         className={`project-reorder-item group relative flex h-(--ui-control-height-compact) items-stretch rounded-md px-2 text-content @max-[140px]/rail:px-0 ${RAIL_DRAG_HANDLE}`}
         ground={railBackgroundColor(loadRailBackgrounds(group.id).header)}
         aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
@@ -1903,7 +1929,10 @@ function ProjectGroupSection({
           </div>
         </Button>
         {/* The name keeps a readable minimum while hover reveals the group actions beside it. */}
-        <div className="flex min-w-12 flex-1 items-center gap-1.5 @max-[140px]/rail:hidden">
+        <div
+          data-group-labels
+          className="flex min-w-0 flex-1 items-center gap-1.5 @max-[140px]/rail:hidden"
+        >
           {workspaceRoot && !locked ? (
             <Button
               variant="ghost"
@@ -1919,19 +1948,20 @@ function ProjectGroupSection({
               // The name is part of the drag handle; the click that ends a drag is swallowed above.
               onClick={() => onSelect(workspaceRoot)}
               size="sm"
-              // With its 1px border, this starts the name where a plain group's `ps-1.5` label does.
-              className="min-w-8 flex-1 justify-start ps-1.25 text-left"
+              // With its 1px border, this starts the name where a plain group's `ps-1` label does.
+              className="min-w-8 flex-1 justify-start ps-0.75 text-left"
             >
               <span className={nameClassName}>{group.name}</span>
             </Button>
           ) : (
-            <span className={`${nameClassName} ps-1.5`}>{group.name}</span>
+            <span className={`${nameClassName} ps-1`}>{group.name}</span>
           )}
           {group.workspaceFile && !locked ? (
             <Tooltip label={t("Workspace")}>
               <span
                 role="img"
                 aria-label={t("Workspace")}
+                data-group-workspace-mark
                 className="grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[200px]/rail:hidden"
               >
                 <FolderTree className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
@@ -1953,18 +1983,23 @@ function ProjectGroupSection({
             </Tooltip>
           ) : null}
         </div>
-        {/* At rest the workspace mark and the change count sit at the row's end, in the
-            same column as the project rows' Git marks: only the options slot is reserved.
-            The other actions take no width until hover, focus or selection. */}
+        {/* Status shares the trailing column with hover actions. */}
         {gitSummary.dirty > 0 ? (
           <Tooltip label={group.name} details={[gitTitle]}>
-            <Badge variant="count" size="xs" className="my-auto shrink-0 @max-[140px]/rail:hidden">
+            <Badge
+              variant="count"
+              size="xs"
+              data-group-git
+              className="my-auto shrink-0 @max-[140px]/rail:hidden"
+            >
               {gitSummary.dirty}
             </Badge>
           </Tooltip>
         ) : null}
-        <div className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden">
-          <ProjectGroupPinAction group={group} />
+        <div
+          data-group-actions
+          className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden!"
+        >
           <div data-action-slot="collapse" className="flex items-center gap-0.5">
             {group.workspaceFile && !locked && !linkStatus ? (
               <Tooltip label={t("Linked to {p0}", { p0: group.workspaceFile })} wide>
@@ -1982,8 +2017,8 @@ function ProjectGroupSection({
                 label={t("{p0} git overview, {p1}", { p0: group.name, p1: gitTitle })}
                 tooltip={group.name}
                 tooltipDetails={[gitTitle]}
-                motion="none"
                 ref={gitAnchor}
+                motion="none"
                 type="button"
                 data-no-drag
                 aria-label={t("{p0} git overview, {p1}", { p0: group.name, p1: gitTitle })}
@@ -1992,11 +2027,8 @@ function ProjectGroupSection({
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
-                  if (workspaceRoot) {
-                    window.dispatchEvent(
-                      new CustomEvent(OPEN_PROJECT_CHANGES_EVENT, { detail: workspaceRoot }),
-                    );
-                  } else setOverviewOpen((value) => !value);
+                  if (overviewOpen) setOverviewOpen(false);
+                  else openGitOverview();
                 }}
                 className="shrink-0"
               >
@@ -2030,6 +2062,7 @@ function ProjectGroupSection({
             </InlineAction>
           </div>
           <InlineAction
+            ref={groupOptionsAnchor}
             label={t("{p0} group options", { p0: group.name })}
             tooltip={t("Group options")}
             tooltipDetails={[group.name]}
@@ -2050,7 +2083,7 @@ function ProjectGroupSection({
         </div>
         {overviewOpen && !locked && !workspaceRoot ? (
           <GroupGitPopover
-            anchor={gitAnchor}
+            anchor={overviewFromMenu ? groupOptionsAnchor : gitAnchor}
             name={group.name}
             paths={workspaceItems.map((item) => item.path)}
             onSelect={(path) => {
@@ -2147,7 +2180,7 @@ function ProjectCard({
   selected: boolean;
   busy: boolean;
   statsEnabled: boolean;
-  /** Group members leave both out: only the group itself is pinned. */
+  /** Group members leave both out: only ungrouped projects can be pinned. */
   pinned?: boolean;
   sortable: SortableHandle;
   onSelect: (path: string) => void;
@@ -2236,6 +2269,7 @@ function ProjectCard({
     <ActionHost
       ref={(el) => sortable.setItemRef(item.path, el)}
       selected={selected || multiSelected}
+      hoverReveal
       data-project-path={item.path}
       ground={railBackgroundColor(loadRailBackgrounds(key).header)}
       data-project-working={busy || undefined}
@@ -2321,6 +2355,7 @@ function ProjectCard({
         </span>
       ) : null}
       <Button
+        data-project-primary
         variant="item"
         type="button"
         tooltip={name}
@@ -2332,10 +2367,11 @@ function ProjectCard({
         onFocus={focusHint ? undefined : (event) => event.preventDefault()}
         aria-label={cardAriaLabel}
         aria-current={selected ? "true" : undefined}
-        className={`flex min-w-0 flex-1 cursor-default items-center gap-2 text-left ${multi?.active ? "" : showReconnect ? "pe-12" : "pe-6"} @max-[140px]/rail:justify-center @max-[140px]/rail:pe-0!`}
+        className={`project-card-primary flex min-w-0 flex-1 cursor-default items-center gap-2 border-0 ps-1 text-left ${showReconnect ? "pe-7" : "pe-0"} @max-[140px]/rail:justify-center @max-[140px]/rail:px-0!`}
       >
         <div
-          className={`project-card-logo grid size-4 shrink-0 place-items-center ${multi?.active || !onTogglePin ? "" : "transition-opacity motion-reduce:transition-none group-hover:opacity-0 group-focus-within:opacity-0 group-data-[selected]:opacity-0 [@media(hover:none)]:opacity-0 [@media(pointer:coarse)]:opacity-0"} @max-[140px]/rail:opacity-100!`}
+          data-project-pinnable={!multi?.active && !!onTogglePin ? "" : undefined}
+          className="project-card-logo grid size-4 shrink-0 place-items-center @max-[140px]/rail:opacity-100!"
         >
           {logoPath && !busy ? (
             <ProjectLogoIcon
@@ -2369,15 +2405,6 @@ function ProjectCard({
             {context}
           </span>
         ) : null}
-        {change ? (
-          <span
-            className="project-card-stats shrink-0 @max-[140px]/rail:hidden!"
-            data-project-git=""
-            data-git-bucket={detailBucket ?? undefined}
-          >
-            <ProjectGitChangeMark change={change} />
-          </span>
-        ) : null}
         {remote && !showReconnect ? (
           <span
             role="img"
@@ -2408,6 +2435,15 @@ function ProjectCard({
             <BellOff className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
           </span>
         ) : null}
+        {change ? (
+          <span
+            className="project-card-stats ms-auto shrink-0 @max-[140px]/rail:hidden!"
+            data-project-git=""
+            data-git-bucket={detailBucket ?? undefined}
+          >
+            <ProjectGitChangeMark change={change} />
+          </span>
+        ) : null}
       </Button>
       {change ? (
         // The wrapper hides the dot outside the icon rail: StatusDot's own display beats `hidden`.
@@ -2435,6 +2471,7 @@ function ProjectCard({
             </InlineAction>
           ) : null}
           <InlineAction
+            data-project-options
             label={t("Project options")}
             tooltipDetails={[name]}
             motion="none"
@@ -2453,12 +2490,13 @@ function ProjectCard({
                 multi && item.path !== "~" ? () => multi.toggle(item.path) : undefined,
               );
             }}
-            className="absolute end-1 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
+            className="absolute end-2 [inset-block-start:50%] -translate-y-1/2 @max-[140px]/rail:hidden!"
           >
             <MoreHorizontal className="icon-md" strokeWidth={1.75} />
           </InlineAction>
           {onTogglePin ? (
             <InlineAction
+              data-project-pin
               label={pinned ? t("Unpin project") : t("Pin project")}
               tooltipDetails={[name]}
               motion="none"
@@ -2471,7 +2509,7 @@ function ProjectCard({
                 event.stopPropagation();
                 onTogglePin(item.path);
               }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
+              className="absolute start-2.5 [inset-block-start:50%] -translate-y-1/2 @max-[140px]/rail:hidden!"
             >
               {pinned ? (
                 <PinOff className="icon-sm" strokeWidth={1.75} />

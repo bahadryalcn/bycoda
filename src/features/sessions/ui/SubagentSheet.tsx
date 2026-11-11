@@ -14,6 +14,7 @@ import { ArrowDown, Check, Copy, CornerDownRight, Square } from "../../../shared
 import { copyText } from "../../../platform/tauri/clipboard";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { Alert } from "../../../shared/ui/Alert";
+import { AnsiText } from "../../../shared/ui/AnsiText";
 import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
 import { blockLifecycle } from "../model/activityDock";
 import { commandCopyText, emptyOutputReason, inspectCommand } from "../model/commandInspection";
@@ -471,12 +472,12 @@ function CommandDetails({
             <div className="flex min-w-0 flex-col gap-2 px-3 py-2">
               {error ? (
                 <pre className="select-text whitespace-pre-wrap break-words font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
-                  {error}
+                  <AnsiText text={error} />
                 </pre>
               ) : null}
               {output ? (
                 <pre className="select-text whitespace-pre-wrap break-words font-mono text-ui-caption leading-5">
-                  {output}
+                  <AnsiText text={output} />
                 </pre>
               ) : emptyText ? (
                 <p className="text-ui-caption text-(--ui-text-secondary)">{emptyText}</p>

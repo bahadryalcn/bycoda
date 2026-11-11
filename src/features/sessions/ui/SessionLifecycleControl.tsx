@@ -22,10 +22,12 @@ export function SessionLifecycleControl({
   sessionId,
   cwd,
   local,
+  hasMessages,
 }: {
   sessionId: string;
   cwd: string;
   local: boolean;
+  hasMessages: boolean;
 }) {
   const t = useT();
   const machineId = useLocalLifecycleMachine();
@@ -51,6 +53,7 @@ export function SessionLifecycleControl({
         iconOnly
         label={label}
         loading={busy}
+        disabled={!hasMessages && !settled}
         onClick={() => {
           setBusy(true);
           (settled ? client.unsettle(sessionId) : client.settle(sessionId))

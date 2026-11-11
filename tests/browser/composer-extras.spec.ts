@@ -1548,3 +1548,48 @@ test("model picker selects image models under Agents in both themes and widths",
     });
   }
 });
+
+test("queue row icons and saved account presentation", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const theme of ["dark", "light"]) {
+    for (const width of [1280, 800]) {
+      for (const state of ["one", "busy"]) {
+        await page.setViewportSize({ width, height: 850 });
+        await page.goto(
+          `/tests/browser/composer-extras.html?chat-layout&accounts&queue-state=${state}&theme=${theme}`,
+        );
+        const card = page.locator("[data-message-queue-card]");
+        const handles = card.locator("[data-queue-handle]");
+        await expect(handles).toHaveCount(state === "one" ? 1 : 2);
+        if (state === "one") await expect(handles.first()).toBeDisabled();
+        else await expect(handles.first()).toBeEnabled();
+        await expect(card.locator("[data-queue-target]").first()).toContainText(" · personal");
+        await expect(card.locator("[data-queue-target]").first()).not.toContainText("Claude Code");
+        const remove = card
+          .getByRole("button", { name: "Remove queued message", exact: true })
+          .first();
+        await expect(remove).toHaveText("");
+        await expect(remove).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+        await page.mouse.move(0, 0);
+        await card.screenshot({
+          path: `temp/verification/2026-11-11-queue-row/${theme}-${width}-${state}.png`,
+        });
+      }
+    }
+  }
+});
+
+test("queue removal offers inline Undo without a confirmation", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts&queue-state=one");
+  const card = page.locator("[data-message-queue-card]");
+  await card.getByRole("button", { name: "Remove queued message", exact: true }).click();
+  await expect(card.locator("[data-queue-handle]")).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Confirm delete" })).toHaveCount(0);
+  await expect(card.locator("[data-queue-removal]")).toContainText("Message removed");
+  await card.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(card.locator("[data-queue-handle]")).toHaveCount(1);
+  await expect(card.locator("[data-queue-removal]")).toHaveCount(0);
+});

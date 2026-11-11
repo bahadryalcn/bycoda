@@ -529,7 +529,7 @@ export function usageLimitFromRateLimitEvent(
   return resetsAt != null ? { resetsAt } : {};
 }
 
-const USAGE_LIMIT_TEXT = /hit your (?:usage )?limit|usage limit reached/i;
+const USAGE_LIMIT_TEXT = /hit your (?:(?:usage|weekly) )?limit|usage limit reached/i;
 
 /** Claude also ends a limited turn with the limit as its error text. */
 export function isUsageLimitResult(rec: Record<string, unknown>): boolean {

@@ -687,3 +687,108 @@ it("does not resume a queue while a given-up send may still be answered, and doe
     await harness.cleanup();
   }
 });
+
+it("removes immediately and restores the full row beside surviving neighbours with a fresh ID", async () => {
+  const row = {
+    id: "removed",
+    text: "Retain exact text",
+    attachments: [
+      {
+        id: "file",
+        name: "note.txt",
+        path: "/kept/note.txt",
+        kind: "file" as const,
+        mimeType: "text/plain",
+        size: 4,
+      },
+    ],
+    modelTarget: {
+      harness: "claude" as const,
+      model: "claude:test",
+      modelSettings: { effort: "medium" },
+      providerAccountId: "personal",
+    },
+    deliveryUnknown: true as const,
+  };
+  const harness = await queueHarness("paused", true, vi.fn(), {
+    queuedMessages: [
+      { id: "before", text: "before", attachments: [] },
+      row,
+      { id: "after", text: "after", attachments: [] },
+    ],
+  });
+  try {
+    let receipt!: ReturnType<typeof harness.actions.onDeleteQueuedMessage>;
+    await act(async () => {
+      receipt = harness.actions.onDeleteQueuedMessage(harness.id, row.id);
+    });
+    expect(getSessions()[0].queuedMessages?.map((entry) => entry.id)).toEqual(["before", "after"]);
+    await act(async () =>
+      setSessions((current) =>
+        current.map((entry) => ({
+          ...entry,
+          queuedMessages: [...entry.queuedMessages!, { id: "new", text: "new", attachments: [] }],
+        })),
+      ),
+    );
+    if (!receipt || typeof receipt !== "object") throw new Error("Expected undo receipt");
+    const undo = receipt.undo;
+    await act(async () => {
+      await undo();
+    });
+    const queue = getSessions()[0].queuedMessages!;
+    expect(queue.map((entry) => entry.text)).toEqual(["before", row.text, "after", "new"]);
+    expect(queue[1].id).not.toBe(row.id);
+    expect(queue[1]).toEqual({ ...row, id: queue[1].id });
+    expect(getSessions()[0].queueStatus).toBe("paused");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+it("restores a removed last message without resuming its paused queue", async () => {
+  const harness = await queueHarness("paused", false, vi.fn());
+  try {
+    let receipt!: ReturnType<typeof harness.actions.onDeleteQueuedMessage>;
+    await act(async () => {
+      receipt = harness.actions.onDeleteQueuedMessage(harness.id, "head");
+    });
+    expect(getSessions()[0].queuedMessages).toBeUndefined();
+    if (!receipt || typeof receipt !== "object") throw new Error("Expected undo receipt");
+    const undo = receipt.undo;
+    await act(async () => {
+      await undo();
+    });
+    expect(getSessions()[0].queuedMessages?.[0].text).toBe("Saved task");
+    expect(getSessions()[0].queueStatus).toBe("paused");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+it.each([false, true])(
+  "restores several removals in original order (reverse: %s)",
+  async (reverse) => {
+    const harness = await queueHarness("paused", true, vi.fn(), {
+      queuedMessages: ["a", "b", "c"].map((id) => ({ id, text: id, attachments: [] })),
+    });
+    const receipts: { undo: () => unknown; dispose?: () => void }[] = [];
+    try {
+      for (const id of ["a", "b", "c"])
+        await act(async () => {
+          const receipt = harness.actions.onDeleteQueuedMessage(harness.id, id);
+          if (!receipt || typeof receipt !== "object") throw new Error("Expected receipt");
+          receipts.push(receipt);
+        });
+      for (const receipt of reverse ? [...receipts].reverse() : receipts) {
+        await act(async () => {
+          await receipt.undo();
+        });
+        receipt.dispose?.();
+      }
+      expect(getSessions()[0].queuedMessages?.map((row) => row.text)).toEqual(["a", "b", "c"]);
+    } finally {
+      await harness.cleanup();
+    }
+  },
+);

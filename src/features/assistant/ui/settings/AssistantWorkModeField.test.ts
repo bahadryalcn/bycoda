@@ -93,7 +93,9 @@ it("offers the three work modes with a one-line description each", async () => {
   });
   expect(radios().map((radio) => radio.value)).toEqual(["watch", "ask", "free"]);
   expect(checked()).toEqual(["ask"]);
-  expect(container.textContent).toContain("Talks with you and reports what happens. Starts no jobs.");
+  expect(container.textContent).toContain(
+    "Talks with you and reports what happens. Starts no jobs.",
+  );
   expect(container.textContent).toContain("Runs jobs you assign. Asks before commands");
   expect(container.textContent).toContain("Runs jobs without asking.");
   expect(container.textContent).not.toContain("Custom");

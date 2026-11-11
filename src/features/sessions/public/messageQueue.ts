@@ -3,5 +3,8 @@ export {
   canDispatchQueuedHead,
   liveTurnHarness,
   reorderQueuedMessages,
+  restoreQueuedMessage,
   sameQueuedModelTarget,
 } from "../model/messageQueue";
+
+export { createQueuedUndoOrder } from "../model/queuedUndoOrder";

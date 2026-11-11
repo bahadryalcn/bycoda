@@ -221,12 +221,24 @@ function Fixture() {
                 {
                   id: "queued",
                   text: "Connect GitHub and manage deployments from the repository",
+                  modelTarget: {
+                    harness: "claude" as const,
+                    model: "claude:sonnet-5",
+                    providerAccountId: "default",
+                    modelSettings: {},
+                  },
                   attachments: [],
                   deliveryUnknown: queueVisual === "unknown" ? true : undefined,
                 },
                 {
                   id: "queued-next",
                   text: "Configure the Cloudflare DNS records",
+                  modelTarget: {
+                    harness: "claude" as const,
+                    model: "claude:sonnet-5",
+                    providerAccountId: "account-work",
+                    modelSettings: {},
+                  },
                   attachments: [],
                 },
               ].filter((row) => fixtureRows.includes(row.id))
@@ -249,6 +261,25 @@ function Fixture() {
                 return {
                   kind: "waiting",
                   message: "Queue resumed. Messages will send when this turn finishes.",
+                };
+              }
+            : undefined
+        }
+        onDeleteQueuedMessage={
+          queueVisual
+            ? (id) => {
+                const index = fixtureRows.indexOf(id);
+                if (index < 0) return false;
+                setFixtureRows((rows) => rows.filter((entry) => entry !== id));
+                return {
+                  undo: () => {
+                    setFixtureRows((rows) =>
+                      rows.includes(id)
+                        ? rows
+                        : [...rows.slice(0, index), id, ...rows.slice(index)],
+                    );
+                    return true;
+                  },
                 };
               }
             : undefined

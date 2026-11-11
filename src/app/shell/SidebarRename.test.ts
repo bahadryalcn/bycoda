@@ -1852,13 +1852,15 @@ describe("collapsed rail Inbox actions", () => {
     props.inboxActive = true;
     props.tab = "files";
     props.onGoBack = vi.fn();
+    props.onShowWorkspace = vi.fn();
     props.onTabChange = vi.fn();
     await act(async () => render());
     const workspace = container.querySelector<HTMLButtonElement>(
       '[data-compact-project-rail] button[aria-label="Workspace"]',
     )!;
     act(() => workspace.click());
-    expect(props.onGoBack).toHaveBeenCalledOnce();
+    expect(props.onShowWorkspace).toHaveBeenCalledOnce();
+    expect(props.onGoBack).not.toHaveBeenCalled();
     expect(props.onTabChange).not.toHaveBeenCalled();
   });
 
@@ -2041,7 +2043,7 @@ describe("collapsed rail Inbox actions", () => {
     expect(rail.querySelector('[role="tablist"]')).toBeNull();
     expect(rail.querySelector('[role="tab"]')).toBeNull();
     expect(
-      Array.from(rail.querySelectorAll("button"), (button) =>
+      Array.from(rail.querySelectorAll("[data-compact-rail-actions] button"), (button) =>
         button.getAttribute("aria-label")?.replace(/ \(.+\)$/, ""),
       ),
     ).toEqual([
@@ -2054,8 +2056,6 @@ describe("collapsed rail Inbox actions", () => {
       "Tasks",
       "Assistant",
       "Projects and groups",
-      "Account: Guest. Unknown",
-      "Settings",
     ]);
     expect(rail.querySelectorAll('button[aria-label="Projects and groups"]')).toHaveLength(1);
     expect(rail.querySelector('button[aria-label^="Switch project"]')).toBeNull();
@@ -2947,7 +2947,7 @@ it("opens a project selector for an explicit global New request without creating
 });
 
 it.each(["standard", "compact", "detailed"] as const)(
-  "offers owning-session actions without pin in %s Last sessions rows",
+  "keeps %s Last sessions rows navigation-only",
   async (density) => {
     saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density });
     vi.mocked(useLocalLifecycleMachine).mockReturnValue("local");
@@ -2977,20 +2977,13 @@ it.each(["standard", "compact", "detailed"] as const)(
       const row = container.querySelector('[data-session-card="foreign-session"]')!;
       expect(row.querySelector('button[aria-label="Pin"]')).toBeNull();
       expect(row.querySelector('[data-session-project-slot][data-pinned="true"]')).toBeNull();
-      expect(row.querySelector('button[aria-label^="Settle"]')).not.toBeNull();
-      await act(async () =>
-        row.querySelector<HTMLButtonElement>('button[aria-label^="Settle"]')!.click(),
-      );
-      expect(settle).toHaveBeenCalledExactlyOnceWith(foreign.id);
-      await act(async () =>
-        row.querySelector<HTMLButtonElement>('button[aria-label^="Archive"]')!.click(),
-      );
-      expect(props.onArchiveSession).toHaveBeenCalledWith(foreign.id, true, foreign);
-      await act(async () =>
-        row.querySelector<HTMLButtonElement>('button[aria-label^="Delete"]')!.click(),
-      );
-      expect(props.onDeleteSession).toHaveBeenCalledWith(foreign.id, foreign);
-      expect(props.lastSessionsData.refresh).toHaveBeenCalledTimes(2);
+      expect(row.querySelector('button[aria-label^="Settle"]')).toBeNull();
+      expect(row.querySelector('button[aria-label^="Archive"]')).toBeNull();
+      expect(row.querySelector('button[aria-label^="Delete"]')).toBeNull();
+      expect(settle).not.toHaveBeenCalled();
+      expect(props.onArchiveSession).not.toHaveBeenCalled();
+      expect(props.onDeleteSession).not.toHaveBeenCalled();
+      expect(props.lastSessionsData.refresh).not.toHaveBeenCalled();
       expect(props.onPinSession).not.toHaveBeenCalled();
     } finally {
       vi.mocked(useLocalLifecycleMachine).mockReturnValue(undefined);

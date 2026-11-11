@@ -18,8 +18,10 @@ import {
   queuedMessageForSubmit,
   queuedSteerRoute,
   reorderSessionQueue,
+  restoreQueuedMessage,
   runningTargetOf,
 } from "../../../features/sessions/model/messageQueue";
+import { createQueuedUndoOrder } from "../../../features/sessions/model/queuedUndoOrder";
 import { repairStaleHandoff } from "../../../features/sessions/model/activeSubmits";
 import { isPreparingHandoff } from "../../../features/sessions/model/handoff";
 import { applyQueuedEdit } from "../../../features/sessions/model/queuedMessageEdit";
@@ -377,16 +379,61 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
     };
   }, [onSubmit, sessions, movingWindows, windowTransferPending, retryTick]);
 
-  const onDeleteQueuedMessage = useCallback((sessionId: string, messageId: string) => {
-    const progress = readDeliveryProgress(sessionId, messageId);
-    if (progress && !["accepted", "rejected", "unknown"].includes(progress.stage)) return;
-    if (progress) clearDeliveryProgress(sessionId, progress);
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId ? dequeueQueuedMessage(session, messageId) : session,
-      ),
-    );
-  }, []);
+  const undoOrders = useRef(new Map<string, ReturnType<typeof createQueuedUndoOrder>>());
+  useEffect(() => {
+    const live = new Set(sessions.map((session) => session.id));
+    for (const id of undoOrders.current.keys()) if (!live.has(id)) undoOrders.current.delete(id);
+  }, [sessions]);
+  const onDeleteQueuedMessage = useCallback(
+    (sessionId: string, messageId: string) => {
+      const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+      const original = session?.queuedMessages?.find((row) => row.id === messageId);
+      if (!session || !original) return false;
+      const restored = { ...original, id: crypto.randomUUID() };
+      const progress = readDeliveryProgress(sessionId, messageId);
+      if (progress && !["accepted", "rejected", "unknown"].includes(progress.stage)) return false;
+      if (progress) clearDeliveryProgress(sessionId, progress);
+      const order = undoOrders.current.get(sessionId) ?? createQueuedUndoOrder();
+      undoOrders.current.set(sessionId, order);
+      const position = order.capture(
+        session.queuedMessages!.map((row) => row.id),
+        messageId,
+        restored.id,
+      );
+      let undone = false;
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId ? dequeueQueuedMessage(session, messageId) : session,
+        ),
+      );
+      return {
+        dispose: position.dispose,
+        undo: () => {
+          if (undone) return true;
+          if (!sessionsRef.current.some((entry) => entry.id === sessionId)) return false;
+          setSessions((current) =>
+            current.map((entry) =>
+              entry.id === sessionId
+                ? {
+                    ...entry,
+                    queuedMessages: restoreQueuedMessage(
+                      entry.queuedMessages ?? [],
+                      restored,
+                      position.ids(),
+                      messageId,
+                    ),
+                    queueStatus: entry.queueStatus ?? session.queueStatus,
+                  }
+                : entry,
+            ),
+          );
+          undone = true;
+          return true;
+        },
+      };
+    },
+    [sessionsRef, setSessions],
+  );
 
   const onQueuedMessageEditingChange = useCallback((sessionId: string, messageId?: string) => {
     setSessions((prev) =>

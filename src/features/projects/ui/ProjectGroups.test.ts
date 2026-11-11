@@ -11,9 +11,14 @@ import {
   saveProjectGroups,
 } from "../model/projectGroups";
 import { loadPinnedProjects, savePinnedProjects } from "../model/recents";
+import * as groupLock from "../../group-lock/model/groupLock";
 import { hideGroup, restoreHiddenGroup } from "../../group-lock/model/groupLock";
+import { useProjectMenu } from "../../../app/shell/useProjectMenu";
 import { ProjectRail } from "../../../app/shell/ProjectRail";
-import { useProjectDiffStats } from "../../source-control/hooks/useProjectDiffStats";
+import {
+  useProjectDiffStats,
+  useProjectsDiffStats,
+} from "../../source-control/hooks/useProjectDiffStats";
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
@@ -35,6 +40,8 @@ let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(useProjectDiffStats).mockClear();
+  vi.mocked(useProjectDiffStats).mockReturnValue(null);
+  vi.mocked(useProjectsDiffStats).mockImplementation((paths) => paths.map(() => null));
   localStorage.clear();
   container = document.createElement("div");
   document.body.append(container);
@@ -94,6 +101,119 @@ it("keeps quick project actions visible and opens appearance and folder actions 
   expect(dialog?.querySelector("h2")?.textContent).toBe("Additional folders");
 });
 
+it("shows project changes inside its menu", async () => {
+  vi.mocked(useProjectDiffStats).mockReturnValue({ files: 3, additions: 12, deletions: 4 });
+  await renderRail();
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[data-project-path="/work/personal"] button')!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 40 })),
+  );
+  expect(document.querySelector("[data-project-menu-git]")?.textContent).toBe("3 files · +12 -4");
+  vi.mocked(useProjectDiffStats).mockReturnValue(null);
+});
+
+for (const linked of [false, true]) {
+  it(`retains cached Git changes in ${linked ? "workspace" : "group"} menus`, async () => {
+    saveProjectGroups([
+      {
+        id: "team",
+        name: "Team",
+        collapsed: false,
+        ...(linked
+          ? { workspaceFile: "/work/team/team.code-workspace", workspaceFolders: ["/work/client"] }
+          : {}),
+      },
+    ]);
+    saveProjectGroupAssignments({ "/work/client": "team" });
+    vi.mocked(useProjectsDiffStats).mockImplementation((paths) =>
+      paths.map(() => ({ files: 2, additions: 7, deletions: 3 })),
+    );
+    await renderRail();
+    await act(async () => button("Team group options").click());
+    expect(document.querySelector("[data-group-menu-git]")?.textContent).toBe("2 files · +7 -3");
+  });
+}
+
+it("conceals cached member Git data in a locked group menu", async () => {
+  saveProjectGroups([{ id: "team", name: "Team", collapsed: false, lockable: true }]);
+  saveProjectGroupAssignments({ "/work/client": "team" });
+  const view = groupLock.getGroupLockView();
+  const spy = vi
+    .spyOn(groupLock, "getGroupLockView")
+    .mockReturnValue({ ...view, lock: { ...view.lock, lockedGroupIds: new Set(["team"]) } });
+  try {
+    vi.mocked(useProjectsDiffStats).mockReturnValue([{ files: 2, additions: 7, deletions: 3 }]);
+    await renderRail();
+    vi.mocked(useProjectsDiffStats).mockClear();
+    await act(async () => button("Team group options").click());
+    expect(document.querySelector("[data-group-menu-git]")).toBeNull();
+    expect(
+      vi
+        .mocked(useProjectsDiffStats)
+        .mock.calls.some(([paths, enabled]) => enabled && paths.includes("/work/client")),
+    ).toBe(false);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+it("opens the existing Git overview through group options and conceals it when locked", async () => {
+  saveProjectGroups([{ id: "team", name: "Team", collapsed: false }]);
+  const overview = vi.fn();
+  function MenuFixture() {
+    const menu = useProjectMenu({});
+    return createElement(
+      "div",
+      null,
+      createElement(
+        "button",
+        { onClick: () => menu.openGroupMenu("team", 20, 40, undefined, overview) },
+        "Open menu",
+      ),
+      menu.element,
+    );
+  }
+  await act(async () => root.render(createElement(MenuFixture)));
+  await act(async () => button("Open menu").click());
+  await act(async () => button("Changes").click());
+  expect(overview).toHaveBeenCalledTimes(1);
+  await act(async () => button("Open menu").click());
+  const staleAction = button("Changes");
+  const view = groupLock.getGroupLockView();
+  const spy = vi
+    .spyOn(groupLock, "getGroupLockView")
+    .mockReturnValue({ ...view, lock: { ...view.lock, lockedGroupIds: new Set(["team"]) } });
+  try {
+    await act(async () => staleAction.click());
+    expect(overview).toHaveBeenCalledTimes(1);
+    await act(async () => button("Open menu").click());
+    expect(
+      [...document.querySelectorAll("button")].some((item) => item.textContent === "Changes"),
+    ).toBe(false);
+    expect(overview).toHaveBeenCalledTimes(1);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+it("ungroups a project when its selected group is clicked again", async () => {
+  saveProjectGroups([{ id: "team", name: "Team", collapsed: false }]);
+  saveProjectGroupAssignments({ "/work/client": "team" });
+  await renderRail();
+  await act(async () =>
+    button("client").dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 40 }),
+    ),
+  );
+  await act(async () => button("Move to group").click());
+  expect(
+    [...document.querySelectorAll("button")].some((item) => item.textContent === "Ungrouped"),
+  ).toBe(false);
+  await act(async () => button("Team").click());
+  expect(loadProjectGroupAssignments()).toEqual({});
+});
+
 it("offers group locking directly while keeping lock setup in the privacy flyout", async () => {
   saveProjectGroups([{ id: "team", name: "Team", collapsed: false }]);
   await renderRail();
@@ -138,7 +258,10 @@ it("moves a linked workspace into a group through its menu and back out without 
   await act(async () => button("Team, 1 project").click());
   await act(async () => button("Wallet group options").click());
   await act(async () => button("Move to group").click());
-  await act(async () => button("Ungrouped").click());
+  expect(
+    [...document.querySelectorAll("button")].some((item) => item.textContent === "Ungrouped"),
+  ).toBe(false);
+  await act(async () => button("Team").click());
   expect(parent.querySelector('[data-project-group="wallet"]')).toBeNull();
   expect(container.querySelector('[data-project-group="wallet"]')).not.toBeNull();
   expect(loadProjectGroupAssignments()).toEqual({ "/work/client": "wallet" });
@@ -356,6 +479,7 @@ it("suspends project Git stats while the rail is hidden", async () => {
   expect(vi.mocked(useProjectDiffStats).mock.calls.some(([, enabled]) => enabled)).toBe(true);
 
   vi.mocked(useProjectDiffStats).mockClear();
+  vi.mocked(useProjectDiffStats).mockReturnValue(null);
   await renderRail(false);
   expect(vi.mocked(useProjectDiffStats).mock.calls.length).toBeGreaterThan(0);
   expect(vi.mocked(useProjectDiffStats).mock.calls.every(([, enabled]) => !enabled)).toBe(true);
@@ -376,7 +500,7 @@ function sectionLabels(): string[] {
     .filter((text) => ["Pinned", "Groups", "Projects"].includes(text));
 }
 
-it("pins a group instead of the projects inside it and indents its members", async () => {
+it("keeps group members indented without offering group pins", async () => {
   saveProjectGroups([
     { id: "alpha", name: "Alpha", collapsed: false },
     { id: "clients", name: "Client work", collapsed: false },
@@ -405,26 +529,13 @@ it("pins a group instead of the projects inside it and indents its members", asy
   ).toBe(false);
   act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
 
-  // An unpinned group keeps its header compact: pinning lives in the group menu, and only the
-  // options slot is reserved at rest; the other actions sit in the collapsing slot.
-  expect(container.querySelector('button[aria-label="Pin group"]')).toBeNull();
-  const header = button("Client work group options").parentElement!;
-  expect(
-    header.querySelector('[data-action-slot="collapse"] [aria-label="Lock Client work"]'),
-  ).not.toBeNull();
-  expect(button("Client work group options").closest('[data-action-slot="collapse"]')).toBeNull();
   await act(async () => button("Client work group options").click());
-  await act(async () => button("Pin group").click());
-  expect(loadProjectGroups()[0]).toMatchObject({ id: "clients", pinned: true });
-  expect(groupIds()).toEqual(["clients", "alpha"]);
-
-  // The pinned header shows its pin, which unpins.
-  const clients = container.querySelector<HTMLElement>('[data-project-group="clients"]')!;
-  await act(async () =>
-    clients.querySelector<HTMLButtonElement>('button[aria-label="Unpin group"]')!.click(),
-  );
-  expect(loadProjectGroups().find((group) => group.id === "clients")?.pinned).toBeUndefined();
-  expect(container.querySelector('button[aria-label="Unpin group"]')).toBeNull();
+  expect(
+    [...document.querySelectorAll("button")].some((item) =>
+      /^(Unpin|Pin) group$/.test(item.textContent ?? ""),
+    ),
+  ).toBe(false);
+  expect(groupIds()).toEqual(["alpha", "clients"]);
 });
 
 it("renders assigned projects in persistent collapsible groups", async () => {

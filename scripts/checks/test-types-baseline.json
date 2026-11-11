@@ -143,7 +143,6 @@
     "src/app/model/windowTransferBootstrap.test.ts": 1,
     "src/app/model/windowTransferPopout.test.ts": 1,
     "src/app/shell/DetachedWorkingBar.test.ts": 1,
-    "src/app/shell/GithubStarPrompt.test.ts": 4,
     "src/app/shell/LastSessionsSection.test.ts": 1,
     "src/app/shell/NavigationBoundary.test.ts": 2,
     "src/app/shell/SessionFolderListRows.test.ts": 4,

@@ -36,7 +36,7 @@
 
 /* Keep the location readable and every action reachable in narrow workspace panes. */
 @container workspace-pane (inline-size < 340px) {
-  .workspaceHeader {
+  .workspaceHeader[data-workspace-header] {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-rows: repeat(2, var(--ui-pane-header-height));

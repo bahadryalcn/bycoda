@@ -10,7 +10,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { MoreHorizontal } from "../../shared/ui/icons";
+import { Bot, Clock, Folder, FolderTree, MoreHorizontal, Pin } from "../../shared/ui/icons";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
 import {
   applyShownSectionOrder,
@@ -39,7 +39,7 @@ export const RAIL_SECTION_HEADER =
   "group flex min-h-(--ui-control-height-compact) items-center gap-1 px-2";
 
 /** Label style shared by every section header, whether it collapses or not. */
-export const RAIL_SECTION_LABEL = "text-ui-caption font-medium text-(--ui-text-secondary)";
+export const RAIL_SECTION_LABEL = "text-ui-secondary font-medium text-(--ui-text)";
 
 /**
  * The block around one section (header plus body). Two spacing roles live here, not in
@@ -67,6 +67,7 @@ export function RailSectionHeader({
   actions,
   onLabelClick,
   labelClickLabel,
+  selected = false,
 }: {
   label: string;
   /** Present when the section can be reordered; adds the drag handle, shortcuts and options menu. */
@@ -83,11 +84,21 @@ export function RailSectionHeader({
   onLabelClick?: () => void;
   /** Accessible name of the label button, for example "Open Crews". */
   labelClickLabel?: string;
+  selected?: boolean;
 }) {
   const t = useT();
   const collapsible = onToggleCollapsed != null;
+  const sectionIcons = [
+    [t("Pinned"), Pin],
+    [t("Groups"), FolderTree],
+    [t("Projects"), Folder],
+    [t("Last sessions"), Clock],
+    [t("Crews"), Bot],
+  ] as const;
+  const SectionIcon = sectionIcons.find(([name]) => name === label)?.[1];
   return (
     <SectionLabel
+      selected={selected}
       host
       compactRail
       collapsible={collapsible}
@@ -96,22 +107,27 @@ export function RailSectionHeader({
       controls={controlsId}
       labelAction={
         collapsible && onLabelClick
-          ? { label: labelClickLabel ?? label, toggleLabel: label, onClick: onLabelClick }
+          ? {
+              label: labelClickLabel ?? label,
+              toggleLabel: label,
+              onClick: onLabelClick,
+              current: selected,
+            }
           : undefined
       }
-      icon={icon}
+      icon={icon ?? (SectionIcon ? <SectionIcon className="icon-sm" /> : undefined)}
       chevron="hover"
       // SectionLabel types `count` as a number; it renders any node, and LiveAgentsPreview passes one.
       count={count as number | null | undefined}
       headerProps={{
         ...drag?.headerProps,
+        "data-rail-section-header": "",
         tabIndex: drag ? 0 : undefined,
         "aria-keyshortcuts": drag ? "Alt+ArrowUp Alt+ArrowDown" : undefined,
         title: drag ? t("Drag to reorder") : undefined,
       }}
       className={`px-2 ${drag ? RAIL_DRAG_HANDLE : ""} rounded-md focus-visible:bg-(--ui-surface-hover) @max-[140px]/rail:px-0`}
       classNames={{
-        heading: collapsible ? undefined : "px-2",
         count: "ms-auto ps-1",
         actions: "cursor-default",
       }}

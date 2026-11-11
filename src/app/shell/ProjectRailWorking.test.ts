@@ -31,6 +31,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
   useProjectDiffStats: () => null,
+  useProjectsDiffStats: () => [],
 }));
 vi.mock("./SidebarUpdate", () => ({ SidebarUpdateFooter: () => null }));
 

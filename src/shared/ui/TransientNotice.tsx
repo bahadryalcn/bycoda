@@ -26,7 +26,7 @@ export interface TransientNoticeProps {
   onDismiss: () => void;
   /** Disables the dismiss control while an operation cannot be interrupted. */
   dismissDisabled?: boolean;
-  /** Auto-dismiss delay. `null` keeps the notice until dismissed. Danger notices default to `null` so a failure and its diagnostic are never lost to a timer. */
+  /** Auto-dismiss delay; defaults to ten seconds of focused window time. `null` keeps the notice until dismissed. */
   durationMs?: number | null;
   /**
    * Corner stack. Viewport notices without `offset`/`onHeightChange` join the shared corner

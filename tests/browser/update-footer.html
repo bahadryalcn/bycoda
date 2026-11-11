@@ -43,6 +43,33 @@
         margin-block-start: 1rem;
         font-size: 0.8125rem;
       }
+      .update-account-rail {
+        container: rail / inline-size;
+        box-sizing: border-box;
+        inline-size: 340px;
+        min-block-size: 640px;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--ui-pane-border);
+        background: var(--ui-surface);
+      }
+      .update-account-rail[data-compact] {
+        inline-size: 56px;
+      }
+      .update-account-rail .bycoda-rail-tools--footer {
+        margin-block-start: auto;
+      }
+      .update-account-brand {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-block-size: 44px;
+        border-block-end: 1px solid var(--ui-pane-border);
+      }
+      .update-account-brand img {
+        inline-size: 28px;
+        block-size: 28px;
+      }
     </style>
   </head>
   <body>

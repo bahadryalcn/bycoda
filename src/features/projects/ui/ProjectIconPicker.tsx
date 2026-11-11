@@ -1,5 +1,5 @@
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { NativeSelect } from "../../../shared/ui/Select";
+import { Select } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -27,13 +27,13 @@ export function ProjectIconPicker({
   const selected = projectMascot(project, name);
   const icons = filterProjectMascots(query, category);
   return (
-    <div className="mb-3 px-0.5" data-project-icon-picker>
-      <div className="mb-2 flex items-center gap-2">
+    <div className="flex flex-col gap-2 px-0.5" data-project-icon-picker>
+      <div className="flex items-center gap-2">
         <ProjectMascot
           project={project}
           name={selected.name}
           color={color}
-          className="size-7 shrink-0"
+          className="size-6 shrink-0"
         />
         <div className="min-w-0 flex-1">
           <p className="text-ui-micro text-(--ui-text-secondary)">{t("Project icon")}</p>
@@ -52,9 +52,10 @@ export function ProjectIconPicker({
           {t("Auto")}
         </Button>
       </div>
-      <div className="mb-2 flex gap-1.5">
+      <div className="flex min-w-0 items-center gap-1.5">
         <SearchInput
           standalone
+          appearance="field"
           type="search"
           aria-label={t("Search project icons")}
           placeholder={t("Search icons…")}
@@ -62,24 +63,24 @@ export function ProjectIconPicker({
           onChange={(event) => setQuery(event.target.value)}
           containerClassName="min-w-0 flex-1"
         />
-        <NativeSelect
-          aria-label={t("Project icon category")}
+        <Select
+          hideLabel
+          label={t("Project icon category")}
           value={category}
-          onChange={(event) => setCategory(event.target.value as ProjectIconCategory | "All")}
-          className="max-w-28"
-        >
-          <option value="All">{t("All types")}</option>
-          {PROJECT_ICON_CATEGORIES.map((group) => (
-            <option key={group}>{group}</option>
-          ))}
-        </NativeSelect>
+          onValueChange={(next) => setCategory(next as ProjectIconCategory | "All")}
+          className="w-24 shrink-0"
+          options={[
+            { value: "All", label: t("All types") },
+            ...PROJECT_ICON_CATEGORIES.map((group) => ({ value: group, label: group })),
+          ]}
+        />
       </div>
       <div
-        className="h-35 overflow-y-auto overscroll-contain p-1"
+        className="max-h-44 overflow-y-auto overscroll-contain"
         role="group"
         aria-label={t("Project icons")}
       >
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-5 gap-1">
           {icons.map((icon) => (
             <Button
               variant="item"
@@ -91,10 +92,10 @@ export function ProjectIconPicker({
               aria-label={t("Project icon: {p0}", { p0: icon.label })}
               aria-pressed={selected.name === icon.name}
               onClick={() => onPick(icon.name)}
-              className="flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 px-0.5"
+              className="flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 px-0.5"
             >
-              <ProjectMascot project={project} name={icon.name} className="size-7 shrink-0" />
-              <span className="max-w-full truncate text-ui-caption text-(--ui-text-secondary)">
+              <ProjectMascot project={project} name={icon.name} className="size-6 shrink-0" />
+              <span className="max-w-full truncate text-ui-micro text-(--ui-text-secondary)">
                 {icon.label.split(" / ")[0]}
               </span>
             </Button>
@@ -109,7 +110,7 @@ export function ProjectIconPicker({
           />
         ) : null}
       </div>
-      <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
+      <p className="sr-only">
         <LiveText
           text={`${icons.length}${t(" icons · ")}${category === "All" ? t("All types") : category}`}
         />

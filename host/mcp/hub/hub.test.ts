@@ -252,6 +252,9 @@ describe("MCP hub children", () => {
         'command = "node"',
         "[mcp_servers.off]",
         "enabled = false",
+        "[[skills.config]]",
+        'path = "/skills/example/SKILL.md"',
+        "enabled = false",
         "",
       ].join("\n"),
     );

@@ -3,6 +3,7 @@ import { subscribeRemoteRecovered } from "./remoteHealth";
 import { remoteBackoffDelay } from "./remotePollingPolicy";
 import { loadStoredQueue, setSessionQueue } from "../../sessions/public/sessionStore";
 import type { Attachment } from "../../sessions";
+import { createQueuedUndoOrder } from "../../sessions/public/messageQueue";
 import { SharedQueueClient } from "./sharedQueueClient";
 import { sameQueueValue, sharedQueueStorageId, type SharedQueue } from "./sharedQueue";
 import {
@@ -11,6 +12,7 @@ import {
   pauseRemoteQueue,
   releaseRemoteQueue,
   removeRemoteMessage,
+  restoreRemoteMessage,
   reorderRemoteMessages,
   resolveUnknownRow,
   setRemoteEditing,
@@ -54,6 +56,8 @@ export function useSharedRemoteQueue(
     () => (enabled && key ? new SharedQueueClient(machineId, environmentId, key) : undefined),
     [key, machineId, environmentId, enabled],
   );
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- Undo ordering belongs to this shared queue client and resets with it.
+  const undoOrder = useMemo(() => createQueuedUndoOrder(), [client]);
   const empty = useMemo(() => ({ queue: { messages: [], revision: 0 }, loaded: false }), []);
   const state = useSyncExternalStore(
     client?.subscribe ?? (() => () => {}),
@@ -225,6 +229,41 @@ export function useSharedRemoteQueue(
     enqueue: (message: RemoteQueueDraft) =>
       client.update((queue) => enqueueRemoteMessage(queue, message)),
     remove: (id: string) => client.update((queue) => removeRemoteMessage(queue, id)),
+    removeUndoable: (id: string) => {
+      const before = client.snapshot().queue;
+      const message = before.messages.find((row) => row.id === id);
+      if (!message || !client.update((queue) => removeRemoteMessage(queue, id))) return false;
+      const restored = { ...message, id: crypto.randomUUID() };
+      const order = undoOrder.capture(
+        before.messages.map((row) => row.id),
+        id,
+        restored.id,
+      );
+      let undone = false;
+      return {
+        dispose: order.dispose,
+        undo: async () => {
+          if (undone) return true;
+          if (client.snapshot().error) await client.retry();
+          if (client.snapshot().error) throw new Error(client.snapshot().error);
+          const current = client.snapshot().queue;
+          if (
+            !current.messages.some((row) => row.id === restored.id || row.id === id) &&
+            !client.update((queue) =>
+              restoreRemoteMessage(queue, restored, order.ids(), id, before.status),
+            )
+          ) {
+            throw new Error(
+              client.snapshot().error ?? "The queue is being sent elsewhere. Wait and try again.",
+            );
+          }
+          await client.sync(true);
+          if (client.snapshot().error) throw new Error(client.snapshot().error);
+          undone = true;
+          return true;
+        },
+      };
+    },
     edit: (id: string, text: string, attachments: Attachment[]) =>
       client.update((queue) => editRemoteMessage(queue, id, text, attachments)),
     setEditing: (id?: string) => client.update((queue) => setRemoteEditing(queue, id)),

@@ -10,6 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { useT } from "../i18n";
 import { LAYER } from "../lib/layers";
+import { elapsedSince, monotonicNow } from "../lib/time/timestamps";
 import { Alert } from "./Alert";
 import { Button } from "./Button";
 import { Info, X } from "./icons";
@@ -20,8 +21,8 @@ import { Progress } from "./Progress";
 export type ToastPlacement = "bottom-end" | "top-end" | "bottom-start" | "top-start";
 export type ToastTone = "neutral" | "info" | "success" | "warning" | "danger";
 
-/** Seven seconds, long enough to read a sentence and reach its action. */
-export const TOAST_VISIBLE_MS = 7000;
+/** Ten seconds of focused window time to read a sentence and reach its action. */
+export const TOAST_VISIBLE_MS = 10_000;
 const DEFAULT_INSET = 12;
 
 /* ---------------------------------------------------------------------------------------------
@@ -121,7 +122,8 @@ export function ToastSlot({ placement = "bottom-end", order, children }: ToastSl
 
 /**
  * Expires after `durationMs` of visible, unattended time: hover, focus inside and a hidden
- * document pause the timer and resume only the remaining time. `null` never expires.
+ * document or unfocused window pause the timer and resume only the remaining time.
+ * `null` never expires.
  */
 export function useAutoDismiss(
   surface: { current: HTMLElement | null },
@@ -149,15 +151,16 @@ export function useAutoDismiss(
     let timer: number | undefined;
     let hovered = node.matches(":hover");
     let focused = node.contains(document.activeElement);
+    let windowFocused = document.hasFocus();
     const pause = () => {
       if (timer === undefined) return;
       window.clearTimeout(timer);
       timer = undefined;
-      remaining = Math.max(0, remaining - (Date.now() - started));
+      remaining = Math.max(0, remaining - elapsedSince(started));
     };
     const resume = () => {
-      if (timer !== undefined || hovered || focused || document.hidden) return;
-      started = Date.now();
+      if (timer !== undefined || hovered || focused || document.hidden || !windowFocused) return;
+      started = monotonicNow();
       timer = window.setTimeout(() => {
         timer = undefined;
         expire.current();
@@ -181,14 +184,25 @@ export function useAutoDismiss(
       resume();
     };
     const visibility = () => {
+      windowFocused = document.hasFocus();
       if (document.hidden) pause();
       else resume();
+    };
+    const windowFocus = () => {
+      windowFocused = true;
+      resume();
+    };
+    const windowBlur = () => {
+      windowFocused = false;
+      pause();
     };
     node.addEventListener("pointerenter", enter);
     node.addEventListener("pointerleave", leave);
     node.addEventListener("focusin", focus);
     node.addEventListener("focusout", blur);
     document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("focus", windowFocus);
+    window.addEventListener("blur", windowBlur);
     resume();
     return () => {
       pause();
@@ -197,6 +211,8 @@ export function useAutoDismiss(
       node.removeEventListener("focusin", focus);
       node.removeEventListener("focusout", blur);
       document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("focus", windowFocus);
+      window.removeEventListener("blur", windowBlur);
     };
   }, [surface, durationMs, paused, resetKey]);
 }
@@ -237,8 +253,8 @@ export type ToastContentProps = {
   /** Disables the dismiss control (and pauses expiry) while an operation cannot be interrupted. */
   dismissDisabled?: boolean;
   /**
-   * Auto-dismiss delay. `null` keeps the toast until dismissed. Danger toasts default to `null`
-   * so a failure and its diagnostic are never lost to a timer.
+   * Auto-dismiss delay; defaults to ten seconds for every tone, including errors.
+   * `null` explicitly keeps the toast until dismissed.
    */
   durationMs?: number | null;
   width?: "md" | "lg";
@@ -299,12 +315,7 @@ export function ToastCard({
   frameRef?: Ref<HTMLDivElement>;
 }) {
   const t = useT();
-  const durationMs =
-    durationOption === undefined
-      ? tone === "danger" || !onDismiss
-        ? null
-        : TOAST_VISIBLE_MS
-      : durationOption;
+  const durationMs = durationOption === undefined ? TOAST_VISIBLE_MS : durationOption;
   const surface = useRef<HTMLDivElement>(null);
   useAutoDismiss(surface, {
     durationMs: onDismiss ? durationMs : null,
@@ -412,7 +423,8 @@ export type ToastProps = ToastContentProps & {
  * ```tsx
  * {saved ? <Toast tone="success" message={t("Saved")} onDismiss={() => setSaved(false)} /> : null}
  * ```
- * Danger toasts are sticky by default; expiry pauses on hover, focus and a hidden window.
+ * All tones expire after ten seconds by default; expiry pauses on hover, focus inside,
+ * and a hidden or unfocused window. Pass `durationMs={null}` for an explicitly persistent notice.
  * @group feedback
  * @use Background or nonblocking event owned by a component: result, undo, retry, progress.
  * @avoid Save feedback next to its control: InlineMessage. Page or panel notice: Alert. Code with no component: useToast. Corner notice with legacy API: TransientNotice.

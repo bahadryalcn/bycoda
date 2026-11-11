@@ -25,8 +25,6 @@ export type ProjectGroup = {
   workspaceFolders?: string[];
   /** Opening the group asks for the app lock password. See group-lock. */
   lockable?: boolean;
-  /** Pinned groups list before the others; projects inside a group are never pinned. */
-  pinned?: boolean;
   /**
    * Where nested workspaces sit among the group's projects, as member keys (see
    * `orderProjectGroupMembers`). Projects keep the rail order among themselves.
@@ -173,7 +171,6 @@ function normalizeGroup(value: unknown): ProjectGroup | null {
     ...(mascot ? { mascot } : {}),
     ...(workspaceFile ? { workspaceFile, workspaceFolders } : {}),
     ...(candidate.lockable === true ? { lockable: true } : {}),
-    ...(candidate.pinned === true ? { pinned: true } : {}),
     ...(Array.isArray(candidate.memberOrder)
       ? {
           memberOrder: [
@@ -210,8 +207,7 @@ export function loadProjectGroups(): ProjectGroup[] {
       seen.add(group.id);
       groups.push(group);
     }
-    // Pinned groups come first everywhere, so every reorder and "Move up" sees the shown order.
-    return [...groups.filter((group) => group.pinned), ...groups.filter((group) => !group.pinned)];
+    return groups;
   } catch {
     return [];
   }
@@ -315,13 +311,6 @@ export function reorderProjectGroups(ids: readonly string[]): boolean {
   const next = orderByIds(current, [...ids]);
   if (next.every((group, index) => group.id === current[index].id)) return true;
   return saveProjectGroups(next);
-}
-
-/** Pins or unpins a rail group; resolves false when the change could not be saved. */
-export function toggleProjectGroupPin(id: string): Promise<boolean> {
-  return withRoomPrivacyMutation(() =>
-    updateProjectGroup(id, (group) => ({ ...group, pinned: !group.pinned })),
-  );
 }
 
 /** Moves one group a step up or down the list, or to the top. */

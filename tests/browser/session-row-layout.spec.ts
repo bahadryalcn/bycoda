@@ -791,3 +791,37 @@ for (const light of [false, true]) {
     });
   }
 }
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`global Last sessions navigation only ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/session-row-layout.html?global&${theme}`, {
+        waitUntil: "domcontentloaded",
+      });
+      const row = page.locator('[data-session-card="row-demo"]');
+      const open = row.locator("[data-session-select]");
+      await expect(row).toBeVisible();
+      await expect(row.getByRole("button")).toHaveCount(1);
+      await page.screenshot({
+        path: `temp/verification/2026-11-11-sidebar/last-sessions-${theme}-${width}-rest.png`,
+        animations: "disabled",
+      });
+      await open.hover();
+      await expect(row.getByRole("button")).toHaveCount(1);
+      await open.focus();
+      await open.press("Shift+F10");
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await open.click({ button: "right" });
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/2026-11-11-sidebar/last-sessions-${theme}-${width}-hover.png`,
+        animations: "disabled",
+      });
+      await open.click();
+      await expect(page.getByRole("status", { name: "Selected session" })).toHaveText("row-demo");
+      await expect(page.getByRole("status", { name: "Pin operations" })).toHaveText("0");
+    });
+  }
+}

@@ -157,3 +157,96 @@
 
 /* The working-agent decoration of a project row lives in src/styles/working-row.css, shared with the
    Appearance preview. */
+
+/* Identity and overflow use the same leading/trailing tracks in every row.
+   A selected row keeps its resting information until hover or keyboard focus. */
+[data-project-row] .project-card-stats {
+  min-inline-size: var(--space-5);
+  text-align: end;
+}
+
+[data-group-row] > [data-group-actions] {
+  display: none;
+}
+
+[data-project-row]:has(:focus-visible) [data-project-pinnable] {
+  opacity: 0;
+}
+
+[data-project-row]:has(:focus-visible) .project-card-stats {
+  opacity: 0;
+}
+
+[data-project-row]:has(:focus-visible) .project-card-primary:not(:has([data-project-git])) {
+  padding-inline-end: var(--space-6);
+}
+
+[data-group-row]:has(:focus-visible) > [data-group-actions] {
+  display: flex;
+}
+
+[data-group-row]:has(:focus-visible) > [data-group-git] {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-project-row]:hover [data-project-pinnable],
+  [data-project-row]:hover .project-card-stats {
+    opacity: 0;
+  }
+
+  [data-project-row]:hover .project-card-primary:not(:has([data-project-git])) {
+    padding-inline-end: var(--space-6);
+  }
+
+  [data-group-row]:hover > [data-group-actions] {
+    display: flex;
+  }
+
+  [data-group-row]:hover > [data-group-git] {
+    display: none;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  [data-project-row] .project-card-primary {
+    padding-inline-end: var(--space-6);
+  }
+
+  [data-project-row] [data-project-pinnable] {
+    opacity: 0;
+  }
+
+  [data-group-row] > [data-group-actions] {
+    display: flex;
+  }
+}
+
+/* Nested workspace rows share their own width, independent of the window.
+   Secondary shortcuts remain in the row menu when their buttons cannot fit. */
+[data-project-group] {
+  container: group-section / inline-size;
+}
+@container group-section (width < 200px) {
+  [data-group-actions] > [data-action-slot="collapse"] {
+    display: none;
+  }
+  [data-group-row]:has(:focus-visible) [data-group-workspace-mark] {
+    display: none;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    [data-group-row]:hover [data-group-workspace-mark] {
+      display: none;
+    }
+  }
+}
+
+/* Popover anchors must keep their geometry after the menu closes and the
+   pointer leaves the row. Both Git entry points keep their existing anchor. */
+[data-group-row][data-group-overview-open] > [data-group-actions] {
+  display: flex;
+}
+[data-group-row][data-group-overview-open] > [data-group-git],
+[data-group-row][data-group-overview-open] [data-group-workspace-mark] {
+  display: none;
+}

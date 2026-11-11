@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.9]
+
+### Improved
+
+- Add Assistant work modes, role-based model pools and safer drive and home-folder selection.
+- Add Crew tool profiles and improve member controls and the work view.
+- Scan decision-model folders, test and add local models, and configure routing for individual tasks.
+- Separate global and project MCP configuration and recognize Codex arrays-of-tables configurations.
+- Expand Usage breakdowns, CSV export and quota history; recognize Grok CLI quotas and Claude weekly limits.
+- Refine project and workspace navigation, group appearance controls, compact rail buttons and account/update actions.
+- Add separate search controls for split diff panes and improve shared appearance and accessibility.
+
+### Fixed
+
+- Restore removed queued messages with Undo while preserving their target, attachments and order across local and remote sessions.
+- Render terminal colors and text styles in command output and remove control codes from copied text.
+- Dismiss ordinary error and status toasts after ten focused seconds, pausing their timers while the app is unfocused.
+- Keep narrow workspace headers and row actions within their bounds and preserve workspace-return navigation.
+- Require confirmation for Host updates and retain recovery data when retiring missing workspaces.
+
 ## [0.7.8]
 
 ### Improved

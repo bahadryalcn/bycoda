@@ -313,7 +313,8 @@ describe("LiveAgentsPreview mixed collections", () => {
     expect(section.getAttribute("data-live-agents-headline")).toBe("working");
     const header = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
     expect(header.textContent).toContain("Working");
-    expect(header.textContent).toContain("2 need attention");
+    expect(header.textContent).not.toContain("need attention");
+    expect(header.querySelector('[aria-label="2 need attention"]')).not.toBeNull();
     expect(header.textContent).not.toContain("Needs attention");
     expect(container.querySelector('.sr-only[role="status"]')!.textContent).toBe(
       "2 working agents, 2 need attention, 1 finished agent",
@@ -347,4 +348,26 @@ describe("LiveAgentsPreview mixed collections", () => {
     expect(more.textContent).toContain("Show less");
     expect(container.querySelectorAll("[data-live-agent-card]")).toHaveLength(5);
   });
+});
+
+it.each([
+  ["failed", "danger"],
+  ["retrying", "warning"],
+] as const)("uses %s attention tone", (issue, tone) => {
+  render({
+    agents: [agent("issue", "/repo/a", { issue, done: true }), agent("running", "/repo/b")],
+    collapsible: true,
+  });
+  const header = container.querySelector("button[aria-expanded]")!;
+  expect(header.querySelector(`[data-tone="${tone}"]`)).not.toBeNull();
+});
+it("uses warning for multiple failures", () => {
+  render({
+    agents: [
+      agent("a", "/a", { issue: "failed", done: true }),
+      agent("b", "/b", { issue: "failed", done: true }),
+    ],
+    collapsible: true,
+  });
+  expect(container.querySelector('button[aria-expanded] [data-tone="warning"]')).not.toBeNull();
 });

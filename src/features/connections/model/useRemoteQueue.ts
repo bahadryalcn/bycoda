@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadStoredQueue, setSessionQueue } from "../../sessions/public/sessionStore";
+import { createQueuedUndoOrder } from "../../sessions/public/messageQueue";
 import { remoteBackoffDelay } from "./remotePollingPolicy";
 import type { Attachment } from "../../sessions";
 import {
@@ -9,6 +10,7 @@ import {
   pauseRemoteQueue,
   releaseRemoteQueue,
   removeRemoteMessage,
+  restoreRemoteMessage,
   reorderRemoteMessages,
   sentRemoteMessage,
   setRemoteEditing,
@@ -58,6 +60,8 @@ const initial = (key?: string): Entry => {
 };
 
 export function useRemoteQueue(key: string | undefined) {
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- Undo ordering belongs to this session and resets when its key changes.
+  const undoOrder = useMemo(() => createQueuedUndoOrder(), [key]);
   const [entry, setEntry] = useState<Entry>(() => initial(key));
   const entryRef = useRef(entry);
   entryRef.current = entry;
@@ -152,10 +156,11 @@ export function useRemoteQueue(key: string | undefined) {
   const update = useCallback(
     (change: (queue: RemoteQueue) => RemoteQueue) => {
       const current = entryRef.current;
-      if (!current.loaded || current.key !== key) return;
+      if (!current.loaded || current.key !== key) return false;
       const next = { ...current, queue: change(current.queue) };
       entryRef.current = next;
       setEntry(next);
+      return true;
     },
     [key],
   );
@@ -174,6 +179,33 @@ export function useRemoteQueue(key: string | undefined) {
     remove: useCallback(
       (id: string) => update((queue) => removeRemoteMessage(queue, id)),
       [update],
+    ),
+    removeUndoable: useCallback(
+      (id: string) => {
+        const current = entryRef.current;
+        if (!current.loaded || current.key !== key) return false;
+        const before = current.queue;
+        const message = before.messages.find((row) => row.id === id);
+        if (!message || !update((queue) => removeRemoteMessage(queue, id))) return false;
+        const restored = { ...message, id: crypto.randomUUID() };
+        const order = undoOrder.capture(
+          before.messages.map((row) => row.id),
+          id,
+          restored.id,
+        );
+        let undone = false;
+        return {
+          dispose: order.dispose,
+          undo: () => {
+            if (undone) return true;
+            undone = update((queue) =>
+              restoreRemoteMessage(queue, restored, order.ids(), id, before.status),
+            );
+            return undone;
+          },
+        };
+      },
+      [key, update, undoOrder],
     ),
     edit: useCallback(
       (id: string, text: string, attachments: Attachment[]) =>

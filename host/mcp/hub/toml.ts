@@ -1,5 +1,6 @@
 /** Minimal TOML reader for the subset Codex writes for `[mcp_servers.*]` tables:
- * tables, dotted and quoted keys, strings, numbers, booleans, arrays and inline tables.
+ * tables, arrays of tables, dotted and quoted keys, strings, numbers, booleans,
+ * arrays and inline tables.
  * Unsupported syntax throws so the caller can skip the file instead of guessing. */
 type Json = string | number | boolean | Json[] | { [key: string]: Json };
 
@@ -140,17 +141,31 @@ export function parseTomlSubset(text: string): Record<string, Json> {
     skipSpace(true);
     if (i >= text.length) break;
     if (text[i] === "[") {
-      if (text[i + 1] === "[") fail("arrays of tables are unsupported");
-      i++;
+      const arrayTable = text[i + 1] === "[";
+      i += arrayTable ? 2 : 1;
       const path = parseDottedKey();
       skipSpace();
       if (text[i] !== "]") fail("expected ]");
       i++;
+      if (arrayTable) {
+        if (text[i] !== "]") fail("expected ]]");
+        i++;
+      }
       table = root;
-      for (const part of path) {
+      for (const [index, part] of path.entries()) {
+        if (arrayTable && index === path.length - 1) {
+          const items = table[part] ?? (table[part] = []);
+          if (!Array.isArray(items)) fail(`table ${part} conflicts`);
+          const entry = {};
+          (items as Json[]).push(entry);
+          table = entry;
+          continue;
+        }
         const next = table[part] ?? (table[part] = {});
-        if (typeof next !== "object" || Array.isArray(next)) fail(`table ${part} conflicts`);
-        table = next as Record<string, Json>;
+        const current = Array.isArray(next) ? next.at(-1) : next;
+        if (!current || typeof current !== "object" || Array.isArray(current))
+          fail(`table ${part} conflicts`);
+        table = current as Record<string, Json>;
       }
     } else {
       const path = parseDottedKey();

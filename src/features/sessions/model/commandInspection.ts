@@ -1,3 +1,4 @@
+import { stripAnsi } from "../../../shared/lib/ansi";
 import type { Block } from "./session";
 import { blockLifecycle, type DockAgentStatus } from "./activityDock";
 import { boundedToolPreview } from "./toolInspection";
@@ -102,7 +103,12 @@ export function inspectCommand(block: Block, busy: boolean): CommandInspection {
 
 /** Text for Copy: the exact command, the status line, the error, then the output. */
 export function commandCopyText(inspection: CommandInspection, statusLabel: string): string {
-  return [inspection.command.text, statusLabel, inspection.error, inspection.output]
+  return [
+    inspection.command.text,
+    statusLabel,
+    inspection.error && stripAnsi(inspection.error),
+    stripAnsi(inspection.output),
+  ]
     .filter(Boolean)
     .join("\n\n");
 }

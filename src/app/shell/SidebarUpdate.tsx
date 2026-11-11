@@ -32,6 +32,7 @@ export function SidebarUpdateFooter({
   noticesOnly = false,
   repositoryPrompt = false,
   icon = false,
+  compact = false,
 }: {
   update?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
@@ -40,6 +41,7 @@ export function SidebarUpdateFooter({
   repositoryPrompt?: boolean;
   /** Footer icon button: only the download icon (dot while an update waits) and its dialog. */
   icon?: boolean;
+  compact?: boolean;
 }) {
   const t = useT();
   const [promptOpen, setPromptOpen] = useState(false);
@@ -72,13 +74,39 @@ export function SidebarUpdateFooter({
 
   if (noticesOnly) return card;
   if (!card && !actionable && !repositoryPrompt && !icon) return null;
-  if (icon && !actionable) return null;
+  if (icon && !actionable && !repositoryPrompt) return null;
+
+  const actionText =
+    snapshot.phase === "downloading"
+      ? snapshot.progress != null
+        ? `${snapshot.progress}%`
+        : t("Downloading")
+      : t("Update");
+  const actionIcon =
+    snapshot.phase === "downloading" ? (
+      <Spinner size="md" className="shrink-0" />
+    ) : icon ? (
+      <span className="relative grid icon-lg shrink-0 place-items-center">
+        <ArrowDownCircle className="icon-lg" aria-hidden />
+        <StatusDot
+          tone={snapshot.phase === "error" ? "warning" : "accent"}
+          appearance="solid"
+          size="compact"
+          className="absolute -end-0.5 -top-0.5"
+        />
+      </span>
+    ) : (
+      <RefreshCw className="icon-md shrink-0" aria-hidden />
+    );
 
   const updateAction = actionable ? (
     <Button
-      {...(repositoryPrompt || icon
-        ? { iconOnly: true as const, label: actionLabel }
-        : { label: actionLabel })}
+      {...(icon && !compact
+        ? { label: actionLabel, revealLabel: true, startIcon: actionIcon }
+        : repositoryPrompt || icon
+          ? { iconOnly: true as const, label: actionLabel }
+          : { label: actionLabel })}
+      size={icon ? "lg" : "sm"}
       variant={repositoryPrompt || icon ? "ghost" : "secondary"}
       tone={snapshot.phase === "error" ? "warning" : "neutral"}
       motion="none"
@@ -88,36 +116,24 @@ export function SidebarUpdateFooter({
       onClick={() => setPromptOpen(true)}
       className="min-w-0"
     >
-      {snapshot.phase === "downloading" ? (
-        <Spinner size="md" className="shrink-0" />
-      ) : icon ? (
-        <span className="relative grid place-items-center">
-          <ArrowDownCircle className="icon-md shrink-0" aria-hidden />
-          <StatusDot
-            tone={snapshot.phase === "error" ? "warning" : "accent"}
-            appearance="solid"
-            size="compact"
-            className="absolute -end-0.5 -top-0.5"
-          />
-        </span>
+      {icon && !compact ? (
+        actionText
       ) : (
-        <RefreshCw className="icon-md shrink-0" aria-hidden />
+        <>
+          {actionIcon}
+          {!repositoryPrompt && !icon ? (
+            <span className="truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden">
+              {actionText}
+            </span>
+          ) : null}
+        </>
       )}
-      {!repositoryPrompt && !icon ? (
-        <span className="truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden">
-          {snapshot.phase === "downloading"
-            ? snapshot.progress != null
-              ? `${snapshot.progress}%`
-              : t("Downloading")
-            : t("Update")}
-        </span>
-      ) : null}
     </Button>
   ) : null;
 
   return (
     <div
-      className={`flex min-w-0 flex-col gap-1.5 empty:hidden ${repositoryPrompt ? "w-full" : icon ? "" : "items-end"}`}
+      className={`flex min-w-0 flex-col gap-1.5 empty:hidden ${repositoryPrompt && !icon ? "w-full" : icon ? "shrink-0" : "items-end"}`}
     >
       {promptOpen && actionable ? (
         <Modal
@@ -147,7 +163,11 @@ export function SidebarUpdateFooter({
         </Modal>
       ) : null}
       {card}
-      {repositoryPrompt ? <GithubStarPrompt action={updateAction} /> : updateAction}
+      {repositoryPrompt ? (
+        <GithubStarPrompt action={updateAction} icon={icon} compact={compact} />
+      ) : (
+        updateAction
+      )}
     </div>
   );
 }

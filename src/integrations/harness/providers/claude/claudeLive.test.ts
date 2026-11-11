@@ -2107,6 +2107,20 @@ describe("claude subagents", () => {
     expect(events.some((event) => event.type === "usage.limited")).toBe(false);
   });
 
+  it("emits a usage limit for a weekly rejection without a rate limit event", async () => {
+    const { events, turn } = await startTurn("s1");
+    const message = "You've hit your weekly limit · resets Nov 14, 8am (Europe/Istanbul)";
+    emit({
+      type: "result",
+      subtype: "success",
+      is_error: true,
+      result: message,
+    });
+    await turn;
+    expect(events).toContainEqual({ type: "session.error", message });
+    expect(events).toContainEqual({ type: "usage.limited" });
+  });
+
   it("does not end the turn on a subagent result", async () => {
     const { events, turn } = await startTurn("s1");
     let settled = false;

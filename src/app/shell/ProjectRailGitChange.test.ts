@@ -3,6 +3,8 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { ProjectRail } from "./ProjectRail";
+import { savePinnedProjects } from "../../features/projects/model/recents";
+import { loadRailSectionCollapse } from "../../features/projects/model/railSections";
 
 type Stats = { files: number; additions: number; deletions: number } | null;
 const stats = new Map<string, Stats>();
@@ -26,10 +28,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function renderRail(paths: string[]) {
+async function renderRail(paths: string[], pinnedPaths: string[] = []) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   localStorage.setItem("bycoda.language", "en");
+  savePinnedProjects(pinnedPaths);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -117,4 +120,35 @@ it("adds the parent folder to same-named local projects only", async () => {
   const tip = await tooltipText(rowButton(container, "/work/app"));
   expect(tip).toContain("app");
   expect(tip).toContain("/work/app");
+});
+
+it("keeps project identity and hover actions in aligned slots without reserving an empty tail", async () => {
+  stats.set("/work/changed", { files: 2, additions: 9, deletions: 1 });
+  const container = await renderRail(["/work/changed"]);
+  const row = container.querySelector<HTMLElement>('[data-project-path="/work/changed"]')!;
+  expect(row.hasAttribute("data-hover-reveal")).toBe(true);
+  expect(row.querySelector("[data-project-pin]")).not.toBeNull();
+  expect(row.querySelector("[data-project-options]")).not.toBeNull();
+  expect(row.querySelector("[data-project-primary]")?.classList.contains("pe-6")).toBe(false);
+});
+
+it("collapses pinned projects through their icon header and saves the state", async () => {
+  const container = await renderRail(["/work/pinned"], ["/work/pinned"]);
+  const heading = [...container.querySelectorAll<HTMLElement>("[data-rail-section-header]")].find(
+    (header) => header.textContent?.includes("Pinned"),
+  )!;
+  const toggle = heading.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+  expect(toggle).not.toBeNull();
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(loadRailSectionCollapse()).toMatchObject({ pinned: true });
+  expect(
+    container.querySelector('[data-project-path="/work/pinned"]')?.closest("[hidden]"),
+  ).not.toBeNull();
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    container.querySelector('[data-project-path="/work/pinned"]')?.closest("[hidden]"),
+  ).toBeNull();
 });

@@ -13394,5 +13394,6 @@
   "Worker new tokens": "Yeni işçi tokenları",
   "Worker tokens total {p0}, including {p1} cache reads. Cache reads re-read earlier context and cost far less than new tokens.": "İşçi tokenları toplamı {p0}, bunun {p1} önbellek okuması dahil. Önbellek okumaları önceki bağlamı yeniden okur ve yeni tokenlardan çok daha az maliyetlidir.",
   "How freely may it work?": "Ne kadar serbest çalışsın?",
-  "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000.": "Sohbet ve sesli yanıtları, gözetmen kontrollerini ve asistanın başlattığı işleri kapsar. Kendi oturumlarınız sayılmaz. %80'de yalnızca raporlar, %100'de durur. En az 20.000."
+  "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000.": "Sohbet ve sesli yanıtları, gözetmen kontrollerini ve asistanın başlattığı işleri kapsar. Kendi oturumlarınız sayılmaz. %80'de yalnızca raporlar, %100'de durur. En az 20.000.",
+  "Message removed": "Mesaj kaldırıldı"
 }

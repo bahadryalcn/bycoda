@@ -238,6 +238,46 @@
 .nativeContent {
   gap: var(--space-2);
 }
+/* An icon stays in place while a toolbar action reveals its label. */
+.control[data-button-reveal-label] {
+  --button-icon-size: var(--ui-icon-lg);
+  padding-inline: calc((var(--control-height-lg) - var(--button-icon-size)) / 2 - 1px);
+}
+.control[data-button-reveal-label] > .nativeContent {
+  display: inline-grid;
+  grid-template-columns: var(--button-icon-size) minmax(0, 0fr);
+  gap: 0;
+  transition:
+    grid-template-columns var(--duration-fast) var(--ease-standard),
+    gap var(--duration-fast) var(--ease-standard);
+}
+.control[data-button-reveal-label] .label {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.control[data-button-reveal-label]:is(:hover, :focus-visible, [aria-expanded="true"])
+  > .nativeContent {
+  grid-template-columns: var(--button-icon-size) minmax(0, 1fr);
+  gap: var(--space-2);
+}
+.control[data-button-reveal-label]:is(:hover, :focus-visible, [aria-expanded="true"]) .label {
+  opacity: 1;
+}
+@media (hover: none), (pointer: coarse) {
+  .control[data-button-reveal-label] > .nativeContent {
+    grid-template-columns: var(--button-icon-size) minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+  .control[data-button-reveal-label] .label {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .control[data-button-reveal-label] > .nativeContent,
+  .control[data-button-reveal-label] .label {
+    transition: none;
+  }
+}
 /* A text label never paints outside its control: in a bounded container the control
    stops at the container edge and the label ends in an ellipsis. The accessible name
    keeps the full text. Consumer utilities can still size the control. */
