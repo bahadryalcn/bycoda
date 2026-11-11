@@ -96,7 +96,7 @@ async function setup(
   await act(async () => root!.render(createElement(Form)));
 }
 async function click(text: string, scope: ParentNode = container) {
-  const target = [...scope.querySelectorAll("button")].find(
+  const target = [...scope.querySelectorAll("button, summary")].find(
     (button) => button.textContent === text || button.getAttribute("aria-label") === text,
   );
   expect(target).toBeTruthy();

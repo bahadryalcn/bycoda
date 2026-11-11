@@ -130,7 +130,30 @@ export type GoalPlanTask = {
   projectId?: string;
 };
 
-export type GoalPlan = { tasks: GoalPlanTask[] };
+export type GoalPlan = {
+  tasks: GoalPlanTask[];
+  /** The planner judged the job small and low-risk. */
+  simple?: true;
+};
+
+/** A plan may be marked simple only while it stays this small. */
+const MAX_SIMPLE_PLAN_TASKS = 2;
+
+/** Which independent reviews a planned goal runs, within the owner's settings.
+ * A simple plan runs configured checks only. One task needs no final review:
+ * its own review already covered the whole job. */
+export function goalPlanReviews(goal: {
+  finalReview?: boolean;
+  verifyDefaults: { review: boolean };
+  plan?: GoalPlan;
+}): { task: boolean; final: boolean } {
+  const tasks = goal.plan?.tasks.length ?? 0;
+  const simple = goal.plan?.simple === true;
+  return {
+    task: goal.verifyDefaults.review && !simple,
+    final: goal.finalReview === true && !simple && tasks !== 1,
+  };
+}
 
 /** Evaluate the accepted owner's policy against the parsed plan, before tasks exist. */
 export function goalPlanNeedsApproval(
@@ -461,7 +484,9 @@ export function parseGoalPlan(text: string, allowedProjects: readonly string[]):
         throw new Error(`Task “${task.key}” depends on “${key}”, which is not in the plan.`);
   const cycle = findCycle(tasks);
   if (cycle) throw new Error(`The plan’s dependencies form a cycle: ${cycle.join(" → ")}.`);
-  return { tasks };
+  const simple =
+    (raw as Record<string, unknown>).simple === true && tasks.length <= MAX_SIMPLE_PLAN_TASKS;
+  return { tasks, ...(simple ? { simple: true as const } : {}) };
 }
 
 /** A dependency cycle among the tasks, as the keys around it with the first

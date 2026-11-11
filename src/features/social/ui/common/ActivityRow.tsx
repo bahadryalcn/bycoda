@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { ActionHost, InlineTextAction } from "../../../../shared/ui/ActionHost";
 import {
@@ -24,7 +24,7 @@ export type ActivityRowProps = {
   kind?: ActivityKind;
   /** Caption content before the time, for example a platform glyph and account name. */
   meta?: ReactNode;
-  /** Plain-language detail, shown after "Details". Technical ids go in TechnicalDetails. */
+  /** Plain-language detail, always shown under the row (errors included). Technical ids go in TechnicalDetails. */
   details?: ReactNode;
   /**
    * Omit when the entry cannot be undone: no Undo button is rendered, so the reason belongs in
@@ -75,10 +75,8 @@ function KindIcon({ kind }: { kind?: ActivityKind }) {
   }
 }
 
-/** One activity entry: what happened, its status, Details and Undo. */
+/** One activity entry: what happened, its status, its detail and Undo. */
 export function ActivityRow({ title, time, status, kind, meta, details, undo }: ActivityRowProps) {
-  const [open, setOpen] = useState(false);
-  const detailsId = useId();
   return (
     <div className="social-activity-row">
       <ActionHost className="social-activity-head">
@@ -94,15 +92,6 @@ export function ActivityRow({ title, time, status, kind, meta, details, undo }: 
         </div>
         <StatusText status={status} />
         <div className="social-activity-actions">
-          {details ? (
-            <InlineTextAction
-              aria-expanded={open}
-              aria-controls={detailsId}
-              onClick={() => setOpen((value) => !value)}
-            >
-              {t("Details")}
-            </InlineTextAction>
-          ) : null}
           {undo ? (
             <InlineTextAction
               disabled={!!undo.blockedReason}
@@ -114,11 +103,7 @@ export function ActivityRow({ title, time, status, kind, meta, details, undo }: 
           ) : null}
         </div>
       </ActionHost>
-      {details && open ? (
-        <div id={detailsId} className="social-activity-details">
-          {details}
-        </div>
-      ) : null}
+      {details ? <div className="social-activity-details">{details}</div> : null}
     </div>
   );
 }

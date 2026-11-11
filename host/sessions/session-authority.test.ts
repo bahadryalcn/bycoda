@@ -8,6 +8,7 @@ import { SocialService } from "../social/social";
 import type { SocialAdapters } from "../../src/integrations/social/adapter";
 import { RuntimeLogAccess } from "../execution/runtime-log-tools";
 import { createSessionAuthorityResolver, SessionAuthorityUnavailable } from "./session-authority";
+import { HostDomainRefusalError } from "../domains/context";
 import type { HostSession } from "../../src/features/connections/model/protocol";
 
 const cleanup: (() => void | Promise<void>)[] = [];
@@ -134,6 +135,26 @@ it("keeps Social grant publication commit-bound and refuses scope-changing renew
   ).rejects.toThrow("rollback social fixture");
   expect(await s.social.principalForToken(token)).toBeUndefined();
   expect(await s.social.principalForToken(initial.token)).toBeTruthy();
+});
+
+it("refuses a grant for a session nobody stores as not sent, with the message clients match", async () => {
+  const s = await socialFixture();
+  s.desktop.metadataAsync.mockImplementation(async () => undefined as never);
+  for (const issue of [
+    () => s.access.issueSessionGrant("missing"),
+    () => s.social.issueSessionGrant("missing"),
+  ]) {
+    const error = await issue().catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(HostDomainRefusalError);
+    expect(error).toMatchObject({
+      message: "Session not found on this machine",
+      code: "COMMAND_INVALID",
+      category: "validation",
+      retryable: false,
+      delivery: "not-sent",
+    });
+  }
+  expect(await s.access.hasSession("missing")).toBe(false);
 });
 
 it("never admits a missing grant, even while an unrelated SQL owner is held", async () => {

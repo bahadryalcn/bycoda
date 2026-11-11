@@ -5,6 +5,10 @@ import {
   resetGridStretch,
   type TerminalFitMode,
 } from "../model/terminalLayout";
+import { deferDuringResize, resizeGestureActive } from "../../../shared/lib/resizeGesture";
+
+/** How often the grid follows its box while a resize is live. */
+const LIVE_FIT_MS = 100;
 
 /**
  * Grid fitting for one xterm instance: shell/TUI (alternate screen) modes, the
@@ -51,11 +55,30 @@ export function createTerminalFitting(options: {
     });
   };
 
+  // A live drag changes the host every frame. Each fit reflows the scrollback and sends a PTY
+  // resize (a ConPTY reflow whose redraw output xterm must parse), so during the gesture the
+  // grid follows the box a few times a second instead of on every frame, and the settled size
+  // always gets its own fit when the gesture ends.
+  let liveFit: ReturnType<typeof setTimeout> | undefined;
+  const applyAfterGesture = deferDuringResize(() => {
+    clearTimeout(liveFit);
+    liveFit = undefined;
+    applySize();
+  });
+
   const schedule = () => {
     if (raf) return;
     raf = requestAnimationFrame(() => {
       raf = 0;
-      applySize();
+      if (!resizeGestureActive()) {
+        applySize();
+        return;
+      }
+      applyAfterGesture();
+      liveFit ??= setTimeout(() => {
+        liveFit = undefined;
+        applySize();
+      }, LIVE_FIT_MS);
     });
   };
 
@@ -90,6 +113,8 @@ export function createTerminalFitting(options: {
       disposed = true;
       cancelAnimationFrame(frame);
       if (raf) cancelAnimationFrame(raf);
+      applyAfterGesture.cancel();
+      clearTimeout(liveFit);
       observer?.disconnect();
       outer.classList.remove("bycoda-terminal--alt-screen");
       for (const subscription of subscriptions) subscription.dispose();

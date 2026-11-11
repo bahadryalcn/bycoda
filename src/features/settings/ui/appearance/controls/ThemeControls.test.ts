@@ -36,11 +36,15 @@ it("labels tone sliders and disables depth in light mode", async () => {
     themeHue: 216,
     themeSaturation: 20,
     themeDarkLightness: 8,
+    preferences: { surfaceContrast: 125 },
     onTint: vi.fn(),
     onDarkLightness: vi.fn(),
+    onPreferences: vi.fn(),
   } as unknown as AppearanceSettings;
   try {
     await act(async () => root.render(createElement(ToneSliders, { appearance })));
+    expect(host.querySelector("#setting-surface-contrast")).not.toBeNull();
+    expect(host.textContent).toContain("125%");
     expect(host.textContent).toContain("216°");
     expect(host.querySelector("#setting-hue")).not.toBeNull();
     expect(host.querySelector("#setting-saturation")).not.toBeNull();

@@ -8,6 +8,7 @@ import { Checkbox } from "../../../../../shared/ui/Checkbox";
 import { InlineError } from "../../../../../shared/ui/InlineError";
 import { NumberField } from "../../../../../shared/ui/NumberField";
 import { Select } from "../../../../../shared/ui/Select";
+import { Surface } from "../../../../../shared/ui/Surface";
 import { Timestamp } from "../../../../../shared/ui/Timestamp";
 import { ArrowDown, ArrowUp, GripVertical, Trash2 } from "../../../../../shared/ui/icons";
 import { isRemoteProvider, REMOTE_PROVIDERS } from "../../../../connections/public/protocol";
@@ -101,7 +102,10 @@ export function ModelPoolRow({
   }
   const dragging = sortable.draggingId === row.id;
   return (
-    <fieldset
+    <Surface
+      as="fieldset"
+      variant="card"
+      padding="sm"
       ref={(node) => sortable.setItemRef(row.id, node)}
       className={`reorder-item ${styles.row}`}
       data-dragging={dragging ? "" : undefined}
@@ -241,6 +245,6 @@ export function ModelPoolRow({
       {problems.map((problem) => (
         <InlineError key={problem}>{t(problem)}</InlineError>
       ))}
-    </fieldset>
+    </Surface>
   );
 }

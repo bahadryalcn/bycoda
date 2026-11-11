@@ -168,6 +168,11 @@ import {
   subscribeGroupLock,
   getGroupLockView,
 } from "../../group-lock/model/groupLock";
+import {
+  canRetryRoomPrivacyProjection,
+  getRoomPrivacyStatus,
+  recoverRoomPrivacyProjection,
+} from "../../group-lock/model/roomPrivacyProjection";
 import { useVoiceBriefing } from "./useVoiceBriefing";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import { newRequestId } from "../../../shared/lib/id/requestId";
@@ -548,6 +553,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     pending.review = { ...pending.review, busy: true, error: "" };
     if (pending.shown) setJobReview(pending.review);
     try {
+      // A held privacy failure refuses every Host admission; settle it first, as the Room's retry does.
+      if (getRoomPrivacyStatus().error && canRetryRoomPrivacyProjection())
+        await recoverRoomPrivacyProjection();
       const verified = await assistantRequest({ op: "projects.list" }, pending.environmentId);
       if (pending.review.jobs.some((row) => row.kind === "quick")) {
         const current = await assistantRequest(

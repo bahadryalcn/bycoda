@@ -208,7 +208,7 @@ fn read_lines_batched_keeps_every_line_in_order() {
 #[test]
 fn read_lines_batched_keeps_draining_after_invalid_utf8() {
     // A Windows code-page byte (0xFE) in the middle of the stream, followed
-    // by more valid lines; before K-UTF8 the reader stopped at that line.
+    // by more valid lines; before lossy decoding the reader stopped at that line.
     let mut input = b"first\r\n".to_vec();
     input.extend_from_slice(b"bad \xFE byte\n");
     input.extend_from_slice("sonra \u{15F}".as_bytes());

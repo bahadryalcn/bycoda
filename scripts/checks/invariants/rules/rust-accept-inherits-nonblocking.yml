@@ -2,7 +2,7 @@ id: rust-accept-inherits-nonblocking
 language: rust
 severity: error
 message: "On macOS and Windows a socket returned by `accept()` inherits the listener's non-blocking mode. Call `socket.set_nonblocking(false)` (and set read/write timeouts) in the `Ok` arm before handing the socket to a blocking handler; otherwise reads spin on WouldBlock and writes truncate responses."
-note: Rule K-SOCKET in docs/reference/code-invariants.md
+note: docs/reference/code-invariants.md
 files:
   - "src-tauri/src/**"
 ignores:

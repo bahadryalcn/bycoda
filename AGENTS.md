@@ -100,18 +100,22 @@ responsibility goes into the owning folder instead.
 
 # Code invariants
 
-Rules and helpers: `docs/reference/code-invariants.md`. In short: listen for native
+Every enforced rule is defined once and listed in the generated `docs/reference/rules.md`;
+`pnpm check:rules` runs them all. Before adding a rule, widen an existing one. Rationale and
+helpers: `docs/reference/code-invariants.md`. In short: listen for native
 events with `listenWindow`, emit with `emit_to`; write state files with
 `writeFileAtomic`, read with `readStateFile`; decode child-process output lossily per
 line; give every discarded promise a rejection handler and every external command a
 deadline; truncate with `truncateGraphemes`; measure durations with `elapsedSince`;
 format dates, numbers, bytes and durations with `src/shared/i18n`; open links with
 `openExternal`; use shared feedback, dialog and form controls instead of native elements
-or hand-written `role`/`aria-live`. Suppress one line only, with `-- <reason>`. A fix for
+or hand-written `role`/`aria-live`; observe sizes with `observeResize`; give every new
+React effect a reason comment and write no `useMemo`/`useCallback`/`memo` in files the
+React Compiler compiles in full; add no function it skips (`pnpm check:compiler`). Suppress one line only, with `-- <reason>`. A fix for
 one of these defect classes adds a regression test. Code, rules and docs are in English.
 
 `pnpm check:structure`, `pnpm check:invariants`, `pnpm check:ui-drift`,
-`pnpm lint:baseline` and `pnpm check:types:tests` are ratchets: their baselines may
+`pnpm check:compiler`, `pnpm lint:baseline` and `pnpm check:types:tests` are ratchets: their baselines may
 only fall, and a cleanup lowers them (`--ratchet`). `pnpm check:baselines` rejects a
 per-rule total above the base branch unless `scripts/checks/baseline-approvals.json`
 records the rise and its reason; only a new or widened rule justifies an entry.

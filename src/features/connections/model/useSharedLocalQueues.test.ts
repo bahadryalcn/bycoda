@@ -880,6 +880,41 @@ it("backs off while the host answers with errors instead of retrying every tick"
   expect(mocks.request.mock.calls.length).toBeLessThanOrEqual(10);
 });
 
+it("keeps no shared queue for a conversation the Host does not store, and asks again when its turn starts or ends", async () => {
+  const known = mocks.request.getMockImplementation()!;
+  mocks.request.mockRejectedValue(
+    new Error("Host rejected request: Session not found on this machine"),
+  );
+  await mount();
+  // Not a failed queue: nothing holds sending back, and the conversation's own queue is sent.
+  expect(localClient).toBeUndefined();
+  expect(sharedLocalQueueReady("chat")).toBe(true);
+  const send = vi.fn(() => true);
+  expect(await submitSharedLocalQueue("chat", "a", false, send)).toBe(true);
+  expect(send).toHaveBeenCalledWith();
+  const asked = mocks.request.mock.calls.length;
+  expect(asked).toBe(1);
+  await act(async () => {
+    for (let elapsed = 0; elapsed < 55_000; elapsed += 500) {
+      vi.advanceTimersByTime(500);
+      for (let i = 0; i < 20; i++) await flushTurn();
+    }
+  });
+  // The failure backoff would have asked after 1.5, 3, 6, 12 and 24 s.
+  expect(mocks.request.mock.calls).toHaveLength(asked);
+  sessionsRef.current = [{ ...sessionsRef.current[0], busy: true }];
+  await flush();
+  expect(mocks.request.mock.calls).toHaveLength(asked + 1);
+  expect(localClient).toBeUndefined();
+  // The Host stores the conversation now: its queue is shared from the next look on.
+  mocks.request.mockImplementation(known);
+  sessionsRef.current = [{ ...sessionsRef.current[0], busy: false }];
+  await flush();
+  expect(localClient).toBeDefined();
+  expect(queue.messages).toEqual([row("a")]);
+  expect(sharedLocalQueueReady("chat")).toBe(true);
+});
+
 it("does not resume while a given-up send may still be answered, and resumes once it has been", async () => {
   await mount();
   let settle!: (value: DeliverySettlement) => void;

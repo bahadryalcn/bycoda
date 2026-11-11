@@ -1,4 +1,6 @@
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Heading } from "../../../shared/ui/Heading";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Switch } from "../../../shared/ui/Switch";
 import { lazy, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -72,7 +74,9 @@ function SwitchRow({
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="onboarding-section">
-      <div className="onboarding-section-title">{title}</div>
+      <SectionLabel as="div" className="onboarding-section-title">
+        {title}
+      </SectionLabel>
       {children}
     </section>
   );
@@ -89,7 +93,9 @@ export function OnboardingWorkspace() {
   return (
     <>
       <div className="onboarding-heading">
-        <h3>{t("A workspace that fits you")}</h3>
+        <Heading size="page" level={3}>
+          {t("A workspace that fits you")}
+        </Heading>
         <p>{t("Choose the tools you want close by. You can change these in Settings anytime.")}</p>
       </div>
       <div className="onboarding-scroll">
@@ -195,7 +201,9 @@ export function OnboardingAppearance() {
   return (
     <>
       <div className="onboarding-heading">
-        <h3>{t("Make yourself at home")}</h3>
+        <Heading size="page" level={3}>
+          {t("Make yourself at home")}
+        </Heading>
         <p>{t("Choose your appearance and the crew that keeps you company.")}</p>
       </div>
       <div className="onboarding-scroll">

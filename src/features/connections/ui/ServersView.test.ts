@@ -443,16 +443,8 @@ it("updates the machine's status from shared host health without losing inventor
     "The machine did not answer",
   );
   await click("Home Mac");
-  const disclosure = document.body.querySelector(
-    '[aria-label="Server details"] details',
-  ) as HTMLDetailsElement;
-  expect(disclosure).toBeTruthy();
-  expect(disclosure.open).toBe(false);
-  expect(disclosure.textContent).toContain("The machine did not answer");
-  await act(async () => {
-    disclosure.open = true;
-  });
-  expect(disclosure.open).toBe(true);
+  const panel = document.body.querySelector('[aria-label="Server details"]')!;
+  expect(panel.textContent).toContain("The machine did not answer");
   expect(document.body.querySelector('[data-server-row][aria-pressed="true"]')).toBeTruthy();
 });
 

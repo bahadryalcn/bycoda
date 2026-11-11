@@ -69,19 +69,11 @@
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
-.sectionTitle {
-  margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-}
 .fields {
   display: grid;
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
 }
 .field {
   display: grid;

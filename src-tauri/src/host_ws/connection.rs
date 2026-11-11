@@ -2,6 +2,7 @@
 use super::{
     bulk,
     demand::{DemandUnion, Effects, MemberId, Notice, Operation, OperationKind},
+    local_endpoints,
     permits::ResourceScope,
     Contracts, NativeEvent, Request, Shared, WsFailure, WsReply,
 };
@@ -300,6 +301,7 @@ pub(super) async fn worker(
             None => break,
         };
         shared.state(generation, "connecting", None);
+        let connecting = Instant::now();
         let handshake = time::timeout(
             contracts.duration("handshakeTimeoutMs"),
             connect(&shared, &contracts, generation),
@@ -312,7 +314,10 @@ pub(super) async fn worker(
                 _ = shared.changed.notified() => { if shared.stopped() { break 'worker; } },
                 _ = time::sleep(wait) => {},
                 request = rx.recv() => match request { Some(request) => queued.push_back(request), None => break 'worker },
-                result = &mut handshake => break result.unwrap_or(Err(("unavailable", false))),
+                result = &mut handshake => break result.unwrap_or_else(|_| {
+                    shared.timed_out(generation, "handshake", connecting.elapsed());
+                    Err(("unavailable", false))
+                }),
             }
         };
         let (category, permanent) = match result {
@@ -377,19 +382,15 @@ pub(super) async fn worker(
             shared.state(generation, "blocked", Some(category));
             continue;
         }
-        shared.state(generation, "retry-wait", Some(category));
-        let initial = contracts.manifest["retryPolicy"]["initialDelayMs"]
-            .as_u64()
-            .unwrap_or(250);
-        let maximum = contracts.manifest["retryPolicy"]["maxDelayMs"]
-            .as_u64()
-            .unwrap_or(30_000);
-        let cap = initial
-            .saturating_mul(1u64.checked_shl(attempts.min(20)).unwrap_or(u64::MAX))
-            .min(maximum);
+        let delay = local_endpoints::retry_delay(
+            &contracts.manifest["retryPolicy"],
+            attempts,
+            uuid::Uuid::new_v4().as_u128() as u64,
+            local_endpoints::contains(&shared.route.endpoint),
+        );
         attempts = attempts.saturating_add(1);
-        let random = uuid::Uuid::new_v4().as_u128() as u64;
-        let delay = time::sleep(Duration::from_millis(random % (cap + 1)));
+        shared.retry_wait(generation, category, delay);
+        let delay = time::sleep(delay);
         tokio::pin!(delay);
         loop {
             prune_reconnect_queue(&shared, &mut queued, generation, Instant::now());
@@ -1244,10 +1245,15 @@ async fn serve(
         {
             break failure;
         }
-        if ping
+        if let Some((_, deadline)) = ping
             .as_ref()
-            .is_some_and(|(_, deadline)| Instant::now() >= *deadline)
+            .filter(|(_, deadline)| Instant::now() >= *deadline)
         {
+            shared.timed_out(
+                generation,
+                "heartbeat",
+                contracts.duration("heartbeatResponseTimeoutMs") + deadline.elapsed(),
+            );
             break ("unavailable", false);
         }
         if Instant::now() >= heartbeat && ping.is_none() {

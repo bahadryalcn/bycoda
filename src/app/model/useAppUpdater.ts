@@ -2,6 +2,11 @@ import { useEffect, useSyncExternalStore } from "react";
 import { subscribeUpdateChannel } from "../../features/settings/model/updateChannel";
 import { isUpdatePromptSnoozed } from "./updatePrompt";
 import {
+  nextUpdateProbeDelayMs,
+  pendingUpdateProbeWaitMs,
+  subscribeUpdateProbeBackoff,
+} from "./updateProbeBackoff";
+import {
   installPendingUpdate,
   probeForUpdate,
   readAppVersion,
@@ -23,8 +28,9 @@ export function claimStartupUpdatePrompt(): boolean {
 let checking = false;
 let installing = false;
 let consumers = 0;
-let timer: ReturnType<typeof setInterval> | undefined;
+let timer: ReturnType<typeof setTimeout> | undefined;
 let stopChannel: (() => void) | undefined;
+let stopBackoff: (() => void) | undefined;
 let generation = 0;
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => {
@@ -40,14 +46,23 @@ export function setAppUpdateSnapshot(next: UpdaterSnapshot) {
   listeners.forEach((listener) => listener());
 }
 
-async function probe() {
+function armProbeTimer(delay = nextUpdateProbeDelayMs()) {
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    // Re-arm first: a probe that is skipped or disabled settles no check.
+    armProbeTimer();
+    void probe();
+  }, delay);
+}
+
+async function probe(explicit = false) {
   if (checking || installing || snapshot.phase === "downloading") return;
   checking = true;
   const request = generation;
   try {
     const currentVersion = await readAppVersion();
     if (request !== generation) return;
-    const update = await probeForUpdate();
+    const update = await probeForUpdate(explicit);
     if (request !== generation || installing) return;
     if (!startupChecked) {
       startupChecked = true;
@@ -92,19 +107,24 @@ export function useAppUpdater() {
   useEffect(() => {
     consumers += 1;
     if (consumers === 1) {
-      void probe();
-      timer = setInterval(() => void probe(), 30 * 60 * 1000);
-      // Switching the update channel answers right away instead of at the next interval.
-      // probe() never rejects; the handler keeps that true if it changes.
+      // A remount inside a failure wait keeps that wait instead of probing again.
+      const wait = pendingUpdateProbeWaitMs();
+      armProbeTimer(wait || undefined);
+      if (!wait) void probe();
+      // Every settled check, background or explicit, restarts the wait from its outcome.
+      stopBackoff = subscribeUpdateProbeBackoff(() => armProbeTimer());
+      // Switching the update channel is the user's own check of other feeds: it answers
+      // right away. probe() never rejects; the handler keeps that true if it changes.
       stopChannel = subscribeUpdateChannel(() => {
-        probe().catch(() => {});
+        probe(true).catch(() => {});
       });
     }
     return () => {
       consumers -= 1;
       if (!consumers) {
-        clearInterval(timer);
+        clearTimeout(timer);
         stopChannel?.();
+        stopBackoff?.();
         generation += 1;
         checking = false;
       }

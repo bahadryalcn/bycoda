@@ -1,13 +1,12 @@
 import { Button } from "../../../shared/ui/Button";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import {
   memo,
   useCallback,
   useEffect,
   useLayoutEffect,
-  useReducer,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -73,6 +72,7 @@ import { FilePane } from "../../files/ui/FilePane";
 import { MediaVisibilityContext } from "../../files/model/mediaVisibility";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
 import { paneBackgroundPlacement, syncPaneBackgrounds } from "../../../shared/lib/paneBackground";
+import { paneRectStyle, sashKey, sashStyle, writeLayoutPreview } from "./paneTreePreview";
 import { useShellSessionsSelector } from "../../sessions/model/sessionsStore";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { TranscriptPool } from "../../sessions/ui/TranscriptPool";
@@ -313,13 +313,15 @@ function PaneTreeComponent({
   onTerminalMetaChange,
   transcriptPool,
 }: Props) {
-  useLocale();
+  "use memo";
+  const t = useT();
   const treeRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef(layout);
-  layoutRef.current = layout;
-  // A sash preview belongs to the layout it was made from; a new layout drops it.
-  const [draft, setDraft] = useState<{ base: LayoutNode; node: LayoutNode } | null>(null);
-  // After every render: a sash preview moves the leaves on each frame.
+  useLayoutEffect(() => {
+    layoutRef.current = layout;
+  });
+  // After every render: a new layout moves the leaves. A sash drag does not render;
+  // it writes the boxes itself (`writeLayoutPreview`) and commits once at the end.
   useLayoutEffect(() => syncPaneBackgrounds(treeRef.current));
   const [paneDrag, setPaneDragState] = useState<PaneDrag | null>(null);
   const setPaneDrag = useCallback((next: PaneDrag | null) => {
@@ -328,38 +330,22 @@ function PaneTreeComponent({
   const [localMaximizedId, setLocalMaximizedId] = useState<string | null>(null);
   const externalDrop = useExternalPaneDrop(visible);
   const drop = paneDrag ?? externalDrop;
-  const onMovePaneRef = useRef(onMovePane);
-  onMovePaneRef.current = onMovePane;
-  const onDetachPaneRef = useRef(onDetachPane);
-  onDetachPaneRef.current = onDetachPane;
-  const onPopOutPaneRef = useRef(onPopOutPane);
-  onPopOutPaneRef.current = onPopOutPane;
+  // What a pane drag reads while it runs: the latest values, not the render it started in.
   const dragContents = useRef({
     editorPanes,
     sessionById: new Map<string, Session>() as ReadonlyMap<string, Session>,
+    onFocus,
+    onMovePane,
+    onDetachPane,
+    onPopOutPane,
   });
-  const onFocusRef = useRef(onFocus);
-  onFocusRef.current = onFocus;
   const cancelPaneDrag = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelPaneDrag.current?.(), []);
   useEffect(() => {
     if (!visible) cancelPaneDrag.current?.();
   }, [visible]);
 
-  // A sash drag re-renders this tree every frame. `SessionPane` compares props
-  // shallowly, so handing it a fresh drag handler each frame would re-render
-  // the whole session subtree (transcript, composer, picker) per frame.
-  const dragHandlers = useRef(new Map<string, (event: ReactPointerEvent<HTMLElement>) => void>());
-  const paneDragStartFor = (paneId: string) => {
-    const cached = dragHandlers.current.get(paneId);
-    if (cached) return cached;
-    const handler = (event: ReactPointerEvent<HTMLElement>) => startPaneDrag(paneId, event);
-    dragHandlers.current.set(paneId, handler);
-    return handler;
-  };
-
-  const tree = draft && draft.base === layout ? draft.node : layout;
-  const leaves = layoutLeaves(tree);
+  const leaves = layoutLeaves(layout);
   const maximumId = maximizedPaneId === undefined ? localMaximizedId : maximizedPaneId;
   const maximum = leaves.find(
     (pane) => pane.id === maximumId || pane.tabIds?.includes(maximumId ?? ""),
@@ -397,7 +383,7 @@ function PaneTreeComponent({
     setDropIndicator(element ?? null, dropMarkPlacement);
     return () => clearDropIndicator();
   }, [dropMarkId, dropMarkPlacement]);
-  const sashes = maximum ? [] : layoutSashes(tree);
+  const sashes = maximum ? [] : layoutSashes(layout);
   const inSplit = leaves.length > 1;
   // Split rectangles follow the available workspace width. Keep saved ratios
   // and mounted drafts as the sidebar grows; each pane owns its content overflow.
@@ -413,35 +399,44 @@ function PaneTreeComponent({
         : selectPaneSessions(sessions ?? shell, shownIds),
     samePaneSessions,
   );
-  heldSessions.current = paneSessions;
   const sessionById = paneSessions.byId;
-  dragContents.current = { editorPanes, sessionById };
+  useLayoutEffect(() => {
+    heldSessions.current = paneSessions;
+    dragContents.current = {
+      editorPanes,
+      sessionById,
+      onFocus,
+      onMovePane,
+      onDetachPane,
+      onPopOutPane,
+    };
+  });
 
   // A pane split into an existing layout slides in from the edge it was added
   // on, like the linked work item panel. The neighbours reflow once up front;
   // only the new pane's content moves, so nothing rewraps mid-animation.
   // Panes present when the tree mounts, or swapped in place, just appear.
-  const knownLeafIds = useRef<ReadonlySet<string> | null>(null);
-  const enteringPanes = useRef(new Map<string, PaneEnterFrom>());
-  const [, rerender] = useReducer((tick: number) => tick + 1, 0);
-  if (knownLeafIds.current && leaves.length > knownLeafIds.current.size) {
-    for (const leaf of leaves) {
-      if (knownLeafIds.current.has(leaf.id)) continue;
-      if (!document.hidden && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)
-        enteringPanes.current.set(leaf.id, paneEnterFrom(leaf));
-    }
-  }
-  knownLeafIds.current = new Set(leaves.map((leaf) => leaf.id));
-  for (const id of enteringPanes.current.keys()) {
-    if (!knownLeafIds.current.has(id)) enteringPanes.current.delete(id);
+  const leafKey = leaves.map((leaf) => leaf.id).join("\0");
+  const [seen, setSeen] = useState(() => ({ key: leafKey, size: leaves.length }));
+  const [entering, setEntering] = useState<ReadonlyMap<string, PaneEnterFrom>>(() => new Map());
+  if (seen.key !== leafKey) {
+    const known = new Set(seen.key.split("\0"));
+    const next = new Map([...entering].filter(([id]) => leaves.some((leaf) => leaf.id === id)));
+    if (
+      leaves.length > seen.size &&
+      !document.hidden &&
+      !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    )
+      for (const leaf of leaves) if (!known.has(leaf.id)) next.set(leaf.id, paneEnterFrom(leaf));
+    setSeen({ key: leafKey, size: leaves.length });
+    setEntering(next);
   }
 
-  const enteringIds = [...enteringPanes.current.keys()].join("\0");
+  const enteringIds = [...entering.keys()].join("\0");
   useEffect(() => {
     if (!enteringIds) return;
     const finish = () => {
-      enteringPanes.current.clear();
-      rerender();
+      setEntering(new Map());
     };
     const timer = window.setTimeout(finish, 320);
     const onVisibility = () => {
@@ -454,17 +449,24 @@ function PaneTreeComponent({
     };
   }, [enteringIds]);
 
-  const startPaneDrag = useCallback((fromId: string, event: ReactPointerEvent<HTMLElement>) => {
+  // One handler for every pane and tab: `SessionPane` compares props shallowly, so a
+  // fresh handler per render would re-render the whole session subtree (transcript,
+  // composer, picker). The pane comes from the nearest tab or pane element.
+  const startPaneDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
-    cancelPaneDrag.current?.();
     const handle = event.currentTarget;
+    const owner = handle.closest<HTMLElement>("[data-pane-tab-id], [data-pane-leaf]");
+    const ownerId = owner?.dataset.paneTabId ?? owner?.dataset.paneLeaf;
+    if (!ownerId) return;
+    const fromId: string = ownerId; // hoisted inner functions do not keep the narrowing
+    cancelPaneDrag.current?.();
     const pointerId = event.pointerId;
     const startX = event.clientX;
     const startY = event.clientY;
     let active = false;
     let windowDrag: ReturnType<typeof beginWindowTabDrag> | undefined;
     const canPopOut = () =>
-      Boolean(onPopOutPaneRef.current) &&
+      Boolean(dragContents.current.onPopOutPane) &&
       !dragContents.current.editorPanes
         .find((pane) => pane.id === fromId)
         ?.files.some((file) => file.terminal);
@@ -496,7 +498,7 @@ function PaneTreeComponent({
         }
         active = true;
         setGrabbing(true);
-        onFocusRef.current(fromId);
+        dragContents.current.onFocus(fromId);
         setPaneDrag({ fromId, overId: null, edge: "left" });
       }
       const titleTab = titleTabDropFromPoint(ev.clientX, ev.clientY);
@@ -590,7 +592,7 @@ function PaneTreeComponent({
         canPopOut() &&
         isPointerOutsideWindow(lastX, lastY, window.innerWidth, window.innerHeight)
       ) {
-        onPopOutPaneRef.current?.(
+        dragContents.current.onPopOutPane?.(
           fromId,
           pointerWindowMovePosition({
             screenX,
@@ -603,13 +605,14 @@ function PaneTreeComponent({
       }
       const titleTab = titleTabDropFromPoint(lastX, lastY);
       if (titleTab) {
-        onDetachPaneRef.current(fromId, titleTab.targetTabId, titleTab.position);
+        dragContents.current.onDetachPane(fromId, titleTab.targetTabId, titleTab.position);
         return;
       }
       const over = dropTarget(lastX, lastY);
       if (over && !over.invalid && (over.id !== fromId || over.edge !== "center")) {
-        if (over.tabPosition) onMovePaneRef.current(fromId, over.id, over.edge, over.tabPosition);
-        else onMovePaneRef.current(fromId, over.id, over.edge);
+        if (over.tabPosition)
+          dragContents.current.onMovePane(fromId, over.id, over.edge, over.tabPosition);
+        else dragContents.current.onMovePane(fromId, over.id, over.edge);
       }
     }
 
@@ -638,11 +641,11 @@ function PaneTreeComponent({
           );
           const hidden = leaf.hidden || Boolean(maximum && groupSelected?.id !== maximum.id);
           const rect = maximum ? { x: 0, y: 0, w: 1, h: 1 } : leaf.rect;
-          const onPaneDragStart = paneDragStartFor(leaf.id);
+          const onPaneDragStart = startPaneDrag;
           return (
             <div
               key={leaf.id}
-              data-pane-leaf=""
+              data-pane-leaf={leaf.id}
               data-pane-background={paneBackgroundPlacement(rect)}
               data-pane-id={hidden ? undefined : leaf.id}
               data-pane-active={focusedId === leaf.id ? "true" : undefined}
@@ -668,17 +671,11 @@ function PaneTreeComponent({
               // fights the slide. Scroll events land before paint, so undoing
               // it here never shows.
               onScroll={(event) => {
-                if (!enteringPanes.current.has(leaf.id)) return;
+                if (!entering.has(leaf.id)) return;
                 event.currentTarget.scrollLeft = 0;
                 event.currentTarget.scrollTop = 0;
               }}
-              style={{
-                display: hidden ? "none" : undefined,
-                left: `${rect.x * 100}%`,
-                top: `${rect.y * 100}%`,
-                width: `${rect.w * 100}%`,
-                height: `${rect.h * 100}%`,
-              }}
+              style={{ display: hidden ? "none" : undefined, ...paneRectStyle(rect) }}
             >
               {leaf.tabIds && leaf.tabIds.length > 1 ? (
                 <Tabs value={leaf.id} onValueChange={onFocus} panels="none">
@@ -708,7 +705,7 @@ function PaneTreeComponent({
                           const to = ids[(ids.indexOf(id) + delta + ids.length) % ids.length];
                           onMovePane(id, to, "center", delta < 0 ? "before" : "after");
                         }}
-                        onPointerDown={paneDragStartFor(id)}
+                        onPointerDown={startPaneDrag}
                         tooltip={
                           sessionById.get(id)?.title ||
                           editorPanes
@@ -754,10 +751,13 @@ function PaneTreeComponent({
               ) : null}
               <div
                 className="flex min-h-0 min-w-0 flex-1 flex-col"
-                data-pane-enter={enteringPanes.current.get(leaf.id)}
+                data-pane-enter={entering.get(leaf.id)}
                 onAnimationEnd={(event) => {
                   if (event.target !== event.currentTarget) return;
-                  if (enteringPanes.current.delete(leaf.id)) rerender();
+                  if (!entering.has(leaf.id)) return;
+                  const next = new Map(entering);
+                  next.delete(leaf.id);
+                  setEntering(next);
                 }}
               >
                 <MediaVisibilityContext.Provider value={visible && !hidden}>
@@ -770,9 +770,7 @@ function PaneTreeComponent({
                         pane={editorPane}
                         focused={focusedId === editorPane.id}
                         visible={visible && !hidden}
-                        showTabs={
-                          inSplit || editorPane.files.length > 1 || Boolean(onPaneDragStart)
-                        }
+                        showTabs
                         dirtyFileIds={dirtyFileIds}
                         fileErrorCounts={fileErrorCounts}
                         sessions={paneSessions.list}
@@ -882,16 +880,13 @@ function PaneTreeComponent({
             sash={sash}
             containerRef={treeRef}
             onPreview={(ratio) =>
-              setDraft({
-                base: layoutRef.current,
-                node: setSplitRatio(layoutRef.current, sash.splitId, sash.index, ratio),
-              })
+              writeLayoutPreview(
+                treeRef.current,
+                setSplitRatio(layoutRef.current, sash.splitId, sash.index, ratio),
+              )
             }
-            onCommit={(ratio) => {
-              setDraft(null);
-              onRatio(sash.splitId, sash.index, ratio);
-            }}
-            onCancel={() => setDraft(null)}
+            onCommit={(ratio) => onRatio(sash.splitId, sash.index, ratio)}
+            onCancel={() => writeLayoutPreview(treeRef.current, layoutRef.current)}
           />
         ))}
       </div>
@@ -1024,7 +1019,7 @@ function PaneSash({
   onCommit: (ratio: number) => void;
   onCancel: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const gesture = useRef({ start: 0, span: 0 });
   const row = sash.dir === "right";
   const boundary = sash.sizes.slice(0, sash.index + 1).reduce((sum, size) => sum + size, 0);
@@ -1043,6 +1038,7 @@ function PaneSash({
       min={Math.round((before + minimum) * 100)}
       max={Math.round((before + pairSize - minimum) * 100)}
       className="absolute"
+      data-pane-sash={sashKey(sash)}
       onResizeStart={() => {
         const rect = containerRef.current?.getBoundingClientRect();
         gesture.current = {
@@ -1055,7 +1051,11 @@ function PaneSash({
       }}
       onResizeEnd={(delta, { cancelled, moved }) => {
         if (cancelled || !moved || gesture.current.span <= 0) onCancel();
-        else onCommit(ratioAt(delta));
+        else {
+          // The last frame may not have run; commit the box the pointer ended on.
+          onPreview(ratioAt(delta));
+          onCommit(ratioAt(delta));
+        }
       }}
       onKeyDown={(event) => {
         const decrease = row ? "ArrowLeft" : "ArrowUp";
@@ -1076,19 +1076,7 @@ function PaneSash({
         event.stopPropagation();
         onCommit(before + pairSize / 2);
       }}
-      style={
-        row
-          ? {
-              left: `${(group.x + boundary * group.w) * 100}%`,
-              top: `${group.y * 100}%`,
-              height: `${group.h * 100}%`,
-            }
-          : {
-              left: `${group.x * 100}%`,
-              top: `${(group.y + boundary * group.h) * 100}%`,
-              width: `${group.w * 100}%`,
-            }
-      }
+      style={sashStyle(sash)}
     />
   );
 }

@@ -8,6 +8,8 @@ import {
   titleTabClosable,
   type Tab,
 } from "./TitleBar";
+import { buildTitleTabContextMenuItems } from "./titleTabContextMenu";
+import { t } from "../../shared/i18n";
 
 function tab(overrides: Partial<Tab> = {}): Tab {
   return {
@@ -149,6 +151,38 @@ describe("titleTabClosable", () => {
 
   it("allows a blank tab to be removed when another tab remains", () => {
     expect(titleTabClosable(tab({ blank: true }), 2)).toBe(true);
+  });
+});
+
+describe("title tab context menu archive and delete", () => {
+  const menuItems = (overrides: Partial<Tab>) => {
+    const contextTab = tab(overrides);
+    return buildTitleTabContextMenuItems({
+      contextTab,
+      tabs: [contextTab],
+      t,
+      detached: false,
+      hasReturnTabToMain: false,
+      hasMoveToNewWindow: false,
+      hasCloseIdleTabs: false,
+      hasArchiveTab: true,
+      hasDeleteTab: true,
+    });
+  };
+  const itemIds = (items: ReturnType<typeof menuItems>) =>
+    items.flatMap((item) => (item.kind === "item" ? [item.id] : []));
+
+  it("offers no archive or delete on a blank tab, with no trailing separator", () => {
+    const items = menuItems({ blank: true });
+    expect(itemIds(items)).not.toContain("archive");
+    expect(itemIds(items)).not.toContain("delete");
+    expect(items.at(-1)?.kind).not.toBe("sep");
+  });
+
+  it("offers archive and delete on a non-blank tab with a conversation", () => {
+    const ids = itemIds(menuItems({ blank: false, sessionCount: 1 }));
+    expect(ids).toContain("archive");
+    expect(ids).toContain("delete");
   });
 });
 

@@ -1,4 +1,3 @@
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -234,7 +233,7 @@ export function TermiusImportDialog({
               aria-label={t("Search servers")}
             />
             <div
-              className="max-h-[45dvh] min-h-0 overflow-y-auto divide-y divide-(--ui-pane-border)"
+              className="max-h-[45dvh] min-h-0 overflow-y-auto divide-y divide-(--ui-card-border)"
               aria-label={t("Termius records")}
             >
               {visible.map((host) => {
@@ -282,17 +281,11 @@ export function TermiusImportDialog({
                           .map((label, index) => ({ id: `${index}:${label}`, label }))}
                       />
                       {host.warnings.length ? (
-                        <Disclosure
-                          size="sm"
-                          className="mt-1 text-ui-caption text-(--ui-text-muted)"
-                          summary={review ? t("Review required") : t("Migration details")}
-                        >
-                          <ul className="list-inside list-disc">
-                            {host.warnings.map((warning, i) => (
-                              <li key={i}>{t(warning)}</li>
-                            ))}
-                          </ul>
-                        </Disclosure>
+                        <ul className="mt-1 list-inside list-disc text-ui-caption text-(--ui-text-muted)">
+                          {host.warnings.map((warning, i) => (
+                            <li key={i}>{t(warning)}</li>
+                          ))}
+                        </ul>
                       ) : null}
                     </div>
                   </div>
@@ -316,11 +309,7 @@ export function TermiusImportDialog({
                 className="flex items-center gap-2 text-ui-body"
               />
             ) : null}
-            <Disclosure
-              size="sm"
-              className="text-ui-caption text-(--ui-text-muted)"
-              summary={t("What gets imported")}
-            >
+            <div className="text-ui-caption text-(--ui-text-muted)">
               <p>
                 {t(
                   "Names, addresses, users, ports, groups and tags. Existing records are preserved.",
@@ -331,7 +320,7 @@ export function TermiusImportDialog({
                   {t(warning)}
                 </p>
               ))}
-            </Disclosure>
+            </div>
           </>
         ) : null}
       </div>

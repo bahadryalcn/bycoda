@@ -1,0 +1,21 @@
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
+const require = createRequire(import.meta.url);
+const vite = join(dirname(require.resolve("vite-plus/package.json")), "bin/vp");
+const config = "tests/browser/chat/vite.chat-citations.config.ts";
+// Bundle actual components once, avoiding cold module transforms during a test.
+// This is an isolated fixture build, not a desktop package or release gate.
+const build = spawn(process.execPath, [vite, "build", "--config", config], {
+  stdio: "inherit",
+  windowsHide: true,
+});
+const code = await new Promise((resolve) => build.on("exit", resolve));
+if (code !== 0) process.exit(code ?? 1);
+const server = spawn(process.execPath, [vite, "preview", "--config", config], {
+  stdio: "inherit",
+  windowsHide: true,
+});
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => server.kill());
+server.on("exit", (code) => process.exit(code ?? 0));

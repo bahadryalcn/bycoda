@@ -1,6 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Heading } from "../../../shared/ui/Heading";
 import { Stepper } from "../../../shared/ui/Stepper";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
@@ -72,6 +73,7 @@ import { markAccountStepSeen } from "../model/onboarding";
 import { useOnboardingSteps } from "../model/useOnboardingSteps";
 import { loadOnboardingProviders, addOnboardingProviders } from "../model/onboardingProviders";
 import "./onboarding.css";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 
 type Props = {
   onStartGuide?: () => void;
@@ -250,7 +252,7 @@ export default function OnboardingDialog({
       </div>
       {connections ? (
         <Modal title={t("Connections")} size="lg" onClose={() => setConnections(false)}>
-          <Suspense fallback={<p role="status">{t("Loading…")}</p>}>
+          <Suspense fallback={<LoadingText layout="fill" />}>
             <ConnectionsSettings />
           </Suspense>
         </Modal>
@@ -408,7 +410,7 @@ function Projects({
     <>
       <div className="onboarding-body">
         <div className="onboarding-heading">
-          <h3>{t("Choose your projects")}</h3>
+          <Heading size="page" level={3}>{t("Choose your projects")}</Heading>
           <p>
             {t(
               "Import local projects and conversations from Claude Code and Codex, or choose a folder.",

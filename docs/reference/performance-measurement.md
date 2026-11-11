@@ -1,6 +1,6 @@
 # Read-only performance measurement
 
-Run `node scripts/checks/measure-performance.mjs --help` with Node 22 or newer.
+Run `node scripts/checks/measure-performance.mjs --help` with Node 24 or newer.
 The maintained tool belongs to `scripts/checks/` under `.artifact`. It uses OS
 queries, never starts or stops application/provider processes, never sends a turn,
 and never reads the session database or saves process arguments/environment.

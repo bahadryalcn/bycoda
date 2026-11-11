@@ -1,10 +1,11 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vite-plus";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { readBuildIdentity } from "./scripts/build/build-info.mjs";
 import { reactCompiler } from "./scripts/build/react-compiler";
+import { fmt, lint } from "./scripts/checks/lint-config.mjs";
 
 const host = process.env.TAURI_DEV_HOST;
 const devPort = (name: string, fallback: number): number => {
@@ -46,6 +47,9 @@ export default defineConfig(async ({ mode }) => {
       alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
     },
     clearScreen: false,
+    // Rules: docs/reference/rules.md. `vp lint`, `vp fmt` and the check scripts read these.
+    lint,
+    fmt,
     // These are only reached through lazily loaded modules, so the startup scan
     // misses them; finding them later reloads the page mid-IPC on first run.
     optimizeDeps: {

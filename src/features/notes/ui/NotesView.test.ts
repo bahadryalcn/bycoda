@@ -15,7 +15,7 @@ import {
   type NoteUpsert,
 } from "../notes";
 import { NotesView as RawNotesView } from "./NotesView";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 const NotesView = withQueryClient(RawNotesView);
 import { NoteDraftRecoveryNotice } from "./NoteDraftRecoveryNotice";
 import { drafts } from "../noteDrafts";

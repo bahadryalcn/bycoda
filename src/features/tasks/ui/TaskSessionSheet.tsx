@@ -1,3 +1,4 @@
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useEffect, useRef, useState } from "react";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -136,7 +137,9 @@ export function TaskSessionSheet({
         {!session && !error ? <LoadingText /> : null}
         {conversation.map((block) => (
           <section className="task-session-message" data-role={block.role} key={block.id}>
-            <h3>{t(block.role === "user" ? "You" : "Assistant")}</h3>
+            <SectionLabel as="h3" className="task-session-heading">
+              {t(block.role === "user" ? "You" : "Assistant")}
+            </SectionLabel>
             <AgentMarkdown text={block.text} />
           </section>
         ))}
@@ -148,7 +151,9 @@ export function TaskSessionSheet({
           >
             {operational.map((block) => (
               <section className="task-session-activity-item" key={block.id}>
-                <h3>{t(operationalRoleLabel(block.role))}</h3>
+                <SectionLabel as="h3" className="task-session-heading">
+                  {t(operationalRoleLabel(block.role))}
+                </SectionLabel>
                 <AgentMarkdown text={block.text} />
               </section>
             ))}

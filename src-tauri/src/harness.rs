@@ -31,6 +31,7 @@ mod mcp_auth;
 pub(crate) mod owned_opencode;
 pub(crate) mod process_lifecycle;
 mod process_receipts;
+mod tool_grants;
 pub(crate) mod turn_writes;
 use launch_env::{apply_launch_env, apply_provider_account};
 use process_lifecycle::{OwnedChild, WriteGate};
@@ -244,11 +245,8 @@ impl LiveChild {
             match process.wait_actual_timeout(left()) {
                 None => log::warn!("process wait timed out during stop"),
                 Some(Err(error)) => log::warn!("process wait failed during stop: {error}"),
-                Some(Ok(_)) => {
-                    if let Err(error) = process.retirement().require_verified() {
-                        log::warn!("provider retirement unverified: {error}");
-                    }
-                }
+                // The process owner reports an unverified retirement itself.
+                Some(Ok(_)) => {}
             }
         }
         if let Some(exit) = &self.exit {
@@ -963,14 +961,11 @@ impl ManagedProviderExit {
     }
 }
 
+/// Best-effort: the process was waited, so admission is released even if its
+/// retirement is unproven. The process owner reports that failure itself.
 fn finish_spawn_authority(
-    retirement: &process_lifecycle::Retirement,
     authority: crate::session_store::authority::NativeLease,
 ) -> Result<(), String> {
-    // Best-effort: the process was waited, so release admission even if retirement is unproven.
-    if let Err(error) = retirement.require_verified() {
-        log::warn!("provider retirement unverified: {error}");
-    }
     authority.finish()
 }
 
@@ -2675,65 +2670,6 @@ fn exact_workspace_activity_enabled(app: &AppHandle, cwd: &Path) -> bool {
         && crate::session_store::rewind::exact_git_rewind_enabled(app)
 }
 
-/// The social, runtime-log and conversation tool grants are optional: a
-/// provider still starts without them. Issue them in parallel, each bounded by
-/// a short Host budget, and skip them while the Host is in its unhealthy
-/// back-off. Every worker finishes by its deadline, so no grant is pinned or
-/// cached after the spawn proceeds.
-fn configure_optional_tool_grants(
-    app: &AppHandle,
-    session_id: &str,
-    cmd: &mut Command,
-    stamp: (u64, u64),
-) {
-    crate::social_bridge::strip_child_env(cmd);
-    crate::runtime_logs_bridge::strip_child_env(cmd);
-    let fallback = crate::conversation_tools_bridge::prepare_child(session_id, cmd, stamp);
-    let Some(deadline) = crate::session_tools_bridge::optional_host_deadline() else {
-        log::warn!("Host is unhealthy; starting the provider without Host tools");
-        return;
-    };
-    type Issued = Result<Vec<(&'static str, String)>, String>;
-    let results: [(&str, Issued); 3] = std::thread::scope(|scope| {
-        let social = scope
-            .spawn(|| crate::social_bridge::issue_child_grant(app, session_id, stamp, deadline));
-        let logs = scope.spawn(|| {
-            crate::runtime_logs_bridge::issue_child_grant(app, session_id, stamp, deadline)
-        });
-        let conversation = crate::conversation_tools_bridge::issue_child_grant(
-            app, session_id, stamp, &fallback, deadline,
-        );
-        let joined = |handle: std::thread::ScopedJoinHandle<'_, Issued>| {
-            handle
-                .join()
-                .unwrap_or_else(|_| Err("tool grant worker panicked".into()))
-        };
-        [
-            ("social", joined(social)),
-            ("runtime logs", joined(logs)),
-            ("conversation", conversation),
-        ]
-    });
-    let mut healthy = true;
-    for (group, issued) in results {
-        match issued {
-            Ok(env) => {
-                for (key, value) in env {
-                    cmd.env(key, value);
-                }
-            }
-            Err(error) => {
-                healthy = false;
-                // An unpaired local Host is the ordinary no-tools setup.
-                if !error.starts_with("Connect the local bycoda Host") {
-                    log::warn!("continuing without {group} tools: {error}");
-                }
-            }
-        }
-    }
-    crate::session_tools_bridge::note_optional_host_outcome(deadline, healthy);
-}
-
 /// Off the main thread: fork/exec, and `apply_gui_env` can wait on the first
 /// login-shell read. Callers await this before writing to the child. Kill can
 /// still race the fork, so a cancelled spawn must not reinsert the child.
@@ -2999,7 +2935,17 @@ fn harness_spawn_blocking(
 
     let mut scratch =
         crate::control::configure_child(&app, &session_id, &mut cmd, control_turn.as_ref());
-    configure_optional_tool_grants(&app, &session_id, &mut cmd, (epoch, kill_all));
+    tool_grants::configure_optional_tool_grants(
+        &app,
+        &session_id,
+        &mut cmd,
+        (epoch, kill_all),
+        tool_grants::sessionless(
+            management_input_policy.is_some(),
+            &authority_target,
+            &source_target,
+        ),
+    );
 
     // Hold this child's redaction values through its final output drain, even
     // after a replacement has revoked and removed its native grant cache.
@@ -3118,7 +3064,7 @@ fn harness_spawn_blocking(
                 .and(retirement)
                 .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
             let finished = if waited {
-                finish_spawn_authority(&child.retirement(), authority_lease)
+                finish_spawn_authority(authority_lease)
             } else {
                 Err("Provider wait failed; admission retained".into())
             };
@@ -3222,7 +3168,7 @@ fn harness_spawn_blocking(
         let settlement = settlement
             .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
         let finished = if readers_closed && waited {
-            finish_spawn_authority(&child.retirement(), authority_lease)
+            finish_spawn_authority(authority_lease)
         } else {
             Err("NATIVE_AUTHORITY_UNKNOWN_PROVIDER_OUTPUT: retained process admission".into())
         };
@@ -3444,7 +3390,7 @@ pub async fn harness_auth_status(
         if let Some(home) = dirs_home() {
             cmd.current_dir(home);
         }
-        let output = exec_command_observed_output(cmd, &command, Duration::from_secs(10))?.output;
+        let output = exec_command_output(cmd, &command, Duration::from_secs(10))?;
         Ok(parse_auth_status(
             &provider,
             output.status.success(),
@@ -4950,7 +4896,7 @@ impl Drop for LineBatcher {
 }
 
 /// Reads `reader` to EOF and emits its lines in batches; returns once the
-/// last batch is out. Each line is decoded lossily (K-UTF8): an invalid byte
+/// last batch is out. Each line is decoded lossily (rule rust-bufreader-lines-on-stream): an invalid byte
 /// replaces one character and the reader keeps draining, so Windows
 /// code-page output or a chunk split inside a multibyte character never
 /// drops the rest of the provider stream. Only EOF or a real I/O error ends
@@ -5348,12 +5294,11 @@ fn exec_output_read(
     cwd: Option<&str>,
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
-    exec_command_observed_output(
+    exec_command_output(
         configured_exec_command(command, args, cwd, &[]),
         command,
         timeout,
     )
-    .map(|capture| capture.output)
 }
 
 /// A read whose printed lines stay useful when the command outlives `timeout`:
@@ -5484,35 +5429,17 @@ fn output_wait<C: Into<OwnedChild>>(child: C) -> OutputWait {
     }
 }
 
+/// Data observation only: the output never certifies retirement. The process
+/// owner reports an unverified retirement itself.
 fn exec_command_output(
-    cmd: Command,
-    command: &str,
-    timeout: Duration,
-) -> Result<std::process::Output, String> {
-    let captured = exec_command_observed_output(cmd, command, timeout)?;
-    if let Err(error) = captured.retirement.require_verified() {
-        log::warn!("command retirement unverified: {error}");
-    }
-    Ok(captured.output)
-}
-
-struct CommandCapture {
-    output: std::process::Output,
-    retirement: process_lifecycle::Retirement,
-}
-/// Explicit data observation only. Semantic completion keeps the strict wrapper.
-fn exec_command_observed_output(
     mut cmd: Command,
     command: &str,
     timeout: Duration,
-) -> Result<CommandCapture, String> {
+) -> Result<std::process::Output, String> {
     let rx = spawn_output_wait(&mut cmd).map_err(|e| format!("Failed to run {command}: {e}"))?;
 
     match rx.recv_timeout(timeout) {
-        Ok(Ok(output)) => Ok(CommandCapture {
-            output,
-            retirement: rx.owner.retirement(),
-        }),
+        Ok(Ok(output)) => Ok(output),
         Ok(Err(e)) => Err(format!("Failed to run {command}: {e}")),
         Err(_) => {
             rx.stop_and_drain();

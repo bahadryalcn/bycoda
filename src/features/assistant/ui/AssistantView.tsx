@@ -15,6 +15,7 @@ import historyStyles from "./AssistantHistory.module.css";
 import noteStyles from "./AssistantNoteCard.module.css";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { TabStrip } from "../../../shared/ui/Tabs";
 import { Alert } from "../../../shared/ui/Alert";
 import { StatusDot } from "../../../shared/ui/StatusDot";
@@ -182,7 +183,9 @@ export function AssistantView(props: AssistantViewProps) {
               value={snapshot?.profile.avatar}
               name={identity.name}
             />
-            <h1 className={shell.name}>{identity.name || identity.title}</h1>
+            <Heading size="page" level={1} className={shell.name}>
+              {identity.name || identity.title}
+            </Heading>
             {snapshot?.profile.setupComplete && (
               <Button
                 className={shell.mode}
@@ -208,11 +211,7 @@ export function AssistantView(props: AssistantViewProps) {
                   <AssistantPresenceStatus
                     snapshot={snapshot}
                     compact
-                    unconfirmed={Boolean(
-                      readError ||
-                      pending?.key.startsWith("presence") ||
-                      error?.key.startsWith("presence"),
-                    )}
+                    offline={Boolean(readError)}
                   />
                   <ChevronDown className="icon-xs" />
                 </Button>
@@ -361,7 +360,7 @@ export function AssistantView(props: AssistantViewProps) {
           </div>
         ) : !snapshot.profile.setupComplete ? (
           <section className={shell.setupPrompt}>
-            <h2>{t("Set up your personal assistant")}</h2>
+            <Heading size="section">{t("Set up your personal assistant")}</Heading>
             <p>{t("Choose a name, working permissions and a daily budget before starting.")}</p>
             <Button variant="primary" onClick={() => setSetup(true)}>
               {t("Set up")}
@@ -430,13 +429,13 @@ export function AssistantView(props: AssistantViewProps) {
               )}
               {view === "History" && (
                 <header className={historyStyles.heading}>
-                  <h2>{t("History")}</h2>
+                  <Heading size="page">{t("History")}</Heading>
                   <span>{snapshot.activity.length}</span>
                 </header>
               )}
               {view === "Sessions" && (
                 <div className={sessionStyles.pageHeading}>
-                  <h2>{t("Sessions")}</h2>
+                  <Heading size="page">{t("Sessions")}</Heading>
                 </div>
               )}
               <CollectionToolbar snapshot={snapshot} />

@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { LogSink, setDefaultLogSink } from "../diagnostics/logger";
 import {
   DesktopLive,
   DESKTOP_BEAT_STALE_MS,
@@ -704,6 +708,42 @@ describe("run leases and the in-flight mark", () => {
 });
 
 describe("in-flight marks believed without a heartbeat", () => {
+  it("warns once per session however often the stale mark is read again", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bycoda-desktop-live-"));
+    const sink = new LogSink({ dir, mirror: false });
+    setDefaultLogSink(sink);
+    try {
+      let now = 0;
+      const live = new DesktopLive(() => now);
+      const expire = (id: string) => {
+        expect(live.running(id, true)).toBe(true);
+        now += DESKTOP_STORED_RUNNING_MS + 1;
+        expect(live.running(id, true)).toBe(false);
+      };
+      expire("stale");
+      // A read without the mark restarts the belief window; the same session expires again.
+      for (let round = 0; round < 3; round++) {
+        expect(live.running("stale", false)).toBe(false);
+        expire("stale");
+      }
+      // More sessions than the belief map holds push the first one out and back in.
+      for (let index = 0; index < 600; index++) live.running(`filler-${index}`, true);
+      expire("stale");
+      expire("other");
+      sink.flushSync();
+      const lines = readFileSync(sink.path, "utf8")
+        .split("\n")
+        .filter((line) => line.includes("in-flight mark"));
+      expect(lines.filter((line) => line.endsWith("sessionId=stale"))).toHaveLength(1);
+      expect(lines.filter((line) => line.endsWith("sessionId=other"))).toHaveLength(1);
+      expect(lines[0]).toContain("WARN  [host.desktop.live] desktop session still carries");
+    } finally {
+      setDefaultLogSink(undefined);
+      sink.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("tells when the earliest mark stops counting, only while no app has beat", () => {
     let now = 1_000;
     const live = new DesktopLive(() => now);

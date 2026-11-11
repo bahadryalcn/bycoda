@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineAction } from "../../../shared/ui/ActionHost";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -71,7 +72,11 @@ export function GoalForm({
   const update = <K extends keyof GoalDraft>(key: K, value: GoalDraft[K]) =>
     onChange({ ...draft, [key]: value });
   const { targetId, target, projectState, machineOptions, defaultAccountFor, projectChoices } =
-    useTaskTargetMachine({ machines, machineId: draft.machineId, cwd: draft.cwds[0] ?? "" });
+    useTaskTargetMachine({
+      machines,
+      machineId: draft.machineId,
+      cwd: draft.cwds[0] ?? "",
+    });
   const choices = projectChoices(recents, { exclude: draft.cwds });
   // Account profiles are local to this computer; other hosts keep their own account choice.
   const localAccounts = Boolean(target && isLocalSyncMachine(target));
@@ -108,279 +113,289 @@ export function GoalForm({
       className="task-form"
     >
       <div className="task-form-body">
-        <fieldset
-          disabled={saving}
-          inert={saving}
-          className="goal-form-sections min-w-0 border-0 p-0"
-        >
-          <GoalSection title={t("What")} framed={false}>
-            <TextField
-              hideLabel
-              label=""
-              autoFocus
-              aria-label={t("Goal title")}
-              value={draft.title}
-              onChange={(event) => update("title", event.target.value)}
-              placeholder={t("Name the main job")}
-              fieldClassName="task-title-field"
-            />
-            <PromptField
-              label={t("Main job")}
-              surface="raised"
-              minRows={4}
-              value={draft.prompt}
-              onChange={(event) => update("prompt", event.target.value)}
-              placeholder={t(
-                "Describe the whole job. A planner agent reads the projects and splits it into tasks, which agents then carry out.",
-              )}
-              toolbarLeading={
-                <>
-                  <ModelPicker
-                    harness={draft.harness}
-                    model={draft.model}
-                    values={draft.modelSettings}
-                    project={lead || "~"}
-                    accountChoices={localAccounts}
-                    accountId={draft.providerAccountId}
-                    onChange={(harness, model, accountId) =>
-                      onChange({
-                        ...draft,
-                        harness,
-                        model,
-                        providerAccountId: localAccounts
-                          ? (accountId ?? defaultAccountFor(harness))
-                          : harness === draft.harness
-                            ? draft.providerAccountId
-                            : defaultAccountFor(harness),
-                      })
-                    }
-                    onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
-                  />
-                  <TaskAccountPicker
-                    harness={draft.harness}
-                    accountId={draft.providerAccountId}
-                    local={localAccounts}
-                  />
-                  {draft.harness !== "fx" ? (
-                    <AccessPicker
-                      value={draft.runtimeMode}
-                      onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+        <FieldGroup variant="bare" disabled={saving} inert={saving}>
+          <div className="goal-form-sections min-w-0">
+            <GoalSection title={t("What")} framed={false}>
+              <TextField
+                hideLabel
+                label=""
+                autoFocus
+                aria-label={t("Goal title")}
+                value={draft.title}
+                onChange={(event) => update("title", event.target.value)}
+                placeholder={t("Name the main job")}
+              />
+              <PromptField
+                label={t("Main job")}
+                surface="raised"
+                minRows={4}
+                value={draft.prompt}
+                onChange={(event) => update("prompt", event.target.value)}
+                placeholder={t(
+                  "Describe the whole job. A planner agent reads the projects and splits it into tasks, which agents then carry out.",
+                )}
+                toolbarLeading={
+                  <>
+                    <ModelPicker
+                      harness={draft.harness}
+                      model={draft.model}
+                      values={draft.modelSettings}
+                      project={lead || "~"}
+                      accountChoices={localAccounts}
+                      accountId={draft.providerAccountId}
+                      onChange={(harness, model, accountId) =>
+                        onChange({
+                          ...draft,
+                          harness,
+                          model,
+                          providerAccountId: localAccounts
+                            ? (accountId ?? defaultAccountFor(harness))
+                            : harness === draft.harness
+                              ? draft.providerAccountId
+                              : defaultAccountFor(harness),
+                        })
+                      }
+                      onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
                     />
-                  ) : null}
-                </>
-              }
-              toolbarTrailing={
-                <span className="flex items-center gap-2 text-ui-micro text-(--ui-text-secondary)">
-                  {t("Time limit")}
-                  <SearchableSelect
-                    hideLabel
-                    variant="pill"
-                    searchable={false}
-                    align="end"
-                    label={t("Time limit")}
-                    value={String(draft.maxRunMinutes)}
-                    options={RUN_TIME_LIMIT_OPTIONS}
-                    onChange={(value) => update("maxRunMinutes", Number(value))}
-                  />
-                </span>
-              }
-            />
-          </GoalSection>
-
-          <GoalSection title={t("Where")} framed={false}>
-            <div className="goal-section-rows">
-              <GoalOption title={t("Machine")}>
-                <SearchableSelect
-                  hideLabel
-                  label={t("Machine")}
-                  placeholder={t("Choose machine")}
-                  value={targetId}
-                  options={machineOptions}
-                  onChange={(machineId) =>
-                    onChange({
-                      ...draft,
-                      machineId,
-                      cwds: [],
-                      leadCwd: "",
-                      workspaces: undefined,
-                      providerAccountId: defaultAccountFor(draft.harness, machineId),
-                    })
-                  }
-                />
-              </GoalOption>
-              <div className="goal-option-wide grid min-w-0 gap-2">
-                <div className="goal-projects">
-                  <span className="shrink-0">{t("Projects")}</span>
-                  {draft.cwds.map((cwd) => (
-                    <span key={cwd} data-goal-project={cwd} className="goal-project-chip">
-                      <span className="min-w-0 truncate">{projectDisplayName(cwd)}</span>
-                      {cwd === lead ? <span className="shrink-0">{t("lead")}</span> : null}
-                      <InlineAction
-                        reveal="always"
-                        label={t("Remove {p0}", { p0: projectDisplayName(cwd) })}
-                        onClick={() => onChange(toggleGoalProject(draft, cwd))}
-                      >
-                        <X />
-                      </InlineAction>
-                    </span>
-                  ))}
-                  {draft.cwds.length < MAX_GOAL_PROJECTS ? (
+                    <TaskAccountPicker
+                      harness={draft.harness}
+                      accountId={draft.providerAccountId}
+                      local={localAccounts}
+                    />
+                    {draft.harness !== "fx" ? (
+                      <AccessPicker
+                        value={draft.runtimeMode}
+                        onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+                      />
+                    ) : null}
+                  </>
+                }
+                toolbarTrailing={
+                  <span className="flex items-center gap-2 text-ui-micro text-(--ui-text-secondary)">
+                    {t("Time limit")}
                     <SearchableSelect
                       hideLabel
                       variant="pill"
-                      label={t("Project")}
-                      placeholder={t("Choose project")}
-                      value=""
-                      options={choices.map((entry) => ({
-                        value: entry.path,
-                        label: projectDisplayName(entry.path),
-                        keywords: entry.path,
-                      }))}
-                      onChange={(cwd) => onChange(toggleGoalProject(draft, cwd))}
+                      searchable={false}
+                      align="end"
+                      label={t("Time limit")}
+                      value={String(draft.maxRunMinutes)}
+                      options={RUN_TIME_LIMIT_OPTIONS}
+                      onChange={(value) => update("maxRunMinutes", Number(value))}
                     />
-                  ) : null}
-                  <ProjectDiscoveryStatus state={projectState} />
-                  {draft.cwds.length > 1 ? (
-                    <span className="flex items-center gap-1.5">
-                      {t("Lead")}
+                  </span>
+                }
+              />
+            </GoalSection>
+
+            <GoalSection title={t("Where")} framed={false}>
+              <div className="goal-section-rows">
+                <GoalOption title={t("Machine")}>
+                  <SearchableSelect
+                    hideLabel
+                    label={t("Machine")}
+                    placeholder={t("Choose machine")}
+                    value={targetId}
+                    options={machineOptions}
+                    onChange={(machineId) =>
+                      onChange({
+                        ...draft,
+                        machineId,
+                        cwds: [],
+                        leadCwd: "",
+                        workspaces: undefined,
+                        providerAccountId: defaultAccountFor(draft.harness, machineId),
+                      })
+                    }
+                  />
+                </GoalOption>
+                <div className="goal-option-wide grid min-w-0 gap-2">
+                  <div className="goal-projects">
+                    <span className="shrink-0">{t("Projects")}</span>
+                    {draft.cwds.map((cwd) => (
+                      <span key={cwd} data-goal-project={cwd} className="goal-project-chip">
+                        <span className="min-w-0 truncate">{projectDisplayName(cwd)}</span>
+                        {cwd === lead ? <span className="shrink-0">{t("lead")}</span> : null}
+                        <InlineAction
+                          reveal="always"
+                          label={t("Remove {p0}", {
+                            p0: projectDisplayName(cwd),
+                          })}
+                          onClick={() => onChange(toggleGoalProject(draft, cwd))}
+                        >
+                          <X />
+                        </InlineAction>
+                      </span>
+                    ))}
+                    {draft.cwds.length < MAX_GOAL_PROJECTS ? (
                       <SearchableSelect
-                        variant="pill"
-                        searchable={false}
                         hideLabel
-                        label={t("Lead project")}
-                        value={lead}
-                        options={draft.cwds.map((cwd) => ({
-                          value: cwd,
-                          label: projectDisplayName(cwd),
+                        variant="pill"
+                        label={t("Project")}
+                        placeholder={t("Choose project")}
+                        value=""
+                        options={choices.map((entry) => ({
+                          value: entry.path,
+                          label: projectDisplayName(entry.path),
+                          keywords: entry.path,
                         }))}
-                        onChange={(cwd) => update("leadCwd", cwd)}
+                        onChange={(cwd) => onChange(toggleGoalProject(draft, cwd))}
                       />
-                    </span>
-                  ) : null}
-                </div>
-                {machine ? (
-                  <span className="text-ui-caption text-(--ui-text-secondary)">
-                    {t("Runs on ")}
-                    {machine}
-                  </span>
-                ) : draft.cwds.length ? (
-                  <InlineMessage tone="warning" live="assertive">
-                    {TASK_MACHINE_ERROR}
-                  </InlineMessage>
-                ) : (
-                  <span className="text-ui-caption text-(--ui-text-secondary)">
-                    {t("Choose the projects the job may touch, all on one machine.")}
-                  </span>
-                )}
-              </div>
-            </div>
-            <Disclosure summary={t("Working branch and worktree")}>
-              <div className="task-form-section-body">
-                {draft.cwds.map((cwd) => (
-                  <div key={cwd}>
-                    <p className="font-medium text-ui-caption">{projectDisplayName(cwd)}</p>
-                    <TaskWorkspacePicker
-                      headingHidden
-                      machine={target}
-                      cwd={cwd}
-                      isolate={draft.isolate}
-                      value={draft.workspaces?.[cwd]}
-                      disabled={saving || workspaceBusy}
-                      onBusyChange={setWorkspaceBusy}
-                      onChecksChange={(patch) =>
-                        setWorkspaceChecks((current) => ({
-                          ...current,
-                          [cwd]: { ...(current[cwd] ?? INITIAL_WORKSPACE_CHECKS), ...patch },
-                        }))
-                      }
-                      onChange={(workspace) =>
-                        update("workspaces", { ...draft.workspaces, [cwd]: workspace ?? {} })
-                      }
-                    />
+                    ) : null}
+                    <ProjectDiscoveryStatus state={projectState} />
+                    {draft.cwds.length > 1 ? (
+                      <span className="flex items-center gap-1.5">
+                        {t("Lead")}
+                        <SearchableSelect
+                          variant="pill"
+                          searchable={false}
+                          hideLabel
+                          label={t("Lead project")}
+                          value={lead}
+                          options={draft.cwds.map((cwd) => ({
+                            value: cwd,
+                            label: projectDisplayName(cwd),
+                          }))}
+                          onChange={(cwd) => update("leadCwd", cwd)}
+                        />
+                      </span>
+                    ) : null}
                   </div>
-                ))}
+                  {machine ? (
+                    <span className="text-ui-caption text-(--ui-text-secondary)">
+                      {t("Runs on ")}
+                      {machine}
+                    </span>
+                  ) : draft.cwds.length ? (
+                    <InlineMessage tone="warning" live="assertive">
+                      {TASK_MACHINE_ERROR}
+                    </InlineMessage>
+                  ) : (
+                    <span className="text-ui-caption text-(--ui-text-secondary)">
+                      {t("Choose the projects the job may touch, all on one machine.")}
+                    </span>
+                  )}
+                </div>
               </div>
-            </Disclosure>
-          </GoalSection>
+              <Disclosure summary={t("Working branch and worktree")}>
+                <div className="task-form-section-body">
+                  {draft.cwds.map((cwd) => (
+                    <div key={cwd}>
+                      <p className="font-medium text-ui-caption">{projectDisplayName(cwd)}</p>
+                      <TaskWorkspacePicker
+                        headingHidden
+                        machine={target}
+                        cwd={cwd}
+                        isolate={draft.isolate}
+                        value={draft.workspaces?.[cwd]}
+                        disabled={saving || workspaceBusy}
+                        onBusyChange={setWorkspaceBusy}
+                        onChecksChange={(patch) =>
+                          setWorkspaceChecks((current) => ({
+                            ...current,
+                            [cwd]: {
+                              ...(current[cwd] ?? INITIAL_WORKSPACE_CHECKS),
+                              ...patch,
+                            },
+                          }))
+                        }
+                        onChange={(workspace) =>
+                          update("workspaces", {
+                            ...draft.workspaces,
+                            [cwd]: workspace ?? {},
+                          })
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              </Disclosure>
+            </GoalSection>
 
-          <GoalSection title={t("How it runs")}>
-            <GoalOption
-              title={t("Start planned tasks")}
-              description={t("Choose whether planned tasks start on their own.")}
-            >
-              <SearchableSelect
-                hideLabel
-                label={t("Start planned tasks")}
-                searchable={false}
-                value={draft.manualStart ? "manual" : "automatic"}
-                options={[
-                  { value: "automatic", label: t("Automatically when ready") },
-                  { value: "manual", label: t("Manually from To do") },
-                ]}
-                onChange={(value) => update("manualStart", value === "manual")}
+            <GoalSection title={t("How it runs")}>
+              <GoalOption
+                title={t("Start planned tasks")}
+                description={t("Choose whether planned tasks start on their own.")}
+              >
+                <SearchableSelect
+                  hideLabel
+                  label={t("Start planned tasks")}
+                  searchable={false}
+                  value={draft.manualStart ? "manual" : "automatic"}
+                  options={[
+                    {
+                      value: "automatic",
+                      label: t("Automatically when ready"),
+                    },
+                    { value: "manual", label: t("Manually from To do") },
+                  ]}
+                  onChange={(value) => update("manualStart", value === "manual")}
+                />
+              </GoalOption>
+              <GoalExecutionModeOption
+                isolate={draft.isolate}
+                description={executionHint}
+                disabled={saving}
+                onChange={(isolate) => update("isolate", isolate)}
               />
-            </GoalOption>
-            <GoalExecutionModeOption
-              isolate={draft.isolate}
-              description={executionHint}
-              disabled={saving}
-              onChange={(isolate) => update("isolate", isolate)}
-            />
-            <GoalConcurrencyOption
-              value={draft.maxRunningTasks ?? 0}
-              onChange={(value) => update("maxRunningTasks", value || undefined)}
-            />
-            <GoalCheckOption
-              title={t("Continue until complete")}
-              description={t(
-                "Keeps correcting while progress is made; asks for input when needed.",
-              )}
-              checked={draft.continueUntilDone}
-              onChange={(checked) => update("continueUntilDone", checked)}
-            />
-          </GoalSection>
-
-          <GoalSection title={t("Review and delivery")}>
-            <GoalCheckOption
-              title={t("Review the plan before starting")}
-              description={t("The planned tasks are created only once you approve the plan.")}
-              checked={draft.approvePlan}
-              onChange={(checked) => update("approvePlan", checked)}
-            />
-            <GoalCheckOption
-              title={t("Review each task with a second agent")}
-              description={t("A second agent checks each task's result.")}
-              checked={draft.review}
-              onChange={(checked) => update("review", checked)}
-            />
-            <GoalCheckOption
-              title={t("Verify the integrated result before completing this goal")}
-              description={t("Checks the combined result of all tasks before the goal completes.")}
-              checked={draft.finalReview === true}
-              onChange={(checked) => update("finalReview", checked)}
-            />
-            <div className="goal-option-wide grid gap-1">
-              <AutoMergeField
-                checked={draft.autoMerge && draft.isolate === true}
-                disabled={draft.isolate !== true}
-                onChange={(checked) => update("autoMerge", checked)}
+              <GoalConcurrencyOption
+                value={draft.maxRunningTasks ?? 0}
+                onChange={(value) => update("maxRunningTasks", value || undefined)}
               />
-              {draft.isolate !== true ? (
-                <span className="goal-option-reason">
-                  {t("Needs a separate worktree for each task.")}
-                </span>
-              ) : null}
-            </div>
-          </GoalSection>
+              <GoalCheckOption
+                title={t("Continue until complete")}
+                description={t(
+                  "Keeps correcting while progress is made; asks for input when needed.",
+                )}
+                checked={draft.continueUntilDone}
+                onChange={(checked) => update("continueUntilDone", checked)}
+              />
+            </GoalSection>
 
-          <GoalSection title={t("Limits")} framed={false}>
-            <TaskBudgetControls
-              budget={draft.budget}
-              onChange={(budget) => update("budget", budget)}
-            />
-            <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
-          </GoalSection>
-        </fieldset>
+            <GoalSection title={t("Review and delivery")}>
+              <GoalCheckOption
+                title={t("Review the plan before starting")}
+                description={t("The planned tasks are created only once you approve the plan.")}
+                checked={draft.approvePlan}
+                onChange={(checked) => update("approvePlan", checked)}
+              />
+              <GoalCheckOption
+                title={t("Review each task with a second agent")}
+                description={t("A second agent checks each task's result.")}
+                checked={draft.review}
+                onChange={(checked) => update("review", checked)}
+              />
+              <GoalCheckOption
+                title={t("Verify the integrated result before completing this goal")}
+                description={t(
+                  "Checks the combined result of all tasks before the goal completes.",
+                )}
+                checked={draft.finalReview === true}
+                onChange={(checked) => update("finalReview", checked)}
+              />
+              <div className="goal-option-wide grid gap-1">
+                <AutoMergeField
+                  checked={draft.autoMerge && draft.isolate === true}
+                  disabled={draft.isolate !== true}
+                  onChange={(checked) => update("autoMerge", checked)}
+                />
+                {draft.isolate !== true ? (
+                  <span className="goal-option-reason">
+                    {t("Needs a separate worktree for each task.")}
+                  </span>
+                ) : null}
+              </div>
+            </GoalSection>
+
+            <GoalSection title={t("Limits")} framed={false}>
+              <TaskBudgetControls
+                budget={draft.budget}
+                onChange={(budget) => update("budget", budget)}
+              />
+              <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
+            </GoalSection>
+          </div>
+        </FieldGroup>
       </div>
       <div className="task-form-footer">
         <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>

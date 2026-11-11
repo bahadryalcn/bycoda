@@ -15,12 +15,12 @@
   "suites": [
     {
       "id": "attachment-cards",
-      "config": "tests/browser/attachment-cards.playwright.config.ts",
+      "config": "tests/browser/chat/attachment-cards.playwright.config.ts",
       "files": ["attachment-cards.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.attachment-cards.config.ts",
+        "config": "tests/browser/chat/vite.attachment-cards.config.ts",
         "mode": "dev",
-        "path": "/tests/browser/attachment-cards.html"
+        "path": "/tests/browser/chat/attachment-cards.html"
       },
       "projects": [
         {
@@ -32,12 +32,12 @@
     },
     {
       "id": "messaging-integrations",
-      "config": "tests/browser/messaging-integrations.playwright.config.ts",
+      "config": "tests/browser/messaging/messaging-integrations.playwright.config.ts",
       "files": ["messaging-integrations.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.messaging-integrations.config.ts",
+        "config": "tests/browser/messaging/vite.messaging-integrations.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/messaging-integrations.html"
+        "path": "/tests/browser/messaging/messaging-integrations.html"
       },
       "projects": [
         {
@@ -49,12 +49,12 @@
     },
     {
       "id": "inline-visuals",
-      "config": "tests/browser/playwright.inline-visuals.config.ts",
+      "config": "tests/browser/chat/playwright.inline-visuals.config.ts",
       "files": ["inline-visuals.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.inline-visuals.config.ts",
+        "config": "tests/browser/chat/vite.inline-visuals.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/inline-visuals.html"
+        "path": "/tests/browser/chat/inline-visuals.html"
       },
       "projects": [
         {
@@ -66,12 +66,12 @@
     },
     {
       "id": "chat-citations",
-      "config": "tests/browser/playwright.chat-citations.config.ts",
+      "config": "tests/browser/chat/playwright.chat-citations.config.ts",
       "files": ["chat-citations.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.chat-citations.config.ts",
+        "config": "tests/browser/chat/vite.chat-citations.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/chat-citations.html"
+        "path": "/tests/browser/chat/chat-citations.html"
       },
       "projects": [
         {
@@ -83,12 +83,12 @@
     },
     {
       "id": "generated-file-links",
-      "config": "tests/browser/generated-file-links.playwright.config.ts",
+      "config": "tests/browser/chat/generated-file-links.playwright.config.ts",
       "files": ["generated-file-links.spec.ts"],
       "fixture": {
-        "config": "tests/browser/generated-file-links.vite.config.ts",
+        "config": "tests/browser/chat/generated-file-links.vite.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/generated-file-links.html"
+        "path": "/tests/browser/chat/generated-file-links.html"
       },
       "projects": [
         {
@@ -100,7 +100,7 @@
     },
     {
       "id": "assistant-room",
-      "config": "tests/browser/playwright.assistant-room.config.ts",
+      "config": "tests/browser/assistant/playwright.assistant-room.config.ts",
       "files": [
         "assistant-room.e2e.ts",
         "assistant-history.e2e.ts",
@@ -109,9 +109,9 @@
         "assistant-room-global.e2e.ts"
       ],
       "fixture": {
-        "config": "tests/browser/vite.assistant-room.config.ts",
+        "config": "tests/browser/assistant/vite.assistant-room.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/assistant-room.html"
+        "path": "/tests/browser/assistant/assistant-room.html"
       },
       "projects": [
         {
@@ -129,12 +129,12 @@
     },
     {
       "id": "working-project-summary",
-      "config": "tests/browser/working-project-summary.playwright.config.ts",
+      "config": "tests/browser/workspace/working-project-summary.playwright.config.ts",
       "files": ["working-project-summary.spec.ts"],
       "fixture": {
-        "config": "tests/browser/working-project-summary.vite.config.ts",
+        "config": "tests/browser/workspace/working-project-summary.vite.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/working-project-summary.html"
+        "path": "/tests/browser/workspace/working-project-summary.html"
       },
       "projects": [
         {
@@ -146,12 +146,12 @@
     },
     {
       "id": "assistant-settings",
-      "config": "tests/browser/playwright.assistant-settings.config.ts",
+      "config": "tests/browser/assistant/playwright.assistant-settings.config.ts",
       "files": ["assistant-settings.e2e.ts", "assistant-settings-safety.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.assistant-settings.config.ts",
+        "config": "tests/browser/assistant/vite.assistant-settings.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/assistant-room.html"
+        "path": "/tests/browser/assistant/assistant-room.html"
       },
       "projects": [
         {
@@ -163,12 +163,12 @@
     },
     {
       "id": "tooltip-policy",
-      "config": "tests/browser/tooltip-policy.playwright.config.ts",
+      "config": "tests/browser/shared-ui/tooltip-policy.playwright.config.ts",
       "files": ["tooltip-policy.spec.ts"],
       "fixture": {
-        "config": "tests/browser/tooltip-policy.vite.config.ts",
+        "config": "tests/browser/shared-ui/tooltip-policy.vite.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/tooltip-policy.html"
+        "path": "/tests/browser/shared-ui/tooltip-policy.html"
       },
       "projects": [
         {
@@ -180,12 +180,12 @@
     },
     {
       "id": "composer-compact",
-      "config": "tests/browser/playwright.composer-compact.config.ts",
+      "config": "tests/browser/chat/playwright.composer-compact.config.ts",
       "files": ["composer-compact.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.composer-compact.config.ts",
+        "config": "tests/browser/chat/vite.composer-compact.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/composer-compact.html"
+        "path": "/tests/browser/chat/composer-compact.html"
       },
       "projects": [
         {
@@ -202,12 +202,12 @@
     },
     {
       "id": "session-references",
-      "config": "tests/browser/playwright.session-references.config.ts",
+      "config": "tests/browser/sessions/playwright.session-references.config.ts",
       "files": ["session-references.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.session-references.config.ts",
+        "config": "tests/browser/sessions/vite.session-references.config.ts",
         "mode": "dev",
-        "path": "/tests/browser/session-references.html"
+        "path": "/tests/browser/sessions/session-references.html"
       },
       "projects": [
         {
@@ -219,12 +219,12 @@
     },
     {
       "id": "compact-navigation",
-      "config": "tests/browser/compact-navigation.playwright.config.ts",
+      "config": "tests/browser/app-shell/compact-navigation.playwright.config.ts",
       "files": ["compact-navigation.spec.ts", "shell-count-badges.spec.ts"],
       "fixture": {
-        "config": "tests/browser/compact-navigation.vite.config.ts",
+        "config": "tests/browser/app-shell/compact-navigation.vite.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/compact-navigation.html"
+        "path": "/tests/browser/app-shell/compact-navigation.html"
       },
       "projects": [
         {
@@ -241,12 +241,12 @@
     },
     {
       "id": "composer-host-compatibility",
-      "config": "tests/browser/composer-host-compatibility.playwright.config.ts",
+      "config": "tests/browser/chat/composer-host-compatibility.playwright.config.ts",
       "files": ["composer-host-compatibility.spec.ts"],
       "fixture": {
-        "config": "tests/browser/composer-host-compatibility.vite.config.ts",
+        "config": "tests/browser/chat/composer-host-compatibility.vite.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/composer-host-compatibility.html"
+        "path": "/tests/browser/chat/composer-host-compatibility.html"
       },
       "projects": [
         {
@@ -263,12 +263,12 @@
     },
     {
       "id": "edit-from-here",
-      "config": "tests/browser/edit-from-here.playwright.config.ts",
+      "config": "tests/browser/chat/edit-from-here.playwright.config.ts",
       "files": ["edit-from-here.spec.ts"],
       "fixture": {
-        "config": "tests/browser/edit-from-here.vite.config.ts",
+        "config": "tests/browser/chat/edit-from-here.vite.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/edit-from-here.html",
+        "path": "/tests/browser/chat/edit-from-here.html",
         "fixedPort": 1549,
         "portReason": "Existing absolute-origin assertion; occupied endpoints are never reused."
       },
@@ -287,12 +287,12 @@
     },
     {
       "id": "arc-controls",
-      "config": "tests/browser/playwright.arc-controls.config.ts",
+      "config": "tests/browser/shared-ui/playwright.arc-controls.config.ts",
       "files": ["arc-controls.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.arc-controls.config.ts",
+        "config": "tests/browser/shared-ui/vite.arc-controls.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/arc-controls.html"
+        "path": "/tests/browser/shared-ui/arc-controls.html"
       },
       "projects": [
         {
@@ -309,12 +309,12 @@
     },
     {
       "id": "automations",
-      "config": "tests/browser/playwright.automations.config.ts",
+      "config": "tests/browser/automations/playwright.automations.config.ts",
       "files": ["automations.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.automations.config.ts",
+        "config": "tests/browser/automations/vite.automations.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/automations.html"
+        "path": "/tests/browser/automations/automations.html"
       },
       "projects": [
         {
@@ -331,12 +331,12 @@
     },
     {
       "id": "browser-annotation",
-      "config": "tests/browser/playwright.browser-annotation.config.ts",
+      "config": "tests/browser/host-tools/playwright.browser-annotation.config.ts",
       "files": ["browser-annotation.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.browser-annotation.config.ts",
+        "config": "tests/browser/host-tools/vite.browser-annotation.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/browser-annotation.html",
+        "path": "/tests/browser/host-tools/browser-annotation.html",
         "fixedPort": 1444,
         "portReason": "Existing absolute-origin assertion; occupied endpoints are never reused."
       },
@@ -350,12 +350,12 @@
     },
     {
       "id": "chat-artifacts",
-      "config": "tests/browser/playwright.chat-artifacts.config.ts",
+      "config": "tests/browser/chat/playwright.chat-artifacts.config.ts",
       "files": ["chat-artifacts.spec.ts", "artifact-formats.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.chat-artifacts.config.ts",
+        "config": "tests/browser/chat/vite.chat-artifacts.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/transcript.html"
+        "path": "/tests/browser/chat/transcript.html"
       },
       "projects": [
         {
@@ -372,12 +372,12 @@
     },
     {
       "id": "composer",
-      "config": "tests/browser/playwright.composer.config.ts",
+      "config": "tests/browser/chat/playwright.composer.config.ts",
       "files": ["composer-extras.spec.ts", "git-generation.spec.ts", "workspace-layout.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.composer.config.ts",
+        "config": "tests/browser/chat/vite.composer.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/composer-extras.html"
+        "path": "/tests/browser/chat/composer-extras.html"
       },
       "projects": [
         {
@@ -394,12 +394,12 @@
     },
     {
       "id": "connections",
-      "config": "tests/browser/playwright.connections.config.ts",
+      "config": "tests/browser/connections/playwright.connections.config.ts",
       "files": ["connections.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.connections.config.ts",
+        "config": "tests/browser/connections/vite.connections.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/settings.html"
+        "path": "/tests/browser/settings/settings.html"
       },
       "projects": [
         {
@@ -411,12 +411,12 @@
     },
     {
       "id": "crew",
-      "config": "tests/browser/playwright.crew.config.ts",
+      "config": "tests/browser/crews/playwright.crew.config.ts",
       "files": ["star-wars-crew.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.crew.config.ts",
+        "config": "tests/browser/crews/vite.crew.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/crew-scene.html"
+        "path": "/tests/browser/crews/crew-scene.html"
       },
       "projects": [
         {
@@ -433,12 +433,12 @@
     },
     {
       "id": "crews",
-      "config": "tests/browser/playwright.crews.config.ts",
+      "config": "tests/browser/crews/playwright.crews.config.ts",
       "files": ["crews.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.crews.config.ts",
+        "config": "tests/browser/crews/vite.crews.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/crews.html"
+        "path": "/tests/browser/crews/crews.html"
       },
       "projects": [
         {
@@ -455,12 +455,12 @@
     },
     {
       "id": "device-panel",
-      "config": "tests/browser/playwright.device-panel.config.ts",
+      "config": "tests/browser/devices/playwright.device-panel.config.ts",
       "files": ["device-panel.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.host-tools.config.ts",
+        "config": "tests/browser/host-tools/vite.host-tools.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/host-tools.html"
+        "path": "/tests/browser/host-tools/host-tools.html"
       },
       "projects": [
         {
@@ -472,12 +472,12 @@
     },
     {
       "id": "editor-navigation",
-      "config": "tests/browser/playwright.editor-navigation.config.ts",
+      "config": "tests/browser/files/playwright.editor-navigation.config.ts",
       "files": ["editor-navigation.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.editor-navigation.config.ts",
+        "config": "tests/browser/files/vite.editor-navigation.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/editor-navigation.html"
+        "path": "/tests/browser/files/editor-navigation.html"
       },
       "projects": [
         {
@@ -494,7 +494,7 @@
     },
     {
       "id": "editor-selection",
-      "config": "tests/browser/playwright.editor-selection.config.ts",
+      "config": "tests/browser/files/playwright.editor-selection.config.ts",
       "files": [
         "editor-selection.spec.ts",
         "file-save.spec.ts",
@@ -502,9 +502,9 @@
         "editor-recovery.spec.ts"
       ],
       "fixture": {
-        "config": "tests/browser/vite.editor-selection.config.ts",
+        "config": "tests/browser/files/vite.editor-selection.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/editor-selection.html"
+        "path": "/tests/browser/files/editor-selection.html"
       },
       "projects": [
         {
@@ -531,12 +531,12 @@
     },
     {
       "id": "external-mcp",
-      "config": "tests/browser/playwright.external-mcp.config.ts",
+      "config": "tests/browser/settings/playwright.external-mcp.config.ts",
       "files": ["external-mcp.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.external-mcp.config.ts",
+        "config": "tests/browser/settings/vite.external-mcp.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/external-mcp.html"
+        "path": "/tests/browser/settings/external-mcp.html"
       },
       "projects": [
         {
@@ -553,12 +553,12 @@
     },
     {
       "id": "git-checkouts",
-      "config": "tests/browser/playwright.git-checkouts.config.ts",
+      "config": "tests/browser/source-control/playwright.git-checkouts.config.ts",
       "files": ["git-checkouts.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.git-checkouts.config.ts",
+        "config": "tests/browser/source-control/vite.git-checkouts.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/git-workspace.html"
+        "path": "/tests/browser/source-control/git-workspace.html"
       },
       "projects": [
         {
@@ -570,12 +570,12 @@
     },
     {
       "id": "group-menu",
-      "config": "tests/browser/playwright.group-menu.config.ts",
+      "config": "tests/browser/shared-ui/playwright.group-menu.config.ts",
       "files": ["group-menu.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.group-menu.config.ts",
+        "config": "tests/browser/shared-ui/vite.group-menu.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/group-menu.html"
+        "path": "/tests/browser/shared-ui/group-menu.html"
       },
       "projects": [
         {
@@ -592,7 +592,7 @@
     },
     {
       "id": "overlays",
-      "config": "tests/browser/playwright.overlays.config.ts",
+      "config": "tests/browser/shared-ui/playwright.overlays.config.ts",
       "files": [
         "overlay-popups.spec.ts",
         "overlay-menus.spec.ts",
@@ -600,9 +600,9 @@
         "overlay-media.spec.ts"
       ],
       "fixture": {
-        "config": "tests/browser/vite.overlays.config.ts",
+        "config": "tests/browser/shared-ui/vite.overlays.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/overlay-popups.html"
+        "path": "/tests/browser/shared-ui/overlay-popups.html"
       },
       "projects": [
         {
@@ -629,12 +629,12 @@
     },
     {
       "id": "host-tools",
-      "config": "tests/browser/playwright.host-tools.config.ts",
+      "config": "tests/browser/host-tools/playwright.host-tools.config.ts",
       "files": ["host-tools.e2e.ts", "tools-workspace-resize.e2e.ts", "host-tools-session.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.host-tools.config.ts",
+        "config": "tests/browser/host-tools/vite.host-tools.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/host-tools.html"
+        "path": "/tests/browser/host-tools/host-tools.html"
       },
       "projects": [
         {
@@ -650,12 +650,12 @@
     },
     {
       "id": "jira-board",
-      "config": "tests/browser/playwright.jira-board.config.ts",
+      "config": "tests/browser/inbox/playwright.jira-board.config.ts",
       "files": ["jira-board.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.jira-board.config.ts",
+        "config": "tests/browser/inbox/vite.jira-board.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/jira-board.html"
+        "path": "/tests/browser/inbox/jira-board.html"
       },
       "projects": [
         {
@@ -672,12 +672,12 @@
     },
     {
       "id": "merge-conflicts",
-      "config": "tests/browser/playwright.merge-conflicts.config.ts",
+      "config": "tests/browser/files/playwright.merge-conflicts.config.ts",
       "files": ["merge-conflicts.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.merge-conflicts.config.ts",
+        "config": "tests/browser/files/vite.merge-conflicts.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/merge-conflicts.html"
+        "path": "/tests/browser/files/merge-conflicts.html"
       },
       "projects": [
         {
@@ -694,12 +694,12 @@
     },
     {
       "id": "notes",
-      "config": "tests/browser/playwright.notes.config.ts",
+      "config": "tests/browser/notes/playwright.notes.config.ts",
       "files": ["notes.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.notes.config.ts",
+        "config": "tests/browser/notes/vite.notes.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/notes.html"
+        "path": "/tests/browser/notes/notes.html"
       },
       "projects": [
         {
@@ -716,12 +716,12 @@
     },
     {
       "id": "notifications",
-      "config": "tests/browser/playwright.notifications.config.ts",
+      "config": "tests/browser/notifications/playwright.notifications.config.ts",
       "files": ["notifications.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.notifications.config.ts",
+        "config": "tests/browser/notifications/vite.notifications.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/notifications.html"
+        "path": "/tests/browser/notifications/notifications.html"
       },
       "projects": [
         {
@@ -733,12 +733,12 @@
     },
     {
       "id": "onboarding",
-      "config": "tests/browser/playwright.onboarding.config.ts",
+      "config": "tests/browser/onboarding/playwright.onboarding.config.ts",
       "files": ["onboarding.spec.ts", "usage-guide.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.onboarding.config.ts",
+        "config": "tests/browser/onboarding/vite.onboarding.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/onboarding.html"
+        "path": "/tests/browser/onboarding/onboarding.html"
       },
       "projects": [
         {
@@ -755,12 +755,12 @@
     },
     {
       "id": "operational-tools",
-      "config": "tests/browser/playwright.operational-tools.config.ts",
+      "config": "tests/browser/host-tools/playwright.operational-tools.config.ts",
       "files": ["operational-tools.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.operational-tools.config.ts",
+        "config": "tests/browser/host-tools/vite.operational-tools.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/operational-tools.html"
+        "path": "/tests/browser/host-tools/operational-tools.html"
       },
       "projects": [
         {
@@ -777,12 +777,12 @@
     },
     {
       "id": "orchestration",
-      "config": "tests/browser/playwright.orchestration.config.ts",
+      "config": "tests/browser/orchestration/playwright.orchestration.config.ts",
       "files": ["orchestration.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.orchestration.config.ts",
+        "config": "tests/browser/orchestration/vite.orchestration.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/orchestration.html"
+        "path": "/tests/browser/orchestration/orchestration.html"
       },
       "projects": [
         {
@@ -799,12 +799,12 @@
     },
     {
       "id": "question-flow",
-      "config": "tests/browser/playwright.question-flow.config.ts",
+      "config": "tests/browser/chat/playwright.question-flow.config.ts",
       "files": ["question-flow.spec.ts", "question-attachments.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.question-flow.config.ts",
+        "config": "tests/browser/chat/vite.question-flow.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/question-flow.html"
+        "path": "/tests/browser/chat/question-flow.html"
       },
       "projects": [
         {
@@ -821,7 +821,7 @@
     },
     {
       "id": "servers",
-      "config": "tests/browser/playwright.servers.config.ts",
+      "config": "tests/browser/terminal/playwright.servers.config.ts",
       "files": [
         "servers-management.spec.ts",
         "servers.spec.ts",
@@ -830,9 +830,9 @@
         "server-recovery.spec.ts"
       ],
       "fixture": {
-        "config": "tests/browser/vite.servers.config.ts",
+        "config": "tests/browser/terminal/vite.servers.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/servers.html"
+        "path": "/tests/browser/terminal/servers.html"
       },
       "projects": [
         {
@@ -861,12 +861,12 @@
     },
     {
       "id": "session-row-layout",
-      "config": "tests/browser/session-row-layout.playwright.config.ts",
+      "config": "tests/browser/sessions/session-row-layout.playwright.config.ts",
       "files": ["session-row-layout.spec.ts"],
       "fixture": {
-        "config": "tests/browser/session-row-layout.vite.config.ts",
+        "config": "tests/browser/sessions/session-row-layout.vite.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/session-row-layout.html"
+        "path": "/tests/browser/sessions/session-row-layout.html"
       },
       "projects": [
         {
@@ -878,12 +878,12 @@
     },
     {
       "id": "session-usability",
-      "config": "tests/browser/playwright.session-usability.config.ts",
+      "config": "tests/browser/sessions/playwright.session-usability.config.ts",
       "files": ["session-usability.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.session-usability.config.ts",
+        "config": "tests/browser/sessions/vite.session-usability.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/session-usability.html"
+        "path": "/tests/browser/sessions/session-usability.html"
       },
       "projects": [
         {
@@ -900,7 +900,7 @@
     },
     {
       "id": "sessions",
-      "config": "tests/browser/playwright.sessions.config.ts",
+      "config": "tests/browser/chat/playwright.sessions.config.ts",
       "files": [
         "transcript-scroll.spec.ts",
         "transcript-long-text.spec.ts",
@@ -908,9 +908,9 @@
         "sessions-streaming.spec.ts"
       ],
       "fixture": {
-        "config": "tests/browser/vite.sessions.config.ts",
+        "config": "tests/browser/chat/vite.sessions.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/transcript.html"
+        "path": "/tests/browser/chat/transcript.html"
       },
       "projects": [
         {
@@ -937,12 +937,12 @@
     },
     {
       "id": "settings",
-      "config": "tests/browser/playwright.settings.config.ts",
+      "config": "tests/browser/settings/playwright.settings.config.ts",
       "files": ["settings.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.settings.config.ts",
+        "config": "tests/browser/settings/vite.settings.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/settings.html"
+        "path": "/tests/browser/settings/settings.html"
       },
       "projects": [
         {
@@ -954,7 +954,7 @@
     },
     {
       "id": "settings-navigation",
-      "config": "tests/browser/playwright.settings.config.ts",
+      "config": "tests/browser/settings/playwright.settings.config.ts",
       "files": [
         "settings-dialog.e2e.ts",
         "settings-open.e2e.ts",
@@ -963,9 +963,9 @@
         "settings-ui-details.e2e.ts"
       ],
       "fixture": {
-        "config": "tests/browser/vite.settings.config.ts",
+        "config": "tests/browser/settings/vite.settings.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/settings.html"
+        "path": "/tests/browser/settings/settings.html"
       },
       "projects": [
         {
@@ -983,12 +983,12 @@
     },
     {
       "id": "settings-workspace",
-      "config": "tests/browser/playwright.settings.config.ts",
+      "config": "tests/browser/settings/playwright.settings.config.ts",
       "files": ["terminal-settings.e2e.ts", "workspace-settings.e2e.ts", "policies.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.settings.config.ts",
+        "config": "tests/browser/settings/vite.settings.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/settings.html"
+        "path": "/tests/browser/settings/settings.html"
       },
       "projects": [
         {
@@ -1000,12 +1000,12 @@
     },
     {
       "id": "settings-library",
-      "config": "tests/browser/playwright.settings.config.ts",
+      "config": "tests/browser/settings/playwright.settings.config.ts",
       "files": ["settings-skills.e2e.ts", "settings-notifications.e2e.ts", "voice-settings.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.settings.config.ts",
+        "config": "tests/browser/settings/vite.settings.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/settings.html"
+        "path": "/tests/browser/settings/settings.html"
       },
       "projects": [
         {
@@ -1021,12 +1021,12 @@
     },
     {
       "id": "settings-subviews",
-      "config": "tests/browser/playwright.settings.config.ts",
+      "config": "tests/browser/settings/playwright.settings.config.ts",
       "files": ["settings-subviews.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.settings.config.ts",
+        "config": "tests/browser/settings/vite.settings.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/settings.html"
+        "path": "/tests/browser/settings/settings.html"
       },
       "projects": [
         {
@@ -1038,12 +1038,12 @@
     },
     {
       "id": "settings-backgrounds",
-      "config": "tests/browser/playwright.settings.config.ts",
+      "config": "tests/browser/settings/playwright.settings.config.ts",
       "files": ["live-backgrounds.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.settings.config.ts",
+        "config": "tests/browser/settings/vite.settings.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/settings.html"
+        "path": "/tests/browser/settings/settings.html"
       },
       "projects": [
         {
@@ -1055,12 +1055,12 @@
     },
     {
       "id": "social",
-      "config": "tests/browser/playwright.social.config.ts",
+      "config": "tests/browser/social/playwright.social.config.ts",
       "files": ["social.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.social.config.ts",
+        "config": "tests/browser/social/vite.social.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/social.html"
+        "path": "/tests/browser/social/social.html"
       },
       "projects": [
         {
@@ -1072,12 +1072,12 @@
     },
     {
       "id": "sprints",
-      "config": "tests/browser/playwright.sprints.config.ts",
+      "config": "tests/browser/tasks/playwright.sprints.config.ts",
       "files": ["sprints.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.tasks.config.ts",
+        "config": "tests/browser/tasks/vite.tasks.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/tasks.html"
+        "path": "/tests/browser/tasks/tasks.html"
       },
       "projects": [
         {
@@ -1094,12 +1094,12 @@
     },
     {
       "id": "subagent-relay",
-      "config": "tests/browser/playwright.subagent-relay.config.ts",
+      "config": "tests/browser/chat/playwright.subagent-relay.config.ts",
       "files": ["subagent-relay.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.subagent-relay.config.ts",
+        "config": "tests/browser/chat/vite.subagent-relay.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/subagent-relay.html"
+        "path": "/tests/browser/chat/subagent-relay.html"
       },
       "projects": [
         {
@@ -1111,12 +1111,12 @@
     },
     {
       "id": "tasks",
-      "config": "tests/browser/playwright.tasks.config.ts",
+      "config": "tests/browser/tasks/playwright.tasks.config.ts",
       "files": ["tasks.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.tasks.config.ts",
+        "config": "tests/browser/tasks/vite.tasks.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/tasks.html"
+        "path": "/tests/browser/tasks/tasks.html"
       },
       "projects": [
         {
@@ -1133,12 +1133,12 @@
     },
     {
       "id": "terminal-tools",
-      "config": "tests/browser/playwright.terminal-tools.config.ts",
+      "config": "tests/browser/terminal/playwright.terminal-tools.config.ts",
       "files": ["terminal-tools.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.terminal-tools.config.ts",
+        "config": "tests/browser/terminal/vite.terminal-tools.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/terminal-tools.html"
+        "path": "/tests/browser/terminal/terminal-tools.html"
       },
       "projects": [
         {
@@ -1150,12 +1150,12 @@
     },
     {
       "id": "termius",
-      "config": "tests/browser/playwright.termius.config.ts",
+      "config": "tests/browser/terminal/playwright.termius.config.ts",
       "files": ["termius-import.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.termius.config.ts",
+        "config": "tests/browser/terminal/vite.termius.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/termius-import.html"
+        "path": "/tests/browser/terminal/termius-import.html"
       },
       "projects": [
         {
@@ -1172,12 +1172,12 @@
     },
     {
       "id": "text-actions",
-      "config": "tests/browser/playwright.text-actions.config.ts",
+      "config": "tests/browser/chat/playwright.text-actions.config.ts",
       "files": ["text-actions.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.text-actions.config.ts",
+        "config": "tests/browser/chat/vite.text-actions.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/text-actions.html"
+        "path": "/tests/browser/chat/text-actions.html"
       },
       "projects": [
         {
@@ -1194,12 +1194,12 @@
     },
     {
       "id": "tools-simplify",
-      "config": "tests/browser/playwright.tools-simplify.config.ts",
+      "config": "tests/browser/host-tools/playwright.tools-simplify.config.ts",
       "files": ["tools-simplify.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.host-tools.config.ts",
+        "config": "tests/browser/host-tools/vite.host-tools.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/host-tools.html"
+        "path": "/tests/browser/host-tools/host-tools.html"
       },
       "projects": [
         {
@@ -1211,12 +1211,12 @@
     },
     {
       "id": "usage-budgets",
-      "config": "tests/browser/playwright.usage-budgets.config.ts",
+      "config": "tests/browser/usage/playwright.usage-budgets.config.ts",
       "files": ["usage-budgets.spec.ts", "usage-analytics.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.usage-budgets.config.ts",
+        "config": "tests/browser/usage/vite.usage-budgets.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/usage-budgets.html"
+        "path": "/tests/browser/usage/usage-budgets.html"
       },
       "projects": [
         {
@@ -1233,7 +1233,7 @@
     },
     {
       "id": "voice-visual-styles",
-      "config": "tests/browser/playwright.voice-visual-styles.config.ts",
+      "config": "tests/browser/voice/playwright.voice-visual-styles.config.ts",
       "files": [
         "voice-visual-styles.e2e.ts",
         "voice-overlay.e2e.ts",
@@ -1241,9 +1241,9 @@
         "voice-companion-controls.e2e.ts"
       ],
       "fixture": {
-        "config": "tests/browser/vite.voice-visual-styles.config.ts",
+        "config": "tests/browser/voice/vite.voice-visual-styles.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/voice-visual-styles.html"
+        "path": "/tests/browser/voice/voice-visual-styles.html"
       },
       "projects": [
         {
@@ -1260,12 +1260,12 @@
     },
     {
       "id": "global-voice",
-      "config": "tests/browser/playwright.global-voice.config.ts",
+      "config": "tests/browser/voice/playwright.global-voice.config.ts",
       "files": ["global-voice.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.global-voice.config.ts",
+        "config": "tests/browser/voice/vite.global-voice.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/voice-visual-styles.html"
+        "path": "/tests/browser/voice/voice-visual-styles.html"
       },
       "projects": [
         {
@@ -1277,12 +1277,12 @@
     },
     {
       "id": "workspace-navigation",
-      "config": "tests/browser/playwright.workspace-navigation.config.ts",
+      "config": "tests/browser/workspace/playwright.workspace-navigation.config.ts",
       "files": ["project-workspace-navigation.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.workspace-navigation.config.ts",
+        "config": "tests/browser/workspace/vite.workspace-navigation.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/project-workspace-navigation.html"
+        "path": "/tests/browser/workspace/project-workspace-navigation.html"
       },
       "projects": [
         {
@@ -1294,7 +1294,7 @@
     },
     {
       "id": "worktrees",
-      "config": "tests/browser/playwright.worktrees.config.ts",
+      "config": "tests/browser/source-control/playwright.worktrees.config.ts",
       "files": [
         "worktrees.e2e.ts",
         "workspace-creation.e2e.ts",
@@ -1302,9 +1302,9 @@
         "build-identity.spec.ts"
       ],
       "fixture": {
-        "config": "tests/browser/vite.worktrees.config.ts",
+        "config": "tests/browser/source-control/vite.worktrees.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/worktrees.html"
+        "path": "/tests/browser/source-control/worktrees.html"
       },
       "projects": [
         {
@@ -1326,12 +1326,12 @@
     },
     {
       "id": "session-deletion",
-      "config": "tests/browser/session-deletion.config.ts",
+      "config": "tests/browser/sessions/session-deletion.config.ts",
       "files": ["session-deletion.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.session-deletion.config.ts",
+        "config": "tests/browser/sessions/vite.session-deletion.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/session-deletion.html"
+        "path": "/tests/browser/sessions/session-deletion.html"
       },
       "projects": [
         {
@@ -1348,12 +1348,12 @@
     },
     {
       "id": "session-recovery",
-      "config": "tests/browser/session-recovery.playwright.config.ts",
+      "config": "tests/browser/sessions/session-recovery.playwright.config.ts",
       "files": ["session-recovery.spec.ts"],
       "fixture": {
-        "config": "tests/browser/session-recovery.vite.config.ts",
+        "config": "tests/browser/sessions/session-recovery.vite.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/session-recovery.html"
+        "path": "/tests/browser/sessions/session-recovery.html"
       },
       "projects": [
         {
@@ -1370,12 +1370,12 @@
     },
     {
       "id": "update-footer",
-      "config": "tests/browser/update-footer.playwright.config.ts",
+      "config": "tests/browser/app-shell/update-footer.playwright.config.ts",
       "files": ["update-footer.spec.ts"],
       "fixture": {
-        "config": "tests/browser/update-footer.vite.config.ts",
+        "config": "tests/browser/app-shell/update-footer.vite.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/update-footer.html"
+        "path": "/tests/browser/app-shell/update-footer.html"
       },
       "projects": [
         {
@@ -1392,12 +1392,12 @@
     },
     {
       "id": "chat-artifacts-rewind",
-      "config": "tests/browser/playwright.chat-artifacts.config.ts",
+      "config": "tests/browser/chat/playwright.chat-artifacts.config.ts",
       "files": ["transcript-rewind.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.chat-artifacts.config.ts",
+        "config": "tests/browser/chat/vite.chat-artifacts.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/transcript.html"
+        "path": "/tests/browser/chat/transcript.html"
       },
       "variantOf": "sessions",
       "reason": "Existing rewind scenario on chat-artifacts fixture; explicit opt-in.",
@@ -1416,12 +1416,12 @@
     },
     {
       "id": "tasks-rewind",
-      "config": "tests/browser/playwright.tasks.config.ts",
+      "config": "tests/browser/tasks/playwright.tasks.config.ts",
       "files": ["transcript-rewind.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.tasks.config.ts",
+        "config": "tests/browser/tasks/vite.tasks.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/tasks.html"
+        "path": "/tests/browser/tasks/tasks.html"
       },
       "variantOf": "sessions",
       "reason": "Existing rewind scenario on tasks fixture; explicit opt-in.",
@@ -1440,7 +1440,7 @@
     },
     {
       "id": "transcript",
-      "config": "tests/browser/transcript.playwright.config.ts",
+      "config": "tests/browser/chat/transcript.playwright.config.ts",
       "files": [
         "chat-chrome.spec.ts",
         "crew-scene.spec.ts",
@@ -1453,9 +1453,9 @@
         "git-workspace.spec.ts"
       ],
       "fixture": {
-        "config": "tests/browser/vite.transcript.config.ts",
+        "config": "tests/browser/chat/vite.transcript.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/transcript.html"
+        "path": "/tests/browser/chat/transcript.html"
       },
       "projects": [
         {
@@ -1492,12 +1492,12 @@
     },
     {
       "id": "merge-conflicts-workspace",
-      "config": "tests/browser/playwright.merge-conflicts.config.ts",
+      "config": "tests/browser/files/playwright.merge-conflicts.config.ts",
       "files": ["git-workspace.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.merge-conflicts.config.ts",
+        "config": "tests/browser/files/vite.merge-conflicts.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/merge-conflicts.html"
+        "path": "/tests/browser/files/merge-conflicts.html"
       },
       "projects": [
         {
@@ -1516,12 +1516,12 @@
     },
     {
       "id": "field-message",
-      "config": "tests/browser/playwright.field-message.config.ts",
+      "config": "tests/browser/shared-ui/playwright.field-message.config.ts",
       "files": ["field-message.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.field-message.config.ts",
+        "config": "tests/browser/shared-ui/vite.field-message.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/field-message.html"
+        "path": "/tests/browser/shared-ui/field-message.html"
       },
       "projects": [
         {
@@ -1533,12 +1533,12 @@
     },
     {
       "id": "assistant-room-remote",
-      "config": "tests/browser/playwright.assistant-room-remote.config.ts",
+      "config": "tests/browser/assistant/playwright.assistant-room-remote.config.ts",
       "files": ["assistant-room-remote.e2e.ts", "assistant-account-grants.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.assistant-room-remote.config.ts",
+        "config": "tests/browser/assistant/vite.assistant-room-remote.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/assistant-room.html"
+        "path": "/tests/browser/assistant/assistant-room.html"
       },
       "projects": [
         {
@@ -1550,12 +1550,12 @@
     },
     {
       "id": "devices",
-      "config": "tests/browser/playwright.devices.config.ts",
+      "config": "tests/browser/devices/playwright.devices.config.ts",
       "files": ["devices.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.devices.config.ts",
+        "config": "tests/browser/devices/vite.devices.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/host-tools.html"
+        "path": "/tests/browser/host-tools/host-tools.html"
       },
       "projects": [
         {
@@ -1567,12 +1567,12 @@
     },
     {
       "id": "dictation-permissions",
-      "config": "tests/browser/playwright.dictation-permissions.config.ts",
+      "config": "tests/browser/voice/playwright.dictation-permissions.config.ts",
       "files": ["dictation-permissions.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.dictation-permissions.config.ts",
+        "config": "tests/browser/voice/vite.dictation-permissions.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/dictation-permissions.html"
+        "path": "/tests/browser/voice/dictation-permissions.html"
       },
       "projects": [
         {
@@ -1584,12 +1584,12 @@
     },
     {
       "id": "inbox-seen-storage",
-      "config": "tests/browser/playwright.inbox-seen-storage.config.ts",
+      "config": "tests/browser/inbox/playwright.inbox-seen-storage.config.ts",
       "files": ["inbox-seen-storage.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.inbox-seen-storage.config.ts",
+        "config": "tests/browser/inbox/vite.inbox-seen-storage.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/inbox-seen-storage.html"
+        "path": "/tests/browser/inbox/inbox-seen-storage.html"
       },
       "projects": [
         {
@@ -1601,12 +1601,12 @@
     },
     {
       "id": "s31-outbox-storage",
-      "config": "tests/browser/playwright.s31-outbox-storage.config.ts",
+      "config": "tests/browser/sessions/playwright.s31-outbox-storage.config.ts",
       "files": ["s31-outbox-storage.spec.ts", "s31-session-bindings.spec.ts"],
       "fixture": {
-        "config": "tests/browser/vite.s31-outbox-storage.config.ts",
+        "config": "tests/browser/sessions/vite.s31-outbox-storage.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/s31-outbox-storage.html"
+        "path": "/tests/browser/sessions/s31-outbox-storage.html"
       },
       "projects": [
         {
@@ -1618,12 +1618,12 @@
     },
     {
       "id": "session-tools",
-      "config": "tests/browser/playwright.session-tools.config.ts",
+      "config": "tests/browser/sessions/playwright.session-tools.config.ts",
       "files": ["session-tools.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.session-tools.config.ts",
+        "config": "tests/browser/sessions/vite.session-tools.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/session-tools.html"
+        "path": "/tests/browser/sessions/session-tools.html"
       },
       "projects": [
         {
@@ -1635,12 +1635,12 @@
     },
     {
       "id": "skill-catalog",
-      "config": "tests/browser/playwright.skill-catalog.config.ts",
+      "config": "tests/browser/skills/playwright.skill-catalog.config.ts",
       "files": ["skill-catalog.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.skill-catalog.config.ts",
+        "config": "tests/browser/skills/vite.skill-catalog.config.ts",
         "mode": "preview",
-        "path": "/tests/browser/skill-catalog.html"
+        "path": "/tests/browser/skills/skill-catalog.html"
       },
       "projects": [
         {
@@ -1652,12 +1652,12 @@
     },
     {
       "id": "title-settings",
-      "config": "tests/browser/playwright.title-settings.config.ts",
+      "config": "tests/browser/settings/playwright.title-settings.config.ts",
       "files": ["title-settings.e2e.ts"],
       "fixture": {
-        "config": "tests/browser/vite.title-settings.config.ts",
+        "config": "tests/browser/settings/vite.title-settings.config.ts",
         "mode": "preview",
-        "path": "/title-settings.html"
+        "path": "/settings/title-settings.html"
       },
       "projects": [
         {
@@ -1726,72 +1726,72 @@
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/compact-navigation.playwright.config.ts",
+      "config": "tests/browser/app-shell/compact-navigation.playwright.config.ts",
       "files": ["compact-navigation.spec.ts", "shell-count-badges.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/composer-host-compatibility.playwright.config.ts",
+      "config": "tests/browser/chat/composer-host-compatibility.playwright.config.ts",
       "files": ["composer-host-compatibility.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/edit-from-here.playwright.config.ts",
+      "config": "tests/browser/chat/edit-from-here.playwright.config.ts",
       "files": ["edit-from-here.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.arc-controls.config.ts",
+      "config": "tests/browser/shared-ui/playwright.arc-controls.config.ts",
       "files": ["arc-controls.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.automations.config.ts",
+      "config": "tests/browser/automations/playwright.automations.config.ts",
       "files": ["automations.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.browser-annotation.config.ts",
+      "config": "tests/browser/host-tools/playwright.browser-annotation.config.ts",
       "files": ["browser-annotation.e2e.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.chat-artifacts.config.ts",
+      "config": "tests/browser/chat/playwright.chat-artifacts.config.ts",
       "files": ["chat-artifacts.spec.ts", "artifact-formats.spec.ts", "transcript-rewind.spec.ts"],
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.composer.config.ts",
+      "config": "tests/browser/chat/playwright.composer.config.ts",
       "files": ["composer-extras.spec.ts", "git-generation.spec.ts", "workspace-layout.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.connections.config.ts",
+      "config": "tests/browser/connections/playwright.connections.config.ts",
       "files": ["connections.e2e.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.crew.config.ts",
+      "config": "tests/browser/crews/playwright.crew.config.ts",
       "files": ["star-wars-crew.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.crews.config.ts",
+      "config": "tests/browser/crews/playwright.crews.config.ts",
       "files": ["crews.spec.ts"],
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.device-panel.config.ts",
+      "config": "tests/browser/devices/playwright.device-panel.config.ts",
       "files": ["device-panel.e2e.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.editor-navigation.config.ts",
+      "config": "tests/browser/files/playwright.editor-navigation.config.ts",
       "files": ["editor-navigation.spec.ts"],
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.editor-selection.config.ts",
+      "config": "tests/browser/files/playwright.editor-selection.config.ts",
       "files": [
         "editor-selection.spec.ts",
         "file-save.spec.ts",
@@ -1801,67 +1801,67 @@
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.external-mcp.config.ts",
+      "config": "tests/browser/settings/playwright.external-mcp.config.ts",
       "files": ["external-mcp.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.git-checkouts.config.ts",
+      "config": "tests/browser/source-control/playwright.git-checkouts.config.ts",
       "files": ["git-checkouts.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.group-menu.config.ts",
+      "config": "tests/browser/shared-ui/playwright.group-menu.config.ts",
       "files": ["group-menu.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.host-tools.config.ts",
+      "config": "tests/browser/host-tools/playwright.host-tools.config.ts",
       "files": ["host-tools.e2e.ts", "tools-workspace-resize.e2e.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.jira-board.config.ts",
+      "config": "tests/browser/inbox/playwright.jira-board.config.ts",
       "files": ["jira-board.spec.ts"],
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.merge-conflicts.config.ts",
+      "config": "tests/browser/files/playwright.merge-conflicts.config.ts",
       "files": ["merge-conflicts.spec.ts", "git-workspace.spec.ts"],
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.notes.config.ts",
+      "config": "tests/browser/notes/playwright.notes.config.ts",
       "files": ["notes.spec.ts"],
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.notifications.config.ts",
+      "config": "tests/browser/notifications/playwright.notifications.config.ts",
       "files": ["notifications.e2e.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.onboarding.config.ts",
+      "config": "tests/browser/onboarding/playwright.onboarding.config.ts",
       "files": ["onboarding.spec.ts", "usage-guide.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.operational-tools.config.ts",
+      "config": "tests/browser/host-tools/playwright.operational-tools.config.ts",
       "files": ["operational-tools.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.orchestration.config.ts",
+      "config": "tests/browser/orchestration/playwright.orchestration.config.ts",
       "files": ["orchestration.spec.ts"],
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.question-flow.config.ts",
+      "config": "tests/browser/chat/playwright.question-flow.config.ts",
       "files": ["question-flow.spec.ts", "question-attachments.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.servers.config.ts",
+      "config": "tests/browser/terminal/playwright.servers.config.ts",
       "files": [
         "servers-management.spec.ts",
         "servers.spec.ts",
@@ -1872,17 +1872,17 @@
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.session-usability.config.ts",
+      "config": "tests/browser/sessions/playwright.session-usability.config.ts",
       "files": ["session-usability.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.sessions-composer.config.ts",
+      "config": "tests/browser/chat/playwright.sessions-composer.config.ts",
       "files": ["composer-extras.spec.ts"],
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.sessions.config.ts",
+      "config": "tests/browser/chat/playwright.sessions.config.ts",
       "files": [
         "transcript-scroll.spec.ts",
         "transcript-long-text.spec.ts",
@@ -1892,7 +1892,7 @@
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.settings.config.ts",
+      "config": "tests/browser/settings/playwright.settings.config.ts",
       "files": [
         "live-backgrounds.e2e.ts",
         "settings-open.e2e.ts",
@@ -1911,62 +1911,62 @@
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.social.config.ts",
+      "config": "tests/browser/social/playwright.social.config.ts",
       "files": ["social.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.sprints.config.ts",
+      "config": "tests/browser/tasks/playwright.sprints.config.ts",
       "files": ["sprints.spec.ts"],
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.subagent-relay.config.ts",
+      "config": "tests/browser/chat/playwright.subagent-relay.config.ts",
       "files": ["subagent-relay.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.tasks.config.ts",
+      "config": "tests/browser/tasks/playwright.tasks.config.ts",
       "files": ["tasks.spec.ts", "transcript-rewind.spec.ts"],
       "browsers": ["chromium", "webkit"]
     },
     {
-      "config": "tests/browser/playwright.terminal-tools.config.ts",
+      "config": "tests/browser/terminal/playwright.terminal-tools.config.ts",
       "files": ["terminal-tools.e2e.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.termius.config.ts",
+      "config": "tests/browser/terminal/playwright.termius.config.ts",
       "files": ["termius-import.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.text-actions.config.ts",
+      "config": "tests/browser/chat/playwright.text-actions.config.ts",
       "files": ["text-actions.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.tools-simplify.config.ts",
+      "config": "tests/browser/host-tools/playwright.tools-simplify.config.ts",
       "files": ["tools-simplify.e2e.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.usage-budgets.config.ts",
+      "config": "tests/browser/usage/playwright.usage-budgets.config.ts",
       "files": ["usage-budgets.spec.ts", "usage-analytics.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.voice-visual-styles.config.ts",
+      "config": "tests/browser/voice/playwright.voice-visual-styles.config.ts",
       "files": ["voice-visual-styles.e2e.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.workspace-navigation.config.ts",
+      "config": "tests/browser/workspace/playwright.workspace-navigation.config.ts",
       "files": ["project-workspace-navigation.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/playwright.worktrees.config.ts",
+      "config": "tests/browser/source-control/playwright.worktrees.config.ts",
       "files": [
         "worktrees.e2e.ts",
         "workspace-creation.e2e.ts",
@@ -1976,22 +1976,22 @@
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/session-deletion.config.ts",
+      "config": "tests/browser/sessions/session-deletion.config.ts",
       "files": ["session-deletion.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/session-recovery.playwright.config.ts",
+      "config": "tests/browser/sessions/session-recovery.playwright.config.ts",
       "files": ["session-recovery.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/update-footer.playwright.config.ts",
+      "config": "tests/browser/app-shell/update-footer.playwright.config.ts",
       "files": ["update-footer.spec.ts"],
       "browsers": ["chromium"]
     },
     {
-      "config": "tests/browser/generated-file-links.playwright.config.ts",
+      "config": "tests/browser/chat/generated-file-links.playwright.config.ts",
       "files": ["generated-file-links.spec.ts"],
       "browsers": ["chromium"]
     }

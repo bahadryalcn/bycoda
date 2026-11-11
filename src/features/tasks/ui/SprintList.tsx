@@ -3,6 +3,7 @@ import { useT } from "../../../shared/i18n";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Surface } from "../../../shared/ui/Surface";
 import { sprintProjectKey, type HostSprint } from "../model/hostSprints";
 import { displayDate } from "../model/sprintDates";
 import { SprintStatusBadge } from "./SprintStatusBadge";
@@ -50,7 +51,7 @@ export function SprintList({
           options={["all", ...present].map((value) => ({ value, label: label(value) }))}
         />
       ) : null}
-      <ul className="sprint-collection">
+      <Surface as="ul" variant="card" padding="none" className="sprint-collection">
         {shown.map((sprint) => (
           <li className="sprint-row" key={sprint.id}>
             <div className="sprint-row-main">
@@ -78,7 +79,7 @@ export function SprintList({
             <SprintStatusBadge state={sprint.state} />
           </li>
         ))}
-      </ul>
+      </Surface>
     </>
   );
 }

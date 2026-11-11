@@ -1099,14 +1099,15 @@ function Workspace({
 
   // Idle tabs close without prompts: the active, moving, dirty and terminal tabs stay.
   const idleTabIds = useCallback(
-    (selectedId = activeTabIdRef.current, dirtyIds = dirtyFilesRef.current) =>
+    (selectedId?: string, dirtyIds?: typeof dirtyFiles) =>
+      // Refs are read here, not in parameter defaults: the compiler cannot reorder them.
       idleWorkspaceTabIds({
         tabs,
         sessions,
-        activeTabId: selectedId,
+        activeTabId: selectedId ?? activeTabIdRef.current,
         busySessionIds,
         unseenFinishedIds,
-        dirtyFileIds: dirtyIds,
+        dirtyFileIds: dirtyIds ?? dirtyFilesRef.current,
         movingTabIds: movingTabIds.current,
         hasComposerDraft: (sessionId) => {
           const draft = composerDraftOf(sessionId);

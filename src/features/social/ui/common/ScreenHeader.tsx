@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
+import { Heading } from "../../../../shared/ui/Heading";
 import { MoreHorizontal } from "../../../../shared/ui/icons";
 import { DisabledReason, gateProps, type ActionGate } from "./DisabledReason";
 import "./common.css";
@@ -41,7 +42,9 @@ export function ScreenHeader({ title, description, primary, secondary = [] }: Sc
   return (
     <header className="social-screen-header">
       <div className="social-screen-heading">
-        <h2 className="social-screen-title">{title}</h2>
+        <Heading size="page" level={2}>
+          {title}
+        </Heading>
         {description ? <p className="social-screen-description">{description}</p> : null}
       </div>
       <div className="social-screen-actions">

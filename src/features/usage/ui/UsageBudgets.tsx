@@ -2,6 +2,9 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Badge } from "../../../shared/ui/Badge";
+import { Heading } from "../../../shared/ui/Heading";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Surface } from "../../../shared/ui/Surface";
 import {
   useEffect,
   useRef,
@@ -151,7 +154,9 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
     <section className="space-y-2" aria-label={t("Usage budgets")} aria-busy={pending}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-ui-body font-medium">{t("Usage budgets")}</h2>
+          <Heading size="section" level={2}>
+            {t("Usage budgets")}
+          </Heading>
           <InfoPopover label={t("About usage budgets")}>
             <p>
               {t(
@@ -227,13 +232,12 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
         const format = (n: number) =>
           budget.metric === "tokens" ? formatUsageTokens(n) : `${n.toFixed(1)}%`;
         return (
-          <div
-            key={budget.id}
-            className="space-y-1.5 rounded-(--ui-radius-card) border border-(--ui-settings-group-border) px-3 py-2.5"
-          >
+          <Surface key={budget.id} variant="outline" padding="md" className="space-y-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
-                <h3 className="break-words text-ui-caption font-medium">{budget.label}</h3>
+                <SectionLabel as="h3" classNames={{ label: "usage-budget-title" }}>
+                  {budget.label}
+                </SectionLabel>
                 <p className="text-ui-caption text-(--ui-text-secondary)">
                   {t(scopeLabel[budget.scope])} · {t(periodLabel[budget.period])} ·{" "}
                   {t(budget.action === "block" ? "Block new turns" : "Monitor only")}
@@ -326,7 +330,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             !loadProjectGroups().some((g) => g.id === budget.target) ? (
               <p className="text-ui-caption text-danger">{t("Workspace unavailable")}</p>
             ) : null}
-          </div>
+          </Surface>
         );
       })}
     </section>
@@ -414,7 +418,7 @@ function BudgetEditor({
   };
   return (
     <form
-      className="space-y-3 rounded-(--ui-radius-card) border border-(--ui-settings-group-border) p-3"
+      className="space-y-3 rounded-(--ui-radius-card) border border-(--ui-card-border) p-3"
       onSubmit={(event) => {
         event.preventDefault();
         const next = normalizeBudget({

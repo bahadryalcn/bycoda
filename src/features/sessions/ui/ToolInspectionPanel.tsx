@@ -1,3 +1,4 @@
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface } from "../../../shared/ui/Surface";
 import { useMemo, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
@@ -176,9 +177,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
         return (
           <section key={index} className="min-w-0">
             <div className="flex min-h-7 items-center justify-between gap-2 pr-1 pl-3">
-              <h4 className="text-ui-caption font-medium text-(--ui-text-secondary)">
-                {t(section.title)}
-              </h4>
+              <SectionLabel as="h4">{t(section.title)}</SectionLabel>
               {index === 0 ? (
                 <div className="flex items-center gap-2">
                   {feedback.failed ? (

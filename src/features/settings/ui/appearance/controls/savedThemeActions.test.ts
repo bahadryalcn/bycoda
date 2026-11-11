@@ -95,6 +95,15 @@ describe("applyAppearanceSnapshot", () => {
     });
   });
 
+  it("captures and restores surface contrast with the preferences record", () => {
+    const { appearance, fns } = mockAppearance();
+    applyAppearanceSnapshot(appearance, {
+      preferences: { ...APPEARANCE_DEFAULTS, surfaceContrast: 135 },
+    });
+    expect(fns.onPreferences.mock.calls[0]![0]).toMatchObject({ surfaceContrast: 135 });
+    expect(captureAppearanceSnapshot().preferences?.surfaceContrast).toBe(100);
+  });
+
   it("keeps word wrap and chat width and skips settings the snapshot does not hold", () => {
     const { appearance, fns } = mockAppearance();
     applyAppearanceSnapshot(appearance, {

@@ -180,6 +180,55 @@ it("keeps the transcript available when an image is missing", async () => {
   expect(result.session.blocks[0].attachments?.[0].loadPreview).toBeTypeOf("function");
 });
 
+it("asks once for an image the Host answered it does not hold", async () => {
+  vi.useFakeTimers();
+  try {
+    // The native layer forwards the Host refusal as text, as an Error or a bare string.
+    const read = vi.fn(async (): Promise<never> => {
+      throw "Host rejected request: Attachment file is missing on this machine.";
+    });
+    let known: HostSession | undefined;
+    for (let i = 0; i < 3; i++) {
+      known = await withRemoteAttachmentPreviews("gone-machine", snapshot(), known, read);
+      // Longer than the longest transport backoff.
+      vi.advanceTimersByTime(600_000);
+    }
+    expect(read).toHaveBeenCalledTimes(1);
+    // A fresh snapshot of the same file (a new sync, a remounted view) does not ask again.
+    const fresh = await withRemoteAttachmentPreviews("gone-machine", snapshot(), undefined, read);
+    await expect(fresh.session.blocks[0].attachments![0].loadPreview!()).rejects.toThrow(
+      "missing on its machine",
+    );
+    expect(read).toHaveBeenCalledTimes(1);
+    // The same file on another machine is a different key.
+    await withRemoteAttachmentPreviews("other-machine", snapshot(), undefined, read);
+    expect(read).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("settles a snapshot whose only unloaded images are missing on the Host", async () => {
+  vi.useFakeTimers();
+  try {
+    const read = vi.fn(async (): Promise<never> => {
+      throw new Error("Attachment file is missing on this machine.");
+    });
+    const first = await withRemoteAttachmentPreviews(
+      "settled-machine",
+      snapshot(),
+      undefined,
+      read,
+    );
+    vi.advanceTimersByTime(600_000);
+    // No retry is pending, so the snapshot is returned as is instead of being walked again.
+    expect(await withRemoteAttachmentPreviews("settled-machine", first, first, read)).toBe(first);
+    expect(read).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("backs off a missing image across unchanged syncs", async () => {
   vi.useFakeTimers();
   try {

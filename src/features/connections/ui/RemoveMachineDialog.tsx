@@ -1,6 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { t } from "../../../shared/i18n";
@@ -85,7 +84,7 @@ export function RemoveMachineDialog({
             },
           ]}
         />
-        <Disclosure summary={t("Details")}>
+        <div>
           <p>
             {t("To stop the host and turn off its background service, run")}{" "}
             <code>{"~/.bycoda-host/bin/bycoda-host service uninstall"}</code>{" "}
@@ -95,7 +94,7 @@ export function RemoveMachineDialog({
             </code>{" "}
             {t("on Windows). Its sessions and history are kept.")}
           </p>
-        </Disclosure>
+        </div>
         {error ? <Alert tone="danger">{error}</Alert> : null}
       </div>
     </Modal>

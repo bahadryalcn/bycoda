@@ -69,6 +69,8 @@ export type HostDispatchContext = {
   retainResultAuthority?: HostDomainContext["retainResultAuthority"];
   /** Retains backend admission even when a client stops waiting for legacy I/O. */
   trackWork?: <T>(action: () => Promise<T>) => Promise<T>;
+  /** The transport's id for this request. Log correlation only; it never reaches a result. */
+  requestId?: string | number;
 };
 
 export type HostServices = {
@@ -320,12 +322,20 @@ export function createHostDispatcher(services: HostServices) {
             },
           );
         }
+        // Ties the Host line to the client's failed request. The request id stays out of the
+        // warning's identity so a retry loop still collapses into one line.
+        const request =
+          context.requestId === undefined ? undefined : `request=${context.requestId}`;
         if (hostRpcHasEffect(method, definition.kind)) {
           // Clients only see the generic unknown-outcome message; keep the cause diagnosable.
+          // Each command's unknown outcome needs its own line, so its id is part of the identity.
           hostWarnDeduped(
-            `Host operation ${method} failed with an unknown outcome: ${
+            `Host operation ${method}${
+              typeof params.commandId === "string" ? ` command=${params.commandId}` : ""
+            } failed with an unknown outcome: ${
               cause instanceof Error ? cause.message : String(cause)
             }`,
+            request,
           );
           throw new HostDispatchError(
             "service-unavailable",
@@ -344,6 +354,7 @@ export function createHostDispatcher(services: HostServices) {
         // Clients see the generic read failure; keep the cause diagnosable in the Host log.
         hostWarnDeduped(
           `Host read ${method} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          request,
         );
         throw new HostDispatchError("service-unavailable", "Host read could not be completed.", {
           cause,

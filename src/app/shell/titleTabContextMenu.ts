@@ -166,7 +166,7 @@ export function buildTitleTabContextMenuItems({
           },
         ]
       : []),
-    ...(contextTab.sessionCount > 0 && (hasArchiveTab || hasDeleteTab)
+    ...(contextTab.sessionCount > 0 && !contextTab.blank && (hasArchiveTab || hasDeleteTab)
       ? [
           { kind: "sep" as const },
           ...(hasArchiveTab

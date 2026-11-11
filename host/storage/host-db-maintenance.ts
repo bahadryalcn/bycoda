@@ -4,19 +4,17 @@ import {
   countOrphanNativeBufferBlobs,
   type NativeBufferBlobGcResult,
 } from "../native-buffer/native-buffer-blob-gc";
-import {
-  releaseNativeBufferLegacyBatches,
-  vacuumAfterNativeBufferLegacyRelease,
-} from "../native-buffer/native-buffer-legacy-release";
+import { releaseNativeBufferLegacyBatches } from "../native-buffer/native-buffer-legacy-release";
 import { nativeBufferGitStoreFor } from "../native-buffer/native-buffer-git-registry";
 import type { HostStore } from "../store";
 import { capEventsGlobally, EVENT_BYTES_TOTAL, type EventRetentionResult } from "./event-retention";
+import { compactHostDatabase } from "./host-db-compaction";
 import { withShortBusyTimeout } from "./short-busy-timeout";
 
 export const HOST_DB_MAINTENANCE_FIRST_DELAY_MS = 10 * 60 * 1000;
 export const HOST_DB_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
-/** About 64 MB of free pages per pass, only when the database already uses
- * auto_vacuum=INCREMENTAL; the mode of an existing database is never changed. */
+/** About 64 MB of free pages per pass, only when the database uses
+ * auto_vacuum=INCREMENTAL; the VACUUM in host-db-compaction.ts switches a file to it. */
 const INCREMENTAL_VACUUM_PAGES = 16_384;
 const METRIC = "storage.maintenance";
 const GIT_GC_METRIC = "storage.nativeBufferGitGc";
@@ -31,8 +29,8 @@ export type HostDbMaintenanceResult = {
   incrementalVacuum: boolean;
   /** Legacy SQL native buffer rows removed by this pass (git store only). */
   legacyRowsDeleted?: number;
-  /** The one-time VACUUM after the legacy release ran in this pass. */
-  legacyVacuum?: { before: number; after: number };
+  /** File sizes around the VACUUM this pass ran (host-db-compaction.ts). */
+  vacuum?: { before: number; after: number };
 };
 
 // Native buffer history (`native-activity/buffer-history/...`) is deliberately not
@@ -62,13 +60,14 @@ async function reclaim(store: HostStore) {
   );
 }
 
-/** One bounded pass: orphan blob GC, global event cap, then WAL truncation when the
- * pass deleted rows. Never VACUUMs; see docs/reference/host-runtime.md. */
+/** One bounded pass: orphan blob GC, global event cap, a VACUUM when the file is mostly
+ * free and the Host is idle, then WAL truncation when the pass deleted rows. See
+ * docs/reference/host-runtime.md. */
 export function runHostDbMaintenance(
   store: HostStore,
   stopped: () => boolean = () => false,
   gitStore: { gc(): Promise<unknown> } | undefined = nativeBufferGitStoreFor(store),
-  testing: { uptimeMs?: () => number } = {},
+  testing: { uptimeMs?: () => number; now?: () => number } = {},
 ): Promise<HostDbMaintenanceResult> {
   return perfMetrics.measure(METRIC, async () => {
     const blobs = await collectOrphanNativeBufferBlobs(store, { stopped });
@@ -82,17 +81,17 @@ export function runHostDbMaintenance(
         .measure(GIT_GC_METRIC, () => gitStore.gc())
         .catch((error: unknown) => console.warn("Native buffer git gc failed:", error));
     // Legacy SQL content is worthless once the Host runs on the git store: release it in
-    // bounded batches over the first passes, then VACUUM once when it is safe.
+    // bounded batches over the first passes. Compaction waits for the last batch.
     const legacy = gitStore
       ? await releaseNativeBufferLegacyBatches(store, { stopped })
       : undefined;
-    const legacyVacuum =
-      legacy?.done && !stopped()
-        ? await vacuumAfterNativeBufferLegacyRelease(store, { ...testing, stopped })
+    const vacuum =
+      legacy?.done !== false
+        ? await compactHostDatabase(store, { ...testing, stopped })
         : undefined;
     const extra = {
       ...(legacy ? { legacyRowsDeleted: legacy.deletedRows } : {}),
-      ...(legacyVacuum ? { legacyVacuum } : {}),
+      ...(vacuum ? { vacuum } : {}),
     };
     if ((!blobs.deletedBlobs && !events.deletedRows && !legacy?.deletedRows) || stopped())
       return { blobs, events, incrementalVacuum: false, ...extra };
@@ -128,10 +127,9 @@ export function scheduleHostDbMaintenance(
       timer = undefined;
       runHostDbMaintenance(store, () => stopped)
         .then((result) => {
-          if (result.legacyVacuum)
+          if (result.vacuum)
             console.info(
-              `Host database VACUUM after native buffer legacy release: ` +
-                `${result.legacyVacuum.before} -> ${result.legacyVacuum.after} bytes.`,
+              `Host database VACUUM: ${result.vacuum.before} -> ${result.vacuum.after} bytes.`,
             );
           if (result.legacyRowsDeleted)
             console.info(`Released ${result.legacyRowsDeleted} legacy native buffer rows.`);

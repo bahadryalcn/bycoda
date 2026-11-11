@@ -7,6 +7,7 @@ import { formatDate, formatNumber, t } from "../../../../shared/i18n";
 import { useMinuteNow } from "../../../../shared/hooks/useMinuteNow";
 import { BarChart, DonutChart } from "../../../../shared/ui/Charts";
 import { Button } from "../../../../shared/ui/Button";
+import { Heading } from "../../../../shared/ui/Heading";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Surface } from "../../../../shared/ui/Surface";
 import { statusLabel } from "./assistantRoomHelpers";
@@ -51,7 +52,9 @@ function ChartBlock({
 }) {
   return (
     <div className={styles.chart}>
-      <h3 className={styles.chartTitle}>{title}</h3>
+      <Heading size="item" level={3} className={styles.chartTitle}>
+        {title}
+      </Heading>
       <p className={styles.muted}>{caption}</p>
       <div className={styles.chartBody}>{children}</div>
     </div>

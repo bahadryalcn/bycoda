@@ -38,8 +38,8 @@ export const RAIL_DRAG_HANDLE = "cursor-grab touch-none";
 export const RAIL_SECTION_HEADER =
   "group flex min-h-(--ui-control-height-compact) items-center gap-1 px-2";
 
-/** Label style shared by every section header, whether it collapses or not. */
-export const RAIL_SECTION_LABEL = "text-ui-secondary font-medium text-(--ui-text)";
+/** SectionLabel's caption type, for a section header built from a Button (Recovery). */
+export const RAIL_SECTION_LABEL = "text-ui-caption font-medium text-(--ui-text-secondary)";
 
 /**
  * The block around one section (header plus body). Two spacing roles live here, not in

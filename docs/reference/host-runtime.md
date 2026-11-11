@@ -1000,12 +1000,18 @@ bounded pass 10 minutes after start and then hourly, off the request path
   The oldest revisions of the largest sessions go first, and every session keeps
   its newest 50.
 - After a pass that deleted rows, `PRAGMA wal_checkpoint(TRUNCATE)` runs, and so
-  does `PRAGMA incremental_vacuum` when the database already uses
-  `auto_vacuum=INCREMENTAL`. The auto_vacuum mode is never changed.
+  does `PRAGMA incremental_vacuum` (about 64 MB per pass) when the database uses
+  `auto_vacuum=INCREMENTAL`.
 
-Freed pages are reused by later writes, so the file does not shrink by itself.
-Nothing runs `VACUUM` automatically. The only supported shrink is
-`native-buffer legacy-release` below.
+Freed pages are reused by later writes, so small deletions do not shrink the
+file. When more than 25% of the pages are free, the pass truncates the WAL and
+runs `VACUUM` (`host/storage/host-db-compaction.ts`), only while no session or
+shell is running, the Host has been up for 10 minutes and the last `VACUUM` is at
+least a day old (`hostDbCompactedAt` metadata row). The same `VACUUM` switches
+the file to `auto_vacuum=INCREMENTAL`, so later deletions are released by the
+bounded step above and the rewrite stays rare. A second WAL truncation then
+shrinks the file, and one log line reports the sizes. The pass result reports
+`vacuum`. If the idle condition never holds the file stays as is.
 
 ### Native buffer content store
 
@@ -1035,12 +1041,8 @@ worker (`native_buffer_blob_chunks`, `native_buffer_blobs`,
 `native_buffer_artifacts`, `native_buffer_directory_children`,
 `native_buffer_certificates`; clock tables and everything else stay), yielding
 between batches, and stops after 200 batches or 2 minutes; the next pass
-continues. After the last row is gone the pass truncates the WAL and then runs a
-single `VACUUM`, only when no session is running, more than 25% of the pages are
-free and the Host has been up for 10 minutes. The `nativeBufferLegacyVacuum`
-metadata row makes it one-time, and one log line reports the sizes. If the idle
-condition never holds the file stays as is and the free pages are reused. The
-pass result reports `legacyRowsDeleted` and `legacyVacuum`.
+continues. The `VACUUM` above waits until the last row is gone. The pass result
+reports `legacyRowsDeleted`.
 
 For an immediate shrink with the Host stopped, the owner can run
 

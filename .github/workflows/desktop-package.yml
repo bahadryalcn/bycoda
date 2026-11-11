@@ -108,7 +108,7 @@ jobs:
           path: temp/test-results/release-candidate
       - uses: ./temp/release-tools/.github/actions/setup-deps
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Prepare exact source before compiling shared outputs
         run: node temp/release-tools/scripts/release/prepare-candidate.mjs temp/test-results/release-candidate/candidate.json
       - name: Compile portable web and Host once
@@ -159,7 +159,7 @@ jobs:
           -Mode Verify -Purpose package -ExportEnvironment
       - uses: ./temp/release-tools/.github/actions/setup-deps
         with:
-          node-version: "22"
+          node-version: "24"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c80933 # v4
         with:
           name: ${{ inputs.candidate-artifact || format('release-candidate-{0}', inputs.expected-sha) }}
@@ -209,7 +209,7 @@ jobs:
           persist-credentials: false
       - uses: ./temp/release-tools/.github/actions/setup-deps
         with:
-          node-version: "22"
+          node-version: "24"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.candidate-artifact || format('release-candidate-{0}', inputs.expected-sha) }}
@@ -290,7 +290,7 @@ jobs:
           path: temp/test-results/release-candidate
       - uses: ./temp/release-tools/.github/actions/setup-deps
         with:
-          node-version: "22"
+          node-version: "24"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-common-${{ inputs.expected-sha }}

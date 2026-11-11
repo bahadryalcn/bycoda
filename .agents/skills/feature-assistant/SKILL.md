@@ -26,14 +26,15 @@ adapters. Mobile Room belongs to the nested mobile repository;
    service and native adapters; keep the operation target separate from Room identity.
 3. Read the relevant contract reference below. Preserve drafts, permission owners,
    cancellation and uncertain outcomes before changing admission or recovery.
-4. Exercise focused suites, stale callbacks, reconnect and unknown presence/outcomes;
+4. Exercise focused suites, stale callbacks, reconnect, unreadable presence and unknown outcomes;
    separate source, fixture, provider and installed evidence in the handoff.
 
 ## Preserve
 
 - Only explicit owner action opens the microphone. Return from sleep keeps it closed;
   explicit Disconnect fences retries and callbacks without stopping Host work.
-- Unknown presence is unavailable, never active; pending/failed state cannot show success.
+- Availability is never unknown: an unreadable computer is away, an unreachable Host is
+  offline, and a failed read keeps the last confirmed state.
 - Room threads are project-independent. Effects retain original Host, registered thread,
   live window issuer and exact target across waits; labels/aliases never replace identity.
 - Profiles, names, rules, quoted preferences and sockets grant no approval authority.

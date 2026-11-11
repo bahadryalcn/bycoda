@@ -92,7 +92,7 @@
 .dev-server-selection,
 .dev-server-scan-error {
   padding: 12px;
-  border: 1px solid var(--ui-pane-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
 }
 .dev-server-selection {
@@ -113,17 +113,10 @@
   gap: 8px;
   min-inline-size: 0;
 }
-.dev-server-heading > :is(h4, h5) {
+.dev-server-heading > :is(h4, .dev-server-heading-label) {
   flex: 1 1 auto;
   min-inline-size: 0;
   overflow-wrap: anywhere;
-  font-weight: 500;
-}
-.dev-server-heading > h4 {
-  font-size: var(--ui-font-body);
-}
-.dev-server-heading > h5 {
-  font-size: var(--ui-font-caption);
 }
 .dev-server-url,
 .dev-server-command {
@@ -166,7 +159,7 @@
   overflow: auto;
   padding: 10px;
   border-radius: var(--ui-control-radius);
-  background: var(--color-selection-subtle);
+  background: var(--ui-surface-selected);
   font-size: var(--ui-font-micro);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -219,4 +212,9 @@
 }
 .dev-server-process {
   padding-block-start: 8px;
+}
+.dev-server-context {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
 }

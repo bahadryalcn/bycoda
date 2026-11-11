@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { armShutdownDeadline, createLifecycleRuntime } from "./lifecycle";
+import { armShutdownDeadline, createLifecycleRuntime, shutdownExitCode } from "./lifecycle";
 
 vi.mock("../assistant/observations/assistant-observation-producers", () => ({
   installAssistantObservationProducers: async () => undefined,
@@ -81,5 +81,19 @@ describe("armShutdownDeadline", () => {
     disarm();
     vi.advanceTimersByTime(100);
     expect(exit).not.toHaveBeenCalled();
+  });
+});
+
+describe("shutdownExitCode", () => {
+  it("keeps a requested stop from being restarted by the service supervisor", () => {
+    expect(shutdownExitCode("lifecycle", false)).toBe(0);
+    // A supervisor restarts any non-zero exit; a failed drain must not undo the stop.
+    expect(shutdownExitCode("lifecycle", true)).toBe(0);
+  });
+
+  it("reports a failed drain after a signal", () => {
+    expect(shutdownExitCode("SIGTERM", true)).toBe(1);
+    expect(shutdownExitCode("SIGINT", true)).toBe(1);
+    expect(shutdownExitCode("SIGTERM", false)).toBe(0);
   });
 });

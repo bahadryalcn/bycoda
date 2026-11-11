@@ -7,6 +7,7 @@ import { ChevronDown, ChevronRight, Minus, Plus } from "../../../shared/ui/icons
 import { t, useLocale } from "../../../shared/i18n/git";
 import { collator } from "../../../shared/lib/intl";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+import { deferDuringResize } from "../../../shared/lib/resizeGesture";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { selectTreePaths, type TreeSelectionModifiers } from "../../files/public/treeSelection";
 
@@ -129,17 +130,28 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
     while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY))
       parent = parent.parentElement;
     setScrollElement(parent);
-    const measure = () => {
+    // The probe forces a layout, and the row height follows the density token and zoom, not the
+    // list size: read it on mount, when the root's attributes change (density, theme) and when the
+    // window is resized (zoom), never from the size observer below.
+    const measureRowHeight = () => {
       setRowHeight((previous) => {
         const next = readRowHeight(list);
         return Math.abs(previous - next) < 0.5 ? previous : next;
       });
+    };
+    const measureRowHeightSettled = deferDuringResize(measureRowHeight);
+    const measure = () => {
       if (!parent) return;
       const margin =
         list.getBoundingClientRect().top - parent.getBoundingClientRect().top + parent.scrollTop;
       setScrollMargin((previous) => (Math.abs(previous - margin) < 0.5 ? previous : margin));
     };
+    measureRowHeight();
     measure();
+    const rootObserver =
+      typeof MutationObserver === "undefined" ? null : new MutationObserver(measureRowHeight);
+    rootObserver?.observe(document.documentElement, { attributes: true });
+    window.addEventListener("resize", measureRowHeightSettled);
     // Preceding sections and container resizes can move the list without a
     // React render. Observe their sizes instead of forcing layout every render.
     const observer = new ResizeObserver(measure);
@@ -151,7 +163,12 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
           if (sibling instanceof HTMLElement && sibling !== element) observer.observe(sibling);
       if (element === parent) break;
     }
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      rootObserver?.disconnect();
+      window.removeEventListener("resize", measureRowHeightSettled);
+      measureRowHeightSettled.cancel();
+    };
   }, [view, rest.kind, virtualized]);
   const toggleDir = useStableCallback((path: string) => {
     const key = `${rest.kind}:${path}`;

@@ -5,37 +5,72 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-#[derive(Debug)]
+/// Why this job cannot prove retirement. The reason is diagnostic only: every
+/// variant withholds the proof in the same way.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OwnedJobError {
-    Unavailable,
+    /// A Windows call on the job, its notification port or a member failed.
+    Api { step: &'static str, code: u32 },
+    /// The owner's own bookkeeping cannot be trusted.
+    State(&'static str),
+    /// The job emptied, but neither the captured handles nor the notification
+    /// census accounted for every process lifetime within the delivery wait.
+    CensusIncomplete { waited_ms: u64, census: String },
 }
 
 impl std::fmt::Display for OwnedJobError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Owned process job unavailable")
+        formatter.write_str("Owned process job unavailable: ")?;
+        match self {
+            Self::Api { step, code } => write!(formatter, "{step} failed (os error {code})"),
+            Self::State(reason) => formatter.write_str(reason),
+            Self::CensusIncomplete { waited_ms, census } => {
+                write!(
+                    formatter,
+                    "census incomplete after {waited_ms} ms ({census})"
+                )
+            }
+        }
     }
 }
 impl std::error::Error for OwnedJobError {}
 
+/// Call directly after the failed Windows call, before anything resets its error.
+fn api(step: &'static str) -> OwnedJobError {
+    OwnedJobError::Api {
+        step,
+        code: unsafe { windows_sys::Win32::Foundation::GetLastError() },
+    }
+}
+fn io_failure(step: &'static str, error: &io::Error) -> OwnedJobError {
+    OwnedJobError::Api {
+        step,
+        code: error.raw_os_error().unwrap_or(0) as u32,
+    }
+}
+fn poisoned() -> OwnedJobError {
+    OwnedJobError::State("job owner state poisoned")
+}
+
+/// How long an emptied job waits for outstanding notification packets.
+const DELIVERY_WAIT: Duration = Duration::from_secs(1);
+
 enum CaptureFailure {
     Coverage,
-    Api,
+    Api(OwnedJobError),
 }
 
 /// Limited job-drain observation and strict retirement are different facts.
 /// Only this module's original HANDLE/count observations can issue the proof.
 pub struct JobDrain {
-    verified: Option<VerifiedJobRetirement>,
+    verified: Result<VerifiedJobRetirement, OwnedJobError>,
 }
 struct VerifiedJobRetirement {
     _private: (),
 }
 impl JobDrain {
     pub fn require_verified(&self) -> Result<(), OwnedJobError> {
-        self.verified
-            .as_ref()
-            .map(|_| ())
-            .ok_or(OwnedJobError::Unavailable)
+        self.verified.as_ref().map(|_| ()).map_err(Clone::clone)
     }
 }
 
@@ -51,8 +86,7 @@ struct JobNotifications {
     incomplete: bool,
     #[cfg(test)]
     observed: std::collections::VecDeque<(u32, usize)>,
-    /// First branch that withheld proof, for CI triage of unverified drains.
-    #[cfg(test)]
+    /// First branch that withheld proof, reported with an unverified drain.
     incomplete_reason: Option<&'static str>,
 }
 
@@ -71,7 +105,7 @@ impl JobNotifications {
         let raw =
             unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, std::ptr::null_mut(), 0, 0) };
         if raw.is_null() {
-            return Err(OwnedJobError::Unavailable);
+            return Err(api("CreateIoCompletionPort"));
         }
         let port = unsafe { OwnedHandle::from_raw_handle(raw) };
         // A non-zero-sized allocation keeps the private key stable when the job
@@ -90,7 +124,7 @@ impl JobNotifications {
             )
         } == 0
         {
-            return Err(OwnedJobError::Unavailable);
+            return Err(api("SetInformationJobObject(completion port)"));
         }
         Ok(Self {
             port,
@@ -102,15 +136,26 @@ impl JobNotifications {
             incomplete: false,
             #[cfg(test)]
             observed: std::collections::VecDeque::new(),
-            #[cfg(test)]
             incomplete_reason: None,
         })
     }
 
-    fn mark_incomplete(&mut self, _reason: &'static str) {
+    fn mark_incomplete(&mut self, reason: &'static str) {
         self.incomplete = true;
-        #[cfg(test)]
-        self.incomplete_reason.get_or_insert(_reason);
+        self.incomplete_reason.get_or_insert(reason);
+    }
+
+    /// Counts only: PIDs are lifecycle correlations and stay out of diagnostics.
+    fn census(&self, total: u32, waited: usize, uncertain: bool) -> String {
+        format!(
+            "{total} lifetimes, {waited} waited handles, {} births, {} exits, {} unmatched; \
+             capture {}; notifications {}",
+            self.births,
+            self.exits,
+            self.active.len(),
+            if uncertain { "incomplete" } else { "complete" },
+            self.incomplete_reason.unwrap_or("without anomaly"),
+        )
     }
 
     fn record(&mut self, message: u32, value: usize) {
@@ -190,15 +235,21 @@ impl JobNotifications {
                 )
             } == 0
             {
-                if unsafe { GetLastError() } == WAIT_TIMEOUT && value.is_null() {
+                let code = unsafe { GetLastError() };
+                if code == WAIT_TIMEOUT && value.is_null() {
                     return Ok(());
                 }
-                return Err(OwnedJobError::Unavailable);
+                return Err(OwnedJobError::Api {
+                    step: "GetQueuedCompletionStatus",
+                    code,
+                });
             }
             if key != (&*self.key as *const u8) as usize {
                 // This port is private and associated with exactly one job.
                 // A different sender is not a coverage gap we can reconcile.
-                return Err(OwnedJobError::Unavailable);
+                return Err(OwnedJobError::State(
+                    "notification packet from another sender",
+                ));
             }
             self.record(message, value as usize);
         }
@@ -241,7 +292,9 @@ pub struct OwnedProcessJob {
     members:
         std::sync::Mutex<std::collections::HashMap<(u32, u64), std::os::windows::io::OwnedHandle>>,
     uncertain: AtomicBool,
-    operational_failure: AtomicBool,
+    /// First operational failure. It never clears: later successes cannot
+    /// restore the observations that failure lost.
+    operational_failure: std::sync::OnceLock<OwnedJobError>,
 }
 #[cfg(windows)]
 impl OwnedProcessJob {
@@ -250,7 +303,7 @@ impl OwnedProcessJob {
         self.handle.as_handle()
     }
     pub fn new() -> Result<Self, OwnedJobError> {
-        let handle = create_job().map_err(|_| OwnedJobError::Unavailable)?;
+        let handle = create_job().map_err(|error| io_failure("CreateJobObject", &error))?;
         // Associate while empty, before even the suspended leader is assigned.
         // Association after spawning can miss already-finished descendants.
         let notifications = JobNotifications::associate(&handle)?;
@@ -259,8 +312,11 @@ impl OwnedProcessJob {
             notifications: std::sync::Mutex::new(notifications),
             members: std::sync::Mutex::new(std::collections::HashMap::new()),
             uncertain: AtomicBool::new(false),
-            operational_failure: AtomicBool::new(false),
+            operational_failure: std::sync::OnceLock::new(),
         })
+    }
+    fn fail(&self, error: OwnedJobError) {
+        let _ = self.operational_failure.set(error);
     }
     pub fn spawn(&self, command: &mut Command) -> Result<std::process::Child, OwnedJobError> {
         use std::os::windows::{io::AsRawHandle, process::CommandExt};
@@ -269,23 +325,37 @@ impl OwnedProcessJob {
             Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_SUSPENDED},
         };
         command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED);
-        let mut child = command.spawn().map_err(|_| OwnedJobError::Unavailable)?;
-        if unsafe { AssignProcessToJobObject(self.handle.as_raw_handle(), child.as_raw_handle()) }
-            == 0
+        let mut child = command
+            .spawn()
+            .map_err(|error| io_failure("CreateProcess", &error))?;
+        let refused = if unsafe {
+            AssignProcessToJobObject(self.handle.as_raw_handle(), child.as_raw_handle())
+        } == 0
         {
+            Some(api("AssignProcessToJobObject"))
+        } else {
+            self.observe();
+            if self.uncertain.load(Ordering::Acquire) {
+                Some(
+                    self.operational_failure
+                        .get()
+                        .cloned()
+                        .unwrap_or(OwnedJobError::State(
+                            "member capture incomplete before resume",
+                        )),
+                )
+            } else {
+                resume_child(child.id())
+                    .err()
+                    .map(|error| io_failure("ResumeThread", &error))
+            }
+        };
+        if let Some(error) = refused {
             self.terminate();
             let _ = child.kill();
             let _ = child.wait();
             let _ = self.settle();
-            return Err(OwnedJobError::Unavailable);
-        }
-        self.observe();
-        if self.uncertain.load(Ordering::Acquire) || resume_child(child.id()).is_err() {
-            self.terminate();
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = self.settle();
-            return Err(OwnedJobError::Unavailable);
+            return Err(error);
         }
         Ok(child)
     }
@@ -293,31 +363,31 @@ impl OwnedProcessJob {
     // can remove PID-list entries before the corresponding process is signaled.
     // Missing births remain unknown, never a successful tree-settlement proof.
     pub fn observe(&self) {
-        if self.observe_notifications(0).is_err() {
+        if let Err(error) = self.observe_notifications(0) {
             self.uncertain.store(true, Ordering::Release);
-            self.operational_failure.store(true, Ordering::Release);
+            self.fail(error);
         }
         match self.capture_members() {
             Ok(()) => {}
             Err(CaptureFailure::Coverage) => self.uncertain.store(true, Ordering::Release),
-            Err(CaptureFailure::Api) => {
+            Err(CaptureFailure::Api(error)) => {
                 self.uncertain.store(true, Ordering::Release);
-                self.operational_failure.store(true, Ordering::Release);
+                self.fail(error);
             }
         }
     }
     /// Wait for job activity before the next census. A bounded wait also lets
     /// the supervisor react to stop requests that do not post job packets.
     pub fn wait_for_activity(&self, wait_ms: u32) {
-        if self.observe_notifications(wait_ms).is_err() {
+        if let Err(error) = self.observe_notifications(wait_ms) {
             self.uncertain.store(true, Ordering::Release);
-            self.operational_failure.store(true, Ordering::Release);
+            self.fail(error);
         }
     }
     fn observe_notifications(&self, wait_ms: u32) -> Result<(), OwnedJobError> {
         self.notifications
             .lock()
-            .map_err(|_| OwnedJobError::Unavailable)?
+            .map_err(|_| poisoned())?
             .observe(wait_ms)
     }
 
@@ -329,8 +399,23 @@ impl OwnedProcessJob {
         Ok(self
             .notifications
             .lock()
-            .map_err(|_| OwnedJobError::Unavailable)?
+            .map_err(|_| poisoned())?
             .covers_with_waits(total, waited))
+    }
+    fn census_incomplete(
+        &self,
+        total: u32,
+        waited: &WaitedMembers,
+    ) -> Result<OwnedJobError, OwnedJobError> {
+        let notifications = self.notifications.lock().map_err(|_| poisoned())?;
+        Ok(OwnedJobError::CensusIncomplete {
+            waited_ms: DELIVERY_WAIT.as_millis() as u64,
+            census: notifications.census(
+                total,
+                waited.count,
+                self.uncertain.load(Ordering::Acquire),
+            ),
+        })
     }
     fn capture_members(&self) -> Result<(), CaptureFailure> {
         use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
@@ -370,7 +455,10 @@ impl OwnedProcessJob {
         {
             return Err(match unsafe { GetLastError() } {
                 ERROR_MORE_DATA | ERROR_INSUFFICIENT_BUFFER => CaptureFailure::Coverage,
-                _ => CaptureFailure::Api,
+                code => CaptureFailure::Api(OwnedJobError::Api {
+                    step: "QueryInformationJobObject(process list)",
+                    code,
+                }),
             });
         }
         let list = unsafe { &*storage.as_ptr().cast::<JOBOBJECT_BASIC_PROCESS_ID_LIST>() };
@@ -379,11 +467,18 @@ impl OwnedProcessJob {
             return Err(CaptureFailure::Coverage);
         }
         let ids = unsafe { std::slice::from_raw_parts(list.ProcessIdList.as_ptr(), count) };
-        let mut members = self.members.lock().map_err(|_| CaptureFailure::Api)?;
+        let mut members = self
+            .members
+            .lock()
+            .map_err(|_| CaptureFailure::Api(poisoned()))?;
         for &pid in ids {
-            let pid = u32::try_from(pid).map_err(|_| CaptureFailure::Api)?;
+            let pid = u32::try_from(pid).map_err(|_| {
+                CaptureFailure::Api(OwnedJobError::State("member pid out of range"))
+            })?;
             if pid <= 1 {
-                return Err(CaptureFailure::Api);
+                return Err(CaptureFailure::Api(OwnedJobError::State(
+                    "reserved member pid",
+                )));
             }
             let raw = unsafe {
                 OpenProcess(
@@ -397,7 +492,10 @@ impl OwnedProcessJob {
                 // That is missing coverage; access/API failures are a different fact.
                 return Err(match unsafe { GetLastError() } {
                     ERROR_INVALID_PARAMETER | ERROR_NOT_FOUND => CaptureFailure::Coverage,
-                    _ => CaptureFailure::Api,
+                    code => CaptureFailure::Api(OwnedJobError::Api {
+                        step: "OpenProcess(member)",
+                        code,
+                    }),
                 });
             }
             let process = unsafe { OwnedHandle::from_raw_handle(raw) };
@@ -414,7 +512,7 @@ impl OwnedProcessJob {
                 )
             } == 0
             {
-                return Err(CaptureFailure::Api);
+                return Err(CaptureFailure::Api(api("IsProcessInJob")));
             }
             if member == 0 {
                 return Err(CaptureFailure::Coverage);
@@ -429,7 +527,7 @@ impl OwnedProcessJob {
                 )
             } == 0
             {
-                return Err(CaptureFailure::Api);
+                return Err(CaptureFailure::Api(api("GetProcessTimes")));
             }
             let key = (
                 pid,
@@ -454,15 +552,12 @@ impl OwnedProcessJob {
             )
         } == 0
         {
-            self.operational_failure.store(true, Ordering::Release);
+            self.fail(api("TerminateJobObject"));
         }
     }
     fn wait_members(&self) -> Result<WaitedMembers, OwnedJobError> {
         use std::os::windows::io::AsRawHandle;
-        let members = self
-            .members
-            .lock()
-            .map_err(|_| OwnedJobError::Unavailable)?;
+        let members = self.members.lock().map_err(|_| poisoned())?;
         for process in members.values() {
             if unsafe {
                 windows_sys::Win32::System::Threading::WaitForSingleObject(
@@ -471,7 +566,7 @@ impl OwnedProcessJob {
                 )
             } != 0
             {
-                return Err(OwnedJobError::Unavailable);
+                return Err(api("WaitForSingleObject(member)"));
             }
         }
         let mut lifetimes_by_pid = std::collections::HashMap::new();
@@ -494,8 +589,8 @@ impl OwnedProcessJob {
         };
         let mut delivery_deadline = None;
         loop {
-            if self.observe_notifications(0).is_err() {
-                self.operational_failure.store(true, Ordering::Release);
+            if let Err(error) = self.observe_notifications(0) {
+                self.fail(error);
             }
             let mut accounting: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION =
                 unsafe { std::mem::zeroed() };
@@ -509,15 +604,16 @@ impl OwnedProcessJob {
                 )
             } == 0
             {
+                let error = api("QueryInformationJobObject(accounting)");
                 self.terminate();
                 let _ = self.wait_members();
-                return Err(OwnedJobError::Unavailable);
+                return Err(error);
             }
             if accounting.ActiveProcesses == 0 {
                 // Group accounting alone is not the per-process exit event.
                 let members = self.wait_members()?;
-                if self.operational_failure.load(Ordering::Acquire) {
-                    return Err(OwnedJobError::Unavailable);
+                if let Some(error) = self.operational_failure.get() {
+                    return Err(error.clone());
                 }
                 let handles_cover = !self.uncertain.load(Ordering::Acquire)
                     && accounting.TotalProcesses as usize == members.count;
@@ -533,16 +629,18 @@ impl OwnedProcessJob {
                 // never creates this proof. All captured HANDLE waits still ran.
                 if handles_cover || self.notifications_cover(accounting.TotalProcesses, &members)? {
                     return Ok(JobDrain {
-                        verified: Some(VerifiedJobRetirement { _private: () }),
+                        verified: Ok(VerifiedJobRetirement { _private: () }),
                     });
                 }
-                let deadline = delivery_deadline
-                    .get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
+                let deadline =
+                    delivery_deadline.get_or_insert_with(|| Instant::now() + DELIVERY_WAIT);
                 if Instant::now() >= *deadline {
-                    return Ok(JobDrain { verified: None });
+                    return Ok(JobDrain {
+                        verified: Err(self.census_incomplete(accounting.TotalProcesses, &members)?),
+                    });
                 }
-                if self.observe_notifications(10).is_err() {
-                    self.operational_failure.store(true, Ordering::Release);
+                if let Err(error) = self.observe_notifications(10) {
+                    self.fail(error);
                 }
                 continue;
             }
@@ -757,11 +855,20 @@ mod tests {
         assert!(output.status.success());
         assert!(String::from_utf8_lossy(&output.stdout).contains("actual owned job output"));
         job.observe();
-        assert!(
-            job.drain().is_err(),
+        // The first failed call and its OS error survive the later recovery.
+        assert_eq!(
+            job.drain().err(),
+            Some(OwnedJobError::Api {
+                step: "QueryInformationJobObject(process list)",
+                code: windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED,
+            }),
             "an API failure is not only incomplete proof"
         );
-        assert!(job.settle().is_err());
+        assert_eq!(
+            job.settle().unwrap_err().to_string(),
+            "Owned process job unavailable: QueryInformationJobObject(process list) failed \
+             (os error 5)"
+        );
     }
 
     #[test]
@@ -776,7 +883,13 @@ mod tests {
         let restricted = std::mem::replace(&mut job.handle, original);
         drop(restricted);
         assert!(child.wait_with_output().unwrap().status.success());
-        assert!(job.drain().is_err());
+        assert!(matches!(
+            job.drain().err(),
+            Some(OwnedJobError::Api {
+                step: "TerminateJobObject",
+                ..
+            })
+        ));
         assert!(job.settle().is_err());
     }
 
@@ -878,7 +991,19 @@ mod tests {
         }
         drop(notifications);
         assert!(discarded > 0);
-        assert!(job.drain().unwrap().require_verified().is_err());
+        // Incomplete proof names the bounded wait and the census, not an API.
+        let error = job.drain().unwrap().require_verified().unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                OwnedJobError::CensusIncomplete { waited_ms: 1000, census }
+                    if census.contains(" lifetimes, ") && census.contains(" births, ")
+            ),
+            "{error}"
+        );
+        assert!(error
+            .to_string()
+            .starts_with("Owned process job unavailable: census incomplete after 1000 ms ("));
         assert!(job.settle().is_err());
     }
 

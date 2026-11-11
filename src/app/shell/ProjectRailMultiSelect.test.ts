@@ -40,7 +40,8 @@ it("collapses Groups and Projects independently and restores their saved state",
     act(async () =>
       root.render(
         createElement(ProjectRail, {
-          cwd: "/a",
+          // No active project: a collapsed section opens for the active one (next test).
+          cwd: "~",
           recents: [{ path: "/a", openedAt: 1 }],
           onSelectProject: vi.fn(),
           onOpenProject,
@@ -79,6 +80,53 @@ it("collapses Groups and Projects independently and restores their saved state",
     expect(body("Projects").hidden).toBe(true);
     act(() => toggle("Projects").click());
     expect(body("Projects").hidden).toBe(false);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows a collapsed Projects section open for the active project until it is closed by hand", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.clear();
+  localStorage.setItem(
+    "bycoda.projectRailSectionCollapse",
+    JSON.stringify({ pinned: false, groups: false, crews: false, projects: true }),
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const render = async (cwd: string) =>
+    act(async () =>
+      root.render(
+        createElement(ProjectRail, {
+          cwd,
+          recents: [
+            { path: "/a", openedAt: 1 },
+            { path: "/b", openedAt: 2 },
+          ],
+          onSelectProject: vi.fn(),
+          onOpenProject: vi.fn(),
+        }),
+      ),
+    );
+  const toggle = () =>
+    [...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")].find(
+      (button) => button.textContent === "Projects",
+    )!;
+  const body = () => toggle().closest("[data-section-label]")!.nextElementSibling as HTMLElement;
+  const saved = () =>
+    JSON.parse(localStorage.getItem("bycoda.projectRailSectionCollapse")!).projects;
+  try {
+    await render("/a");
+    expect(body().hidden).toBe(false);
+    expect(saved()).toBe(true);
+    act(() => toggle().click());
+    expect(body().hidden).toBe(true);
+    expect(saved()).toBe(true);
+    await render("/b");
+    expect(body().hidden).toBe(false);
   } finally {
     act(() => root.unmount());
     container.remove();

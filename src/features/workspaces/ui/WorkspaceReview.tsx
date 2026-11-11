@@ -22,6 +22,7 @@ import {
   type WorkspaceContext,
 } from "../model/workspaceClient";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { Heading } from "../../../shared/ui/Heading";
 
 const CommitDiff = lazy(() =>
   import("../../source-control/ui/CommitDiff").then((module) => ({ default: module.CommitDiff })),
@@ -451,9 +452,9 @@ export function WorkspaceReview({
             )}
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4">
               <section>
-                <h3 className="font-medium">
+                <Heading size="item" level={3}>
                   {t("Commits")} ({plan.commits.length})
-                </h3>
+                </Heading>
                 <ul>
                   {plan.commits.map((sha) => (
                     <li key={sha}>
@@ -470,9 +471,9 @@ export function WorkspaceReview({
                 </ul>
               </section>
               <section>
-                <h3 className="font-medium">
+                <Heading size="item" level={3}>
                   {t("Changed files")} ({plan.changedPaths.length})
-                </h3>
+                </Heading>
                 <ul>
                   {plan.changedPaths.map((path) => (
                     <li key={path} className="break-all text-(--ui-text-secondary)">
@@ -484,17 +485,17 @@ export function WorkspaceReview({
             </div>
             {diffCommit && (
               <section className="min-w-0 overflow-hidden">
-                <h3 className="font-medium">
+                <Heading size="item" level={3}>
                   {t("Commit diff")} · {diffCommit.slice(0, 12)}
-                </h3>
-                <Suspense fallback={<p role="status">{t("Loading diff…")}</p>}>
+                </Heading>
+                <Suspense fallback={<LoadingText>{t("Loading diff…")}</LoadingText>}>
                   <CommitDiff cwd={executionCwd} sha={diffCommit} />
                 </Suspense>
               </section>
             )}
             {plan.artifacts && (
               <section>
-                <h3 className="font-medium">{t("Additional delivery files")}</h3>
+                <Heading size="item" level={3}>{t("Additional delivery files")}</Heading>
                 <DescriptionList size="sm">
                   {plan.artifacts.paths.map((path) => (
                     <DescriptionItem key={path} term={path} monospace>
@@ -508,7 +509,7 @@ export function WorkspaceReview({
               </section>
             )}
             <section>
-              <h3 className="font-medium">{t("Checks")}</h3>
+              <Heading size="item" level={3}>{t("Checks")}</Heading>
               {plan.checks.length ? (
                 <ul>
                   {plan.checks.map((check) => (
@@ -522,7 +523,7 @@ export function WorkspaceReview({
               )}
             </section>
             <section>
-              <h3 className="font-medium">{t("Visual evidence")}</h3>
+              <Heading size="item" level={3}>{t("Visual evidence")}</Heading>
               {plan.visualEvidence.length ? (
                 <ul>
                   {plan.visualEvidence.map((evidence) => (

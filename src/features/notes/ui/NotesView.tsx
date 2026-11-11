@@ -2415,7 +2415,7 @@ function NoteEditor({
             tabIndex={undefined}
             data-external-drop-owner="note-images"
             aria-busy={imageBusy}
-            className="note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-editor-border) transition-colors"
+            className="note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-card-border) transition-colors"
             {...dropZoneHandlers}
           >
             <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>

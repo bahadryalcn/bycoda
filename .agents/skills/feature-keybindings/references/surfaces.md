@@ -23,5 +23,5 @@ All source paths are repository-relative.
 
 - Editor/model: `src/features/settings/ui/QuickComposerShortcutEditor.test.ts`; `src/features/settings/model/settings.test.ts`, `appShortcuts.test.ts`, `useKeybindingShortcut.test.ts`; `src/features/quick-composer/model/quickComposerShortcut.test.ts`.
 - Runtime: `src/app/workspace/input/useWorkspaceKeyboardShortcuts.test.ts`; recorder/shared control tests when those APIs change.
-- Browser: `tests/browser/settings.e2e.ts`, `settings-layout.e2e.ts` and current Settings config. Include conflict state recorder width and separate Reset hit areas, not just the idle row.
+- Browser: `tests/browser/settings/settings.e2e.ts`, `settings-layout.e2e.ts` and current Settings config. Include conflict state recorder width and separate Reset hit areas, not just the idle row.
 - Check keyboard capture, modifiers, IME, cancel/blur, disabled/unassigned, reserved conflicts, pending deduplication, storage/native partial failure and rollback, sibling/restart labels and nested popovers. Use isolated data; never overwrite owner shortcuts to test UI.

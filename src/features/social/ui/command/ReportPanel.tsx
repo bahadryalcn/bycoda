@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Heading } from "../../../../shared/ui/Heading";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
+import { Surface } from "../../../../shared/ui/Surface";
 import type { AiReport } from "../../model/socialActions";
 import type { ReportState } from "./useCommandScreen";
 
@@ -33,9 +35,15 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
   const [period, setPeriod] = useState<"day" | "week">("day");
   const data: AiReport | undefined = report?.data;
   return (
-    <section className="command-frame" aria-label={t("Report")}>
+    <Surface
+      as="section"
+      variant="card"
+      padding="none"
+      className="command-frame"
+      aria-label={t("Report")}
+    >
       <header className="command-frame-header">
-        <h3 className="command-section-title">{t("Report")}</h3>
+        <Heading size="section">{t("Report")}</Heading>
         <div className="command-report-controls">
           <SegmentedControl
             label={t("Report period")}
@@ -61,6 +69,6 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
           ) : null}
         </div>
       ) : null}
-    </section>
+    </Surface>
   );
 }

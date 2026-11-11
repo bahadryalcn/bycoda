@@ -1,4 +1,3 @@
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { sshJumpChain } from "../model/sshEndpointReview";
@@ -93,16 +92,10 @@ export function ConfigImportChoices({
 
 export function JumpAuthenticationHelp() {
   return (
-    <Disclosure
-      size="sm"
-      className="text-ui-caption text-(--ui-text-muted)"
-      summary={t("Jump host authentication")}
-    >
-      <p className="break-words">
-        {t(
-          "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.",
-        )}
-      </p>
-    </Disclosure>
+    <p className="break-words text-ui-caption text-(--ui-text-muted)">
+      {t(
+        "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.",
+      )}
+    </p>
   );
 }

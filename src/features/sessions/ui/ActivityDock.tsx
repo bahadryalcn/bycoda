@@ -270,15 +270,17 @@ function DockBody({
               )}
             </span>
             {clock ? <DockClock startedAt={clockOrigin} /> : null}
+            {/* Inside the summary: a narrow dock gives the summary a full row, and the
+                walker must stay on it instead of wrapping below the label. */}
+            {dock.state === "working" || dock.state === "waiting" ? (
+              <div
+                data-pacing-track="reserved"
+                className="pointer-events-none relative ms-auto -me-1 h-8 w-20 shrink-0 overflow-clip"
+              >
+                <PacingUncle visible={visible} />
+              </div>
+            ) : null}
           </div>
-          {dock.state === "working" || dock.state === "waiting" ? (
-            <div
-              data-pacing-track="reserved"
-              className="pointer-events-none relative h-8 w-20 shrink-0 overflow-clip"
-            >
-              <PacingUncle visible={visible} />
-            </div>
-          ) : null}
           {stopAll ? (
             <Button
               className="shrink-0"

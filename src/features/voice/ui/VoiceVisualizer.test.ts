@@ -170,3 +170,49 @@ it("steps connecting progress without decorative motion or animation frames", as
     vi.useRealTimers();
   }
 });
+
+it("gives each visual its own loading motion instead of a shared spinner", async () => {
+  for (const visual of ["mark", "wave", "dots", "orb"] as const) {
+    await render("connecting", visual);
+    expect(container.querySelector("[data-arc]"), visual).toBeNull();
+  }
+  await render("connecting", "wave");
+  const sweep = container.querySelector("[data-sweep]")!;
+  frameCallback(0);
+  const start = sweep.getAttribute("transform");
+  frameCallback(600);
+  expect(sweep.getAttribute("transform")).not.toBe(start);
+
+  await render("connecting", "orb");
+  const core = container.querySelector<SVGCircleElement>("[data-core]")!;
+  frameCallback(0);
+  const radius = core.getAttribute("r");
+  frameCallback(700);
+  expect(core.getAttribute("r")).not.toBe(radius);
+
+  await render("thinking", "dots");
+  const bar = container.querySelector("[data-bar]")!;
+  frameCallback(280);
+  expect(Number(bar.getAttribute("y"))).toBeLessThan(35);
+});
+
+it("steps the wave sweep and orb breath without decorative motion", async () => {
+  vi.useFakeTimers();
+  try {
+    saveDecorativeMotionEnabled(false);
+    await render("connecting", "wave");
+    const sweep = container.querySelector("[data-sweep]")!;
+    const first = sweep.getAttribute("transform");
+    await act(async () => vi.advanceTimersByTime(400));
+    expect(sweep.getAttribute("transform")).not.toBe(first);
+    await render("connecting", "orb");
+    const core = container.querySelector("[data-core]")!;
+    const small = core.getAttribute("r");
+    await act(async () => vi.advanceTimersByTime(400));
+    expect(core.getAttribute("r")).not.toBe(small);
+    expect(requestFrame).not.toHaveBeenCalled();
+  } finally {
+    saveDecorativeMotionEnabled(true);
+    vi.useRealTimers();
+  }
+});

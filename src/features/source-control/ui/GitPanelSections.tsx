@@ -1,11 +1,14 @@
 import { useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { ContextMenu } from "../../../shared/ui/ContextMenu";
+import { Divider } from "../../../shared/ui/Divider";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
 import {
   saveGitPanelSection,
   useGitPanelSections,
   type GitPanelSection,
+  type SectionRepositoryChoice,
 } from "../model/panelSections";
 import {
   GitHistoryGraph,
@@ -17,14 +20,13 @@ import {
 } from "./GitHistoryGraph";
 import { GitStashSection } from "./GitStashSection";
 
-// Session-wide disclosure memory. A grouped repository row starts with its
-// graph folded so several repositories do not each open a tall history.
+// Session-wide disclosure memory.
 let graphOpen = true;
-let repositoryGraphOpen = false;
-// Rows of an overview have no fixed pane height to fit the graph into.
-const REPOSITORY_GRAPH_MAX = GRAPH_PANEL_DEFAULT * 3;
 
-/** Stashes and the commit graph below a repository's changes, each hideable from the panel menu. */
+/**
+ * Stashes and the commit graph below a repository's changes, each hideable from the panel
+ * menu. A multi-repository overview renders them once, for the repository `repositories` names.
+ */
 export function GitPanelSections({
   cwd,
   enabled,
@@ -32,7 +34,7 @@ export function GitPanelSections({
   selectedSha,
   onOpenCommit,
   paneRef,
-  repository = false,
+  repositories,
 }: {
   cwd: string;
   enabled: boolean;
@@ -40,18 +42,18 @@ export function GitPanelSections({
   selectedSha?: string;
   onOpenCommit: (commit: GitHistoryCommit, pin?: boolean) => void;
   paneRef: RefObject<HTMLDivElement | null>;
-  /** A row of the multi-repository overview, whose height follows its content. */
-  repository?: boolean;
+  /** Lets the user choose which repository of an overview these sections show. */
+  repositories?: SectionRepositoryChoice;
 }) {
+  useLocale();
   const shown = useGitPanelSections();
   const [graphHeight, setGraphHeight] = useState(loadGraphPanelHeight);
-  const [graphExpanded, setGraphExpanded] = useState(repository ? repositoryGraphOpen : graphOpen);
+  const [graphExpanded, setGraphExpanded] = useState(graphOpen);
   // A drag paints the graph box directly; re-rendering the whole panel every
   // frame made the sash lag behind the pointer. State updates once, on release.
   const graphBoxRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    if (repository) return;
     const pane = paneRef.current;
     if (!pane || pane.clientHeight < GRAPH_PANEL_MIN + 160) return;
     const max = pane.clientHeight - 160;
@@ -59,12 +61,28 @@ export function GitPanelSections({
       setGraphHeight(max);
       saveGraphPanelHeight(max);
     }
-  }, [graphHeight, paneRef, repository]);
+  }, [graphHeight, paneRef]);
 
   return (
     <>
+      {repositories && (shown.stashes || shown.graph) ? (
+        <div className="shrink-0 px-1">
+          <Divider decorative />
+          <SearchableSelect
+            hideLabel
+            label={t("Repository")}
+            value={repositories.value}
+            onChange={repositories.onChange}
+            variant="row"
+            side="top"
+            options={repositories.options}
+          />
+        </div>
+      ) : null}
       {shown.stashes ? (
         <GitStashSection
+          // Its open row menu and confirmation belong to one repository.
+          key={cwd}
           cwd={cwd}
           enabled={enabled}
           hasChanges={hasChanges}
@@ -83,7 +101,7 @@ export function GitPanelSections({
           }}
           maxHeight={() => {
             const pane = paneRef.current;
-            if (repository || !pane) return REPOSITORY_GRAPH_MAX;
+            if (!pane) return GRAPH_PANEL_DEFAULT * 3;
             return Math.max(GRAPH_PANEL_MIN, pane.clientHeight - 160);
           }}
         />
@@ -97,12 +115,7 @@ export function GitPanelSections({
           // Cap the shown height, not the saved one, so a shorter window keeps the
           // file list visible and the chosen height returns when it grows again.
           style={
-            graphExpanded
-              ? {
-                  height: graphHeight,
-                  maxHeight: repository ? REPOSITORY_GRAPH_MAX : "calc(100% - 160px)",
-                }
-              : undefined
+            graphExpanded ? { height: graphHeight, maxHeight: "calc(100% - 160px)" } : undefined
           }
         >
           <GitHistoryGraph
@@ -110,11 +123,10 @@ export function GitPanelSections({
             enabled={enabled}
             expanded={graphExpanded}
             selectedSha={selectedSha}
+            repositories={repositories}
             onToggleExpanded={() => {
-              const next = !graphExpanded;
-              if (repository) repositoryGraphOpen = next;
-              else graphOpen = next;
-              setGraphExpanded(next);
+              graphOpen = !graphExpanded;
+              setGraphExpanded(graphOpen);
             }}
             onOpenCommit={onOpenCommit}
           />

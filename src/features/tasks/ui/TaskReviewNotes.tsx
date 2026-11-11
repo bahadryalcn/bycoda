@@ -2,6 +2,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Surface } from "../../../shared/ui/Surface";
 import { Badge } from "../../../shared/ui/Badge";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { t, useLocale } from "../../../shared/i18n";
@@ -63,10 +64,13 @@ export function TaskReviewNotes({
           {[...notes].reverse().map((note) => {
             const resolved = note.resolvedAt !== undefined;
             return (
-              <li
+              <Surface
+                as="li"
+                variant="outline"
+                padding="sm"
                 key={note.id}
                 data-review-note={note.id}
-                className="space-y-1.5 rounded-(--ui-radius-card) border border-(--ui-pane-border) p-2"
+                className="space-y-1.5"
               >
                 <div className="flex flex-wrap items-center gap-2 text-ui-caption">
                   <Badge tone={resolved ? "success" : "warning"}>
@@ -154,7 +158,7 @@ export function TaskReviewNotes({
                     </div>
                   </Disclosure>
                 ) : null}
-              </li>
+              </Surface>
             );
           })}
         </ul>

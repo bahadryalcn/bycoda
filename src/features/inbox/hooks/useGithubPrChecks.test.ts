@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useGithubPrChecks, type GithubPrChecksView } from "./useGithubPrChecks";
 import type { GithubPrChecks } from "../model/githubPrChecks";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 
 const { fetchGithubPrChecks } = vi.hoisted(() => ({
   fetchGithubPrChecks: vi.fn(),

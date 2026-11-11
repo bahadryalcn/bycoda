@@ -6,6 +6,7 @@ import { AttachmentOwnership } from "../attachments/attachment-ownership";
 import { DesktopDelete } from "../desktop/desktopDelete";
 import { RemoteActivityFeed } from "../desktop/remoteActivity";
 import { type DesktopSessionMeta } from "../desktop/desktopSessions";
+import { sessionNotFound } from "../sessions/session-authority";
 import { SessionQueues } from "../sessions/session-queue";
 import { AdoptedChanges } from "../workspaces/adoptedChanges";
 import type { ServerBindings } from "./bindings";
@@ -204,6 +205,9 @@ export async function createSessionsRuntime(
       )
     )
       return metadata.running ? "running" : "idle";
+    // Every caller asks before its effect, so a conversation neither side stores
+    // is refused as not sent rather than failing with an unknown outcome.
+    if (!(await dependencies.engine.store.sessionAuthority(id))) throw sessionNotFound();
     return await dependencies.engine.store.sessionStatus(id);
   };
   /** Existence check for queue calls. A conversation the host already stores is one indexed

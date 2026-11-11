@@ -1,14 +1,13 @@
-import { useId, useState } from "react";
 import { t } from "../../../shared/i18n/git";
 import { prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { ChevronDown, ChevronUp, FolderOpen, Trash2 } from "../../../shared/ui/icons";
+import { FolderOpen, Trash2 } from "../../../shared/ui/icons";
 import type { Worktree } from "../model/worktrees";
-import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import styles from "./WorktreesPage.module.css";
 
 /** One unmanaged worktree: same grammar as WorkspaceManagedRow (dot, identity, actions, details). */
@@ -39,8 +38,6 @@ export function WorktreeRow({
   onReveal: () => void;
   onDelete: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const detailsId = useId();
   const folderName = projectName(tree.path);
   const head = t("Detached at {p0}", { p0: tree.head.slice(0, 7) });
   const sessions = `${sessionCount}${t(" session")}${sessionCount === 1 ? "" : "s"}${t(" in this worktree")}`;
@@ -48,11 +45,7 @@ export function WorktreeRow({
   const statusTone =
     tree.missing || tree.dirty ? "warning" : tree.dirty == null ? "neutral" : "success";
   return (
-    <div
-      role="listitem"
-      className={`settings-collection-row ${styles.row}`}
-      data-open={open || undefined}
-    >
+    <div role="listitem" className={`settings-collection-row ${styles.row}`}>
       <StatusDot
         tone={tree.missing ? "warning" : "secondary"}
         size="compact"
@@ -109,8 +102,11 @@ export function WorktreeRow({
         <Tooltip label={caption} when="overflow">
           <span className={styles.caption}>{caption}</span>
         </Tooltip>
+        <Tooltip label={prettyCwd(tree.path)} when="overflow">
+          <span className={styles.caption}>{prettyCwd(tree.path)}</span>
+        </Tooltip>
         {warning && <InlineMessage tone="warning">{warning}</InlineMessage>}
-        {revealError && <InlineError retry={{ onRetry: onReveal }}>{revealError}</InlineError>}
+        {revealError && <DetailedInlineError error={revealError} retry={{ onRetry: onReveal }} />}
       </div>
       <div className={`settings-collection-actions ${styles.rowActions}`}>
         <Button
@@ -140,30 +136,7 @@ export function WorktreeRow({
         >
           <Trash2 className="icon-sm" />
         </Button>
-        <Button
-          size="sm"
-          iconOnly
-          variant="ghost"
-          label={t("Details")}
-          aria-expanded={open}
-          aria-controls={open ? detailsId : undefined}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? <ChevronUp className="icon-sm" /> : <ChevronDown className="icon-sm" />}
-        </Button>
       </div>
-      {open && (
-        <div id={detailsId} className={styles.details}>
-          <DescriptionList size="sm">
-            <DescriptionItem term={t("Folder")} monospace>
-              {prettyCwd(tree.path)}
-            </DescriptionItem>
-            <DescriptionItem term={t("Branch")} monospace>
-              {tree.branch ?? head}
-            </DescriptionItem>
-          </DescriptionList>
-        </div>
-      )}
     </div>
   );
 }

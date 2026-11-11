@@ -2,7 +2,7 @@ import type { AssistantAutomaticPresence } from "../../../src/shared/model/host-
 
 export type AssistantPresenceObservation = { supported: boolean; locked: boolean; idleMs?: number };
 
-/** Unknown never implies present: a missing or failed reader reports a locked, unsupported desktop. */
+/** A missing or failed reader never implies present: it reports a locked, unsupported desktop. */
 export async function readAssistantPresence(
   read: (() => Promise<AssistantPresenceObservation>) | undefined,
 ): Promise<AssistantPresenceObservation> {
@@ -13,7 +13,10 @@ export async function readAssistantPresence(
   }
 }
 
-/** Classifies one desktop observation against the owner's idle and away thresholds. */
+/**
+ * Classifies one desktop observation against the owner's idle and away thresholds. A desktop
+ * that could not be read is away: the owner is always present, idle, away or busy.
+ */
 export function assistantPresenceState(
   observation: AssistantPresenceObservation,
   policy: { idleMinutes: number; awayMinutes: number },
@@ -23,11 +26,11 @@ export function assistantPresenceState(
       ? observation.idleMs
       : undefined;
   const state: AssistantAutomaticPresence["state"] = !observation.supported
-    ? "unknown"
+    ? "away"
     : observation.locked
       ? "locked"
       : idleMs === undefined
-        ? "unknown"
+        ? "away"
         : idleMs >= policy.awayMinutes * 60000
           ? "away"
           : idleMs >= policy.idleMinutes * 60000

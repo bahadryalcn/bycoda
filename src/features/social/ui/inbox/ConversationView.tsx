@@ -3,6 +3,7 @@ import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
+import { Heading } from "../../../../shared/ui/Heading";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { TextField } from "../../../../shared/ui/TextField";
@@ -113,7 +114,9 @@ export function ConversationView({
         <div className="inbox-conversation-heading">
           {item ? <SocialAvatar name={title} platform={item.platform} size="lg" /> : null}
           <div className="inbox-conversation-who">
-            <h3 className="inbox-conversation-title">{title}</h3>
+            <Heading size="page" level={3} className="inbox-conversation-title">
+              {title}
+            </Heading>
             {item ? (
               <span className="inbox-conversation-account">
                 <PlatformIcon platform={item.platform} className="icon-xs" />

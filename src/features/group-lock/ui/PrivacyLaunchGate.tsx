@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Shield } from "../../../shared/ui/icons";
 import { useGroupLock } from "../hooks/useGroupLock";
@@ -29,9 +30,9 @@ export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
             <p className="mb-2 text-ui-caption text-(--ui-text-muted)">
               {PRODUCT_IDENTITY.displayName}
             </p>
-            <h1 id="privacy-launch-title" className="text-ui-heading font-medium">
+            <Heading size="page" id="privacy-launch-title">
               {t("Privacy mode")}
-            </h1>
+            </Heading>
             <p className="mt-3 text-ui-body leading-relaxed text-(--ui-text-secondary)">
               {t("Your workspace is hidden. Continue when you are ready.")}
             </p>

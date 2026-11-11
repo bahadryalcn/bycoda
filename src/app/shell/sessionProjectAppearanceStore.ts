@@ -50,10 +50,14 @@ export function getSessionProjectAppearanceServerSnapshot(): Snapshot {
   return serverSnapshot;
 }
 
-export function getSessionProjectBackground(snapshot: Snapshot, key: string) {
+export function getSessionProjectBackground(
+  snapshot: Snapshot,
+  key: string,
+  part: "header" | "body" = "header",
+) {
   if (snapshot === serverSnapshot) return undefined;
   if (!snapshot.backgrounds.has(key)) snapshot.backgrounds.set(key, loadRailBackgrounds(key));
-  return snapshot.backgrounds.get(key)?.header;
+  return snapshot.backgrounds.get(key)?.[part];
 }
 
 export function subscribeSessionProjectAppearance(listener: () => void): () => void {

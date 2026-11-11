@@ -1,4 +1,5 @@
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { Heading } from "../../../shared/ui/Heading";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Activity, useLayoutEffect, useRef, useState } from "react";
 import { registerSshWorkspaceCatalog } from "../model/sshMobileWorkspaceControl";
@@ -11,6 +12,7 @@ import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { copyWithFeedback, errorText, machineAddress } from "./serverActionFeedback";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -578,7 +580,13 @@ export function ServersView({
       ) : null}
       {actionError ? (
         <div className="px-3 pt-2">
-          <Alert tone="danger">{actionError}</Alert>
+          {fitsOneLine(actionError) ? (
+            <Alert tone="danger">{actionError}</Alert>
+          ) : (
+            <Alert tone="danger" action={<ErrorDetails detail={actionError} />}>
+              {t("The action failed. Check the details and retry.")}
+            </Alert>
+          )}
         </div>
       ) : null}
       {loading && !loaded ? (
@@ -639,7 +647,7 @@ export function ServersView({
                   }}
                 />
               ) : null}
-              <h1 className="min-w-0 text-ui-body font-medium">
+              <Heading size="section" className="min-w-0">
                 {t("Servers")}{" "}
                 <span className="text-(--ui-text-muted) tabular-nums">
                   {loaded
@@ -648,7 +656,7 @@ export function ServersView({
                       : `${filtered.length} / ${servers.length}`
                     : null}
                 </span>
-              </h1>
+              </Heading>
               {checkedServers.length ? (
                 <>
                   <span role="status" className="text-(--ui-text-secondary)">
@@ -754,9 +762,9 @@ export function ServersView({
               <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-4 py-3">
                 <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
                 <OverflowTooltip label={selected.name}>
-                  <h2 className="min-w-0 flex-1 truncate text-ui-title font-medium">
+                  <Heading size="section" className="min-w-0 flex-1 truncate">
                     {selected.name}
-                  </h2>
+                  </Heading>
                 </OverflowTooltip>
                 {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
                 <Button

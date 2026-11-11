@@ -67,22 +67,22 @@ it("disables stale open menu after selected Host changes instead of adopting its
   await act(() => choice("Away").click());
   expect(port.set).not.toHaveBeenCalled();
 });
-it("allows manual availability with fresh unknown sensor state without claiming Here from its ACK", async () => {
-  const unknown: AssistantPresenceView = {
+it("allows manual availability while the computer reads Away without claiming Here from its ACK", async () => {
+  const away: AssistantPresenceView = {
     ...ready,
-    status: { ...ready.status!, state: "unknown" },
+    status: { ...ready.status!, state: "away" },
   };
-  vi.mocked(port.read).mockResolvedValue(unknown);
-  vi.mocked(port.refresh).mockResolvedValue(unknown);
-  vi.mocked(port.set).mockResolvedValue({ ...unknown, revision: 2 });
+  vi.mocked(port.read).mockResolvedValue(away);
+  vi.mocked(port.refresh).mockResolvedValue(away);
+  vi.mocked(port.set).mockResolvedValue({ ...away, revision: 2 });
   await render();
   await open();
-  expect(container.textContent).toContain("Unknown");
+  expect(container.textContent).toContain("Away");
   expect(choice("Here").disabled).toBe(false);
   expect(choice("Refresh").disabled).toBe(false);
   await act(async () => choice("Here").click());
   expect(port.set).toHaveBeenCalledWith("host-a", "present");
-  expect(container.textContent).toContain("Unknown");
+  expect(container.textContent).toContain("Away");
 });
 it("retains failed exact choice and source for Retry and prevents changing intent", async () => {
   const failed: AssistantPresenceView = {
@@ -126,7 +126,7 @@ it("keeps late native reads from overwriting a newer event and never changes pre
 it("hides unconfigured identity rather than claiming an assistant is ready", async () => {
   vi.mocked(port.read).mockResolvedValue({
     ...ready,
-    status: { state: "unknown", setupComplete: false },
+    status: { state: "away", setupComplete: false },
   });
   await render();
   expect(container.querySelector("button")).toBeNull();
@@ -137,7 +137,6 @@ it.each([
   ["away", "warning"],
   ["idle", "warning"],
   ["dnd", "danger"],
-  ["unknown", "neutral"],
 ] as const)("colors actual native %s without writing presence", async (state, tone) => {
   vi.mocked(port.read).mockResolvedValue({ ...ready, status: { ...ready.status!, state } });
   await render();
@@ -146,7 +145,7 @@ it.each([
   );
   expect(port.set).not.toHaveBeenCalled();
 });
-it("keeps an in-flight choice neutral until actual ACK and preserves its exact source", async () => {
+it("keeps the last confirmed state while a choice is in flight until actual ACK and preserves its exact source", async () => {
   let resolve!: (view: AssistantPresenceView) => void;
   vi.mocked(port.set).mockImplementation(
     () =>
@@ -159,7 +158,7 @@ it("keeps an in-flight choice neutral until actual ACK and preserves its exact s
   await act(async () => choice("Away").click());
   expect(
     container.querySelector("[data-presence-state]")?.getAttribute("data-presence-state"),
-  ).toBe("unknown");
+  ).toBe("present");
   expect(container.textContent).toContain("Updating availability...");
   await act(async () => {
     resolve({ ...ready, revision: 2, status: { ...ready.status!, state: "away" } });
@@ -169,12 +168,31 @@ it("keeps an in-flight choice neutral until actual ACK and preserves its exact s
     "warning",
   );
 });
-it("never leaves a green Here after a failed native observation", async () => {
+it("shows Offline when the native status was never read", async () => {
   vi.mocked(port.read).mockRejectedValue(new Error("offline"));
   await render();
-  expect(container.querySelector("[data-presence-state]")?.getAttribute("data-presence-tone")).toBe(
-    "neutral",
-  );
-  expect(container.textContent).toContain("Unknown");
+  const mark = container.querySelector("[data-presence-state]");
+  expect(mark?.getAttribute("data-presence-state")).toBe("offline");
+  expect(mark?.getAttribute("data-presence-tone")).toBe("neutral");
+  expect(container.textContent).toContain("Offline");
+  expect(container.textContent).not.toContain("Unknown");
   expect(port.set).not.toHaveBeenCalled();
+});
+it("shows Offline for a null status", async () => {
+  vi.mocked(port.read).mockResolvedValue({ ...ready, status: null });
+  await render();
+  expect(
+    container.querySelector("[data-presence-state]")?.getAttribute("data-presence-state"),
+  ).toBe("offline");
+  expect(container.textContent).toContain("Offline");
+});
+it("keeps the last confirmed Here when a later read fails", async () => {
+  await render();
+  expect(container.textContent).toContain("Here");
+  await act(async () => receive({ ...ready, revision: 2, statusError: true }));
+  const mark = container.querySelector("[data-presence-state]");
+  expect(mark?.getAttribute("data-presence-state")).toBe("present");
+  expect(container.textContent).toContain("Here");
+  expect(container.textContent).not.toContain("Unknown");
+  expect(container.textContent).not.toContain("Offline");
 });

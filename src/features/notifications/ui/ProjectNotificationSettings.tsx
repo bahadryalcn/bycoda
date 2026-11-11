@@ -10,6 +10,8 @@ import { useRemoteMachines } from "../../connections/model/connections";
 import { machineLabel } from "../../connections/model/machineIdentity";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
+import { Heading } from "../../../shared/ui/Heading";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Segmented, SettingsFeedback } from "../../settings/ui/settingsControls";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
@@ -169,9 +171,9 @@ export function ProjectNotificationSettings({
     >
       <div className="settings-collection-header">
         <div>
-          <h2 className="text-ui-secondary font-medium text-content">
+          <Heading size="item" level={2}>
             {t("Project notifications")}
-          </h2>
+          </Heading>
         </div>
       </div>
       <div
@@ -311,18 +313,17 @@ export function ProjectNotificationSettings({
                 const panelId = `notification-categories-${encodeURIComponent(project.id)}`;
                 const muteHintId = `${panelId}-mute-hint`;
                 return (
-                  <fieldset
+                  <FieldGroup
                     key={project.id}
                     ref={project.id === targetId ? targetCard : undefined}
                     tabIndex={-1}
                     className="project-notification-item"
+                    legend={`${project.name} (${project.detail})`}
+                    hideLegend
                     style={{
                       paddingInlineStart: /^\s*\u21b3/.test(project.name) ? "1rem" : undefined,
                     }}
                   >
-                    <legend className="sr-only">
-                      {project.name} ({project.detail})
-                    </legend>
                     <div className="project-notification-item-heading settings-collection-row">
                       <div className="flex min-w-[min(100%,200px)] flex-1 items-center gap-3">
                         {selecting ? (
@@ -470,7 +471,7 @@ export function ProjectNotificationSettings({
                         ))}
                       </div>
                     </div>
-                  </fieldset>
+                  </FieldGroup>
                 );
               })}
             </div>

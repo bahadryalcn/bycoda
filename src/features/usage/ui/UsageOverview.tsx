@@ -19,6 +19,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { DateTimeRangePicker } from "../../../shared/ui/DateTimeRangePicker";
@@ -826,16 +827,13 @@ export function UsageOverview({
                   );
                 })}
               </div>
-              <Button
-                className="usage-details-toggle"
+              <Disclosure
                 size="sm"
-                variant="ghost"
-                aria-expanded={showDetails}
-                onClick={() => setShowDetails(!showDetails)}
+                className="usage-details-disclosure"
+                summary={t("Usage details")}
+                open={showDetails}
+                onOpenChange={setShowDetails}
               >
-                {t("Usage details")}
-              </Button>
-              {showDetails && (
                 <div className="usage-facts">
                   <span>
                     {t("Total tokens")} <b>{formatMetric(totals.tokens, "tokens")}</b>
@@ -865,7 +863,7 @@ export function UsageOverview({
                     </b>
                   </span>
                 </div>
-              )}
+              </Disclosure>
             </>
           )}
           {view === "overview" && actualResolution !== resolution && (
@@ -938,7 +936,9 @@ export function UsageOverview({
                 id="setting-provider-usage"
                 data-setting-id="provider-usage"
               >
-                <h3>{t("Usage breakdown")}</h3>
+                <Heading size="item" level={3}>
+                  {t("Usage breakdown")}
+                </Heading>
                 <div className="usage-controls usage-search-actions">
                   <SearchInput
                     appearance="field"

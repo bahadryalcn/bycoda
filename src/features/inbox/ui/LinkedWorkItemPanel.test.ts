@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearInboxCache, type GithubWorkItem } from "../model/githubTasks";
 import type { LinkedWorkItem } from "../../sessions/model/session";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import { LinkedWorkItemPanel as RawLinkedWorkItemPanel } from "./InboxView";
 
 vi.mock("@tauri-apps/api/core", () => ({

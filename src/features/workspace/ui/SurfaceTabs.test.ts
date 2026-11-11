@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { t } from "../../../shared/i18n";
 import {
   newChangesTab,
   newCommitTab,
@@ -15,7 +16,7 @@ describe("surfaceTabPresentation", () => {
     const file = newReleaseNotesWorkspaceTab({ version: "0.1.23" }).editorPanes[0]?.files[0];
     if (!file) throw new Error("expected release-note file");
 
-    expect(surfaceTabPresentation(file)).toEqual({
+    expect(surfaceTabPresentation(t, file)).toEqual({
       name: releaseNotesTitle("0.1.23"),
       label: releaseNotesTitle("0.1.23"),
       iconName: "CHANGELOG.md",
@@ -24,7 +25,7 @@ describe("surfaceTabPresentation", () => {
   });
 
   it("labels the unified working-tree tab as Changes", () => {
-    expect(surfaceTabPresentation(newChangesTab("/repo", "/repo/App.tsx"))).toEqual({
+    expect(surfaceTabPresentation(t, newChangesTab("/repo", "/repo/App.tsx"))).toEqual({
       name: "Changes",
       label: "Changes",
       iconName: "CHANGES",
@@ -34,7 +35,7 @@ describe("surfaceTabPresentation", () => {
 
   it("labels a session-scoped review distinctly", () => {
     expect(
-      surfaceTabPresentation(newSessionChangesTab("/repo", "session-a", "/repo/App.tsx")),
+      surfaceTabPresentation(t, newSessionChangesTab("/repo", "session-a", "/repo/App.tsx")),
     ).toEqual({
       name: "Session Changes",
       label: "Session Changes",
@@ -46,6 +47,7 @@ describe("surfaceTabPresentation", () => {
   it("labels a commit tab from the subject", () => {
     expect(
       surfaceTabPresentation(
+        t,
         newCommitTab("/repo", {
           sha: "abc1234deadbeef",
           shortSha: "abc1234",
@@ -78,7 +80,7 @@ describe("appendProblems", () => {
 describe("surfaceTabMenuItems", () => {
   it("offers filesystem actions for regular and review file tabs", () => {
     for (const review of [false, true]) {
-      const items = surfaceTabMenuItems(newFileTab("/repo/src/app.ts", "/repo", review));
+      const items = surfaceTabMenuItems(t, newFileTab("/repo/src/app.ts", "/repo", review));
       expect(items.flatMap((item) => (item.kind === "item" ? [item.label] : []))).toEqual([
         "Open in Default App",
         expect.stringMatching(/Reveal|Containing Folder/),
@@ -104,7 +106,7 @@ describe("surfaceTabMenuItems", () => {
       newSessionChangesTab("/repo", "session-a"),
       newTerminalFile("/repo"),
     ]) {
-      expect(surfaceTabMenuItems(file)).toEqual([
+      expect(surfaceTabMenuItems(t, file)).toEqual([
         { kind: "item", id: "close", label: "Close" },
         {
           kind: "item",
@@ -120,7 +122,7 @@ describe("surfaceTabMenuItems", () => {
 
   it("offers Move Left / Move Right as the menu alternative to dragging, disabled at the ends", () => {
     const moves = (sides: { left: boolean; right: boolean }) =>
-      surfaceTabMenuItems(newFileTab("/repo/src/app.ts", "/repo"), true, undefined, sides, true)
+      surfaceTabMenuItems(t, newFileTab("/repo/src/app.ts", "/repo"), true, undefined, sides, true)
         .filter((item) => item.kind === "item" && item.id.startsWith("move-"))
         .map((item) => (item.kind === "item" ? [item.id, item.label, item.disabled] : []));
     expect(moves({ left: false, right: true })).toEqual([
@@ -134,6 +136,7 @@ describe("surfaceTabMenuItems", () => {
     // Tabs without a real file get the same pair; a lone tab is offered none.
     expect(
       surfaceTabMenuItems(
+        t,
         newChangesTab("/repo"),
         true,
         undefined,
@@ -144,14 +147,14 @@ describe("surfaceTabMenuItems", () => {
         .map((item) => (item.kind === "item" ? item.id : "")),
     ).toEqual(["move-left", "move-right", "close", "close-others", "close-right", "close-left"]);
     expect(
-      surfaceTabMenuItems(newFileTab("/repo/src/app.ts", "/repo")).some(
+      surfaceTabMenuItems(t, newFileTab("/repo/src/app.ts", "/repo")).some(
         (item) => item.kind === "item" && item.id.startsWith("move-"),
       ),
     ).toBe(false);
   });
 
   it("disables Close Others when there are no sibling tabs", () => {
-    const items = surfaceTabMenuItems(newFileTab("/repo/src/app.ts", "/repo"), false);
+    const items = surfaceTabMenuItems(t, newFileTab("/repo/src/app.ts", "/repo"), false);
     expect(items.find((item) => item.kind === "item" && item.id === "close-others")).toEqual({
       kind: "item",
       id: "close-others",

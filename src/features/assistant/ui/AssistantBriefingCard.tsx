@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { ClampText } from "../../../shared/ui/ClampText";
+import { Heading } from "../../../shared/ui/Heading";
+import { Surface } from "../../../shared/ui/Surface";
 import { X } from "../../../shared/ui/icons";
 import type { AssistantSnapshot } from "../../../shared/model/host-contracts/assistant";
 import {
@@ -24,7 +27,6 @@ import { briefingSections } from "./room/briefingSections";
 import { LiveText } from "../../../shared/ui/LiveText";
 
 /** Longer briefing text folds to this many characters until the owner expands it. */
-const CLAMP_CHARS = 240;
 
 export function AssistantBriefingCard({
   snapshot,
@@ -67,12 +69,10 @@ export function AssistantBriefingCard({
   const [audioError, setAudioError] = useState("");
   const [approvals, setApprovals] = useState<AssistantApprovalTarget[] | null>(null);
   const [unavailable, setUnavailable] = useState(0);
-  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     epoch.current++;
     busyRef.current = false;
     setBusy("");
-    setExpanded(false);
     setApprovals(null);
     setError("");
     setAudioError("");
@@ -185,9 +185,17 @@ export function AssistantBriefingCard({
     if (targets.length === 1 && result.unavailable === 0) await open(targets[0], guard, owner);
   }
   return (
-    <section className={briefingStyles.briefing} aria-label={t("While you were away")}>
+    <Surface
+      as="section"
+      variant="card"
+      padding="md"
+      className={briefingStyles.briefing}
+      aria-label={t("While you were away")}
+    >
       <div className={briefingStyles.header}>
-        <h2>{t("While you were away")}</h2>
+        <Heading size="item" level={2}>
+          {t("While you were away")}
+        </Heading>
         <Button
           iconOnly
           label={t("Dismiss")}
@@ -203,24 +211,9 @@ export function AssistantBriefingCard({
         </Button>
       </div>
       {parts.lead && (
-        <p
-          className={
-            expanded || parts.lead.length <= CLAMP_CHARS
-              ? briefingStyles.copy
-              : `${briefingStyles.copy} ${briefingStyles.clamped}`
-          }
-        >
+        <ClampText key={briefing.id} lines={3} className={briefingStyles.copy}>
           {parts.lead}
-        </p>
-      )}
-      {parts.lead.length > CLAMP_CHARS && (
-        <Button
-          variant="link"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {t(expanded ? "Show less" : "Show more")}
-        </Button>
+        </ClampText>
       )}
       {parts.sections.length > 0 && (
         <div className={briefingStyles.sections}>
@@ -337,6 +330,6 @@ export function AssistantBriefingCard({
         </div>
       )}
       {error && <InlineError>{t(error)}</InlineError>}
-    </section>
+    </Surface>
   );
 }

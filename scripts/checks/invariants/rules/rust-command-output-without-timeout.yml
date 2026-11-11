@@ -2,7 +2,7 @@ id: rust-command-output-without-timeout
 language: rust
 severity: error
 message: "`Command::output()` with no deadline can block a worker thread forever (a credential helper waiting for a keychain prompt, a hung `gh`). Use `crate::fs::output_with_timeout` or wrap the wait in a timed loop with `try_wait`, and kill the child when the deadline passes."
-note: Rule K-TIMEOUT in docs/reference/code-invariants.md
+note: docs/reference/code-invariants.md
 files:
   - "src-tauri/src/**"
 ignores:

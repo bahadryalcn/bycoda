@@ -3,6 +3,7 @@ import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Heading } from "../../../shared/ui/Heading";
 import { Calendar, Plus } from "../../../shared/ui/icons";
 import { Meter } from "../../../shared/ui/Meter";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -155,7 +156,7 @@ export function SprintManagement({
           <div className="sprint-heading">
             <div className="sprint-title">
               <OverflowTooltip label={selected?.name}>
-                <h2>{selected?.name ?? t("Sprints")}</h2>
+                <Heading size="section">{selected?.name ?? t("Sprints")}</Heading>
               </OverflowTooltip>
               {selected ? <SprintStatusBadge state={selected.state} /> : null}
               {selected && (selected.startsAt !== undefined || selected.endsAt !== undefined) ? (

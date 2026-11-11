@@ -37,10 +37,11 @@ const cache = (over: object) => ({
   ...over,
 });
 
-it("splits cache reads out of worker tokens and names the supervisor", async () => {
+it("shows budget-counted worker tokens and raw cache reads as separate facts", async () => {
   const text = await mount({ cacheUsage: cache({}) });
   expect(text).toContain("Supervisor tokens: 10");
-  expect(text).toContain("Worker new tokens: 100");
+  expect(text).toContain("Worker tokens: 1,000");
+  expect(text).toContain("Cache read tokens: 900");
   expect(text).not.toContain("Chief tokens");
 });
 
@@ -51,8 +52,8 @@ it("keeps the total when cache reads are partial or missing", async () => {
   expect(await mount({})).toContain("Worker tokens: 1,000");
 });
 
-it("never shows negative new tokens", async () => {
+it("never derives worker tokens from cache reads", async () => {
   expect(await mount({ cacheUsage: cache({ cacheReadTokens: 5000 }) })).toContain(
-    "Worker new tokens: 0",
+    "Worker tokens: 1,000",
   );
 });

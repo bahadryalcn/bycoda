@@ -32,7 +32,14 @@ export async function hostGitSubmodules(
   const paths: string[] = [];
   for (let index = 0; index < queue.length; index++) {
     const parent = queue[index];
-    const entries = await git(parent, ["ls-files", "--stage", "-z", "--", "."], remaining());
+    const entries = await git(parent, ["ls-files", "--stage", "-z", "--", "."], remaining()).catch(
+      (error: { stderr?: unknown }) => {
+        // A plain folder has no gitlinks, but may still hold source repositories.
+        if (parent === root && /not a git repository/i.test(String(error?.stderr ?? error)))
+          return "";
+        throw error;
+      },
+    );
     for (const entry of entries.split("\0")) {
       const tab = entry.indexOf("\t");
       if (tab < 0 || !/^160000 [a-f0-9]+ [0-3]$/.test(entry.slice(0, tab))) continue;

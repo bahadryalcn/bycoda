@@ -1144,7 +1144,7 @@ describe("HostStore.adopted", () => {
     await store.save(
       session("plain", project.id, {
         desktop: { updatedAt: 0 },
-        revision: 3,
+        revision: 2,
         updatedAt: 300,
       }),
       { type: "t" },
@@ -1153,7 +1153,7 @@ describe("HostStore.adopted", () => {
       {
         id: "plain",
         projectId: project.id,
-        revision: 3,
+        revision: 2,
         updatedAt: 300,
         status: "idle",
         desktopUpdatedAt: 0,

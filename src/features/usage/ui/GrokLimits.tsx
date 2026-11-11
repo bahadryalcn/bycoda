@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
+import { Heading } from "../../../shared/ui/Heading";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Timestamp } from "../../../shared/ui/Timestamp";
@@ -31,10 +32,10 @@ export function GrokLimits({ refresh }: { refresh: number }) {
   return (
     <section className="usage-account" aria-label="Grok" aria-busy={loading}>
       <div className="usage-account-heading">
-        <h3 className="inline-flex items-center gap-2">
+        <Heading size="item" level={3} className="inline-flex items-center gap-2">
           <HarnessIcon harness="grok" className="icon-sm" />
           Grok
-        </h3>
+        </Heading>
         {limits.updatedAt > 0 ? (
           <span className="usage-account-observed">
             <span className="sr-only">{t("Last observed")}: </span>
@@ -46,7 +47,7 @@ export function GrokLimits({ refresh }: { refresh: number }) {
         {windows.map(({ kind, window }) => (
           <div className="usage-quota" key={kind}>
             <div className="usage-quota-heading">
-              <h4>
+              <Heading size="item" level={4}>
                 {kind === "weekly"
                   ? t("Weekly")
                   : kind === "monthly"
@@ -57,7 +58,7 @@ export function GrokLimits({ refresh }: { refresh: number }) {
                     ? t("Reset time unavailable")
                     : formatResetCountdown(window.resetsAt - now)}
                 </span>
-              </h4>
+              </Heading>
               <p>
                 <strong>
                   {Math.round(showRemaining ? 100 - window.usedPercent : window.usedPercent)}%

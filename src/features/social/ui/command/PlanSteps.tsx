@@ -1,5 +1,6 @@
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Surface } from "../../../../shared/ui/Surface";
 import { TechnicalDetails } from "../common/TechnicalDetails";
 import type { AiPlan } from "../../model/socialActions";
 import { pendingApprovalIds, stepStatusLabel, type StepResult } from "./commandModel";
@@ -17,7 +18,7 @@ export type PlanStepsProps = {
 export function PlanSteps({ plan, results, approved, busy, onApprove, onRun }: PlanStepsProps) {
   const pending = pendingApprovalIds(plan.steps, results).filter((id) => !approved.includes(id));
   return (
-    <section className="command-plan" aria-label={t("Plan")}>
+    <Surface as="section" variant="card" className="command-plan" aria-label={t("Plan")}>
       <ol className="command-steps">
         {plan.steps.map((step) => {
           const result = results[step.id];
@@ -58,6 +59,6 @@ export function PlanSteps({ plan, results, approved, busy, onApprove, onRun }: P
           {t("Run plan")}
         </Button>
       </div>
-    </section>
+    </Surface>
   );
 }

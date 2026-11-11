@@ -30,6 +30,7 @@ import {
 } from "../model/gitGenerationChoice";
 
 import { canRunHarnessTextPrompt } from "../../../integrations/harness";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 
 const KEY = "bycoda.gitGeneration.v1:";
 function load(cwd: string): GitGenerationChoice | undefined {
@@ -75,7 +76,7 @@ export function GitGenerationModelControl({
   const model = resolveModel(harness, choice?.model ?? automatic?.model ?? defaultModelId(harness));
   const values = mergeModelSettings(model, choice?.modelSettings ?? automatic?.modelSettings);
   return (
-    <Suspense fallback={<span>{t("Loading…")}</span>}>
+    <Suspense fallback={<LoadingText />}>
       <ModelPicker
         harness={harness}
         model={model.id}

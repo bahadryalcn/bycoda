@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { TextField } from "../../../shared/ui/TextField";
 import { Select } from "../../../shared/ui/Select";
@@ -222,14 +223,14 @@ export function RecommendedSkills({
             />
           </div>
         </div>
-        <Disclosure size="sm" className={styles.notes} summary={t("Before you install")}>
+        <div className={styles.notes}>
           <p className={styles.note}>
             {t(
               "Existing skills are never replaced. Provider permissions and disabled-skill settings still apply. Extra tools or accounts may be required by the author.",
             )}
           </p>
           <p className={styles.note}>{t(SKILLS_CLI_REQUIREMENTS)}</p>
-        </Disclosure>
+        </div>
         {missingMachine ? (
           <Alert tone="danger" inline>
             {t("The selected computer is no longer connected.")}
@@ -276,7 +277,9 @@ export function RecommendedSkills({
               <li key={skill.id} className={styles.row} data-installed={present || undefined}>
                 <div className={styles.content}>
                   <div className={styles.title}>
-                    <h3>{skill.name}</h3>
+                    <Heading size="item" level={3}>
+                      {skill.name}
+                    </Heading>
                     <span className={styles.meta}>
                       {[t(skill.category), other ? t("On {p0}", { p0: other }) : ""]
                         .filter(Boolean)

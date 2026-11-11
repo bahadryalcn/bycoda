@@ -6,7 +6,7 @@ import { preflightGates, preflightOptions, runPreflight, selectGates } from "./c
 test("preflight mirrors the cheap CI gates that failed main after local checks passed", () => {
   const commands = preflightGates.map((gate) => gate.command.join(" "));
   for (const expected of [
-    "oxfmt --check .",
+    "vp fmt --check .",
     "cargo fmt --all --check",
     "evals/tsconfig.json",
     "check-lint-baseline.mjs",

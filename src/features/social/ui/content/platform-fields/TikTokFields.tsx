@@ -1,4 +1,5 @@
 import { t } from "../../../../../shared/i18n";
+import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { Checkbox } from "../../../../../shared/ui/Checkbox";
 import { NativeSelect } from "../../../../../shared/ui/Select";
 import type { TikTokVideoOptions } from "../../../model/social";
@@ -32,8 +33,7 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
     { key: "allowStitch", label: t("Allow stitches"), blocked: creator?.stitchDisabled },
   ];
   return (
-    <fieldset className="content-platform" disabled={locked}>
-      <legend>{t("TikTok")}</legend>
+    <FieldGroup legend={t("TikTok")} className="content-platform" disabled={locked}>
       {!creator ? (
         <p className="content-platform-note">{t("Loading your TikTok options…")}</p>
       ) : null}
@@ -99,6 +99,6 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
         label={t("I confirm the consent needed to post this video to TikTok.")}
         className="content-check"
       />
-    </fieldset>
+    </FieldGroup>
   );
 }

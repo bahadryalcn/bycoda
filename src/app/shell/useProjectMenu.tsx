@@ -11,7 +11,6 @@ import {
 } from "../../features/source-control/hooks/useProjectDiffStats";
 import {
   projectGitChange,
-  projectGitChangeSummary,
   type ProjectGitStats,
 } from "../../features/projects/ui/projectGitChange";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -32,6 +31,7 @@ import {
   FolderTree,
   GitBranch,
   ImagePlus,
+  Internet,
   Lock,
   LockOpen,
   Pencil,
@@ -116,11 +116,16 @@ import {
   notificationMuteStatus,
 } from "../../features/notifications/ui/notificationMuteActions";
 import { useProjectNotificationPreferences } from "../../features/notifications/hooks/useProjectNotificationPreferences";
+import { connectionIndicator } from "../../features/connections/model/remoteConnection";
+import { useRemoteConnection } from "../../features/connections/model/useRemoteConnection";
+import { machineLabel } from "../../features/connections/model/machineIdentity";
+import { ProjectGitChangeRow } from "../../features/projects/ui/ProjectGitChangeRow";
 import { reconnectRemoteMachine } from "../../features/connections/model/remoteReconnect";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import {
   knownRemoteMachine,
   requestMachineEdit,
+  useRemoteMachines,
 } from "../../features/connections/model/connections";
 import { useNotificationProjects } from "../../features/notifications/hooks/useNotificationProjects";
 import { updateNotificationPreferences } from "../../features/notifications/model/notificationPreferences";
@@ -143,6 +148,32 @@ const REVEAL_LABEL = IS_MAC
     ? "Reveal in File Explorer"
     : "Open Containing Folder";
 
+/** What the Machine item shows for a remote project: the machine, its connection and a status dot. */
+type MachineMenuStatus = {
+  description: string;
+  badge: NonNullable<TabGroupMenuExtraItem["badge"]>;
+};
+
+const CONNECTION_BADGE = { connected: "success", connecting: "warning", down: "danger" } as const;
+
+function machineMenuStatus(
+  machineName: string | undefined,
+  indicator: ReturnType<typeof connectionIndicator>,
+): MachineMenuStatus {
+  const status =
+    indicator.tone === "connected"
+      ? t("Connected")
+      : indicator.label === "Reconnecting"
+        ? t("Reconnecting")
+        : indicator.tone === "connecting"
+          ? t("Connecting")
+          : t("Not connected");
+  return {
+    description: [machineName, status].filter(Boolean).join(" · "),
+    badge: { tone: CONNECTION_BADGE[indicator.tone], label: status },
+  };
+}
+
 function projectMenuExtraItems(
   pinned: boolean | null,
   canRemove: boolean,
@@ -151,7 +182,7 @@ function projectMenuExtraItems(
   externalEditors: ExternalEditor[] | null,
   projectGroups: ProjectGroup[],
   canAddDirs: boolean,
-  canReconnect: boolean,
+  machine: MachineMenuStatus | null,
   currentProjectGroupId?: string,
   canRenameFolder = false,
 ): TabGroupMenuExtraItem[] {
@@ -216,14 +247,16 @@ function projectMenuExtraItems(
           },
         ]
       : []),
-    ...(canReconnect
+    ...(machine
       ? [
           {
             id: "machine",
             get label() {
               return t("Machine");
             },
-            icon: RefreshCw,
+            description: machine.description,
+            icon: Internet,
+            badge: machine.badge,
             submenu: [
               {
                 kind: "item" as const,
@@ -379,6 +412,9 @@ export function useProjectMenu({
   >(null);
   const menuStats = useProjectDiffStats(projectMenu?.path ?? "", projectMenu != null);
   const menuChange = projectGitChange(menuStats);
+  const menuConnection = useRemoteConnection(projectMenu?.path);
+  const menuIndicator = connectionIndicator(menuConnection, menuConnection.reconnecting);
+  const { machines: menuMachines } = useRemoteMachines(!!remoteProjectFor(projectMenu?.path ?? ""));
   const [removingGroup, setRemovingGroup] = useState<{
     id: string;
     name: string;
@@ -814,26 +850,23 @@ export function useProjectMenu({
             externalEditors,
             loadProjectGroups(),
             isLocalProject(projectMenu.path),
-            Boolean(remoteProjectFor(projectMenu.path)),
+            remoteProjectFor(projectMenu.path)
+              ? machineMenuStatus(
+                  menuConnection.machine
+                    ? machineLabel(menuMachines, menuConnection.machine)
+                    : undefined,
+                  menuIndicator,
+                )
+              : null,
             projectGroupIdForPath(projectMenu.path, loadProjectGroupAssignments()),
             Boolean(onRenameProjectFolder && isLocalProject(projectMenu.path)),
           ),
         ]}
-        footer={
-          menuChange || menuError ? (
-            <>
-              {menuChange ? (
-                <div
-                  data-project-menu-git=""
-                  className="border-t border-(--ui-border) px-3 py-2 text-ui-caption text-(--ui-text-secondary)"
-                >
-                  {projectGitChangeSummary(menuChange, t)}
-                </div>
-              ) : null}
-              {menuError ? <Alert tone="danger">{menuError}</Alert> : null}
-            </>
-          ) : null
+        nameLabel={t("Project name")}
+        info={
+          menuChange ? <ProjectGitChangeRow data-project-menu-git="" change={menuChange} /> : null
         }
+        footer={menuError ? <Alert tone="danger">{menuError}</Alert> : null}
         onExtraPick={onPick}
       />
     );
@@ -1093,21 +1126,12 @@ export function useProjectMenu({
         }}
         showActions={false}
         ariaLabel={t("Project group actions")}
-        footer={
-          groupMenuChange || menuError ? (
-            <>
-              {groupMenuChange ? (
-                <div
-                  data-group-menu-git=""
-                  className="border-t border-(--ui-border) px-3 py-2 text-ui-caption text-(--ui-text-secondary)"
-                >
-                  {projectGitChangeSummary(groupMenuChange, t)}
-                </div>
-              ) : null}
-              {menuError ? <Alert tone="danger">{menuError}</Alert> : null}
-            </>
-          ) : undefined
+        info={
+          groupMenuChange ? (
+            <ProjectGitChangeRow data-group-menu-git="" change={groupMenuChange} />
+          ) : null
         }
+        footer={menuError ? <Alert tone="danger">{menuError}</Alert> : undefined}
         compactAppearance
         extraItems={[
           ...(workspaceRoot && !locked

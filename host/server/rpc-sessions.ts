@@ -237,13 +237,18 @@ export async function handleSessionsRpc(
         if (authorityGeneration === undefined) await dependencies.adopt(sessionId);
         if (typeof request.params.desiredPinned !== "boolean") throw new Error("Invalid pin value");
         const expectedVersion = SafeCounterSchema.parse(request.params.expectedVersion);
-        request.result = await dependencies.engine.store.pinApply(
-          sessionId,
-          projectId,
-          operationId,
-          request.params.desiredPinned,
-          expectedVersion,
-          authorityGeneration,
+        const desiredPinned = request.params.desiredPinned;
+        // Ordered with the session's turn: a pin written beside a running turn would
+        // take the revision its next event is about to use.
+        request.result = await dependencies.engine.sessionStoreWrite(sessionId, () =>
+          dependencies.engine.store.pinApply(
+            sessionId,
+            projectId,
+            operationId,
+            desiredPinned,
+            expectedVersion,
+            authorityGeneration,
+          ),
         );
       }
       break;

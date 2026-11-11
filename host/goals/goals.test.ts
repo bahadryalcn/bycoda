@@ -1433,7 +1433,7 @@ describe("goal planning", () => {
     expect(prompt).toContain(`- lead: ${lead.cwd}`);
     expect(prompt).toContain(`- api: ${api.cwd}`);
     expect(prompt).toContain("Only read");
-    expect(prompt).toContain('{"tasks":[{"key":"short-id"');
+    expect(prompt).toContain('"tasks":[{"key":"short-id"');
     await finish(
       created.plannerSessionId!,
       planReply([

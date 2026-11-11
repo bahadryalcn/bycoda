@@ -235,7 +235,8 @@ export async function stopChildren(children) {
   );
 }
 
-async function waitFor(child, ready, signal, timeout = 30_000) {
+// A cold dev server or Host can need well over 30 s before its first response.
+async function waitFor(child, ready, signal, timeout = 180_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     signal.throwIfAborted();
@@ -582,7 +583,7 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         await leases.handoff(lease.id, ["vite", "hmr"]);
         const vite = launch(
           process.execPath,
-          [join(root, "node_modules", "vite", "bin", "vite.js"), "--host", "127.0.0.1"],
+          [join(root, "node_modules", "vite-plus", "bin", "vp"), "dev", "--host", "127.0.0.1"],
           env,
         );
         await waitFor(

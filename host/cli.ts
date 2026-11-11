@@ -20,8 +20,9 @@ import { readHostBuildIdentity } from "./build-identity";
 import { createNativeAuthorityBootstrap } from "./native-authority/bootstrap";
 import { writeFileAtomic } from "./storage/atomic-write";
 import { readRunningHost, verifyHostStopped, type RunningHost as Running } from "./lifecycle-state";
-import { probeHostOwner } from "./owner";
+import { acquireHostOwner, probeHostOwner } from "./owner";
 import { startHostDiagnostics, type HostDiagnostics } from "./diagnostics/host-lifecycle";
+import { createBootTimer } from "./server/boot-phases";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -357,10 +358,31 @@ Connect another computer using an SSH forward to the loopback port.`);
   }
   const diagnostics: HostDiagnostics | undefined =
     command === "serve" ? startHostDiagnostics({ dataDir: directory, version }) : undefined;
+  const boot = command === "serve" ? createBootTimer() : undefined;
+  // `serve` claims the kernel owner lease before the database open and migration, which
+  // dominate start-up. A second starter then loses at once without opening the database,
+  // and a prober reads a booting Host as a live owner, never as a stopped one.
+  let releaseOwner: () => void = () => undefined;
+  if (command === "serve") {
+    boot?.phase("owner-lease");
+    try {
+      releaseOwner = await acquireHostOwner(directory);
+    } catch (error) {
+      boot?.failed();
+      throw error;
+    }
+  }
+  boot?.phase("db-open");
   const { HostStore } = await import("./store");
-  const { armShutdownDeadline } = await import("./server/lifecycle");
+  const { armShutdownDeadline, shutdownExitCode } = await import("./server/lifecycle");
   const store = new HostStore(join(directory, "host.db"));
-  await store.ready;
+  try {
+    await store.ready;
+  } catch (error) {
+    boot?.failed();
+    releaseOwner();
+    throw error;
+  }
   if (command === "pair") {
     const device = await store.issueDevice(option("name", "Desktop"));
     console.log(
@@ -394,6 +416,7 @@ Connect another computer using an SSH forward to the loopback port.`);
   }
   // Keep the forwarding commands independent of the host's engine and providers.
   // esbuild keeps these initializers lazy even in the single-file runtime package.
+  boot?.phase("modules");
   const { configureChildBackend, acquireHarnessBridge } =
     await import("../src/integrations/harness/core/child");
   const { HostChildBackend } = await import("./child-backend");
@@ -401,17 +424,17 @@ Connect another computer using an SSH forward to the loopback port.`);
   const { GenericAcpService } = await import("./providers/generic-acp");
   const { ensureGenericAcpRegistered } =
     await import("../src/integrations/harness/providers/generic-acp/genericAcpAdapter");
-  const { acquireHostOwner } = await import("./owner");
   const { HostEngine } = await import("./engine");
   const { hostProviders } = await import("./providers/providers");
   const { createHostServer } = await import("./server");
-  const releaseOwner = await acquireHostOwner(directory);
+  boot?.phase("app-skills");
   try {
     const { installAppSkills } = await import("./app-skills/app-skills");
     installAppSkills();
   } catch (error) {
     console.error("Could not install the bycoda app skills:", error);
   }
+  boot?.phase("provider-backend");
   const { HostRunWriters } = await import("./execution/run-writers");
   const runWriters = new HostRunWriters();
   const { McpHub } = await import("./mcp/hub/hub");
@@ -449,6 +472,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     configureChildBackend(backend);
     ensureGenericAcpRegistered();
     const release = await acquireHarnessBridge();
+    boot?.phase("providers");
     const available: RemoteProvider[] = [];
     for (const provider of REMOTE_PROVIDERS) {
       if (provider === "acp") continue;
@@ -459,8 +483,10 @@ Connect another computer using an SSH forward to the loopback port.`);
         /* report via descriptor */
       }
     }
+    boot?.phase("engine-scan");
     const engine = new HostEngine(store, hostProviders, undefined, undefined, runWriters);
     await engine.ready;
+    boot?.phase("runtimes");
     const { createSessionIdleGate } = await import("./providers/provider-children-idle");
     backend.setIdleGate(createSessionIdleGate(engine, store));
     const secret = randomBytes(32).toString("base64url");
@@ -577,12 +603,14 @@ Connect another computer using an SSH forward to the loopback port.`);
         await drain("database", cleanup);
         // Native/provider handles can outlive close(). All work has now drained;
         // exit so the service also releases its inherited pipes and log handle.
-        process.exit(failed ? 1 : 0);
+        process.exit(shutdownExitCode(reason, failed));
       })());
+    boot?.phase("listen");
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(port, "127.0.0.1", resolve);
     });
+    boot?.phase("publish");
     mcpHub.warm(port);
     automations.start();
     tasks.start();
@@ -597,6 +625,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     process.once("SIGINT", () => {
       void stop("SIGINT");
     });
+    boot?.ready();
     console.log(`bycoda Host ${store.environmentId} listening on 127.0.0.1:${port}`);
     console.log(
       `Providers: ${available.join(", ") || "none found; install and authenticate a supported provider on this host"}`,
@@ -610,6 +639,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       }
     };
   } catch (error) {
+    boot?.failed();
     const failures: unknown[] = [error];
     for (const close of [() => backend.close(), cleanup]) {
       try {
@@ -748,6 +778,11 @@ async function entry() {
 }
 entry().catch((error) => {
   // `serve` routes console.* into the diagnostic log; the exit reason must still reach the caller.
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  const reason = `${error instanceof Error ? error.message : String(error)}\n`;
   process.exitCode = 1;
+  // A Host that failed to start must exit even when a handle outlived its cleanup: the
+  // service supervisor restarts only an exited process, and a lingering one holds the
+  // database open without ever serving.
+  if (command === "serve") process.stderr.write(reason, () => process.exit(1));
+  else process.stderr.write(reason);
 });

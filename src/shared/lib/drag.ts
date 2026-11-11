@@ -193,18 +193,29 @@ export function setGrabbing(on: boolean) {
   }
 }
 
-/** Block native text selection for the duration of a reorder gesture. */
-export function suppressTextSelection() {
+/**
+ * Block new text selections without touching any style: enough for a gesture whose
+ * pointerdown is already cancelled (a `Sash` drag), and free of a document-wide restyle.
+ */
+export function blockTextSelection() {
   const onSelectStart = (event: Event) => {
     event.preventDefault();
   };
   window.addEventListener("selectstart", onSelectStart);
-  document.documentElement.classList.add("is-reordering");
   window.getSelection()?.removeAllRanges();
   return () => {
     window.removeEventListener("selectstart", onSelectStart);
-    document.documentElement.classList.remove("is-reordering");
     window.getSelection()?.removeAllRanges();
+  };
+}
+
+/** Block native text selection for the duration of a reorder gesture. */
+export function suppressTextSelection() {
+  const restore = blockTextSelection();
+  document.documentElement.classList.add("is-reordering");
+  return () => {
+    document.documentElement.classList.remove("is-reordering");
+    restore();
   };
 }
 

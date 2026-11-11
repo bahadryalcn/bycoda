@@ -67,7 +67,7 @@ export function useTraySessions(
           away: t("Away"),
           dnd: t("Do not disturb"),
           idle: t("Idle"),
-          unknown: t("Unknown"),
+          offline: t("Offline"),
           pending: t("Updating availability..."),
           failed: t("Availability change was not confirmed."),
           retry: t("Retry"),

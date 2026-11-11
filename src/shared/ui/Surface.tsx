@@ -1,12 +1,14 @@
 import type { ComponentPropsWithoutRef, Ref } from "react";
 import styles from "./Surface.module.css";
 
-export type SurfaceVariant = "plain" | "raised" | "outline" | "inset" | "quiet";
+export type SurfaceVariant = "card" | "plain" | "raised" | "outline" | "inset" | "quiet";
 export type SurfacePadding = "none" | "sm" | "md" | "lg";
 
 export type SurfaceProps = ComponentPropsWithoutRef<"div"> & {
   ref?: Ref<HTMLElement>;
   /**
+   * - `card`: the grouped card (`--ui-card-surface` fill, `--ui-card-border` frame); the same role
+   *   as a settings group, so cards look alike on every screen and follow Surface contrast.
    * - `plain`: `--ui-surface` fill, the standard panel/card surface.
    * - `raised`: `--ui-surface-raised` with a `--ui-pane-border` frame (paper white in light themes).
    * - `outline`: no fill, a `--ui-pane-border` frame.

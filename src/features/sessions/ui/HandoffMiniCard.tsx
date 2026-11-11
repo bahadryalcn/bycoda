@@ -25,7 +25,7 @@ export function HandoffMiniCard({ card, onDismiss }: Props) {
 
   return (
     <div className="px-3 pt-2" data-handoff-card>
-      <div className="flex min-w-0 items-center gap-2 rounded-(--ui-control-radius) border border-(--ui-pane-border) bg-(--ui-surface-quiet) px-2 py-1">
+      <div className="flex min-w-0 items-center gap-2 rounded-(--ui-radius-card) border border-(--ui-card-border) bg-(--ui-card-surface) px-2 py-1">
         <Replace className="icon-sm shrink-0 text-(--ui-text-secondary)" aria-hidden />
         <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">{t("Handoff")}</span>
         <span className="flex min-w-0 items-center gap-1.5 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">

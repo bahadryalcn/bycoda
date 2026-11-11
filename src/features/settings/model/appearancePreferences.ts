@@ -44,6 +44,7 @@ export const APPEARANCE_DEFAULTS = {
   terminalWeight: 400,
   terminalLineHeight: 1,
   contrast: 100,
+  surfaceContrast: 100,
   accentReadability: ACCENT_READABILITY_DEFAULT,
   canvasBackground: CANVAS_BACKGROUND_DEFAULT,
   controlDensity: "compact",
@@ -66,6 +67,8 @@ export type AppearancePreferences = {
   terminalWeight: number;
   terminalLineHeight: number;
   contrast: number;
+  /** Percent (50-200) of how strongly cards, fields and dialogs lift off the canvas. */
+  surfaceContrast: number;
   /** Contrast level the accent fill, its ink and text selection must reach. */
   accentReadability: AccentReadability;
   /** Main canvas tone; custom surface colors keep their own tinted canvas (see appearance.ts). */
@@ -133,6 +136,12 @@ export function normalizeAppearancePreferences(
       100,
       APPEARANCE_RANGES.contrast.min,
       APPEARANCE_RANGES.contrast.max,
+    ),
+    surfaceContrast: bounded(
+      value.surfaceContrast,
+      100,
+      APPEARANCE_RANGES.surfaceContrast.min,
+      APPEARANCE_RANGES.surfaceContrast.max,
     ),
     // Records saved before this preference existed have no value: they resolve to "auto".
     accentReadability: isAccentReadability(value.accentReadability)
@@ -224,6 +233,10 @@ export function applyAppearancePreferences(value: AppearancePreferences) {
     "--appearance-secondary-strength",
     `${Math.min(100, (85 * value.contrast) / 100)}%`,
   );
+  // Unitless multiplier the layer tokens read; the default leaves the property unset.
+  if (value.surfaceContrast === APPEARANCE_DEFAULTS.surfaceContrast)
+    root.style.removeProperty("--appearance-layer-strength");
+  else root.style.setProperty("--appearance-layer-strength", String(value.surfaceContrast / 100));
   root.style.setProperty(
     "--appearance-chat-width",
     value.chatWidth === "full" ? "100%" : value.chatWidth === "wide" ? "76rem" : "56rem",

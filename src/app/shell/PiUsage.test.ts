@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { withQueryClient } from "../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../tests/browser/support/queryTest";
 import { act, createElement, StrictMode } from "react";
 import { RATE_LIMIT_POLL_MS } from "../../features/providers/model/rateLimits";
 import { createRoot, type Root } from "react-dom/client";

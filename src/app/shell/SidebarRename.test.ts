@@ -2279,9 +2279,9 @@ describe("collapsed rail Inbox actions", () => {
         }),
       );
     });
-    expect(document.querySelector<HTMLInputElement>('input[aria-label="Group name"]')?.value).toBe(
-      "other",
-    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[aria-label="Project name"]')?.value,
+    ).toBe("other");
   });
 
   it("opens a Tab-focused picker row's menu rather than the highlighted one", async () => {
@@ -2305,9 +2305,9 @@ describe("collapsed rail Inbox actions", () => {
         }),
       );
     });
-    expect(document.querySelector<HTMLInputElement>('input[aria-label="Group name"]')?.value).toBe(
-      "other",
-    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[aria-label="Project name"]')?.value,
+    ).toBe("other");
   });
 
   it("shows a rename from the picker menu in the open picker", async () => {
@@ -2323,11 +2323,11 @@ describe("collapsed rail Inbox actions", () => {
     await act(async () => {
       row().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     });
-    const name = document.querySelector<HTMLInputElement>('input[aria-label="Group name"]')!;
+    const name = document.querySelector<HTMLInputElement>('input[aria-label="Project name"]')!;
     typeTitle(name, "Client site");
     pressKey(name, "Enter");
 
-    expect(document.querySelector('input[aria-label="Group name"]')).toBeNull();
+    expect(document.querySelector('input[aria-label="Project name"]')).toBeNull();
     expect(pickerRow("/workspace/other", "Client site").textContent).toContain("Client site");
   });
 

@@ -75,7 +75,7 @@ pub struct PresenceLabels {
     away: String,
     dnd: String,
     idle: String,
-    unknown: String,
+    offline: String,
     pending: String,
     failed: String,
     retry: String,
@@ -89,7 +89,7 @@ impl Default for PresenceLabels {
             away: "Away".into(),
             dnd: "Do not disturb".into(),
             idle: "Idle".into(),
-            unknown: "Unknown".into(),
+            offline: "Offline".into(),
             pending: "Updating availability...".into(),
             failed: "Availability change was not confirmed.".into(),
             retry: "Retry".into(),
@@ -431,21 +431,14 @@ fn build_menu(app: &AppHandle, name: &str, plan: &Plan) -> tauri::Result<Built> 
         }
     }
     let labels = &plan.labels.presence;
-    let effective = if plan.presence.status_error {
-        crate::assistant_presence::Presence::Unknown
-    } else {
-        plan.presence
-            .status
-            .as_ref()
-            .map(|status| status.state.clone())
-            .unwrap_or(crate::assistant_presence::Presence::Unknown)
-    };
+    // A failed refresh keeps the last confirmed status; no status means the Host is unreachable.
+    let effective = plan.presence.status.as_ref().map(|status| &status.state);
     let caption = match effective {
-        crate::assistant_presence::Presence::Present => &labels.here,
-        crate::assistant_presence::Presence::Away => &labels.away,
-        crate::assistant_presence::Presence::Dnd => &labels.dnd,
-        crate::assistant_presence::Presence::Idle => &labels.idle,
-        _ => &labels.unknown,
+        Some(crate::assistant_presence::Presence::Present) => &labels.here,
+        Some(crate::assistant_presence::Presence::Away) => &labels.away,
+        Some(crate::assistant_presence::Presence::Dnd) => &labels.dnd,
+        Some(crate::assistant_presence::Presence::Idle) => &labels.idle,
+        None => &labels.offline,
     };
     let mut presence = SubmenuBuilder::new(app, format!("{}: {}", labels.availability, caption));
     let available = plan.presence.source_token.is_some()
@@ -461,17 +454,17 @@ fn build_menu(app: &AppHandle, name: &str, plan: &Plan) -> tauri::Result<Built> 
         (
             crate::assistant_presence::Choice::Present,
             &labels.here,
-            effective == crate::assistant_presence::Presence::Present,
+            effective == Some(&crate::assistant_presence::Presence::Present),
         ),
         (
             crate::assistant_presence::Choice::Away,
             &labels.away,
-            effective == crate::assistant_presence::Presence::Away,
+            effective == Some(&crate::assistant_presence::Presence::Away),
         ),
         (
             crate::assistant_presence::Choice::Dnd,
             &labels.dnd,
-            effective == crate::assistant_presence::Presence::Dnd,
+            effective == Some(&crate::assistant_presence::Presence::Dnd),
         ),
     ]
     .into_iter()

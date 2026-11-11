@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import {
   MissingRemoteMachine,
@@ -312,7 +313,16 @@ function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSessio
             {issues.length ? (
               <RemoteOutboxNotice project={project.key} environment={machine.environmentId} />
             ) : (
-              <Alert tone="warning">{`${review} ${state.error}`}</Alert>
+              <Alert
+                tone="warning"
+                action={
+                  fitsOneLine(state.error) ? undefined : (
+                    <ErrorDetails title={review} detail={state.error} />
+                  )
+                }
+              >
+                {fitsOneLine(state.error) ? `${review} ${state.error}` : review}
+              </Alert>
             )}
             <div>
               <Button onClick={retry}>{t("Retry")}</Button>

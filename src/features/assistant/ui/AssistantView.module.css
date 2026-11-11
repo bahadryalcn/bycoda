@@ -23,17 +23,6 @@
 .section + .section {
   margin-block-start: 20px;
 }
-.section h2 {
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  margin: 0;
-}
-.section h3 {
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-  color: var(--ui-text-secondary);
-  margin: 0;
-}
 .muted {
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-micro);
@@ -115,22 +104,6 @@
   gap: 10px;
   min-inline-size: 0;
 }
-.modelField,
-.scheduleField {
-  border: 0;
-  padding: 0;
-  margin: 0;
-  min-inline-size: 0;
-}
-/* Same label role as the shared Field label, so the fieldset legend reads like its neighbours. */
-.modelField legend,
-.scheduleField legend {
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-  line-height: 1.4;
-  color: inherit;
-  padding-block-end: 6px;
-}
 /* The field presentation is sized for body copy; here it sits beside Select and TextField. */
 .modelField button:global(.model-picker-field-trigger)[data-model-picker-presentation="field"] {
   font-size: var(--ui-font-caption);
@@ -169,8 +142,6 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
 }
 .content[data-view="Jobs"] .collectionTools > .jobsTitle {
   flex: 1 1 auto;

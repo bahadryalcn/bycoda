@@ -27,6 +27,11 @@ export const MAX_RUNTIME_RETRIES = 2;
 /** Automatic continuations when an unattended worker asks the owner a question. */
 export const MAX_QUESTION_CONTINUATIONS = 2;
 
+/** Fresh reviews started because the working copy changed while a reviewer inspected it. */
+export const MAX_REVIEW_RERUNS = 2;
+
 export const RUNTIME_RETRY_NOTICE = "runtime-retry:";
+
+export const REVIEW_RERUN_NOTICE = "review-rerun:";
 
 export const QUESTION_NOTICE = "question:";

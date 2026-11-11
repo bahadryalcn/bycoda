@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Combobox } from "../../../shared/ui/Combobox";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -140,8 +141,7 @@ export function VoicePersonaDialog({
             onValueChange={(tone) => change({ tone: tone.slice(0, PERSONA_LIMITS.tone) })}
           />
         </div>
-        <fieldset className={styles.duties}>
-          <legend className={styles.legend}>{t("Tasks")}</legend>
+        <FieldGroup className={styles.duties} legend={t("Tasks")} gap="sm">
           <div className={styles.choices}>
             {Object.entries(PERSONA_DUTIES).map(([duty, { label }]) => (
               <Checkbox
@@ -161,7 +161,7 @@ export function VoicePersonaDialog({
             maxLength={PERSONA_LIMITS.customDuties}
             onChange={(event) => change({ customDuties: event.target.value })}
           />
-        </fieldset>
+        </FieldGroup>
         {!styleOnly ? (
           <TextareaField
             label={t("Ground rules")}

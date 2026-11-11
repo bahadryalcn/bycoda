@@ -260,7 +260,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--ui-pane-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
 }
 .device-panel-setup-platforms > li {
@@ -355,15 +355,15 @@
 .device-panel-device-list {
   display: grid;
   inline-size: 100%;
-  border: 1px solid var(--ui-pane-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
   overflow: hidden;
 }
 .device-panel-waiting > .device-panel-device-row {
   inline-size: 100%;
-  border: 1px solid var(--ui-pane-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-workspace-panel);
+  background: var(--ui-card-surface);
 }
 .device-panel-device-row {
   display: flex;

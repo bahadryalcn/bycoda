@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n";
 import { useRemoteMachines } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import { decisionModelsClient, DecisionModelsSettings } from "../../decision-models";
+import { Heading } from "../../../shared/ui/Heading";
 import { SettingsFeedback, settingDomId } from "./settingsControls";
 
 /**
@@ -23,9 +24,9 @@ export function ProviderDecisionModels() {
       aria-labelledby={headingId}
       className="flex min-w-0 flex-col gap-4"
     >
-      <h2 id={headingId} className="settings-section-title">
+      <Heading id={headingId} className="settings-section-title">
         {t("Decision models")}
-      </h2>
+      </Heading>
       {client ? (
         <DecisionModelsSettings client={client} />
       ) : (

@@ -81,12 +81,12 @@
 }
 .handle {
   flex-shrink: 0;
+  /* The wave visual is wider than the square icon button. */
+  inline-size: auto;
+  padding-inline: 4px;
+  aspect-ratio: auto;
   touch-action: none;
   cursor: grab;
-}
-.handle [data-small] {
-  inline-size: 40px;
-  block-size: 32px;
 }
 .heading {
   display: grid;
@@ -101,10 +101,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   margin: 0;
-}
-.title {
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
 }
 .summary {
   color: var(--ui-text-secondary);

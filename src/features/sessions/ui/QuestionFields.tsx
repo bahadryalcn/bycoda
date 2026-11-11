@@ -3,6 +3,7 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Plus } from "../../../shared/ui/icons";
 import { t, useT } from "../../../shared/i18n";
 import { CUSTOM_OPTION_ID, isOtherOption, type UserQuestion } from "../model/userQuestion";
@@ -124,7 +125,9 @@ export function QuestionFields({
   };
 
   return (
-    <fieldset
+    <FieldGroup
+      variant="bare"
+      legend={question.multiSelect || options.length === 0 ? question.prompt : undefined}
       className={styles.fields}
       ref={fields}
       onKeyDownCapture={(event) => {
@@ -132,7 +135,6 @@ export function QuestionFields({
         if (index >= 0) onOptionKeyDown(event, index);
       }}
     >
-      {question.multiSelect || options.length === 0 ? <legend>{question.prompt}</legend> : null}
       {question.multiSelect ? (
         <p className="[margin-block-start:0.5rem] text-ui-caption text-(--ui-text-secondary)">
           {t("Select all that apply")}
@@ -249,7 +251,7 @@ export function QuestionFields({
           </Button>
         )
       ) : null}
-    </fieldset>
+    </FieldGroup>
   );
 }
 

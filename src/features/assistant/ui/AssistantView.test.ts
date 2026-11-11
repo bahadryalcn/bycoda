@@ -198,7 +198,7 @@ it("keeps every settings field mounted while switching settings pages", async ()
   expect(cost.querySelectorAll("input,button,select").length).toBe(fields.length);
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
 });
-it("neutralizes cached availability while the owner's presence change is pending or unconfirmed", async () => {
+it("keeps the confirmed availability while the owner's presence change is pending or unconfirmed", async () => {
   const now = Date.now();
   mock.snapshot!.automaticPresence = {
     state: "present",
@@ -222,9 +222,10 @@ it("neutralizes cached availability while the owner's presence change is pending
   expect(presence()).toContain("Here");
   await click("Presence");
   await click("I'm back");
-  expect(presence()).toContain("Unknown");
+  expect(presence()).toContain("Here");
   await act(async () => reject(new Error("Unconfirmed owner update")));
-  expect(presence()).toContain("Unknown");
+  expect(presence()).toContain("Here");
+  expect(presence()).not.toContain("Unknown");
   expect(mock.snapshot!.effectivePresence).toBe("present");
 });
 

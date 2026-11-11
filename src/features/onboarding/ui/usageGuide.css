@@ -1,11 +1,10 @@
 .usage-guide-panel {
-  --text-2xl: var(--ui-font-heading, 1.25rem);
   display: flex;
   flex-direction: column;
   inline-size: min(520px, calc(100vw - 32px));
   max-block-size: calc(100dvh - 48px);
   overflow: clip;
-  border: 1px solid var(--ui-tone-neutral-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--radius-panel);
   background: var(--ui-surface-floating);
   color: var(--color-content);
@@ -52,12 +51,6 @@
   min-inline-size: 0;
 }
 .usage-guide-intro h2 {
-  margin: 0;
-  font-family: var(--font-sans);
-  font-size: var(--text-2xl);
-  font-weight: 500;
-  letter-spacing: normal;
-  line-height: 1.2;
   text-wrap: balance;
 }
 .usage-guide-companion {
@@ -121,11 +114,8 @@
   border-block-start: 1px solid var(--color-stroke);
   padding-block-start: var(--space-4);
 }
-.usage-guide-shortcut-section h3 {
+.usage-guide-shortcut-title {
   margin-block: 0 var(--space-2);
-  font-size: var(--text-ui-caption);
-  font-weight: 500;
-  color: var(--ui-text-muted);
 }
 .usage-guide-footer {
   flex-shrink: 0;
@@ -206,11 +196,6 @@
 }
 .usage-guide-tour-title {
   margin: 0 0 var(--space-2);
-  font-family: var(--font-sans);
-  font-size: var(--text-ui-heading);
-  font-weight: 500;
-  letter-spacing: normal;
-  line-height: 1.25;
   text-wrap: balance;
 }
 .usage-guide-panel--compact .usage-guide-content {

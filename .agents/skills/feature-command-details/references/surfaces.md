@@ -18,4 +18,4 @@ Paths are repository-root relative. Read for provider output, cross-view consist
 
 ## Focused checks
 
-Search adjacent tests for the consumers/models above, plus core apply/preview and changed provider protocol/watchers. Browser entry points include `tests/browser/subagent-relay.spec.ts` and `tests/browser/session-usability.spec.ts`; add deliberate no-output, remote-load and follow-tail coverage when those behaviors change. Locale labels use actual sentence families such as Command details, Output, Copy, Stop and Output was truncated.
+Search adjacent tests for the consumers/models above, plus core apply/preview and changed provider protocol/watchers. Browser entry points include `tests/browser/chat/subagent-relay.spec.ts` and `tests/browser/sessions/session-usability.spec.ts`; add deliberate no-output, remote-load and follow-tail coverage when those behaviors change. Locale labels use actual sentence families such as Command details, Output, Copy, Stop and Output was truncated.

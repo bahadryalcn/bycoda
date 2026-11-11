@@ -78,9 +78,6 @@
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  color: var(--color-content);
 }
 .task-filter-field {
   display: grid;

@@ -63,12 +63,9 @@
   flex-direction: column;
   gap: 1px;
 }
-.guide-hub-group h3 {
+.guide-hub-group-title {
   margin: 0;
   padding: 0 var(--space-2) var(--space-1);
-  font-size: var(--text-ui-caption);
-  font-weight: 500;
-  color: var(--ui-text-muted);
 }
 .guide-hub-nav-label {
   flex: 1;
@@ -103,13 +100,6 @@
   justify-content: space-between;
   gap: var(--space-1) var(--space-3);
 }
-.guide-hub-content h2 {
-  margin: 0;
-  font-family: var(--font-sans);
-  font-size: var(--text-ui-heading);
-  font-weight: 500;
-  line-height: 1.25;
-}
 .guide-hub-count {
   font-size: var(--text-ui-caption);
   font-variant-numeric: tabular-nums;
@@ -133,11 +123,8 @@
   font-size: var(--text-ui-caption);
   color: var(--ui-text-secondary);
 }
-.guide-hub-section h3 {
+.guide-hub-section-title {
   margin: 0 0 var(--space-2);
-  font-size: var(--text-ui-caption);
-  font-weight: 500;
-  color: var(--ui-text-muted);
 }
 .guide-hub-steps {
   display: flex;
@@ -202,7 +189,7 @@
   .guide-hub-group {
     flex-direction: row;
   }
-  .guide-hub-group h3 {
+  .guide-hub-group-title {
     display: none;
   }
   .guide-hub-start-next {

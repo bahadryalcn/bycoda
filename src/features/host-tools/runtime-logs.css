@@ -55,7 +55,7 @@
 }
 
 .runtime-logs-disclosure > summary:active {
-  background: var(--color-selection);
+  background: var(--ui-surface-pressed);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -256,7 +256,7 @@
 }
 
 .runtime-log-row[data-selected="true"] {
-  background: var(--color-selection);
+  background: var(--ui-surface-selected);
 }
 
 .runtime-log-select {
@@ -347,7 +347,7 @@
   padding-inline: 5px;
   border-radius: var(--ui-control-radius);
   color: var(--color-content);
-  background: var(--color-selection);
+  background: var(--ui-surface-selected);
 }
 
 .runtime-log-details-trigger {
@@ -544,7 +544,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .runtime-log-summary:hover {
-    background: var(--color-selection-subtle);
+    background: var(--ui-surface-hover);
   }
 }
 

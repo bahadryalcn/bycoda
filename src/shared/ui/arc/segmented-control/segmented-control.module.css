@@ -101,7 +101,7 @@
   inset: 0;
   border: 1px solid var(--border);
   border-radius: inherit;
-  background: var(--surface);
+  background: var(--ui-surface-selected);
   box-shadow: var(--shadow-resting);
 }
 .label {

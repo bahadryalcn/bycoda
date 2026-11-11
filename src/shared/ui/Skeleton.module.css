@@ -31,3 +31,30 @@
 .held {
   visibility: hidden;
 }
+
+/* Layout-shaped placeholder piece (SkeletonBar). Same tone and finite pulse; pieces pulse one
+   beat apart so a composed skeleton reads as one calm wave. */
+.bar {
+  display: block;
+  flex: none;
+  inline-size: var(--skeleton-bar-width, 100%);
+  max-inline-size: 100%;
+  block-size: var(--skeleton-bar-height, 0.75rem);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface-selected);
+}
+.bar[data-shape="square"] {
+  inline-size: var(--skeleton-bar-width, var(--skeleton-bar-height, 0.75rem));
+  border-radius: calc(var(--radius-control) * 0.75);
+}
+.bar[data-shape="pill"] {
+  border-radius: var(--radius-pill);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .bar {
+    animation: skeleton-inline-pulse 1.8s var(--ease-in-out) calc(var(--index, 0) * 90ms) 11 both;
+  }
+  :global(html[data-decorative-motion="off"]) .bar {
+    animation: none;
+  }
+}

@@ -139,7 +139,7 @@ it("uses Host receipts and canonical activity through restart", async () => {
       version: 0,
       createdAt: time,
       updatedAt: time,
-      value: { state: "present", updatedAt: time },
+      value: { state: "present", since: time, updatedAt: time, supported: true },
     });
     await repository.put("jobs", {
       id: "job",

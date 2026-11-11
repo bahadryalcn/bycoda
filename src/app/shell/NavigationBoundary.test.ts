@@ -88,17 +88,25 @@ it("explains a slow load and clears its timer when the page arrives", async () =
       }),
     { suspense: false },
   );
+  const onBack = vi.fn();
   await act(async () =>
     root.render(
       createElement(NavigationBoundary, {
         name: "Tasks",
-        onBack: vi.fn(),
+        onBack,
         children: createElement(Tasks),
       }),
     ),
   );
-  await act(async () => vi.advanceTimersByTime(10_000));
-  expect(container.textContent).toContain("taking longer to load");
+  expect(container.textContent).not.toContain("taking longer to load");
+  await act(async () => vi.advanceTimersByTime(3_000));
+  const card = container.querySelector("[data-loading-card]")!;
+  expect(card.textContent).toContain("taking longer to load");
+  const back = [...card.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Back to workspace"),
+  )!;
+  await act(async () => back.click());
+  expect(onBack).toHaveBeenCalledOnce();
   await act(async () => finish({ default: () => createElement("main", null, "Task board") }));
   expect(container.textContent).toBe("Task board");
   expect(vi.getTimerCount()).toBe(0);

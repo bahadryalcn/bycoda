@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
+import { FileField } from "../../../../shared/ui/FileField";
+import { Heading } from "../../../../shared/ui/Heading";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
-import { TextField } from "../../../../shared/ui/TextField";
 import { SOCIAL_PLATFORM_NAMES, type SocialAccount } from "../../model/social";
 import type { SocialList } from "../../model/audience";
 import type { ImportResult } from "../../model/socialActions";
@@ -189,15 +191,12 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
       }
     >
       <div className="audience-stack">
-        <TextField
+        <FileField
           label={t("File")}
-          type="file"
           accept=".csv,.xlsx,.json,text/csv,application/json"
           disabled={reading || importing}
-          onChange={(event) =>
-            void chooseFile(event.target.files?.[0]).catch((err: unknown) =>
-              setFileError(errorMessage(err)),
-            )
+          onFiles={(files) =>
+            void chooseFile(files[0]).catch((err: unknown) => setFileError(errorMessage(err)))
           }
         />
         {reading ? <p className="audience-muted">{t("Reading the file…")}</p> : null}
@@ -245,8 +244,7 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
               ]}
               onChange={setListId}
             />
-            <fieldset className="audience-check-group">
-              <legend>{t("Columns")}</legend>
+            <FieldGroup legend={t("Columns")} gap="sm">
               {IMPORT_FIELDS.map((field) => (
                 <LabeledSelect
                   key={field}
@@ -266,13 +264,13 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                   }
                 />
               ))}
-            </fieldset>
+            </FieldGroup>
 
             {attention.length ? (
               <section aria-labelledby="import-issues-heading" className="audience-stack">
-                <h3 id="import-issues-heading" className="audience-heading">
+                <Heading size="item" id="import-issues-heading" className="audience-heading">
                   {t("Rows that need attention")}
-                </h3>
+                </Heading>
                 <ul className="audience-list">
                   {attention.slice(0, REPORT_LIMIT).map((check) => (
                     <li key={check.row}>

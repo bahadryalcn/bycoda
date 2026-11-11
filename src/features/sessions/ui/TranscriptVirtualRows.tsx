@@ -1,5 +1,6 @@
 import { stableCodeDisclosureIdentity } from "./stableCodeDisclosureIdentity";
 import { flushSync } from "react-dom";
+import { deferDuringResize } from "../../../shared/lib/resizeGesture";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
   Fragment,
@@ -75,6 +76,8 @@ function MeasuredTranscriptRows({
   const [scroll, setScroll] = useState<HTMLElement | null>(null);
   const [margin, setMargin] = useState(0);
   const [width, setWidth] = useState(0);
+  // Newest measured width, ahead of `width` while a live resize holds the commit back.
+  const liveWidth = useRef(0);
   const [focus, setFocus] = useState<string | null>(null);
   const [selection, setSelection] = useState<readonly number[] | null>(null);
   const anchor = useRef<{ changed: () => void; release: () => void } | null>(null);
@@ -132,7 +135,7 @@ function MeasuredTranscriptRows({
       const row = rows[index];
       if (!height && !scroll?.clientHeight)
         return (row && sizes.get(row.id)?.height) ?? row?.estimate ?? ESTIMATED_ROW_HEIGHT;
-      if (row && height >= 0) sizes.set(row.id, { width, height });
+      if (row && height >= 0) sizes.set(row.id, { width: liveWidth.current || width, height });
       anchor.current?.changed();
       return height;
     },
@@ -143,17 +146,28 @@ function MeasuredTranscriptRows({
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
-    const measure = () => {
+    // A committed width clears every measured row size (`virtual.measure()` below), so a live
+    // resize commits it once at the end instead of letting scrollHeight fall back to estimates
+    // on each frame.
+    const commit = () => {
+      const next = element.getBoundingClientRect().width;
+      setWidth((previous) => (Math.abs(previous - next) < 0.5 ? previous : next));
+    };
+    const commitWidth = deferDuringResize(commit);
+    // Observers pass their entries as the first argument; only the mount call is immediate.
+    const measure = (immediate?: unknown) => {
       const parent = closestScroll(element);
       setScroll((previous) => (previous === parent ? previous : parent));
       const rect = element.getBoundingClientRect();
-      setWidth((previous) => (Math.abs(previous - rect.width) < 0.5 ? previous : rect.width));
+      liveWidth.current = rect.width;
+      if (immediate === true) commit();
+      else commitWidth();
       if (parent) {
         const next = rect.top - parent.getBoundingClientRect().top + parent.scrollTop;
         setMargin((previous) => (Math.abs(previous - next) < 0.5 ? previous : next));
       }
     };
-    measure();
+    measure(true);
     if (!virtualized) return;
     const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     const mutations =
@@ -168,6 +182,7 @@ function MeasuredTranscriptRows({
       if (node === scroll || node.classList.contains("agent-transcript")) break;
     }
     return () => {
+      commitWidth.cancel();
       resize?.disconnect();
       mutations?.disconnect();
     };

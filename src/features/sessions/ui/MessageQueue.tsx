@@ -2,7 +2,6 @@ import { activeQueueFeedback, type QueueFeedback } from "./queueFeedback";
 import { canSendQueueMessage } from "../model/queueAction";
 import { useAcceptedQueueDeparture, type MessageQueueProps } from "./useAcceptedQueueDeparture";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import {
   DeliveryProgressNotice,
@@ -441,9 +440,9 @@ export function MessageQueue({
         ) : null}
         <DeliveryProgressNotice sessionId={sessionId} messages={messages} embedded />
         {holdDetail && !delivery && (holdDetail.length > 180 || holdDetail.includes("\n")) ? (
-          <Disclosure size="sm" summary={t("Details")} className="px-1 pb-1">
-            <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{holdDetail}</p>
-          </Disclosure>
+          <p className="max-h-32 overflow-y-auto px-1 pb-1 whitespace-pre-wrap text-(--ui-text-muted) [overflow-wrap:anywhere]">
+            {holdDetail}
+          </p>
         ) : null}
         <div
           className="max-h-[min(30dvh,15rem)] min-h-0 overflow-y-auto overscroll-contain"

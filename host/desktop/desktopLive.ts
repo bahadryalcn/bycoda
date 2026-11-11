@@ -18,6 +18,10 @@ import type {
   HostProjectDirectory,
 } from "../../src/features/connections/model/protocol";
 import { canonicalHostPath, hostProjectId } from "../../src/features/sync/model/syncProjectId";
+import { createDedupedWarn } from "../diagnostics/log-dedupe";
+import { createLogger } from "../diagnostics/logger";
+
+const log = createLogger("host.desktop.live");
 
 /** Past this without a heartbeat, the desktop app is gone (closed or crashed)
  * and none of its sessions is running. */
@@ -173,7 +177,19 @@ export class DesktopLive {
   onIdle?: (sessionId: string, clientId: string, reason?: "idle" | "gone") => void;
   /** When the in-flight mark of a session was first seen while no app had beat. */
   private storedSince = new Map<string, number>();
-  private expiredStoredWarned = new Set<string>();
+  /**
+   * One line per session for the life of this Host process. The stale mark stays in the
+   * desktop database, so every later read finds it again and a new belief window expires.
+   */
+  private readonly warnExpiredStored = createDedupedWarn({
+    windowMs: Number.POSITIVE_INFINITY,
+    maxKeys: 4096,
+    write: (sessionId) =>
+      log.warn(
+        "desktop session still carries an in-flight mark with no desktop heartbeat; treating it as not running",
+        { sessionId },
+      ),
+  });
   constructor(private readonly now: () => number = Date.now) {}
 
   /** Only running state, including heartbeat/stored-mark expiry, influences
@@ -373,7 +389,6 @@ export class DesktopLive {
     );
     this.clients.set(clientId, this.now());
     this.storedSince.clear();
-    this.expiredStoredWarned.clear();
     for (const [id, beatAt] of this.clients) {
       if (this.now() - beatAt <= DESKTOP_BEAT_STALE_MS) continue;
       this.clients.delete(id);
@@ -483,7 +498,6 @@ export class DesktopLive {
     if (alive === undefined) {
       if (!stored) {
         this.storedSince.delete(id);
-        this.expiredStoredWarned.delete(id);
         return false;
       }
       // No app has beat since this host started: the mark is all there is. It is
@@ -493,14 +507,7 @@ export class DesktopLive {
       while (this.storedSince.size > 512)
         this.storedSince.delete(this.storedSince.keys().next().value!);
       if (this.now() - since < DESKTOP_STORED_RUNNING_MS) return true;
-      if (!this.expiredStoredWarned.has(id)) {
-        this.expiredStoredWarned.add(id);
-        if (this.expiredStoredWarned.size > 512)
-          this.expiredStoredWarned.delete(this.expiredStoredWarned.values().next().value!);
-        console.warn(
-          `[bycoda] desktop session ${id} still carries an in-flight mark with no desktop heartbeat; treating it as not running.`,
-        );
-      }
+      this.warnExpiredStored(id);
       return false;
     }
     const session = this.sessions.get(id);

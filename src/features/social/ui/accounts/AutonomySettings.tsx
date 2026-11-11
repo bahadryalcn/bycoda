@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
+import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Select } from "../../../../shared/ui/Select";
@@ -133,7 +135,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
   if (!policy || !draft) {
     return (
       <section className="social-card" aria-label={t("Autonomy")}>
-        <h3 className="social-card-title">{t("Autonomy")}</h3>
+        <Heading size="item">{t("Autonomy")}</Heading>
         {loadError ? (
           <InlineMessage tone="danger">{loadError}</InlineMessage>
         ) : (
@@ -213,7 +215,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
 
   return (
     <section className="social-card" aria-label={t("Autonomy")}>
-      <h3 className="social-card-title">{t("Autonomy")}</h3>
+      <Heading size="item">{t("Autonomy")}</Heading>
       <p className="social-card-description">
         {t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}
       </p>
@@ -281,8 +283,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
               setDraft({ ...draft, hours: { ...draft.hours, end: event.currentTarget.value } })
             }
           />
-          <fieldset className="social-checks">
-            <legend>{t("Days")}</legend>
+          <FieldGroup legend={t("Days")} layout="row">
             {weekdayLabels(getLocale()).map(({ day, label }) => (
               <Checkbox
                 disabled={disabled || is("autonomy")}
@@ -303,7 +304,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
                 className="social-check"
               />
             ))}
-          </fieldset>
+          </FieldGroup>
         </div>
       ) : null}
       <div className="social-field-row">

@@ -379,9 +379,10 @@ describe("pane docking UI", () => {
       releasePointerCapture: vi.fn(),
     });
     pointer(sash, "pointerdown", 200, 100);
-    expect(document.body.style.cursor).toBe("col-resize");
+    // The drag cursor lives on one full-window shield, not on the document.
+    expect(document.querySelector("[data-resize-shield]")).not.toBeNull();
     render(leaf("a"));
-    expect(document.body.style.cursor).toBe("");
+    expect(document.querySelector("[data-resize-shield]")).toBeNull();
     expect(document.documentElement.classList.contains("is-reordering")).toBe(false);
   });
 

@@ -14,7 +14,7 @@
   "include": [
     "runner.playwright.config.ts",
     "fixture-configs.ts",
-    "transcript.playwright.config.ts",
+    "chat/transcript.playwright.config.ts",
     "../../playwright.config.ts"
   ]
 }

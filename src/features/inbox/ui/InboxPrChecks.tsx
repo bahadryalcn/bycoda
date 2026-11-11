@@ -5,6 +5,8 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Heading } from "../../../shared/ui/Heading";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -27,7 +29,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle,
-  ChevronRight,
   CircleDashed,
   CircleHelp,
   CircleX,
@@ -293,6 +294,154 @@ function PrCheckRow({
   );
   const className =
     "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-left";
+  const statusCell = (
+    <span className={`shrink-0 text-left ${wideStatus ? "w-24" : "w-14"}`}>
+      {repairItem ? (
+        <CheckRepairStatus item={repairItem} />
+      ) : (
+        <Badge tone={mark.tone} size="xs" appearance="subtle">
+          {status}
+        </Badge>
+      )}
+    </span>
+  );
+  const durationCell = (
+    <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-ui-caption tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
+      {duration}
+    </span>
+  );
+  const fixButton = onFix ? (
+    <Button
+      iconOnly
+      label={t("Fix {p0} with AI", { p0: check.name })}
+      variant="ghost"
+      type="button"
+      ref={fixRef}
+      onClick={(event) => onFix(event.currentTarget)}
+      disabled={fixDisabled}
+      aria-haspopup="dialog"
+      aria-expanded={fixOpen}
+      aria-label={t("Fix {p0} with AI", { p0: check.name })}
+      tooltip={t("Fix with AI")}
+      data-no-drag=""
+      className="shrink-0"
+    >
+      <Sparkles className="icon-sm" strokeWidth={1.75} />
+    </Button>
+  ) : (
+    <span className="size-7 shrink-0" aria-hidden="true" />
+  );
+  const linkButton = linked ? (
+    <Button
+      iconOnly
+      label={t("Open {p0} check", { p0: check.name })}
+      variant="ghost"
+      type="button"
+      tooltip={t("View full log")}
+      aria-label={t("Open {p0} check", { p0: check.name })}
+      data-no-drag=""
+      onClick={() => openUrlSafely(url)}
+    >
+      <ExternalLink className="icon-xs" strokeWidth={1.75} />
+    </Button>
+  ) : (
+    <span className="size-6 shrink-0" aria-hidden="true" />
+  );
+  const detailsBody = expanded ? (
+    <div
+      id={detailsId}
+      className="min-w-0 space-y-3 py-3 pl-10 pr-3 text-ui-caption @max-[420px]/checks:pl-3"
+    >
+      {loading && !details && !error ? (
+        <LoadingText className="px-2 py-1">{t("Loading steps…")}</LoadingText>
+      ) : null}
+      {error ? (
+        <Alert tone="danger">
+          <p>{t("Could not load job details.")}</p>
+          <p className="break-words text-ui-micro">{error}</p>
+          <Button
+            variant="ghost"
+            type="button"
+            loading={loading}
+            onClick={() => setRetry((value) => value + 1)}
+          >
+            {t("Retry details")}
+          </Button>
+        </Alert>
+      ) : null}
+      {details ? (
+        <>
+          {details.annotations.length ? (
+            <CheckEvidence
+              annotations={details.annotations}
+              cwd={cwd}
+              repo={repo}
+              headOid={headOid}
+            />
+          ) : null}
+          {details.steps.length ? (
+            <Disclosure
+              size="sm"
+              summary={
+                <>
+                  {t("View run steps")}{" "}
+                  <span className="text-ui-caption text-(--ui-text-secondary) @max-[420px]/checks:hidden">
+                    {describeCheckCounts(countChecks(details.steps))}
+                  </span>
+                </>
+              }
+            >
+              <ol className="space-y-1" aria-label={t("{p0} steps", { p0: check.name })}>
+                {details.steps.map((step, index) => {
+                  const stepMark = checkMark(step.state);
+                  return (
+                    <li
+                      key={index}
+                      className={`flex items-center gap-2 rounded px-2 py-1 ${step.state === "fail" ? "bg-(--ui-tone-danger-subtle)" : ""}`}
+                    >
+                      <MarkGlyph mark={stepMark} size="md" />
+                      <span className="min-w-0 flex-1 break-words text-(--ui-text-secondary)">
+                        {step.name}
+                        <span className="sr-only">: {checkStateLabel(step.state)}</span>
+                      </span>
+                      <span className="shrink-0 tabular-nums text-(--ui-text-secondary)">
+                        {checkDuration(step.startedAt, step.completedAt)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </Disclosure>
+          ) : (
+            <EmptyState
+              size="inline"
+              kind="empty"
+              description={t("No steps reported for this job.")}
+            />
+          )}
+          {check.state === "fail" && !details.annotations.length && !details.notice ? (
+            <EmptyState
+              size="inline"
+              kind="empty"
+              description={t("No error annotations reported. View the full log at the check URL.")}
+            />
+          ) : null}
+          {details.log ? (
+            <Disclosure size="sm" className="mt-3" summary={t("View logs")}>
+              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-ui-micro">
+                {details.log}
+              </pre>
+            </Disclosure>
+          ) : null}
+          {/* Always mounted so a notice is announced when it first appears. */}
+          <LiveText
+            className="mt-3 block text-(--ui-text-secondary) empty:hidden"
+            text={details.notice ?? ""}
+          />
+        </>
+      ) : null}
+    </div>
+  ) : null;
   return (
     <li
       {...rowHint.trigger}
@@ -313,210 +462,55 @@ function PrCheckRow({
       tabIndex={-1}
       className="min-w-0 rounded-(--ui-control-radius)"
     >
-      <ActionHost className="min-w-0 gap-2 px-2 py-1 @max-[420px]/checks:gap-1">
-        {expandable ? (
-          <Button
-            variant="item"
-            fullWidth
-            motion="none"
-            className="w-full min-w-0 flex-1 text-left"
-            type="button"
-            aria-label={t("{p0} details", { p0: check.name })}
-            aria-expanded={expanded}
-            aria-controls={detailsId}
-            onClick={() => setExpanded(!expanded)}
-          >
-            {body}
-          </Button>
-        ) : linked ? (
-          // The desktop WebView cannot rely on target=_blank, so rows open
-          // through the same opener as every other external link.
-          <Button
-            variant="item"
-            fullWidth
-            motion="none"
-            className="w-full min-w-0 flex-1 text-left"
-            type="button"
-            aria-label={title}
-            onClick={() => openUrlSafely(url)}
-          >
-            {body}
-          </Button>
-        ) : (
-          <div className={className}>{body}</div>
-        )}
-        <span className={`shrink-0 text-left ${wideStatus ? "w-24" : "w-14"}`}>
-          {repairItem ? (
-            <CheckRepairStatus item={repairItem} />
-          ) : (
-            <Badge tone={mark.tone} size="xs" appearance="subtle">
-              {status}
-            </Badge>
-          )}
-        </span>
-        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-ui-caption tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
-          {duration}
-        </span>
-        {onFix ? (
-          <Button
-            iconOnly
-            label={t("Fix {p0} with AI", { p0: check.name })}
-            variant="ghost"
-            type="button"
-            ref={fixRef}
-            onClick={(event) => onFix(event.currentTarget)}
-            disabled={fixDisabled}
-            aria-haspopup="dialog"
-            aria-expanded={fixOpen}
-            aria-label={t("Fix {p0} with AI", { p0: check.name })}
-            tooltip={t("Fix with AI")}
-            data-no-drag=""
-            className="shrink-0"
-          >
-            <Sparkles className="icon-sm" strokeWidth={1.75} />
-          </Button>
-        ) : (
-          <span className="size-7 shrink-0" aria-hidden="true" />
-        )}
-        {expandable ? (
-          <Button
-            iconOnly
-            label={t(expanded ? "Collapse {p1} details" : "Expand {p1} details", {
-              p1: check.name,
-            })}
-            variant="ghost"
-            type="button"
-            aria-label={t(expanded ? "Collapse {p1} details" : "Expand {p1} details", {
-              p1: check.name,
-            })}
-            aria-expanded={expanded}
-            aria-controls={detailsId}
-            onClick={() => setExpanded(!expanded)}
-            data-no-drag=""
-            className="shrink-0"
-          >
-            <ChevronRight
-              className={`icon-xs transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
-              strokeWidth={1.75}
-            />
-          </Button>
-        ) : (
-          <span className="size-7 shrink-0" aria-hidden="true" />
-        )}
-        {linked ? (
-          <Button
-            iconOnly
-            label={t("Open {p0} check", { p0: check.name })}
-            variant="ghost"
-            type="button"
-            tooltip={t("View full log")}
-            aria-label={t("Open {p0} check", { p0: check.name })}
-            data-no-drag=""
-            onClick={() => openUrlSafely(url)}
-          >
-            <ExternalLink className="icon-xs" strokeWidth={1.75} />
-          </Button>
-        ) : (
-          <span className="size-6 shrink-0" aria-hidden="true" />
-        )}
-      </ActionHost>
-      {expanded ? (
-        <div
-          id={detailsId}
-          className="min-w-0 space-y-3 py-3 pl-10 pr-3 text-ui-caption @max-[420px]/checks:pl-3"
-        >
-          {loading && !details && !error ? (
-            <LoadingText className="px-2 py-1">{t("Loading steps…")}</LoadingText>
-          ) : null}
-          {error ? (
-            <Alert tone="danger">
-              <p>{t("Could not load job details.")}</p>
-              <p className="break-words text-ui-micro">{error}</p>
-              <Button
-                variant="ghost"
-                type="button"
-                loading={loading}
-                onClick={() => setRetry((value) => value + 1)}
-              >
-                {t("Retry details")}
-              </Button>
-            </Alert>
-          ) : null}
-          {details ? (
+      {expandable ? (
+        <Disclosure
+          variant="row"
+          size="sm"
+          chevron="end"
+          open={expanded}
+          onOpenChange={setExpanded}
+          summary={
+            <span className="flex min-w-0 items-center gap-2.5">
+              {body}
+              {statusCell}
+              {durationCell}
+            </span>
+          }
+          summaryActions={
             <>
-              {details.annotations.length ? (
-                <CheckEvidence
-                  annotations={details.annotations}
-                  cwd={cwd}
-                  repo={repo}
-                  headOid={headOid}
-                />
-              ) : null}
-              {details.steps.length ? (
-                <Disclosure
-                  size="sm"
-                  summary={
-                    <>
-                      {t("View run steps")}{" "}
-                      <span className="text-ui-caption text-(--ui-text-secondary) @max-[420px]/checks:hidden">
-                        {describeCheckCounts(countChecks(details.steps))}
-                      </span>
-                    </>
-                  }
-                >
-                  <ol className="space-y-1" aria-label={t("{p0} steps", { p0: check.name })}>
-                    {details.steps.map((step, index) => {
-                      const stepMark = checkMark(step.state);
-                      return (
-                        <li
-                          key={index}
-                          className={`flex items-center gap-2 rounded px-2 py-1 ${step.state === "fail" ? "bg-(--ui-tone-danger-subtle)" : ""}`}
-                        >
-                          <MarkGlyph mark={stepMark} size="md" />
-                          <span className="min-w-0 flex-1 break-words text-(--ui-text-secondary)">
-                            {step.name}
-                            <span className="sr-only">: {checkStateLabel(step.state)}</span>
-                          </span>
-                          <span className="shrink-0 tabular-nums text-(--ui-text-secondary)">
-                            {checkDuration(step.startedAt, step.completedAt)}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ol>
-                </Disclosure>
-              ) : (
-                <EmptyState
-                  size="inline"
-                  kind="empty"
-                  description={t("No steps reported for this job.")}
-                />
-              )}
-              {check.state === "fail" && !details.annotations.length && !details.notice ? (
-                <EmptyState
-                  size="inline"
-                  kind="empty"
-                  description={t(
-                    "No error annotations reported. View the full log at the check URL.",
-                  )}
-                />
-              ) : null}
-              {details.log ? (
-                <Disclosure size="sm" className="mt-3" summary={t("View logs")}>
-                  <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-ui-micro">
-                    {details.log}
-                  </pre>
-                </Disclosure>
-              ) : null}
-              {/* Always mounted so a notice is announced when it first appears. */}
-              <LiveText
-                className="mt-3 block text-(--ui-text-secondary) empty:hidden"
-                text={details.notice ?? ""}
-              />
+              {fixButton}
+              {linkButton}
             </>
-          ) : null}
-        </div>
-      ) : null}
+          }
+        >
+          {detailsBody}
+        </Disclosure>
+      ) : (
+        <ActionHost className="min-w-0 gap-2 px-2 py-1 @max-[420px]/checks:gap-1">
+          {linked ? (
+            // The desktop WebView cannot rely on target=_blank, so rows open
+            // through the same opener as every other external link.
+            <Button
+              variant="item"
+              fullWidth
+              motion="none"
+              className="w-full min-w-0 flex-1 text-left"
+              type="button"
+              aria-label={title}
+              onClick={() => openUrlSafely(url)}
+            >
+              {body}
+            </Button>
+          ) : (
+            <div className={className}>{body}</div>
+          )}
+          {statusCell}
+          {durationCell}
+          {fixButton}
+          <span className="size-7 shrink-0" aria-hidden="true" />
+          {linkButton}
+        </ActionHost>
+      )}
       {rowHint.tooltip}
     </li>
   );
@@ -592,9 +586,69 @@ export function InboxPrChecks({
   const groups = CHECK_STATES.map((state) => ({
     state,
     rows: rows.filter((row) => row.state === state),
-    hidden:
-      activeFilter === "attention" && !showOthers && (state === "pass" || state === "skipping"),
+    other: state === "pass" || state === "skipping",
   }));
+  const othersHidden = groups.some((group) => group.other && group.rows.length > 0);
+  const renderGroup = (group: (typeof groups)[number]) =>
+    group.rows.length ? (
+      <div key={group.state}>
+        <SectionLabel as="h3" count={group.rows.length} className="mb-1.5 mt-3 px-2">
+          {checkStateLabel(group.state)}
+        </SectionLabel>
+        <ul className="flex flex-col gap-0.5">
+          {group.rows.map((check, index) => (
+            <PrCheckRow
+              key={JSON.stringify([
+                cwd,
+                repo,
+                repair?.number,
+                checks?.headOid,
+                check.workflow,
+                check.name,
+                check.url,
+                group.rows
+                  .slice(0, index)
+                  .filter(
+                    (row) =>
+                      row.workflow === check.workflow &&
+                      row.name === check.name &&
+                      row.url === check.url,
+                  ).length,
+              ])}
+              check={check}
+              wideStatus={repairGroups.length > 0}
+              revealToken={
+                revealed?.scope === revealScope &&
+                revealed.name === check.name &&
+                revealed.workflow === check.workflow
+                  ? revealed.token
+                  : undefined
+              }
+              repairItem={checks ? findCheckRepair(repairGroups, check, checks) : undefined}
+              onFix={
+                repair && check.state === "fail"
+                  ? (anchor) =>
+                      setSelection({
+                        checks: [check],
+                        anchor,
+                        scope: revealScope,
+                      })
+                  : undefined
+              }
+              fixDisabled={refreshing || stale || Boolean(error)}
+              fixAnchor={selection?.anchor}
+              cwd={cwd}
+              repo={repo}
+              headOid={checks?.headOid ?? ""}
+              autoExpand={
+                repairGroups.length === 0 && check === rows.find((row) => row.state === "fail")
+              }
+              refreshToken={checks}
+            />
+          ))}
+        </ul>
+      </div>
+    ) : null;
   const requiredFailures = rows.filter((row) => row.state === "fail" && !row.allowFailure).length;
   const headline = requiredFailures
     ? `${requiredFailures} ${requiredFailures === 1 ? "check needs" : "checks need"} a fix`
@@ -623,7 +677,7 @@ export function InboxPrChecks({
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 px-2">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-            <h2 className="text-ui-title font-medium leading-snug">{t(headline)}</h2>
+            <Heading size="section">{t(headline)}</Heading>
             {stale ? (
               <Badge tone="warning" size="xs">
                 {t("Saved results")}
@@ -763,86 +817,21 @@ export function InboxPrChecks({
         <EmptyState size="inline" kind="empty" description={t("No checks reported")} />
       ) : (
         <>
-          {groups.map((group) =>
-            group.rows.length ? (
-              <div key={group.state} hidden={group.hidden} className={group.hidden ? "hidden" : ""}>
-                <h3 className="mb-1.5 mt-3 flex items-center gap-2 px-2 text-ui-caption font-normal text-(--ui-text-secondary)">
-                  {checkStateLabel(group.state)}
-                  <span className="text-ui-caption text-(--ui-text-secondary)">
-                    {group.rows.length}
-                  </span>
-                </h3>
-                <ul className="flex flex-col gap-0.5">
-                  {group.rows.map((check, index) => (
-                    <PrCheckRow
-                      key={JSON.stringify([
-                        cwd,
-                        repo,
-                        repair?.number,
-                        checks?.headOid,
-                        check.workflow,
-                        check.name,
-                        check.url,
-                        group.rows
-                          .slice(0, index)
-                          .filter(
-                            (row) =>
-                              row.workflow === check.workflow &&
-                              row.name === check.name &&
-                              row.url === check.url,
-                          ).length,
-                      ])}
-                      check={check}
-                      wideStatus={repairGroups.length > 0}
-                      revealToken={
-                        revealed?.scope === revealScope &&
-                        revealed.name === check.name &&
-                        revealed.workflow === check.workflow
-                          ? revealed.token
-                          : undefined
-                      }
-                      repairItem={checks ? findCheckRepair(repairGroups, check, checks) : undefined}
-                      onFix={
-                        repair && check.state === "fail"
-                          ? (anchor) =>
-                              setSelection({
-                                checks: [check],
-                                anchor,
-                                scope: revealScope,
-                              })
-                          : undefined
-                      }
-                      fixDisabled={refreshing || stale || Boolean(error)}
-                      fixAnchor={selection?.anchor}
-                      cwd={cwd}
-                      repo={repo}
-                      headOid={checks?.headOid ?? ""}
-                      autoExpand={
-                        repairGroups.length === 0 &&
-                        check === rows.find((row) => row.state === "fail")
-                      }
-                      refreshToken={checks}
-                    />
-                  ))}
-                </ul>
-              </div>
-            ) : null,
-          )}
-          {activeFilter === "attention" && counts.pass + counts.skipping > 0 ? (
-            <Button
-              variant="ghost"
-              type="button"
-              aria-expanded={showOthers}
-              onClick={() => setShowOthers(!showOthers)}
-              className="mt-3 text-left"
-            >
-              <ChevronRight className={`icon-xs ${showOthers ? "rotate-90" : ""}`} />
-              {describeCheckCounts({
+          {groups.filter((group) => !group.other).map(renderGroup)}
+          {othersHidden ? (
+            <Disclosure
+              size="sm"
+              className={activeFilter === "attention" ? "mt-3" : "[&>summary]:hidden"}
+              open={activeFilter !== "attention" || showOthers}
+              onOpenChange={setShowOthers}
+              summary={describeCheckCounts({
                 ...countChecks([]),
                 pass: counts.pass,
                 skipping: counts.skipping,
               })}
-            </Button>
+            >
+              {groups.filter((group) => group.other).map(renderGroup)}
+            </Disclosure>
           ) : null}
         </>
       )}

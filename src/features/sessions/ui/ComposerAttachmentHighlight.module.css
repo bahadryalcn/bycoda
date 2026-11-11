@@ -1,6 +1,8 @@
-/* The chip is painted by ::before, not by the token's own box, so neighbouring chips keep
-   a gap without any change in advance width: the textarea underneath keeps every
-   character where it is. The hidden brackets are the chip's inline padding. */
+/* The chip is painted by ::before, not by the token's own box, so the textarea underneath
+   keeps every character where it is and no advance width changes. The hidden brackets are
+   the chip's inline padding. The painted box extends 1px past the hidden brackets on each
+   side and 2px above and below, so the label has room; a normal space between two
+   neighbouring tokens still leaves a gap. */
 .token {
   --token-ink: var(--ui-attachment-ink, var(--ui-tone-accent-fg));
   position: relative;
@@ -11,10 +13,9 @@
   content: "";
   position: absolute;
   z-index: -1;
-  inset: -1px 1px;
+  inset: -2px -1px;
   border-radius: var(--ui-radius-control);
-  background: color-mix(in srgb, var(--token-ink) 10%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--token-ink) 45%, transparent);
+  background: color-mix(in srgb, var(--token-ink) 16%, transparent);
 }
 
 .bracket {

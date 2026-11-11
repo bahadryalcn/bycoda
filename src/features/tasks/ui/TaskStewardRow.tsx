@@ -1,3 +1,4 @@
+import { Heading } from "../../../shared/ui/Heading";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -47,9 +48,9 @@ export function StewardRow({
       <div className="task-ops-row-text">
         <div className="task-ops-title-line">
           <Bot className="icon-sm shrink-0 text-(--ui-text-secondary)" />
-          <h3 title={steward.focus || undefined} className="task-ops-title">
+          <Heading size="item" title={steward.focus || undefined} className="task-ops-title">
             {stewardProjectName(steward)}
-          </h3>
+          </Heading>
           {!steward.enabled ? <Badge size="xs">{t("Paused")}</Badge> : null}
         </div>
         <p className="task-ops-caption">

@@ -59,7 +59,7 @@ it("does not briefly report new current Host observations as future timestamps b
   await openDetails();
   expect(document.body.textContent).toContain("Computer presence: Here");
   await act(() => vi.advanceTimersByTime(105000));
-  expect(container.textContent).toContain("Unknown");
+  expect(container.textContent).toContain("Here");
 });
 it("keeps the manual DND choice visible while reporting unavailable automatic evidence separately", async () => {
   await act(() =>
@@ -67,7 +67,7 @@ it("keeps the manual DND choice visible while reporting unavailable automatic ev
       createElement(AssistantPresenceStatus, {
         snapshot: {
           presence: { state: "dnd", since: 1, updatedAt: 1 },
-          automaticPresence: { state: "unknown", supported: false, since: 1, updatedAt: 10000 },
+          automaticPresence: { state: "away", supported: false, since: 1, updatedAt: 10000 },
           effectivePresence: "dnd",
         },
         details: true,
@@ -76,16 +76,16 @@ it("keeps the manual DND choice visible while reporting unavailable automatic ev
   );
   expect(container.textContent).toBe("Do not disturb");
   await openDetails();
-  expect(document.body.textContent).toContain("Computer presence: Unknown");
+  expect(document.body.textContent).toContain("Computer presence: Away");
 });
-it("keeps compact Here unknown when current computer evidence is unsupported", async () => {
+it("shows the Host effective state when computer evidence is unsupported", async () => {
   await act(() =>
     root.render(
       createElement(AssistantPresenceStatus, {
         compact: true,
         snapshot: {
           presence: { state: "present", since: 1, updatedAt: 1 },
-          automaticPresence: { state: "unknown", supported: false, since: 1, updatedAt: 10000 },
+          automaticPresence: { state: "away", supported: false, since: 1, updatedAt: 10000 },
           effectivePresence: "present",
         },
       }),
@@ -93,21 +93,21 @@ it("keeps compact Here unknown when current computer evidence is unsupported", a
   );
   expect(
     container.querySelector("[data-presence-state]")?.getAttribute("data-presence-state"),
-  ).toBe("unknown");
+  ).toBe("present");
   expect(container.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
-    "Current availability: Unknown",
+    "Current availability: Here",
   );
   expect(container.querySelector("div")).toBeNull();
 });
-it("withholds a cached green state while the current read or change is unconfirmed", async () => {
+it("shows Offline only while the Host cannot be read, then restores the snapshot state", async () => {
   const snapshot = {
     presence: { state: "present" as const, since: 1, updatedAt: 1 },
     automaticPresence: { state: "present" as const, supported: true, since: 1, updatedAt: 10000 },
     effectivePresence: "present" as const,
   };
-  const render = async (unconfirmed: boolean) =>
+  const render = async (offline: boolean) =>
     act(() =>
-      root.render(createElement(AssistantPresenceStatus, { snapshot, compact: true, unconfirmed })),
+      root.render(createElement(AssistantPresenceStatus, { snapshot, compact: true, offline })),
     );
   await render(false);
   expect(
@@ -116,9 +116,9 @@ it("withholds a cached green state while the current read or change is unconfirm
   await render(true);
   expect(
     container.querySelector("[data-presence-state]")?.getAttribute("data-presence-state"),
-  ).toBe("unknown");
+  ).toBe("offline");
   expect(container.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
-    "Current availability: Unknown",
+    "Current availability: Offline",
   );
   await render(false);
   expect(

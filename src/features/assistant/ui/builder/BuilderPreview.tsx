@@ -4,6 +4,8 @@ import type { AssistantProfilePatch } from "../../../../shared/model/host-contra
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { ModalActions, ModalFooter } from "../../../../shared/ui/Modal";
+import { SectionLabel } from "../../../../shared/ui/SectionLabel";
+import { Surface } from "../../../../shared/ui/Surface";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import { builderEntries, builderPatch, type BuilderFieldKey } from "../../model/assistantBuilder";
 import { AssistantAvatarMark } from "../AssistantAvatar";
@@ -49,9 +51,9 @@ export function BuilderPreview({
   return (
     <div className={styles.stage}>
       <p className={styles.summary}>{proposal.summary}</p>
-      <h3 className={styles.sectionTitle}>{t("Proposed settings")}</h3>
+      <SectionLabel as="h3">{t("Proposed settings")}</SectionLabel>
       {entries.length > 0 ? (
-        <ul className={styles.fields}>
+        <Surface as="ul" variant="card" padding="none" className={styles.fields}>
           {entries.map((entry) => (
             <li key={entry.key} className={styles.field}>
               <Checkbox
@@ -85,14 +87,14 @@ export function BuilderPreview({
               ) : null}
             </li>
           ))}
-        </ul>
+        </Surface>
       ) : (
         <p className={styles.muted}>
           {t("The proposal matches your current settings. Nothing to change.")}
         </p>
       )}
       <section className={styles.avatarSection} aria-label={t("Avatar")}>
-        <h3 className={styles.sectionTitle}>{t("Avatar (optional)")}</h3>
+        <SectionLabel as="h3">{t("Avatar (optional)")}</SectionLabel>
         {avatar ? (
           <div className={styles.avatarResult}>
             <AssistantAvatarMark

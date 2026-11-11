@@ -202,16 +202,10 @@ export function SshIdentityField({
         />
       </Disclosure>
       {selectedKey ? (
-        <Disclosure
-          size="sm"
-          className="text-ui-caption text-(--ui-text-muted)"
-          summary={t("Key details")}
-        >
-          <DescriptionList size="sm">
-            <DescriptionItem term={t("Key type")}>{selectedKey.keyType}</DescriptionItem>
-            <DescriptionItem term={t("Fingerprint")}>{selectedKey.fingerprint}</DescriptionItem>
-          </DescriptionList>
-        </Disclosure>
+        <DescriptionList size="sm" className="text-ui-caption text-(--ui-text-muted)">
+          <DescriptionItem term={t("Key type")}>{selectedKey.keyType}</DescriptionItem>
+          <DescriptionItem term={t("Fingerprint")}>{selectedKey.fingerprint}</DescriptionItem>
+        </DescriptionList>
       ) : null}
     </div>
   );

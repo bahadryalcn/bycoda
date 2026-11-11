@@ -388,13 +388,16 @@ it("keeps long diagnostics readable behind a disclosure without hiding recovery 
   loadProjectFiles.mockRejectedValueOnce(new Error(diagnostic));
   renderPicker();
   await act(async () => {});
-  const details = document.querySelector("details")!;
-  expect(details.open).toBe(false);
-  expect(details.querySelector('summary [role="alert"]')?.textContent).toContain(
-    "Remote listing failed:",
-  );
-  expect(details.querySelector("p")?.textContent).toBe(diagnostic);
-  expect(details.querySelector("p")?.tabIndex).toBe(0);
+  const alert = document.querySelector('[role="alert"]')!;
+  expect(alert.textContent).toContain("Remote listing failed:");
+  expect(alert.textContent).not.toContain(diagnostic);
+  expect(document.querySelector("details")).toBeNull();
+  expect(document.querySelector("pre")).toBeNull();
+  const detailsButton = [...document.querySelectorAll("button")].find((button) =>
+    button.textContent?.startsWith("Details"),
+  )!;
+  await act(async () => detailsButton.click());
+  expect(document.querySelector("pre")?.textContent).toBe(diagnostic);
   expect(document.querySelector("[data-file-picker]")?.textContent).toContain("App.tsx");
   expect(
     [...document.querySelectorAll("button")].some((button) => button.textContent === "Retry"),

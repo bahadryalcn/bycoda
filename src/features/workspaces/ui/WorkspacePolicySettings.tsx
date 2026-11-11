@@ -11,6 +11,7 @@ import {
   type RosterFilter,
 } from "../model/workspacePresentation";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { WorkspaceManagedRow } from "./WorkspaceManagedRow";
 import { WorkspaceStorageSummary } from "./WorkspaceStorageSummary";
 import { WorkspaceRosterFilter } from "./WorkspaceRosterFilter";
@@ -376,7 +377,7 @@ export function WorkspacePolicySettings({
       {stageNotice("inventory", t("Managed workspace directories"), inventoryLoaded)}
       {showRoster && (
         <section aria-label={t("Worktrees")} className="flex min-w-0 flex-col gap-2">
-          {!renderHeader && <h3 className="text-ui-secondary font-medium">{t("Worktrees")}</h3>}
+          {!renderHeader && <Heading size="item">{t("Worktrees")}</Heading>}
           {capabilities && !capabilities.includes(WORKSPACE_PINNING_CAPABILITY) && (
             <SettingsFeedback state="warning">
               {t("Update the execution Host to pin or unpin individual workspaces.")}

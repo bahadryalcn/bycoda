@@ -19,6 +19,7 @@ import { createDevicesRuntime } from "./server/devices";
 import { createEnvironmentRuntime } from "./server/environment";
 import { createGitRuntime } from "./server/git";
 import { createHttpRuntime } from "./server/http";
+import { bootPhase } from "./server/boot-phases";
 import { createLifecycleRuntime } from "./server/lifecycle";
 import { createManagementRuntime } from "./server/management";
 import { createMobileRuntime } from "./server/mobile";
@@ -332,37 +333,49 @@ export async function createHostServer(
   );
   const workspacesRuntime = createWorkspacesRuntime(dependencies);
   const tasksRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createTasksRuntime>>>();
-  await createTasksRuntime(dependencies, tasksRuntime.publish);
+  await bootPhase("runtime-tasks", () => createTasksRuntime(dependencies, tasksRuntime.publish));
   const assistantRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createAssistantRuntime>>>();
-  await createAssistantRuntime(dependencies, assistantRuntime.publish);
+  await bootPhase("runtime-assistant", () =>
+    createAssistantRuntime(dependencies, assistantRuntime.publish),
+  );
   const stewardsRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createStewardsRuntime>>>();
-  await createStewardsRuntime(dependencies, stewardsRuntime.publish);
+  await bootPhase("runtime-stewards", () =>
+    createStewardsRuntime(dependencies, stewardsRuntime.publish),
+  );
   const devicesRuntime = createDevicesRuntime(dependencies);
   const voiceRuntime = createVoiceRuntime(dependencies);
   // Before Social so the decision service can be handed to it (see phase3-p35b-done.md).
   const decisionRuntime = createDecisionModelsRuntime(dependencies);
   const developmentRuntime = createDevelopmentRuntime(dependencies);
   const sessionsRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSessionsRuntime>>>();
-  await createSessionsRuntime(dependencies, sessionsRuntime.publish);
+  await bootPhase("runtime-sessions", () =>
+    createSessionsRuntime(dependencies, sessionsRuntime.publish),
+  );
   const socialRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSocialRuntime>>>();
-  await createSocialRuntime(dependencies, socialRuntime.publish);
+  await bootPhase("runtime-social", () => createSocialRuntime(dependencies, socialRuntime.publish));
   const sessionQueueRuntime =
     createRuntimeSlot<Awaited<ReturnType<typeof createSessionQueueRuntime>>>();
-  await createSessionQueueRuntime(dependencies, sessionQueueRuntime.publish);
+  await bootPhase("runtime-session-queue", () =>
+    createSessionQueueRuntime(dependencies, sessionQueueRuntime.publish),
+  );
   const sessionLeasesRuntime = createSessionLeasesRuntime(dependencies);
   const sessionViewsRuntime = createSessionViewsRuntime(dependencies);
   const projectsRuntime = createProjectsRuntime(dependencies);
   const crewsRuntime = createCrewsRuntime(dependencies);
   const sessionListRuntime =
     createRuntimeSlot<Awaited<ReturnType<typeof createSessionListRuntime>>>();
-  await createSessionListRuntime(dependencies, sessionListRuntime.publish);
+  await bootPhase("runtime-session-list", () =>
+    createSessionListRuntime(dependencies, sessionListRuntime.publish),
+  );
   const pushRuntime = createPushRuntime(dependencies);
   const conversationRuntime = createConversationRuntime(dependencies);
   const mobileRuntime = createMobileRuntime(dependencies);
   const environmentRuntime = createEnvironmentRuntime(dependencies);
   const sessionServicesRuntime = createSessionServicesRuntime(dependencies);
   const commandsRuntime = createCommandsRuntime(dependencies);
-  const accountPlatformRuntime = await createAccountPlatformRuntime(dependencies);
+  const accountPlatformRuntime = await bootPhase("runtime-account-platform", () =>
+    createAccountPlatformRuntime(dependencies),
+  );
   const gitRuntime = createGitRuntime(dependencies);
   const managementRuntime = createManagementRuntime(dependencies);
   const assistantNativeRuntime = createAssistantNativeRuntime(dependencies);
@@ -374,7 +387,9 @@ export async function createHostServer(
   const httpRuntime = createHttpRuntime(dependencies);
   const websocketRuntime = createWebsocketRuntime(dependencies);
   const lifecycleRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createLifecycleRuntime>>>();
-  await createLifecycleRuntime(dependencies, lifecycleRuntime.publish);
+  await bootPhase("runtime-recovery", () =>
+    createLifecycleRuntime(dependencies, lifecycleRuntime.publish),
+  );
   return Object.assign(httpRuntime.server, {
     assistant: assistantRuntime.current.assistant,
     desktop,

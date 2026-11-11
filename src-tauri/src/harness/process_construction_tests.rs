@@ -911,7 +911,7 @@ fn fast_descendant_native_terminal_keeps_exit_status_and_releases_spawn_authorit
     output.terminal_delivery(true);
     assert!(output.verified_emit_seal().is_ok());
     assert!(process.retirement().require_verified().is_ok());
-    exit.finish(finish_spawn_authority(&process.retirement(), lease));
+    exit.finish(finish_spawn_authority(lease));
     assert!(exit.succeeded());
     assert!(host.authority_idle("fast-source").is_ok());
     let retained: i64 = store

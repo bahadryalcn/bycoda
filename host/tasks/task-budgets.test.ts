@@ -155,7 +155,7 @@ describe("durable task/goal family budgets", () => {
     );
     expect(result).toMatchObject({
       blocked: false,
-      usage: { agentMinutes: 0.5, historyComplete: true, tokens: 125 },
+      usage: { agentMinutes: 0.5, historyComplete: true, tokens: 89 },
     });
   });
   it("reconciles a trusted completion checkpoint arriving after the first terminal read", async () => {
@@ -229,7 +229,7 @@ describe("durable task/goal family budgets", () => {
     const result = await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 1 });
     expect(result).toMatchObject({
       blocked: false,
-      usage: { agentMinutes: 0, historyComplete: false, tokens: 125, reportedCostUsd: 2 },
+      usage: { agentMinutes: 0, historyComplete: false, tokens: 89, reportedCostUsd: 2 },
     });
     expect(
       (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 1 }, { starting: true }))
@@ -255,7 +255,7 @@ describe("durable task/goal family budgets", () => {
       attempts: 1,
       completedRuns: 1,
       runningRuns: 0,
-      tokens: 125,
+      tokens: 89,
     });
     s.clock.now += 60000;
     expect((await s.budgets.read({ goalId: "goal" })).agentMinutes).toBe(0.5);
@@ -287,7 +287,7 @@ describe("durable task/goal family budgets", () => {
     await s.register();
     s.clock.now += 20000;
     const ended = await s.finish("session", { durationMs: 20000, metrics: reported });
-    expect((await s.budgets.read({ taskId: "task" })).tokens).toBe(125);
+    expect((await s.budgets.read({ taskId: "task" })).tokens).toBe(89);
     await s.save("session", "follow-up", { previous: ended });
     await s.register("session", "follow-up", { role: "reviewer" });
     s.clock.now += 10000;
@@ -296,7 +296,7 @@ describe("durable task/goal family budgets", () => {
     expect(await restarted.read({ taskId: "task" })).toMatchObject({
       attempts: 2,
       agentMinutes: 0,
-      tokens: 135,
+      tokens: 99,
     });
     expect(first.runId).toBe("run");
   });
@@ -325,7 +325,7 @@ describe("durable task/goal family budgets", () => {
     await s.save("claude", "two", { provider: "claude" });
     await s.register("claude", "two");
     await s.finish("claude", { metrics: reported });
-    expect((await s.budgets.read({ taskId: "task" })).tokens).toBe(290);
+    expect((await s.budgets.read({ taskId: "task" })).tokens).toBe(218);
   });
   it("keeps unsupported provider token metrics unknown", async () => {
     const s = await setup();
@@ -347,7 +347,7 @@ describe("durable task/goal family budgets", () => {
     expect((await s.budgets.evaluate({ goalId: "goal" }, { maxAgentMinutes: 1 })).blocked).toBe(
       true,
     );
-    expect((await s.budgets.evaluate({ goalId: "goal" }, { maxTokens: 100 })).blocked).toBe(true);
+    expect((await s.budgets.evaluate({ goalId: "goal" }, { maxTokens: 80 })).blocked).toBe(true);
   });
   it("warns at the configured threshold and distinguishes unknown active totals", async () => {
     const s = await setup();
@@ -373,7 +373,7 @@ describe("durable task/goal family budgets", () => {
     expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
       historyComplete: false,
       agentMinutes: 0,
-      tokens: 125,
+      tokens: 89,
       attempts: 1,
     });
   });
@@ -390,7 +390,7 @@ describe("durable task/goal family budgets", () => {
     expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
       historyComplete: false,
       agentMinutes: 5000 / 60000,
-      reportedTokens: 125,
+      reportedTokens: 89,
       tokens: null,
       reportedCostUsd: null,
     });
@@ -427,7 +427,7 @@ describe("durable task/goal family budgets", () => {
       expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
         historyComplete: false,
         agentMinutes: 4000 / 60000,
-        tokens: 125,
+        tokens: 89,
       });
     },
   );
@@ -555,7 +555,7 @@ describe("durable task/goal family budgets", () => {
     await s.finish("session", { metrics: reported, durationMs: 1000, cost: 1 });
     expect(await restarted.read({ taskId: "legacy" })).toMatchObject({
       historyComplete: false,
-      reportedTokens: 125,
+      reportedTokens: 89,
       tokens: null,
       agentMinutes: 0,
     });

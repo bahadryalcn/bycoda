@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import "tailwindcss" source("..");
 @import "./palette.css";
 @import "./bycoda.css";
 @import "./arc.css";
@@ -6,19 +6,11 @@
 @import "./surface-motion.css";
 @import "./working-row.css";
 
-/* Desktop UI classes come from product code; explicit Streamdown sources remain below. */
-@source not "../../host";
-@source not "../../src-tauri";
-@source not "../../scripts";
-@source not "../../tests";
-@source not "../../docs";
-@source not "../../mobile";
-/* Output and scratch trees hold no product classes; a large local temp/ otherwise stalls the scan. */
-@source not "../../temp";
-@source not "../../target";
-@source not "../../build";
-@source not "../../dist";
-@source not "../../test-results";
+/* Desktop UI classes come from product code under src/ and the root entry documents. The scan
+   starts at src/ instead of the repository root: walking the root also crawls host, mobile, build
+   output and a large local temp/, which stalls every rebuild. Explicit Streamdown sources remain
+   below. */
+@source "../../*.html";
 @source "../../node_modules/streamdown/dist/*.js";
 @source "../../node_modules/@streamdown/code/dist/*.js";
 @source "../../node_modules/@streamdown/mermaid/dist/*.js";
@@ -261,7 +253,8 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-neutral-fg: var(--color-content);
   --ui-tone-neutral-solid: var(--color-content);
   --ui-tone-neutral-on-solid: var(--palette-scrim);
-  --ui-tone-neutral-subtle: var(--color-selection-subtle);
+  /* Selected, subtle and ghost-selected neutral controls share the one selected role. */
+  --ui-tone-neutral-subtle: var(--ui-surface-selected);
   --ui-tone-neutral-border: var(--color-stroke);
   --ui-tone-neutral-hover: var(--ui-surface-hover);
   --ui-tone-neutral-pressed: var(--ui-surface-pressed);
@@ -534,7 +527,13 @@ html.theme-light {
      --ui-tint-base (the palette ground), not the painted canvas, so they keep the same steps when
      the Pure background paints the canvas pure black or white (V3-039). */
   --ui-surface-panel: var(--ui-chat-canvas);
-  --ui-surface: color-mix(in oklab, var(--color-content) 10%, var(--ui-layer-base));
+  /* --appearance-layer-strength (Appearance > Surface contrast, default 1) scales how far every
+     derived layer lifts off the ground: surfaces, floating containers, cards and group frames. */
+  --ui-surface: color-mix(
+    in oklab,
+    var(--color-content) calc(10% * var(--appearance-layer-strength, 1)),
+    var(--ui-layer-base)
+  );
   /* Workspace panes share the owning canvas's glass instead of stacking opaque
      fills. Floating overlays and embedded document/media pixels keep their roles. */
   --ui-workspace-canvas: var(--color-background-base);
@@ -561,7 +560,11 @@ html.theme-light {
   /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
   --ui-startup-surface: var(--palette-scrim);
   --ui-startup-text: var(--palette-solidInk);
-  --ui-surface-raised: color-mix(in oklab, var(--color-content) 16%, var(--ui-layer-base));
+  --ui-surface-raised: color-mix(
+    in oklab,
+    var(--color-content) calc(16% * var(--appearance-layer-strength, 1)),
+    var(--ui-layer-base)
+  );
   /* Container role for every floating surface: dialogs, sheets, popovers, menus, tooltips, toasts
      and floating panels (V3-040). Tinted canvases keep the raised step; the Pure background maps it
      near the pure ground below. Controls inside keep their own field, hover and selected steps. */
@@ -580,24 +583,30 @@ html.theme-light {
   --ui-conflict-current-word: color-mix(in oklab, var(--color-conflict-ours) 30%, transparent);
   --ui-conflict-incoming-word: color-mix(in oklab, var(--color-conflict-theirs) 30%, transparent);
   /* Keep fields and muted controls at their existing tone independently of navigation. */
-  --ui-surface-muted: color-mix(in oklab, var(--color-content) 5%, var(--ui-layer-base));
+  --ui-surface-muted: color-mix(
+    in oklab,
+    var(--color-content) calc(5% * var(--appearance-layer-strength, 1)),
+    var(--ui-layer-base)
+  );
   /* Hover, selected and pressed share one base (the muted surface) so their steps are monotonic:
-     hover 7% < selected 15% < pressed 24%. Mirrored in model/interactionTint.ts. */
+     hover 12% < selected 20% < pressed 28%. Each step is at least 1.2:1 against the one below
+     (hover against the muted field and the pure black canvas). Mirrored in model/interactionTint.ts
+     and asserted in layerContrast.test.ts. */
   --ui-interaction-tint: var(--color-content);
   --ui-interaction-strength: 1;
   --ui-surface-hover: color-mix(
     in oklab,
-    var(--ui-interaction-tint) calc(7% * var(--ui-interaction-strength)),
+    var(--ui-interaction-tint) calc(12% * var(--ui-interaction-strength)),
     var(--ui-surface-muted)
   );
   --ui-surface-pressed: color-mix(
     in oklab,
-    var(--ui-interaction-tint) calc(24% * var(--ui-interaction-strength)),
+    var(--ui-interaction-tint) calc(28% * var(--ui-interaction-strength)),
     var(--ui-surface-muted)
   );
   --ui-surface-selected: color-mix(
     in oklab,
-    var(--ui-interaction-tint) calc(15% * var(--ui-interaction-strength)),
+    var(--ui-interaction-tint) calc(20% * var(--ui-interaction-strength)),
     var(--ui-surface-muted)
   );
   --ui-border-accent: var(--ui-interaction-ink);
@@ -641,10 +650,24 @@ html.theme-light {
      structure. Every role derives from the user's tint (--color-content / --color-background-base),
      which the light, dark and custom themes already override, so one definition serves all. Inputs,
      selected rows, focus rings and drag targets keep their own boundary roles. */
-  --ui-settings-group-surface: transparent;
-  --ui-settings-group-border: color-mix(in oklab, var(--color-content) 15%, var(--ui-layer-base));
-  --ui-settings-hairline: color-mix(in oklab, var(--color-content) 9%, var(--ui-layer-base));
-  --ui-settings-row-hover: color-mix(in oklab, var(--color-content) 4%, transparent);
+  --ui-settings-group-surface: var(--ui-card-surface);
+  --ui-settings-group-border: color-mix(
+    in oklab,
+    var(--color-content) calc(15% * var(--appearance-layer-strength, 1)),
+    var(--ui-layer-base)
+  );
+  --ui-settings-hairline: color-mix(
+    in oklab,
+    var(--color-content) calc(9% * var(--appearance-layer-strength, 1)),
+    var(--ui-layer-base)
+  );
+  /* The one grouped-card role: settings groups, feature cards and collection frames share this
+     fill and frame (shared Surface variant="card", FieldGroup variant="card"). The fill is
+     transparent on tinted and light canvases and a faint ink step on the pure black ground. */
+  --ui-card-surface: transparent;
+  --ui-card-border: var(--ui-settings-group-border);
+  /* Same step as --ui-surface-hover (12% dark, 4% light), under every selected role. */
+  --ui-settings-row-hover: color-mix(in srgb, var(--color-content) 12%, transparent);
   --ui-radius-card: 0.5rem;
   /* One scrollbar family for native bars, custom rails (editor, rulers) and the terminal.
      Appearance > Interface sets the colour, size, strength and visibility (scrollbarStyle.ts). */
@@ -720,7 +743,7 @@ html.theme-light {
   --ui-control-height-sm: var(--ui-control-height-compact);
   --ui-control-height-md: var(--ui-control-height);
   --ui-control-height-lg: 2.5rem;
-  --ui-control-radius: 0.375rem;
+  --ui-control-radius: 0.5rem;
   --ui-control-checkbox-size: 1rem;
   /* Disabled model (one per control family, never both on one element):
      - Fields, rows, list items and composite surfaces dim as a whole with --ui-disabled-opacity,
@@ -811,11 +834,13 @@ html.theme-light {
   --chat-background-empty-opacity: 0.24;
   --chat-background-session-opacity: 0.24;
   --chat-background-blur: 0px;
-  --selection-subtle-strength: 8%;
-  --selection-strength: 10%;
-  --selection-strong-strength: 12%;
-  --selection-hover-strength: 15%;
-  --selection-emphasis-strength: 20%;
+  /* Ink alpha over the surface, ordered like the state ladder: hover (12%) < subtle < selected
+     (20%) < strong < emphasis. */
+  --selection-hover-strength: 12%;
+  --selection-subtle-strength: 14%;
+  --selection-strength: 20%;
+  --selection-strong-strength: 24%;
+  --selection-emphasis-strength: 28%;
   --background-lightness: var(--theme-dark-lightness);
   /* The palette ground every derived layer mixes from. The painted canvas
      (--color-background-base) equals it unless the Pure background is active. */
@@ -917,7 +942,11 @@ html.theme-light {
      the default cool tint reads as paper while a custom tint stays recognisable.
      Dark mode keeps the full tint through the shared @theme formula. */
   --theme-light-saturation: calc(var(--theme-saturation) * 0.2);
-  --background-lightness: 98.6%;
+  /* Default paper ground; --theme-light-lightness lets a look pick another light ground. */
+  --theme-light-lightness: 98.6%;
+  --background-lightness: var(--theme-light-lightness);
+  /* Lightness of the ground the layers actually sit on (artwork overrides it below). */
+  --ui-ground-lightness: var(--background-lightness);
   --content-lightness: 13%;
   --ui-tint-base: hsl(var(--theme-hue) var(--theme-light-saturation) var(--background-lightness));
   --ui-layer-base: var(--ui-tint-base);
@@ -928,33 +957,72 @@ html.theme-light {
   /* Navigation and chat share the near-white canvas, separated by existing borders;
      editable and floating surfaces retain their paper-white roles. */
   --ui-surface-panel: var(--ui-chat-canvas);
-  --ui-surface: color-mix(in oklab, var(--ui-tint-base) 35%, var(--palette-solidInk));
-  --ui-surface-raised: var(--palette-solidInk);
-  --ui-surface-muted: var(--ui-tint-base);
+  /* Light layers lift from the real ground (--ui-layer-base) toward white, like the dark layers
+     step toward the content ink. The lift is a share of the ground's headroom: 100% only on a
+     near-white ground and a bounded, shrinking share on mid tones, so a gray canvas never gets a
+     pure-white block. Default 98.6% ground: muted 65%, surface 77%, raised 100% white. Mirrored in
+     model/layerContrast.test.ts. --appearance-layer-strength scales every step. */
+  --ui-surface-muted: color-mix(
+    in oklab,
+    var(--palette-solidInk)
+      clamp(
+        0%,
+        calc((var(--ui-ground-lightness) - 58%) * 1.6 * var(--appearance-layer-strength, 1)),
+        100%
+      ),
+    var(--ui-layer-base)
+  );
+  --ui-surface: color-mix(
+    in oklab,
+    var(--palette-solidInk)
+      clamp(
+        0%,
+        calc((var(--ui-ground-lightness) - 58%) * 1.9 * var(--appearance-layer-strength, 1)),
+        100%
+      ),
+    var(--ui-layer-base)
+  );
+  --ui-surface-raised: color-mix(
+    in oklab,
+    var(--palette-solidInk)
+      clamp(
+        0%,
+        calc((var(--ui-ground-lightness) - 58%) * 2.5 * var(--appearance-layer-strength, 1)),
+        100%
+      ),
+    var(--ui-layer-base)
+  );
+  /* Hover, selected and pressed step from the ground itself, so a selected row stays visible on a
+     mid-tone canvas and every selected control resolves to this one role. */
   --ui-surface-hover: color-mix(
     in oklab,
     var(--ui-interaction-tint) calc(4% * var(--ui-interaction-strength)),
-    var(--ui-surface)
+    var(--ui-layer-base)
   );
   --ui-surface-pressed: color-mix(
     in oklab,
     var(--ui-interaction-tint) calc(16% * var(--ui-interaction-strength)),
-    var(--ui-surface)
+    var(--ui-layer-base)
   );
   /* Calm selected fill: a neutral step firmer than hover and under pressed. Hue comes only from
      the user's tint, never from the accent, so selection reads the same for every accent. */
   --ui-surface-selected: color-mix(
     in oklab,
     var(--ui-interaction-tint) calc(10% * var(--ui-interaction-strength)),
-    var(--ui-surface)
+    var(--ui-layer-base)
   );
 
-  --ui-pane-border: color-mix(in oklab, var(--color-content) 9%, var(--ui-tint-base));
+  /* Borders are ink over the ground, so they are always darker than it. */
+  --ui-pane-border: color-mix(
+    in oklab,
+    var(--color-content) calc(9% * var(--appearance-layer-strength, 1)),
+    var(--ui-layer-base)
+  );
   --ui-control-border: color-mix(in oklab, var(--color-content) 52%, var(--ui-surface-muted));
   --ui-editor-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface));
   --ui-chat-canvas: var(--color-background-base);
-  --ui-composer-surface: var(--palette-solidInk);
-  --ui-composer-border: color-mix(in oklab, var(--color-content) 13%, var(--palette-solidInk));
+  --ui-composer-surface: var(--ui-surface-raised);
+  --ui-composer-border: color-mix(in oklab, var(--color-content) 13%, var(--ui-composer-surface));
   --ui-composer-shadow: 0 1px 2px color-mix(in oklab, var(--color-content) 5%, transparent);
   /* Light glass: a milky canvas veil that brightens the blur instead of dimming it. */
   --ui-activity-dock-glass: color-mix(in oklab, var(--color-background-base) 45%, transparent);
@@ -971,13 +1039,25 @@ html.theme-light {
   --color-skill: var(--palette-hexa07c10);
   --color-mention: var(--palette-hex0284c7);
   --color-markdown-heading: var(--palette-hexbe185d);
-  --selection-subtle-strength: 5%;
-  --selection-strength: 6%;
-  --selection-strong-strength: 7%;
-  --selection-hover-strength: 10%;
-  --selection-emphasis-strength: 14%;
-  --color-diff-add-fg: var(--palette-hex047857);
-  --color-diff-del-fg: var(--palette-hexbe123c);
+  --selection-hover-strength: 4%;
+  --selection-subtle-strength: 6%;
+  --selection-strength: 10%;
+  --selection-strong-strength: 13%;
+  --selection-emphasis-strength: 16%;
+  --ui-settings-row-hover: color-mix(in srgb, var(--color-content) 4%, transparent);
+  /* Diff text keeps 3:1 on a mid-tone ground: ink is mixed in as the ground darkens (none from
+     92% up, so the default paper ground keeps the palette hues). */
+  --ui-diff-fg-ink: clamp(0%, calc((92% - var(--ui-ground-lightness)) * 1.4), 60%);
+  --color-diff-add-fg: color-mix(
+    in srgb,
+    var(--color-content) var(--ui-diff-fg-ink),
+    var(--palette-hex047857)
+  );
+  --color-diff-del-fg: color-mix(
+    in srgb,
+    var(--color-content) var(--ui-diff-fg-ink),
+    var(--palette-hexbe123c)
+  );
   color-scheme: light;
 }
 
@@ -993,10 +1073,18 @@ html[data-canvas-background="pure"] {
      stays near the pure ground instead of a mid gray slab, but one visible step above it. The mix
      is in srgb: an oklab mix this close to black rounds to the canvas itself. Controls inside
      keep their steps. */
-  --ui-surface-floating: color-mix(in srgb, var(--color-content) 6%, var(--color-background-base));
+  --ui-surface-floating: color-mix(
+    in srgb,
+    var(--color-content) calc(6% * var(--appearance-layer-strength, 1)),
+    var(--color-background-base)
+  );
   /* Groups and cards read as cards on the black ground: a faint ink fill over whatever surface
-     holds them, framed by the group border. */
-  --ui-settings-group-surface: var(--ui-fill-faint);
+     holds them, framed by the card border. */
+  --ui-card-surface: color-mix(
+    in srgb,
+    var(--color-content) calc(4% * var(--appearance-layer-strength, 1)),
+    transparent
+  );
   /* Keep the writing area visibly above the dark chat canvas while retaining the user's tint. */
   --ui-composer-surface: color-mix(in srgb, var(--color-content) 9%, var(--color-background-base));
   /* A canvas-tinted veil vanishes on pure black, so the activity/queue glass is a faint light
@@ -1009,7 +1097,7 @@ html.theme-light[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureLight);
   --ui-chat-pane-canvas: var(--ui-chat-canvas);
   --ui-surface-floating: var(--ui-surface-raised);
-  --ui-settings-group-surface: transparent;
+  --ui-card-surface: transparent;
   /* Mirror of the dark step: a faint off-white on the white ground. */
   --ui-composer-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
   /* Paper-white reading surfaces would vanish into the white canvas; one faint tint step keeps
@@ -1070,9 +1158,17 @@ html.diff-palette-colorblind {
 
 html.diff-palette-colorblind.theme-light {
   --color-diff-add: var(--palette-hex0969da);
-  --color-diff-add-fg: var(--palette-hex0550ae);
+  --color-diff-add-fg: color-mix(
+    in srgb,
+    var(--color-content) var(--ui-diff-fg-ink),
+    var(--palette-hex0550ae)
+  );
   --color-diff-del: var(--palette-hexbc4c00);
-  --color-diff-del-fg: var(--palette-hex953800);
+  --color-diff-del-fg: color-mix(
+    in srgb,
+    var(--color-content) var(--ui-diff-fg-ink),
+    var(--palette-hex953800)
+  );
 }
 
 /* Colorblind-safe hues with heavier tints and maximum-contrast text. */
@@ -1089,9 +1185,17 @@ html.diff-palette-high-contrast {
 
 html.diff-palette-high-contrast.theme-light {
   --color-diff-add: var(--palette-hex0550ae);
-  --color-diff-add-fg: var(--palette-hex032563);
+  --color-diff-add-fg: color-mix(
+    in srgb,
+    var(--color-content) var(--ui-diff-fg-ink),
+    var(--palette-hex032563)
+  );
   --color-diff-del: var(--palette-hex953800);
-  --color-diff-del-fg: var(--palette-hex471700);
+  --color-diff-del-fg: color-mix(
+    in srgb,
+    var(--color-content) var(--ui-diff-fg-ink),
+    var(--palette-hex471700)
+  );
 }
 
 html,
@@ -2401,6 +2505,24 @@ html.has-workspace-background,
   background-repeat: no-repeat;
 }
 
+/* The ground under artwork is the canvas veiled over the image, not the bare canvas: layers derive
+   from that blend (--workspace-background-ground / -lightness are published from the artwork stops
+   by model/workspaceBackground.ts), so fields, borders and selection step away from what is shown. */
+html.has-workspace-background {
+  --ui-layer-base: color-mix(
+    in srgb,
+    var(--workspace-background-ground, var(--color-background-base))
+      calc(clamp(0, var(--workspace-background-strength, 0), 1) * 32%),
+    var(--color-background-base)
+  );
+  --ui-ground-lightness: calc(
+    var(--background-lightness) *
+      (1 - clamp(0, var(--workspace-background-strength, 0), 1) * 0.32) +
+      var(--workspace-background-lightness, var(--background-lightness)) *
+      clamp(0, var(--workspace-background-strength, 0), 1) * 0.32
+  );
+}
+
 html.has-workspace-background,
 html.has-workspace-background.has-native-glass:not(.theme-light),
 html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) {
@@ -2662,12 +2784,6 @@ html.is-explorer-file-dragging {
 html.theme-light .explorer-file-drag-preview {
   background: var(--color-background-base) !important;
   opacity: 1 !important;
-}
-
-html.is-resizing {
-  cursor: col-resize !important;
-  -webkit-user-select: none !important;
-  user-select: none !important;
 }
 
 .composer-toolbar {
@@ -5029,13 +5145,10 @@ html:is([data-decorative-motion="off"], [data-window-focus="off"])
 .terminal-live:not(button[aria-pressed] .terminal-live, [data-active="true"]) .terminal-live-bar {
   animation: none;
 }
-html.is-resizing {
-  --interaction-cursor: col-resize;
-}
 html.is-explorer-file-dragging {
   --interaction-cursor: grabbing;
 }
-html:is(.is-grabbing, .is-resizing, .is-explorer-file-dragging)
+html:is(.is-grabbing, .is-explorer-file-dragging)
   :is(
     button,
     a,
@@ -5049,7 +5162,7 @@ html:is(.is-grabbing, .is-resizing, .is-explorer-file-dragging)
   ) {
   cursor: var(--interaction-cursor) !important;
 }
-html:is(.is-reordering, .is-resizing)
+html.is-reordering
   :is(input, textarea, [contenteditable], .select-text, .cm-content, .xterm-screen) {
   -webkit-user-select: inherit !important;
   user-select: inherit !important;
@@ -5135,6 +5248,9 @@ html:is(.is-reordering, .is-resizing)
 }
 [data-attachment-kind="image"] {
   --ui-attachment-ink: var(--ui-tone-success-fg);
+}
+[data-attachment-kind="spreadsheet"] {
+  --ui-attachment-ink: color-mix(in srgb, var(--ui-tone-success-fg) 60%, var(--ui-tone-info-fg));
 }
 [data-attachment-kind="audio"],
 [data-attachment-kind="video"] {

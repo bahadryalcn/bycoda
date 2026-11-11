@@ -32,10 +32,6 @@
   margin: 0;
 }
 .bycoda-empty .bycoda-task-brief h1 {
-  /* Decorative entry headline: fluid display size, no text role is this large. */
-  font-size: var(--ui-font-heading);
-  font-weight: 560;
-  line-height: 1.35;
   letter-spacing: -0.025em;
   max-inline-size: 100%;
   white-space: normal;

@@ -1,14 +1,15 @@
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { projectName } from "../../../shared/lib/paths";
 import { t } from "../../../shared/i18n";
 import { formatRelativeTime } from "../../../shared/i18n/format";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { ChevronDown, ChevronUp, FolderOpen, Pin, Trash2 } from "../../../shared/ui/icons";
+import { FolderOpen, Pin, Trash2 } from "../../../shared/ui/icons";
 import type { ManagedWorkspace } from "../model/contracts";
 import { lifecycleLabel } from "../model/workspacePresentation";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
@@ -47,7 +48,6 @@ export function WorkspaceManagedRow({
   remove: { label: string; disabledReason?: string; onRemove: () => void };
 }) {
   const [open, setOpen] = useState(false);
-  const detailsId = useId();
   const branch = workspace.branchRef.replace(/^refs\/heads\//, "");
   const blocked = workspace.directoryState === "blocked";
   const dotTone =
@@ -67,95 +67,94 @@ export function WorkspaceManagedRow({
       className={`settings-collection-row ${styles.row}`}
       data-open={open || undefined}
     >
-      <StatusDot tone={dotTone} size="compact" className={styles.dot} />
-      <div className={`settings-collection-main ${styles.identity}`}>
-        <div className={styles.line}>
-          <Tooltip label={title} when="overflow">
-            <span className={styles.title}>{title}</span>
-          </Tooltip>
-          <Badge size="sm">{lifecycleLabel(workspace.state)}</Badge>
-          {missing && (
-            <Badge size="sm" tone="warning">
-              {t("Missing folder")}
-            </Badge>
-          )}
-          {blocked && (
-            <Badge size="sm" tone="warning">
-              {t("Cleanup blocked")}
-            </Badge>
-          )}
-          {workspace.directoryState === "removed" && (
-            <Badge size="sm">{t("Directory removed")}</Badge>
-          )}
-          {(removing ||
-            workspace.directoryState === "pendingRemoval" ||
-            workspace.directoryState === "removing") && (
-            <Badge size="sm">{t("Removing directory…")}</Badge>
-          )}
-          {workspace.pinned && <Badge size="sm">{t("Pinned")}</Badge>}
-        </div>
-        <Tooltip label={caption} when="overflow">
-          <span className={styles.caption}>{caption}</span>
-        </Tooltip>
-        {pinError && <InlineError className="break-words">{pinError}</InlineError>}
-      </div>
-      <div className={`settings-collection-actions ${styles.actions}`}>
-        <Button size="sm" disabled={reviewDisabled || removing} onClick={onReview}>
-          {t("Review changes")}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          iconOnly
-          label={t("Reveal folder")}
-          disabled={missing || workspace.directoryState === "removed"}
-          disabledReason={t("This folder is not on disk.")}
-          onClick={onReveal}
-        >
-          <FolderOpen className="icon-sm" />
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          iconOnly
-          label={workspace.pinned ? t("Unpin workspace") : t("Pin workspace")}
-          tooltipDetails={[t("Pinned workspaces are never cleaned up automatically.")]}
-          pressed={workspace.pinned}
-          loading={pinning}
-          disabled={!!pin.disabledReason || removing}
-          disabledReason={pin.disabledReason}
-          onClick={pin.onToggle}
-        >
-          <Pin className="icon-sm" />
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          tone="danger"
-          iconOnly
-          label={remove.label}
-          disabled={!!remove.disabledReason || removing}
-          disabledReason={
-            removing ? t("Deletion is running in the background.") : remove.disabledReason
-          }
-          onClick={remove.onRemove}
-        >
-          <Trash2 className="icon-sm" />
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          iconOnly
-          label={t("Details")}
-          aria-expanded={open}
-          aria-controls={open ? detailsId : undefined}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? <ChevronUp className="icon-sm" /> : <ChevronDown className="icon-sm" />}
-        </Button>
-      </div>
-      {open && (
-        <div id={detailsId} className={styles.details}>
+      <Disclosure
+        open={open}
+        onOpenChange={setOpen}
+        chevron="end"
+        summary={
+          <span className={styles.main}>
+            <StatusDot tone={dotTone} size="compact" className={styles.dot} />
+            <span className={`settings-collection-main ${styles.identity}`}>
+              <span className={styles.line}>
+                <Tooltip label={title} when="overflow">
+                  <span className={styles.title}>{title}</span>
+                </Tooltip>
+                <Badge size="sm">{lifecycleLabel(workspace.state)}</Badge>
+                {missing && (
+                  <Badge size="sm" tone="warning">
+                    {t("Missing folder")}
+                  </Badge>
+                )}
+                {blocked && (
+                  <Badge size="sm" tone="warning">
+                    {t("Cleanup blocked")}
+                  </Badge>
+                )}
+                {workspace.directoryState === "removed" && (
+                  <Badge size="sm">{t("Directory removed")}</Badge>
+                )}
+                {(removing ||
+                  workspace.directoryState === "pendingRemoval" ||
+                  workspace.directoryState === "removing") && (
+                  <Badge size="sm">{t("Removing directory…")}</Badge>
+                )}
+                {workspace.pinned && <Badge size="sm">{t("Pinned")}</Badge>}
+              </span>
+              <Tooltip label={caption} when="overflow">
+                <span className={styles.caption}>{caption}</span>
+              </Tooltip>
+              {pinError && <InlineError className="break-words">{pinError}</InlineError>}
+            </span>
+          </span>
+        }
+        summaryActions={
+          <div className={`settings-collection-actions ${styles.actions}`}>
+            <Button size="sm" disabled={reviewDisabled || removing} onClick={onReview}>
+              {t("Review changes")}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              iconOnly
+              label={t("Reveal folder")}
+              disabled={missing || workspace.directoryState === "removed"}
+              disabledReason={t("This folder is not on disk.")}
+              onClick={onReveal}
+            >
+              <FolderOpen className="icon-sm" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              iconOnly
+              label={workspace.pinned ? t("Unpin workspace") : t("Pin workspace")}
+              tooltipDetails={[t("Pinned workspaces are never cleaned up automatically.")]}
+              pressed={workspace.pinned}
+              loading={pinning}
+              disabled={!!pin.disabledReason || removing}
+              disabledReason={pin.disabledReason}
+              onClick={pin.onToggle}
+            >
+              <Pin className="icon-sm" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              tone="danger"
+              iconOnly
+              label={remove.label}
+              disabled={!!remove.disabledReason || removing}
+              disabledReason={
+                removing ? t("Deletion is running in the background.") : remove.disabledReason
+              }
+              onClick={remove.onRemove}
+            >
+              <Trash2 className="icon-sm" />
+            </Button>
+          </div>
+        }
+      >
+        <div className={styles.details}>
           <DescriptionList size="sm">
             <DescriptionItem term={t("Folder")} monospace>
               {workspace.path}
@@ -171,7 +170,7 @@ export function WorkspaceManagedRow({
             </DescriptionItem>
           </DescriptionList>
         </div>
-      )}
+      </Disclosure>
     </div>
   );
 }

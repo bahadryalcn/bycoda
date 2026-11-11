@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -111,7 +112,12 @@ export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
           </div>
         ) : null}
       </div>
-      <ul className="flex flex-col divide-y divide-stroke rounded-md border border-stroke">
+      <Surface
+        as="ul"
+        variant="outline"
+        padding="none"
+        className="flex flex-col divide-y divide-stroke"
+      >
         {routes.routes.map((route) => {
           const inUse = route.address === routes.active;
           const reachable = checks?.[route.address];
@@ -158,7 +164,7 @@ export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
             </li>
           );
         })}
-      </ul>
+      </Surface>
       <p className="text-ui-caption text-(--ui-text-muted)">
         {t("Change the SSH and other address with Edit name and address.")}
       </p>

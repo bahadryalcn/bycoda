@@ -1,5 +1,9 @@
-/** Repeated identical Host warnings print once, then one count per window instead of thousands of lines. */
-export type DedupedWarn = (message: string) => void;
+/**
+ * Repeated identical Host warnings print once, then one count per window instead of thousands of lines.
+ * `detail` is printed with the line but is not part of its identity, so a per-request id can be
+ * logged without making every line unique.
+ */
+export type DedupedWarn = (message: string, detail?: string) => void;
 
 export function createDedupedWarn(
   options: {
@@ -14,7 +18,7 @@ export function createDedupedWarn(
   const now = options.now ?? Date.now;
   const write = options.write ?? ((line: string) => console.warn(line));
   const seen = new Map<string, { last: number; suppressed: number }>();
-  return (message) => {
+  return (message, detail) => {
     const at = now();
     const entry = seen.get(message);
     if (entry && at - entry.last < windowMs) {
@@ -28,7 +32,7 @@ export function createDedupedWarn(
       write(
         `(${entry.suppressed} identical warnings suppressed in the last ${Math.round(windowMs / 60_000)} min)`,
       );
-    write(message);
+    write(detail ? `${message} ${detail}` : message);
   };
 }
 

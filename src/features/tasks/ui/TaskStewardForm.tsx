@@ -2,6 +2,7 @@ import type { FormEvent, ReactNode } from "react";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -119,152 +120,156 @@ export function StewardForm({
       onSubmit={onSubmit}
       className="task-ops-form"
     >
-      <fieldset disabled={saving} inert={saving} className="task-ops-fields">
-        <Section title={t("Project")}>
-          <SettingFrame>
-            <SettingRow title={t("Project")}>
-              {draft.id ? (
-                // A steward stays with the project it was created for.
-                <span className="task-ops-caption">{projectDisplayName(draft.cwd)}</span>
-              ) : (
-                <SearchableProjectPicker
-                  cwd={draft.cwd}
-                  recents={recents}
-                  onSelectProject={(cwd) => update("cwd", cwd)}
-                />
+      <FieldGroup variant="bare" disabled={saving} inert={saving}>
+        <div className="task-ops-fields">
+          <Section title={t("Project")}>
+            <SettingFrame>
+              <SettingRow title={t("Project")}>
+                {draft.id ? (
+                  // A steward stays with the project it was created for.
+                  <span className="task-ops-caption">{projectDisplayName(draft.cwd)}</span>
+                ) : (
+                  <SearchableProjectPicker
+                    cwd={draft.cwd}
+                    recents={recents}
+                    onSelectProject={(cwd) => update("cwd", cwd)}
+                  />
+                )}
+              </SettingRow>
+              <SettingRow title={t("Runs on ").trim()}>
+                {machine ? (
+                  <span className="task-ops-caption">{machine}</span>
+                ) : (
+                  <InlineMessage tone="warning" live="assertive">
+                    {TASK_MACHINE_ERROR}
+                  </InlineMessage>
+                )}
+              </SettingRow>
+            </SettingFrame>
+          </Section>
+          <Section title={t("Focus")}>
+            <TextareaField
+              hideLabel
+              label=""
+              aria-label={t("Focus")}
+              value={draft.focus}
+              onChange={(event) => update("focus", event.target.value)}
+              placeholder={t(
+                "What should it look for? e.g. follow docs/ROADMAP.md, or find bugs and missing tests",
               )}
-            </SettingRow>
-            <SettingRow title={t("Runs on ").trim()}>
-              {machine ? (
-                <span className="task-ops-caption">{machine}</span>
-              ) : (
-                <InlineMessage tone="warning" live="assertive">
-                  {TASK_MACHINE_ERROR}
-                </InlineMessage>
-              )}
-            </SettingRow>
-          </SettingFrame>
-        </Section>
-        <Section title={t("Focus")}>
-          <TextareaField
-            hideLabel
-            label=""
-            aria-label={t("Focus")}
-            value={draft.focus}
-            onChange={(event) => update("focus", event.target.value)}
-            placeholder={t(
-              "What should it look for? e.g. follow docs/ROADMAP.md, or find bugs and missing tests",
-            )}
-            rows={2}
-            fieldClassName="block w-full"
-            className="resize-y"
-          />
-        </Section>
-        <Section title={t("Schedule")}>
-          <SettingFrame>
-            <SettingRow
-              title={t("Frequency")}
-              description={automationScheduleLabel(scheduleOf(draft))}
-            >
-              <SearchableSelect
-                variant="pill"
-                searchable={false}
-                label={t("Schedule")}
-                value={draft.scheduleKind}
-                options={SCHEDULE_OPTIONS}
-                onChange={(value) => update("scheduleKind", value as StewardDraft["scheduleKind"])}
-              />
-            </SettingRow>
-            {draft.scheduleKind === "weekly" ? (
-              <SettingRow title={t("Day of week")}>
+              rows={2}
+              fieldClassName="block w-full"
+              className="resize-y"
+            />
+          </Section>
+          <Section title={t("Schedule")}>
+            <SettingFrame>
+              <SettingRow
+                title={t("Frequency")}
+                description={automationScheduleLabel(scheduleOf(draft))}
+              >
                 <SearchableSelect
                   variant="pill"
                   searchable={false}
-                  label={t("Day of week")}
-                  value={String(draft.dayOfWeek)}
-                  options={AUTOMATION_WEEKDAYS.map((day, index) => ({
-                    value: String(index),
-                    label: day,
-                  }))}
-                  onChange={(value) => update("dayOfWeek", Number(value))}
+                  label={t("Schedule")}
+                  value={draft.scheduleKind}
+                  options={SCHEDULE_OPTIONS}
+                  onChange={(value) =>
+                    update("scheduleKind", value as StewardDraft["scheduleKind"])
+                  }
                 />
               </SettingRow>
-            ) : null}
-            <SettingRow title={draft.scheduleKind === "hourly" ? t("Minute") : t("Time")}>
-              {draft.scheduleKind === "hourly" ? (
-                number(t("Minute"), draft.minute, 59, "minute", 0)
-              ) : (
-                <DateTimeField
-                  mode="time"
-                  hideLabel
-                  // The HH:mm placeholder is the hint.
-                  description=""
-                  label={t("Time")}
-                  value={draft.time}
-                  onChange={(value) => {
-                    if (value) update("time", value);
-                  }}
-                />
-              )}
-            </SettingRow>
-          </SettingFrame>
-        </Section>
-        <Section title={t("Agent")}>
-          <SettingFrame>
-            <SettingRow title={t("Model")}>
-              <ModelPicker
-                harness={draft.harness}
-                model={draft.model}
-                values={draft.modelSettings}
-                project={draft.cwd}
-                onChange={(harness, model) => onChange({ ...draft, harness, model })}
-                onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
-              />
-            </SettingRow>
-            {draft.harness !== "fx" ? (
-              <SettingRow title={t("Access")}>
-                <AccessPicker
-                  value={draft.runtimeMode}
-                  onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+              {draft.scheduleKind === "weekly" ? (
+                <SettingRow title={t("Day of week")}>
+                  <SearchableSelect
+                    variant="pill"
+                    searchable={false}
+                    label={t("Day of week")}
+                    value={String(draft.dayOfWeek)}
+                    options={AUTOMATION_WEEKDAYS.map((day, index) => ({
+                      value: String(index),
+                      label: day,
+                    }))}
+                    onChange={(value) => update("dayOfWeek", Number(value))}
+                  />
+                </SettingRow>
+              ) : null}
+              <SettingRow title={draft.scheduleKind === "hourly" ? t("Minute") : t("Time")}>
+                {draft.scheduleKind === "hourly" ? (
+                  number(t("Minute"), draft.minute, 59, "minute", 0)
+                ) : (
+                  <DateTimeField
+                    mode="time"
+                    hideLabel
+                    // The HH:mm placeholder is the hint.
+                    description=""
+                    label={t("Time")}
+                    value={draft.time}
+                    onChange={(value) => {
+                      if (value) update("time", value);
+                    }}
+                  />
+                )}
+              </SettingRow>
+            </SettingFrame>
+          </Section>
+          <Section title={t("Agent")}>
+            <SettingFrame>
+              <SettingRow title={t("Model")}>
+                <ModelPicker
+                  harness={draft.harness}
+                  model={draft.model}
+                  values={draft.modelSettings}
+                  project={draft.cwd}
+                  onChange={(harness, model) => onChange({ ...draft, harness, model })}
+                  onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
                 />
               </SettingRow>
-            ) : null}
-          </SettingFrame>
-        </Section>
-        <Section title={t("Suggestions")}>
-          <SettingFrame>
-            <SettingRow title={t("Max suggestions per run")}>
-              {number(
-                t("Max suggestions per run"),
-                draft.maxProposals,
-                MAX_PROPOSALS_LIMIT,
-                "maxProposals",
-              )}
-            </SettingRow>
-            <SettingRow title={t("Pause at open suggestions")}>
-              {number(t("Pause at open suggestions"), draft.maxOpen, MAX_OPEN_LIMIT, "maxOpen")}
-            </SettingRow>
-            <Checkbox
-              className="task-ops-setting cursor-pointer justify-start text-ui-body"
-              label={t("Start suggestions automatically")}
-              checked={draft.autoStart}
-              onChange={(event) => update("autoStart", event.target.checked)}
-            />
-            <div className="task-ops-setting">
-              <AutoMergeField
-                checked={draft.autoMerge}
-                onChange={(checked) => update("autoMerge", checked)}
+              {draft.harness !== "fx" ? (
+                <SettingRow title={t("Access")}>
+                  <AccessPicker
+                    value={draft.runtimeMode}
+                    onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+                  />
+                </SettingRow>
+              ) : null}
+            </SettingFrame>
+          </Section>
+          <Section title={t("Suggestions")}>
+            <SettingFrame>
+              <SettingRow title={t("Max suggestions per run")}>
+                {number(
+                  t("Max suggestions per run"),
+                  draft.maxProposals,
+                  MAX_PROPOSALS_LIMIT,
+                  "maxProposals",
+                )}
+              </SettingRow>
+              <SettingRow title={t("Pause at open suggestions")}>
+                {number(t("Pause at open suggestions"), draft.maxOpen, MAX_OPEN_LIMIT, "maxOpen")}
+              </SettingRow>
+              <Checkbox
+                className="task-ops-setting cursor-pointer justify-start text-ui-body"
+                label={t("Start suggestions automatically")}
+                checked={draft.autoStart}
+                onChange={(event) => update("autoStart", event.target.checked)}
               />
-            </div>
-          </SettingFrame>
-          {draft.autoStart ? (
-            <span role="status" className="task-ops-caption" data-tone="warning">
-              {t("Suggestions will run without you reviewing the idea first.")}
-              {t(" Each still waits for your review before it is merged.")}
-            </span>
-          ) : null}
-        </Section>
-      </fieldset>
+              <div className="task-ops-setting">
+                <AutoMergeField
+                  checked={draft.autoMerge}
+                  onChange={(checked) => update("autoMerge", checked)}
+                />
+              </div>
+            </SettingFrame>
+            {draft.autoStart ? (
+              <span role="status" className="task-ops-caption" data-tone="warning">
+                {t("Suggestions will run without you reviewing the idea first.")}
+                {t(" Each still waits for your review before it is merged.")}
+              </span>
+            ) : null}
+          </Section>
+        </div>
+      </FieldGroup>
       {error ? (
         <Alert tone="danger" className="mx-4 mb-3">
           {error}

@@ -10,6 +10,12 @@ review target and the checkout where an agent executes are separate choices.
 When checkout discovery fails, the current panel remains available with local
 **Retry** and diagnostic details; a failed read does not establish an empty list.
 
+A folder that is not a Git repository shows no failure: the panel offers
+**Initialize Repository**, which runs `git init` there and is refused inside an
+existing repository. A project opened on an empty folder outside any repository,
+including one created by the assistant, a crew or a remote machine, is
+initialized automatically.
+
 **All checkouts** shows the current checkout, other worktrees and discovered child
 repositories as expandable changes panels. Folder names lead with the branch on
 the same line; when the panel narrows the branch label shortens before the name.
@@ -21,8 +27,11 @@ target does not change where the agent executes.
 
 Each panel's staging, unstaging, commit and sync actions apply only to that exact
 repository. A file with the same relative name in another checkout is a separate
-target. An expanded panel includes its own Stashes and Graph sections; a panel row
-starts with its graph folded. Right-click an empty part of the Git panel to show or
+target. A single review target shows its Stashes and Graph sections below its changes.
+All repositories and All checkouts show one Stashes and Graph below the rows instead
+of one per row: Auto follows the repository you last used in the list, and the
+selector above the sections, also offered in the full Commit Graph, switches to
+another repository. Right-click an empty part of the Git panel to show or
 hide Stashes and Graph in every panel, or to switch Auto Fetch. The Changes tab totals include discovered child repositories in All
 checkouts and wait for every target's reading before showing a complete total.
 

@@ -132,6 +132,28 @@ export function projectGroupParentId(
     : undefined;
 }
 
+/**
+ * Groups that must be open to show `path`: the group it is assigned to, then each
+ * ancestor. A linked workspace root is its own header, so only its parents count.
+ * Nearest first; callers skip locked groups.
+ */
+export function projectGroupIdsToExpand(
+  path: string,
+  groups: readonly ProjectGroup[],
+  assignments: Record<string, string>,
+): string[] {
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const ids: string[] = [];
+  const start = projectGroupIdForPath(path, assignments);
+  let current = start ? byId.get(start) : undefined;
+  while (current && !ids.includes(current.id)) {
+    ids.push(current.id);
+    const parentId = projectGroupParentId(current, groups, assignments);
+    current = parentId ? byId.get(parentId) : undefined;
+  }
+  return ids;
+}
+
 function normalizeGroup(value: unknown): ProjectGroup | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<ProjectGroup>;

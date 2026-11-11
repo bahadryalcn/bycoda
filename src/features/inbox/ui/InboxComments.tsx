@@ -1,6 +1,8 @@
 import { InboxReviewBadge } from "./InboxReviewBadge";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { ClampText } from "../../../shared/ui/ClampText";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -14,7 +16,6 @@ import {
   useEffect,
   useId,
   useRef,
-  useState,
   useSyncExternalStore,
   type FormEvent,
   type KeyboardEvent,
@@ -162,14 +163,14 @@ export function InboxComments({
       <div className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
         {thread.commits ? (
           <>
-            <h2 className="text-(--ui-text-secondary)">{t("Activity")}</h2>
+            <SectionLabel as="h2">{t("Activity")}</SectionLabel>
             <span>
               {label}
               {commitCount > 0 ? ` · ${commitLabel}` : ""}
             </span>
           </>
         ) : (
-          <h2 className="text-(--ui-text-secondary)">{label}</h2>
+          <SectionLabel as="h2">{label}</SectionLabel>
         )}
         {thread.truncated ? (
           <span>
@@ -490,14 +491,14 @@ function InboxComment({
           className={nested ? "mt-2" : "px-3 py-2.5"}
         >
           {timeline ? (
-            <CollapsibleBody>
+            <ClampText lines={9}>
               <AgentMarkdown
                 className="inbox-comment-md"
                 text={comment.body}
                 cwd={cwd}
                 allowRemoteMedia
               />
-            </CollapsibleBody>
+            </ClampText>
           ) : (
             <AgentMarkdown
               className="inbox-comment-md"
@@ -535,55 +536,6 @@ function InboxComment({
     <Surface as="article" variant="outline" padding="none" className="overflow-hidden">
       {inner}
     </Surface>
-  );
-}
-
-const CLAMPED_BODY_PX = 180;
-
-/** Bot reviews and long write-ups start clamped so the timeline stays scannable. */
-function CollapsibleBody({ children }: { children: ReactNode }) {
-  useLocale();
-  const inner = useRef<HTMLDivElement>(null);
-  const [overflows, setOverflows] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    const el = inner.current;
-    if (!el) return;
-    // A little slack so a body barely over the limit just shows in full.
-    const measure = () => setOverflows(el.scrollHeight > CLAMPED_BODY_PX + 48);
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  const clamped = overflows && !expanded;
-  return (
-    <>
-      <div
-        style={clamped ? { maxHeight: CLAMPED_BODY_PX } : undefined}
-        className={
-          clamped
-            ? "overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"
-            : ""
-        }
-      >
-        <div ref={inner}>{children}</div>
-      </div>
-      {overflows ? (
-        <Button
-          variant="ghost"
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
-          className="mt-1.5"
-        >
-          {expanded ? t("Show less") : t("Show more")}
-        </Button>
-      ) : null}
-    </>
   );
 }
 

@@ -108,6 +108,12 @@ describe("theme suggestion Host command", () => {
     expect(prompt).toContain('"JetBrains Mono"');
   });
 
+  it("guides surface contrast for dark canvases", () => {
+    const prompt = themeSuggestionPrompt("forest");
+    expect(prompt).toContain("interface.surfaceContrast 110-150");
+    expect(prompt).toContain('"surfaceContrast": 50-200');
+  });
+
   it("describes every grouped Appearance field with its allowed values", () => {
     const prompt = themeSuggestionPrompt("forest");
     for (const field of [

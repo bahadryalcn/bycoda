@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Surface } from "../../../shared/ui/Surface";
@@ -98,7 +99,7 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
         </p>
       )}
       <Button
-        variant="ghost"
+        variant="link"
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((current) => !current)}
@@ -138,7 +139,7 @@ export function InboxPrChangesGlance({
   return (
     <section data-inbox-pr-glance className="flex flex-col gap-2">
       <div className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
-        <h2 className="text-(--ui-text-secondary)">{t("Changed files")}</h2>
+        <SectionLabel as="h2">{t("Changed files")}</SectionLabel>
         {diff ? (
           <>
             <span className="tabular-nums">

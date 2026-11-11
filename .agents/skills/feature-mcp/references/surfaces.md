@@ -23,6 +23,6 @@ Code paths are repository-relative.
 
 ## Focused checks
 
-Start with colocated `mcpSettingsCache`, `mcp`, `McpSettings` and `ExternalMcpAccess` tests, Host token/auth/proxy tests, and Rust config tests for native changes. Browser sources include `tests/browser/external-mcp.spec.ts` and Settings subview/layout scenarios; inspect their separate configs/ports.
+Start with colocated `mcpSettingsCache`, `mcp`, `McpSettings` and `ExternalMcpAccess` tests, Host token/auth/proxy tests, and Rust config tests for native changes. Browser sources include `tests/browser/settings/external-mcp.spec.ts` and Settings subview/layout scenarios; inspect their separate configs/ports.
 
 Exercise full-array search with bounded continuous rendering, provider/scope identity, raw CLI health provenance, mixed auth capability, known/unknown-scope removal, JSON add validation, stale discovery, memory-only secret close/reopen, expiry while focused, unknown create and rejected/false revoke. Use isolated config/token stores; UI fixtures do not prove native CLI or authenticated Host behavior.

@@ -351,10 +351,13 @@ it("explains an unavailable website while retaining technical details and the en
   expect(container.querySelector('[role="alert"] p')?.textContent).toBe(
     "Website is not running. Start it in Development servers, then try again.",
   );
-  expect(container.querySelector('[role="alert"] pre')?.textContent).toContain(
+  expect(container.querySelector('[role="alert"] pre')).toBeNull();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[role="alert"] button[aria-expanded]')!.click(),
+  );
+  expect(document.querySelector('[aria-label="Error details"]')?.textContent).toContain(
     "ERR_CONNECTION_REFUSED",
   );
-  expect(container.querySelector<HTMLDetailsElement>('[role="alert"] details')?.open).toBe(false);
   expect(input.value).toBe("3000");
   expect(hostToolRequest).toHaveBeenCalledOnce();
 });
@@ -558,8 +561,12 @@ it("keeps retained logs readable when the host disconnects and recovers with Ref
   expect(container.querySelector('[role="alert"] p')?.textContent).toBe(
     "Could not read logs. Check the host connection and retry.",
   );
-  expect(container.querySelector('[role="alert"] pre')?.textContent).toBe("Host is offline");
-  expect(container.querySelector<HTMLDetailsElement>('[role="alert"] details')?.open).toBe(false);
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[role="alert"] button[aria-expanded]')!.click(),
+  );
+  expect(document.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "Host is offline",
+  );
   expect(rows()).toHaveLength(3);
   await act(async () => button("Refresh").click());
   expect(container.querySelector('[role="alert"]')).toBeNull();

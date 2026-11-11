@@ -17,6 +17,10 @@
   border: 1px solid transparent;
   color: inherit;
 }
+.surface[data-variant="card"] {
+  background: var(--ui-card-surface);
+  border-color: var(--ui-card-border);
+}
 .surface[data-variant="plain"] {
   background: var(--ui-surface);
 }

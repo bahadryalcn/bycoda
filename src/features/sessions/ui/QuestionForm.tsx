@@ -6,6 +6,7 @@ import { questionFormPresentation } from "./questionFormPresentation";
 import { QuestionAttachmentError } from "./QuestionAttachmentError";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import styles from "./QuestionForm.module.css";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { QuestionAttachmentList } from "./QuestionAttachmentList";
@@ -184,7 +185,14 @@ function QuestionFormContent({
     if (!admitted) return;
     try {
       admitted.apply(() => {
-        if (!updateDraft((current) => ({ ...current, delivery: "sending", pendingAction }))) return;
+        if (
+          !updateDraft((current) => ({
+            ...current,
+            delivery: "sending",
+            pendingAction,
+          }))
+        )
+          return;
         submitted.current = true;
         setSubmitting(true);
         setLocalUnknown(false);
@@ -200,7 +208,10 @@ function QuestionFormContent({
           // when dispatch retired the view. It records uncertainty, never retries.
           const original = originalReservation.read();
           if (original) {
-            const retained = originalReservation.write({ ...original, delivery: "unknown" });
+            const retained = originalReservation.write({
+              ...original,
+              delivery: "unknown",
+            });
             if (retained.ok && mounted.current && reservation.current === originalReservation) {
               draftRef.current = retained.value;
               setDraft(retained.value);
@@ -361,7 +372,9 @@ function QuestionFormContent({
           event.preventDefault();
           event.stopPropagation();
           readAttachments(async () => {
-            const attached = await attachmentsFromFiles(pasted, { persistBlobs: false });
+            const attached = await attachmentsFromFiles(pasted, {
+              persistBlobs: false,
+            });
             if (attached.length !== pasted.length)
               throw new Error(t("Some files could not be attached. Try attaching them again."));
             return attached;
@@ -387,63 +400,61 @@ function QuestionFormContent({
             <LiveText className={styles.progress} text={`${index + 1} / ${total}`} />
           ) : null}
         </div>
-        <fieldset
-          className={styles.body}
-          data-inline-prompt={title ? undefined : ""}
-          disabled={sending}
-        >
-          <QuestionFields
-            key={question.id}
-            question={question}
-            selected={answers[question.id] ?? []}
-            custom={custom[question.id] ?? ""}
-            note={draft.notes?.[question.id] ?? ""}
-            onNote={(value) =>
-              updateDraft((current) => ({
-                ...current,
-                notes: { ...current.notes, [question.id]: value },
-              }))
-            }
-            locked={held}
-            onSelect={(optionId) =>
-              updateDraft((current) => ({
-                ...current,
-                answers: {
-                  ...current.answers,
-                  [question.id]: nextSelection(
-                    question,
-                    current.answers[question.id] ?? [],
-                    optionId,
-                  ),
-                },
-              }))
-            }
-            onCustom={(value) =>
-              updateDraft((current) => updateCustomAnswer(current, question, value))
-            }
-            onRejectedInput={() => {
-              if (mounted.current) parentChanged();
-            }}
-          />
-          {canAttach && files.length ? (
-            <div className={styles.attachments} aria-label={t("Attachments")}>
-              <QuestionAttachmentList
-                files={files}
-                held={held}
-                questionId={question.id}
-                update={updateDraft}
-                busy={setReadingAttachments}
-                error={setAttachmentError}
-                flight={attachmentFlight}
-              />
-            </div>
-          ) : null}
-          <QuestionAttachmentError
-            message={attachmentError}
-            blocked={recovery.blocked}
-            retry={recovery.retry}
-          />
-        </fieldset>
+        <FieldGroup variant="bare" disabled={sending}>
+          <div className={styles.body} data-inline-prompt={title ? undefined : ""}>
+            <QuestionFields
+              key={question.id}
+              question={question}
+              selected={answers[question.id] ?? []}
+              custom={custom[question.id] ?? ""}
+              note={draft.notes?.[question.id] ?? ""}
+              onNote={(value) =>
+                updateDraft((current) => ({
+                  ...current,
+                  notes: { ...current.notes, [question.id]: value },
+                }))
+              }
+              locked={held}
+              onSelect={(optionId) =>
+                updateDraft((current) => ({
+                  ...current,
+                  answers: {
+                    ...current.answers,
+                    [question.id]: nextSelection(
+                      question,
+                      current.answers[question.id] ?? [],
+                      optionId,
+                    ),
+                  },
+                }))
+              }
+              onCustom={(value) =>
+                updateDraft((current) => updateCustomAnswer(current, question, value))
+              }
+              onRejectedInput={() => {
+                if (mounted.current) parentChanged();
+              }}
+            />
+            {canAttach && files.length ? (
+              <div className={styles.attachments} aria-label={t("Attachments")}>
+                <QuestionAttachmentList
+                  files={files}
+                  held={held}
+                  questionId={question.id}
+                  update={updateDraft}
+                  busy={setReadingAttachments}
+                  error={setAttachmentError}
+                  flight={attachmentFlight}
+                />
+              </div>
+            ) : null}
+            <QuestionAttachmentError
+              message={attachmentError}
+              blocked={recovery.blocked}
+              retry={recovery.retry}
+            />
+          </div>
+        </FieldGroup>
         <div className={styles.footer}>
           {canAttach ? (
             <Button

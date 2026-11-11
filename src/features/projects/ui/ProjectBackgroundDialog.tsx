@@ -164,7 +164,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
       <div className="flex flex-col gap-5">
         <div>
           <div
-            className={`overflow-hidden rounded-xl border border-[var(--color-stroke)] ${previewEffect === "gradient-blur" ? "bg-background-base" : "bg-[var(--ui-surface-hover)]"}`}
+            className={`overflow-hidden rounded-(--ui-radius-card) border border-(--ui-card-border) ${previewEffect === "gradient-blur" ? "bg-background-base" : "bg-[var(--ui-surface-hover)]"}`}
           >
             {previewSrc ? (
               previewEffect === "gradient-blur" ? (

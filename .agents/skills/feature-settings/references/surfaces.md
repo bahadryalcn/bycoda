@@ -49,5 +49,5 @@ All code paths below are repository-relative. This is a starting map; follow cur
 ## Focused verification
 
 - Shell/model/control: colocated `SettingsView.test.ts`, `settingsControls.test.ts`, `settings.test.ts`, `settings.storage.test.ts`; Policies `PoliciesSettings.test.ts`.
-- Browser: `tests/browser/settings.e2e.ts`, `settings-layout.e2e.ts`, `settings-subviews.e2e.ts`, `settings-organization.e2e.ts`, `policies.e2e.ts`; inspect `playwright.settings.config.ts` for selected specs and port ownership.
+- Browser: `tests/browser/settings/settings.e2e.ts`, `settings-layout.e2e.ts`, `settings-subviews.e2e.ts`, `settings-organization.e2e.ts`, `policies.e2e.ts`; inspect `playwright.settings.config.ts` for selected specs and port ownership.
 - Select tests for changed behavior, not the entire inventory by default. Shared changes need representative consumers, both themes and keyboard/reduced-motion checks. Native/pairing/installed acceptance remains distinct from fixture evidence.

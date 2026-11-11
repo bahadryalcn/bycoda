@@ -4,7 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { Fragment, StrictMode, act, createElement, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { NotesView as RawNotesView } from "./NotesView";
 import { SessionNotesPanel } from "./SessionNotesPanel";

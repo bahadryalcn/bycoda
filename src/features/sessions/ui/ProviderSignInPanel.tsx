@@ -1,3 +1,4 @@
+import { Heading } from "../../../shared/ui/Heading";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import type { HarnessId } from "../model/session";
@@ -37,11 +38,11 @@ export function ProviderSignInPanel({
       <span className="grid size-16 place-items-center rounded-2xl bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg) ring-1 ring-inset ring-(--color-stroke) shadow-sm">
         <HarnessIcon harness={harness} className="size-9" />
       </span>
-      <h2 className="mt-3.5 text-ui-title font-medium leading-5 text-(--ui-tone-neutral-fg)">
+      <Heading size="page" level={2} className="mt-3.5">
         {complete
           ? t("Signed in to {p0}", { p0: title })
           : (idleTitle ?? t("Authentication required"))}
-      </h2>
+      </Heading>
       <p className="mt-1 max-w-56 text-ui-micro leading-4 text-(--ui-text-secondary)">
         {complete
           ? (completeDescription ?? t("You can retry your last message now."))

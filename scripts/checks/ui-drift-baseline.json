@@ -2,20 +2,1795 @@
   "schemaVersion": 1,
   "purpose": "Existing UI drift counted per file and rule by scripts/checks/check-ui-drift.mjs. Counts may only fall; regenerate with --update-baseline after reducing them.",
   "counts": {
+    "src/app/App.tsx": {
+      "feature-typography": 1
+    },
+    "src/app/shell/AppConfirmHost.tsx": {
+      "inline-style-property": 1
+    },
+    "src/app/shell/ChangesTabTooltip.tsx": {
+      "feature-typography": 6,
+      "text-truncation": 2
+    },
+    "src/app/shell/DetachedWorkingBar.tsx": {
+      "feature-typography": 3,
+      "surface-style": 12,
+      "text-truncation": 1
+    },
+    "src/app/shell/GithubStarPrompt.module.css": {
+      "feature-motion": 2,
+      "interaction-state": 4,
+      "surface-style": 1
+    },
+    "src/app/shell/GithubStarPrompt.tsx": {
+      "feature-typography": 2,
+      "text-truncation": 1
+    },
+    "src/app/shell/LastSessionsSection.tsx": {
+      "feature-typography": 8,
+      "spacing-step": 1,
+      "surface-style": 3,
+      "text-truncation": 1
+    },
+    "src/app/shell/MenuBar.tsx": {
+      "feature-typography": 1,
+      "spacing-step": 1,
+      "surface-style": 2
+    },
+    "src/app/shell/NavigationBoundary.tsx": {
+      "feature-typography": 1
+    },
+    "src/app/shell/ProjectRail.tsx": {
+      "feature-typography": 22,
+      "fixed-control-size": 5,
+      "inline-style-property": 1,
+      "interaction-state": 2,
+      "spacing-step": 10,
+      "surface-style": 7,
+      "text-truncation": 2
+    },
+    "src/app/shell/RailAction.tsx": {
+      "feature-typography": 13,
+      "text-truncation": 2
+    },
+    "src/app/shell/RecoveryVerification.tsx": {
+      "feature-typography": 2
+    },
+    "src/app/shell/SessionDetailTimes.tsx": {
+      "feature-typography": 2,
+      "spacing-step": 1
+    },
+    "src/app/shell/SessionFolderListRows.tsx": {
+      "inline-style-property": 1,
+      "surface-style": 2
+    },
+    "src/app/shell/SessionFolderRows.tsx": {
+      "feature-motion": 4,
+      "feature-typography": 15,
+      "fixed-control-size": 1,
+      "interaction-state": 6,
+      "spacing-step": 1,
+      "text-truncation": 1
+    },
+    "src/app/shell/SessionListItem.tsx": {
+      "inline-style-property": 1
+    },
+    "src/app/shell/SessionRecoveryControl.tsx": {
+      "text-truncation": 1
+    },
+    "src/app/shell/SessionRecoveryPanel.tsx": {
+      "feature-typography": 9,
+      "fixed-control-size": 1,
+      "surface-style": 4
+    },
+    "src/app/shell/SettingsRail.tsx": {
+      "feature-typography": 7,
+      "spacing-step": 2,
+      "text-truncation": 1
+    },
+    "src/app/shell/Sidebar.module.css": {
+      "spacing-step": 2,
+      "surface-style": 1
+    },
     "src/app/shell/Sidebar.tsx": {
+      "feature-motion": 3,
+      "feature-typography": 74,
+      "fixed-control-size": 1,
+      "interaction-state": 3,
+      "scrollbar-style": 1,
+      "spacing-step": 14,
+      "surface-style": 19,
+      "text-truncation": 11,
       "theme-palette-literal": 1
+    },
+    "src/app/shell/SidebarAccountFooter.module.css": {
+      "surface-style": 1
+    },
+    "src/app/shell/SidebarUpdate.tsx": {
+      "feature-typography": 12,
+      "text-truncation": 2
+    },
+    "src/app/shell/TitleBar.tsx": {
+      "feature-typography": 13,
+      "fixed-control-size": 2,
+      "scrollbar-style": 1,
+      "spacing-step": 5,
+      "surface-style": 5,
+      "text-truncation": 2
+    },
+    "src/app/shell/UpdateRailCard.tsx": {
+      "feature-typography": 5,
+      "text-truncation": 1
+    },
+    "src/app/shell/UsageFooter.tsx": {
+      "feature-typography": 5,
+      "scrollbar-style": 1,
+      "surface-style": 2
+    },
+    "src/app/shell/UsageProviderChip.tsx": {
+      "feature-motion": 2,
+      "feature-typography": 63,
+      "inline-style-property": 1,
+      "spacing-step": 11,
+      "surface-style": 17,
+      "text-truncation": 9
+    },
+    "src/app/shell/WhatsNewDialog.tsx": {
+      "feature-typography": 4
+    },
+    "src/app/shell/WindowControls.tsx": {
+      "surface-style": 2
+    },
+    "src/app/shell/WorkspaceControls.tsx": {
+      "feature-typography": 1,
+      "surface-style": 2
+    },
+    "src/app/shell/projectRailRow.css": {
+      "interaction-state": 11
+    },
+    "src/app/shell/session-recovery.css": {
+      "scrollbar-style": 2,
+      "spacing-step": 1
+    },
+    "src/app/shell/sessionList.css": {
+      "feature-motion": 1,
+      "interaction-state": 11
+    },
+    "src/app/shell/sessionListWindow.tsx": {
+      "spacing-step": 2
+    },
+    "src/app/shell/toolNavigation.css": {
+      "feature-typography": 1
+    },
+    "src/app/shell/useProjectMenu.tsx": {
+      "feature-typography": 3,
+      "text-truncation": 1
+    },
+    "src/app/shell/useRailSections.tsx": {
+      "interaction-state": 1,
+      "surface-style": 1
+    },
+    "src/app/shell/useSessionProjectAppearance.tsx": {
+      "surface-style": 1
+    },
+    "src/app/ui/ReleaseNotesSurface.tsx": {
+      "feature-typography": 2,
+      "spacing-step": 2
+    },
+    "src/app/workspace/layout/BufferReportRecoveryView.tsx": {
+      "feature-typography": 27,
+      "surface-style": 4
+    },
+    "src/app/workspace/layout/EditorDraftRecoverySection.tsx": {
+      "feature-typography": 14,
+      "surface-style": 4
+    },
+    "src/app/workspace/layout/HostBufferRecoverySection.tsx": {
+      "feature-typography": 2
+    },
+    "src/app/workspace/layout/WorkspaceFooter.tsx": {
+      "surface-style": 2
+    },
+    "src/app/workspace/layout/WorkspaceMainArea.tsx": {
+      "inline-style-property": 1
+    },
+    "src/features/account/ui/AccountAvatar.module.css": {
+      "feature-typography": 6,
+      "spacing-step": 1,
+      "surface-style": 6
+    },
+    "src/features/account/ui/AccountData.tsx": {
+      "feature-typography": 10
+    },
+    "src/features/account/ui/AccountDevices.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/account/ui/AccountMenu.tsx": {
+      "feature-typography": 5,
+      "text-truncation": 2
+    },
+    "src/features/account/ui/AccountProfile.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/account/ui/AccountRailRow.tsx": {
+      "feature-typography": 3,
+      "text-truncation": 1
+    },
+    "src/features/account/ui/AccountSecurity.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/account/ui/FeedbackDialog.module.css": {
+      "feature-typography": 8,
+      "spacing-step": 2,
+      "surface-style": 2
+    },
+    "src/features/account/ui/FeedbackDialog.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/account/ui/account.module.css": {
+      "feature-typography": 18,
+      "spacing-step": 2,
+      "surface-style": 4,
+      "text-truncation": 1
+    },
+    "src/features/activity/ui/ActivitySources.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/assistant/ui/AssistantAvatar.module.css": {
+      "feature-typography": 2,
+      "spacing-step": 1,
+      "surface-style": 3
+    },
+    "src/features/assistant/ui/AssistantBriefingCard.module.css": {
+      "feature-typography": 7,
+      "spacing-step": 1,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/assistant/ui/AssistantHistory.module.css": {
+      "feature-typography": 7,
+      "spacing-step": 1,
+      "surface-style": 3
+    },
+    "src/features/assistant/ui/AssistantMemoryPanel.module.css": {
+      "feature-typography": 8,
+      "spacing-step": 1,
+      "surface-style": 4
+    },
+    "src/features/assistant/ui/AssistantNoteCard.module.css": {
+      "feature-typography": 9
+    },
+    "src/features/assistant/ui/AssistantOwnerQuestions.module.css": {
+      "feature-typography": 3,
+      "surface-style": 6
+    },
+    "src/features/assistant/ui/AssistantPresenceIndicator.module.css": {
+      "feature-typography": 4,
+      "surface-style": 6,
+      "text-truncation": 1
+    },
+    "src/features/assistant/ui/AssistantProfileFields.module.css": {
+      "feature-typography": 4,
+      "spacing-step": 2,
+      "surface-style": 1
+    },
+    "src/features/assistant/ui/AssistantRemoteAccess.module.css": {
+      "feature-typography": 8
+    },
+    "src/features/assistant/ui/AssistantSessions.module.css": {
+      "feature-typography": 23,
+      "spacing-step": 2,
+      "surface-style": 1,
+      "text-truncation": 2
+    },
+    "src/features/assistant/ui/AssistantSettings.module.css": {
+      "scrollbar-style": 1,
+      "surface-style": 1
+    },
+    "src/features/assistant/ui/AssistantSetup.module.css": {
+      "feature-typography": 9,
+      "spacing-step": 1
+    },
+    "src/features/assistant/ui/AssistantView.module.css": {
+      "feature-typography": 16,
+      "surface-style": 1
+    },
+    "src/features/assistant/ui/ManualSessionSupervision.module.css": {
+      "feature-typography": 4,
+      "spacing-step": 1,
+      "surface-style": 4
+    },
+    "src/features/assistant/ui/builder/AssistantBuilder.module.css": {
+      "feature-typography": 14,
+      "spacing-step": 1,
+      "surface-style": 7
+    },
+    "src/features/assistant/ui/room/CollectionToolbar.module.css": {
+      "surface-style": 1
+    },
+    "src/features/assistant/ui/room/Conversation.module.css": {
+      "feature-typography": 18,
+      "spacing-step": 3,
+      "surface-style": 10,
+      "text-truncation": 2
+    },
+    "src/features/assistant/ui/room/Jobs.module.css": {
+      "feature-motion": 1,
+      "feature-typography": 23,
+      "interaction-state": 1,
+      "spacing-step": 4,
+      "surface-style": 5,
+      "text-truncation": 4
+    },
+    "src/features/assistant/ui/room/NotesTab.module.css": {
+      "feature-motion": 2,
+      "feature-typography": 27,
+      "interaction-state": 1,
+      "spacing-step": 4,
+      "surface-style": 5,
+      "text-truncation": 2
+    },
+    "src/features/assistant/ui/room/RoomShell.module.css": {
+      "feature-typography": 17,
+      "spacing-step": 1,
+      "surface-style": 7,
+      "text-truncation": 2
+    },
+    "src/features/assistant/ui/room/RoomTabs.module.css": {
+      "feature-typography": 1
+    },
+    "src/features/assistant/ui/room/TodayTab.module.css": {
+      "feature-typography": 11,
+      "spacing-step": 1,
+      "text-truncation": 1
+    },
+    "src/features/assistant/ui/room/TrashPanel.module.css": {
+      "feature-typography": 8,
+      "spacing-step": 1,
+      "surface-style": 4
+    },
+    "src/features/assistant/ui/settings/ExecutionPermissionPicker.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/assistant/ui/settings/costUsage.module.css": {
+      "feature-typography": 4,
+      "spacing-step": 1,
+      "surface-style": 2
+    },
+    "src/features/assistant/ui/settings/folders/assistantFolders.module.css": {
+      "feature-typography": 3,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/assistant/ui/settings/pool/modelPool.module.css": {
+      "feature-typography": 12,
+      "spacing-step": 2,
+      "surface-style": 1
+    },
+    "src/features/assistant/ui/settings/schedule.module.css": {
+      "feature-typography": 3
+    },
+    "src/features/assistant/ui/settings/settings.module.css": {
+      "feature-typography": 12,
+      "spacing-step": 1,
+      "surface-style": 2
+    },
+    "src/features/assistant/ui/settings/work.module.css": {
+      "feature-typography": 11,
+      "spacing-step": 1
+    },
+    "src/features/automations/ui/AutomationsView.tsx": {
+      "feature-typography": 56,
+      "inline-style-property": 2,
+      "spacing-step": 6,
+      "surface-style": 3,
+      "text-truncation": 11
+    },
+    "src/features/automations/ui/TriggerEditor.tsx": {
+      "feature-typography": 5,
+      "fixed-control-size": 1
+    },
+    "src/features/automations/ui/automations.css": {
+      "interaction-state": 1,
+      "spacing-step": 1,
+      "surface-style": 6
+    },
+    "src/features/connections/ui/AddRemoteProjectDialog.tsx": {
+      "feature-typography": 5,
+      "text-truncation": 1
+    },
+    "src/features/connections/ui/AdoptedSessionNotice.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/connections/ui/ConnectionSyncLine.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/connections/ui/ConnectionsSettings.tsx": {
+      "feature-typography": 7,
+      "surface-style": 2
+    },
+    "src/features/connections/ui/LocalHostDownNotice.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/connections/ui/LocalHostUpdateNotice.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/connections/ui/MachineForm.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/connections/ui/MachineRoutesLine.tsx": {
+      "feature-typography": 11,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/connections/ui/MachineRow.tsx": {
+      "feature-typography": 17,
+      "spacing-step": 1,
+      "surface-style": 1,
+      "text-truncation": 2
+    },
+    "src/features/connections/ui/PhoneConnectionPanel.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/connections/ui/PhonePairingFlow.tsx": {
+      "feature-typography": 10,
+      "surface-style": 2
+    },
+    "src/features/connections/ui/RemoteConnectionDetails.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/connections/ui/RemoteDataStatus.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/connections/ui/RemoteLoadError.tsx": {
+      "text-truncation": 1
+    },
+    "src/features/connections/ui/RemoteOutboxNotice.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/connections/ui/RemoteSession.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/connections/ui/RemoteSessionFrame.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/connections/ui/RemoveMachineDialog.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/connections/ui/ServerActivity.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/connections/ui/ServerFiles.tsx": {
+      "feature-typography": 14,
+      "surface-style": 8,
+      "text-truncation": 3
+    },
+    "src/features/connections/ui/ServerForwards.tsx": {
+      "feature-typography": 6,
+      "surface-style": 2
+    },
+    "src/features/connections/ui/ServerItem.tsx": {
+      "feature-typography": 11,
+      "fixed-control-size": 1,
+      "inline-style-property": 1,
+      "surface-style": 1,
+      "text-truncation": 4
+    },
+    "src/features/connections/ui/ServerOrganization.tsx": {
+      "feature-typography": 2,
+      "surface-style": 4
+    },
+    "src/features/connections/ui/ServerSnippets.tsx": {
+      "feature-typography": 10,
+      "text-truncation": 1
+    },
+    "src/features/connections/ui/ServerStatus.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/connections/ui/ServerTerminalRestoreControls.tsx": {
+      "feature-typography": 3,
+      "surface-style": 2
+    },
+    "src/features/connections/ui/ServerTerminalRestorePreview.tsx": {
+      "feature-typography": 6,
+      "surface-style": 2
+    },
+    "src/features/connections/ui/ServersConnectionTools.tsx": {
+      "feature-typography": 9,
+      "surface-style": 1
+    },
+    "src/features/connections/ui/ServersTerminalWorkspace.tsx": {
+      "feature-typography": 6,
+      "surface-style": 5,
+      "text-truncation": 2
+    },
+    "src/features/connections/ui/ServersView.css": {
+      "spacing-step": 2,
+      "surface-style": 1
+    },
+    "src/features/connections/ui/ServersView.tsx": {
+      "feature-typography": 17,
+      "spacing-step": 2,
+      "surface-style": 7,
+      "text-truncation": 3
+    },
+    "src/features/connections/ui/SharedQueueRecoveryNotice.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/connections/ui/SshAgentForwarding.tsx": {
+      "feature-typography": 8
+    },
+    "src/features/connections/ui/SshCertificateInspection.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/connections/ui/SshConfigImportChoices.tsx": {
+      "feature-typography": 14,
+      "surface-style": 2
+    },
+    "src/features/connections/ui/SshConfigurationConnectReview.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/connections/ui/SshGroupSettings.tsx": {
+      "feature-typography": 15,
+      "surface-style": 2
+    },
+    "src/features/connections/ui/SshIdentityField.tsx": {
+      "feature-typography": 9
+    },
+    "src/features/connections/ui/SshJumpChainEditor.tsx": {
+      "feature-typography": 2,
+      "spacing-step": 1
+    },
+    "src/features/connections/ui/SshJumpPolicyEditor.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/connections/ui/SshRunbookQueue.tsx": {
+      "feature-typography": 2,
+      "surface-style": 4
+    },
+    "src/features/connections/ui/SshRunbooks.tsx": {
+      "feature-typography": 13,
+      "surface-style": 4
+    },
+    "src/features/connections/ui/SshServerEditor.tsx": {
+      "feature-typography": 17,
+      "surface-style": 6
+    },
+    "src/features/connections/ui/SshSettings.tsx": {
+      "feature-typography": 15
+    },
+    "src/features/connections/ui/SshSetupPromptForm.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/connections/ui/TermiusImportDialog.tsx": {
+      "feature-typography": 14,
+      "surface-style": 2
+    },
+    "src/features/connections/ui/connections-settings.css": {
+      "feature-typography": 3
+    },
+    "src/features/connections/ui/external-tunnels.css": {
+      "feature-typography": 6,
+      "surface-style": 1
+    },
+    "src/features/connections/ui/phone-pairing.css": {
+      "feature-typography": 2
+    },
+    "src/features/connections/ui/useSshHttpProxyApproval.tsx": {
+      "feature-typography": 9
+    },
+    "src/features/crews/ui/CrewAccessRow.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/crews/ui/CrewAppearancePicker.tsx": {
+      "fixed-control-size": 1,
+      "spacing-step": 1
+    },
+    "src/features/crews/ui/CrewDialogs.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/crews/ui/CrewEditor.tsx": {
+      "feature-typography": 2,
+      "text-truncation": 1
+    },
+    "src/features/crews/ui/CrewEditorAdd.tsx": {
+      "feature-typography": 4,
+      "spacing-step": 1
+    },
+    "src/features/crews/ui/CrewEditorParts.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/crews/ui/CrewFaces.tsx": {
+      "feature-typography": 1,
+      "surface-style": 4
+    },
+    "src/features/crews/ui/CrewLibrary.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/crews/ui/CrewLibraryBulk.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/crews/ui/CrewLibraryMemberMeta.tsx": {
+      "feature-typography": 6,
+      "text-truncation": 2
+    },
+    "src/features/crews/ui/CrewLibraryTeams.tsx": {
+      "feature-typography": 6,
+      "text-truncation": 1
+    },
+    "src/features/crews/ui/CrewMachineScope.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/crews/ui/CrewManagedBar.tsx": {
+      "feature-typography": 5,
+      "text-truncation": 2
+    },
+    "src/features/crews/ui/CrewMemberDetail.tsx": {
+      "feature-typography": 6,
+      "text-truncation": 1
+    },
+    "src/features/crews/ui/CrewMemberForm.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/crews/ui/CrewMemberPicker.tsx": {
+      "feature-typography": 9,
+      "spacing-step": 1,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/crews/ui/CrewMemberTable.tsx": {
+      "feature-typography": 23,
+      "spacing-step": 1,
+      "text-truncation": 3
+    },
+    "src/features/crews/ui/CrewModelTag.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 2
+    },
+    "src/features/crews/ui/CrewRailSection.tsx": {
+      "feature-typography": 2,
+      "fixed-control-size": 1,
+      "spacing-step": 2,
+      "text-truncation": 1
+    },
+    "src/features/crews/ui/CrewSessions.tsx": {
+      "feature-typography": 8,
+      "spacing-step": 3,
+      "text-truncation": 2
+    },
+    "src/features/crews/ui/CrewTablePortrait.tsx": {
+      "feature-typography": 3,
+      "surface-style": 4
+    },
+    "src/features/crews/ui/CrewTaskPicker.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 1
+    },
+    "src/features/crews/ui/CrewWorkDetail.tsx": {
+      "feature-typography": 9
+    },
+    "src/features/crews/ui/CrewWorkList.tsx": {
+      "feature-typography": 7,
+      "spacing-step": 2,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/crews/ui/CrewWorkManager.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 1
+    },
+    "src/features/crews/ui/CrewWorkOwnerActions.tsx": {
+      "feature-typography": 1,
+      "text-truncation": 1
+    },
+    "src/features/crews/ui/CrewWorkSessions.tsx": {
+      "feature-typography": 9,
+      "spacing-step": 2,
+      "text-truncation": 2
+    },
+    "src/features/crews/ui/CrewWorkState.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/crews/ui/CrewWorkSummary.tsx": {
+      "feature-typography": 12
+    },
+    "src/features/crews/ui/CrewWorkTeam.tsx": {
+      "feature-typography": 3,
+      "spacing-step": 1
+    },
+    "src/features/crews/ui/CrewWorkTimeline.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/crews/ui/CrewWorkingSettings.tsx": {
+      "feature-typography": 3,
+      "spacing-step": 1
+    },
+    "src/features/crews/ui/MemberAppearancePicker.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/crews/ui/MemberCandidateList.tsx": {
+      "feature-typography": 10,
+      "text-truncation": 2
+    },
+    "src/features/crews/ui/MemberModelSection.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/crews/ui/MemberPerformance.tsx": {
+      "feature-typography": 8
+    },
+    "src/features/crews/ui/MemberToolsPicker.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/crews/ui/page/CrewTeamItem.tsx": {
+      "feature-typography": 7,
+      "spacing-step": 1,
+      "text-truncation": 3
+    },
+    "src/features/crews/ui/page/CrewsActive.tsx": {
+      "feature-typography": 12,
+      "spacing-step": 1,
+      "text-truncation": 3
+    },
+    "src/features/crews/ui/page/CrewsPage.tsx": {
+      "feature-typography": 1,
+      "surface-style": 2
+    },
+    "src/features/decision-models/ui/ApiProviderDialog.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 2
+    },
+    "src/features/decision-models/ui/DecisionModelsFirstRunCard.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/decision-models/ui/DecisionModelsSettings.tsx": {
+      "feature-typography": 6,
+      "spacing-step": 1
+    },
+    "src/features/decision-models/ui/FoundList.tsx": {
+      "feature-typography": 4,
+      "surface-style": 2,
+      "text-truncation": 2
+    },
+    "src/features/decision-models/ui/LocalInstallWizard.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/decision-models/ui/RoutingTable.tsx": {
+      "feature-typography": 7,
+      "surface-style": 4
+    },
+    "src/features/decision-models/ui/ScanSettings.tsx": {
+      "surface-style": 1
+    },
+    "src/features/decision-models/ui/SourceIcon.tsx": {
+      "feature-typography": 1,
+      "surface-style": 2
+    },
+    "src/features/decision-models/ui/SourceRow.tsx": {
+      "feature-typography": 6,
+      "spacing-step": 2,
+      "surface-style": 2,
+      "text-truncation": 2
+    },
+    "src/features/decision-models/ui/SourcesList.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/devices/DevicePanel.css": {
+      "feature-typography": 46,
+      "scrollbar-style": 1,
+      "spacing-step": 14,
+      "surface-style": 38,
+      "text-truncation": 3
+    },
+    "src/features/devices/DevicePanel.tsx": {
+      "inline-style-property": 1
+    },
+    "src/features/diagnostics/ui/DiagnosticsSharingSetting.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/files/ui/BinaryFileView.tsx": {
+      "feature-typography": 9,
+      "inline-style-property": 1,
+      "surface-style": 1
+    },
+    "src/features/files/ui/ChatFolderBrowser.tsx": {
+      "feature-typography": 10,
+      "surface-style": 4,
+      "text-truncation": 1
+    },
+    "src/features/files/ui/DelimitedFileView.tsx": {
+      "feature-typography": 2,
+      "surface-style": 2
+    },
+    "src/features/files/ui/DocumentView.tsx": {
+      "feature-typography": 2,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/files/ui/EditorConflictBar.tsx": {
+      "feature-typography": 7,
+      "text-truncation": 3
+    },
+    "src/features/files/ui/EditorSelectionMenu.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/files/ui/ExplorerSyncStatus.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/files/ui/FileEditor.tsx": {
+      "feature-typography": 9,
+      "surface-style": 8,
+      "text-truncation": 2
+    },
+    "src/features/files/ui/FileLoadError.tsx": {
+      "feature-typography": 5,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/files/ui/FilePane.tsx": {
+      "feature-typography": 3,
+      "fixed-control-size": 1
+    },
+    "src/features/files/ui/FilePicker.tsx": {
+      "feature-typography": 6,
+      "spacing-step": 1,
+      "surface-style": 2
+    },
+    "src/features/files/ui/FilePickerLists.tsx": {
+      "feature-typography": 4,
+      "fixed-control-size": 2,
+      "text-truncation": 3
+    },
+    "src/features/files/ui/FilePreview.tsx": {
+      "feature-typography": 19,
+      "interaction-state": 1,
+      "surface-style": 2,
+      "text-truncation": 3
+    },
+    "src/features/files/ui/FilePreviewSearch.tsx": {
+      "feature-typography": 4,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/files/ui/FileTree.tsx": {
+      "feature-typography": 20,
+      "fixed-control-size": 1,
+      "inline-style-property": 4,
+      "spacing-step": 2,
+      "surface-style": 1,
+      "text-truncation": 2
+    },
+    "src/features/files/ui/MoveRecoveryNotice.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/files/ui/SheetGridView.tsx": {
+      "feature-typography": 5,
+      "inline-style-property": 8,
+      "surface-style": 17,
+      "text-truncation": 2
+    },
+    "src/features/group-lock/ui/ForgotLockPasswordDialog.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/group-lock/ui/GroupPrivacy.css": {
+      "feature-typography": 12,
+      "spacing-step": 1
+    },
+    "src/features/group-lock/ui/PrivacyLaunchGate.tsx": {
+      "feature-typography": 7,
+      "spacing-step": 1,
+      "surface-style": 1
+    },
+    "src/features/group-lock/ui/SetLockPasswordDialog.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/host-tools/BrowserPanel.css": {
+      "feature-typography": 27,
+      "spacing-step": 6,
+      "surface-style": 26,
+      "text-truncation": 4
+    },
+    "src/features/host-tools/BrowserPanel.tsx": {
+      "inline-style-property": 3
+    },
+    "src/features/host-tools/ConversationToolsButton.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/host-tools/DesktopControlSettings.module.css": {
+      "feature-typography": 3,
+      "surface-style": 2
+    },
+    "src/features/host-tools/DesktopControlStrip.module.css": {
+      "feature-typography": 3,
+      "surface-style": 4,
+      "text-truncation": 1
+    },
+    "src/features/host-tools/HostToolsWindow.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/host-tools/SessionHostTools.tsx": {
+      "inline-style-property": 5
+    },
+    "src/features/host-tools/ToolsWorkspace.tsx": {
+      "inline-style-property": 2
+    },
+    "src/features/host-tools/browser-annotation.css": {
+      "feature-typography": 7,
+      "interaction-state": 6,
+      "spacing-step": 1,
+      "surface-style": 6
+    },
+    "src/features/host-tools/dev-servers.css": {
+      "feature-typography": 13,
+      "spacing-step": 2,
+      "surface-style": 13,
+      "text-truncation": 2
+    },
+    "src/features/host-tools/diagnostics-panel.css": {
+      "feature-typography": 20,
+      "text-truncation": 1
+    },
+    "src/features/host-tools/host-tools.css": {
+      "feature-typography": 36,
+      "interaction-state": 4,
+      "spacing-step": 10,
+      "surface-style": 15,
+      "text-truncation": 4
+    },
+    "src/features/host-tools/runtime-logs.css": {
+      "feature-typography": 55,
+      "interaction-state": 5,
+      "scrollbar-style": 1,
+      "spacing-step": 14,
+      "surface-style": 20,
+      "text-truncation": 5
+    },
+    "src/features/host-tools/tools-workspace.css": {
+      "feature-typography": 10,
+      "interaction-state": 2,
+      "spacing-step": 2,
+      "surface-style": 8
+    },
+    "src/features/inbox/ui/CheckEvidence.tsx": {
+      "feature-typography": 18,
+      "spacing-step": 1,
+      "surface-style": 6
+    },
+    "src/features/inbox/ui/CheckRepairForm.tsx": {
+      "feature-typography": 14,
+      "spacing-step": 2
+    },
+    "src/features/inbox/ui/CheckRepairProgress.tsx": {
+      "feature-typography": 7,
+      "spacing-step": 2,
+      "surface-style": 3
+    },
+    "src/features/inbox/ui/InboxComments.tsx": {
+      "feature-typography": 21,
+      "interaction-state": 2,
+      "surface-style": 12,
+      "text-truncation": 6
+    },
+    "src/features/inbox/ui/InboxDetail.tsx": {
+      "feature-typography": 14,
+      "spacing-step": 5,
+      "surface-style": 2,
+      "text-truncation": 2
+    },
+    "src/features/inbox/ui/InboxDiscussionPanel.tsx": {
+      "surface-style": 1
+    },
+    "src/features/inbox/ui/InboxFiltersMenu.tsx": {
+      "feature-typography": 5,
+      "text-truncation": 1
+    },
+    "src/features/inbox/ui/InboxMiniCard.tsx": {
+      "feature-typography": 11,
+      "text-truncation": 4
+    },
+    "src/features/inbox/ui/InboxNotificationMenu.tsx": {
+      "feature-typography": 8
+    },
+    "src/features/inbox/ui/InboxPrActions.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/inbox/ui/InboxPrChecks.tsx": {
+      "feature-typography": 30,
+      "fixed-control-size": 1,
+      "spacing-step": 3,
+      "surface-style": 2,
+      "text-truncation": 3
+    },
+    "src/features/inbox/ui/InboxPrOverview.tsx": {
+      "feature-motion": 1,
+      "feature-typography": 20,
+      "inline-style-property": 2,
+      "surface-style": 5,
+      "text-truncation": 2
+    },
+    "src/features/inbox/ui/InboxPresentation.tsx": {
+      "feature-typography": 2,
+      "inline-style-property": 3,
+      "surface-style": 6,
+      "text-truncation": 1
     },
     "src/features/inbox/ui/InboxProviderMark.tsx": {
       "theme-palette-literal": 5
     },
+    "src/features/inbox/ui/InboxSourceRow.tsx": {
+      "feature-typography": 2,
+      "inline-style-property": 1,
+      "spacing-step": 1
+    },
+    "src/features/inbox/ui/InboxView.css": {
+      "surface-style": 3
+    },
     "src/features/inbox/ui/InboxView.tsx": {
-      "layer": 1
+      "feature-typography": 22,
+      "layer": 1,
+      "spacing-step": 2,
+      "surface-style": 7,
+      "text-truncation": 4
+    },
+    "src/features/inbox/ui/JiraBoardView.tsx": {
+      "feature-typography": 16,
+      "surface-style": 3
+    },
+    "src/features/inbox/ui/LinkedWorkItemUpdateNotice.tsx": {
+      "feature-typography": 16,
+      "interaction-state": 1,
+      "spacing-step": 2,
+      "surface-style": 5,
+      "text-truncation": 7
+    },
+    "src/features/inbox/ui/jira-board.css": {
+      "feature-typography": 2,
+      "surface-style": 2
+    },
+    "src/features/messaging/ui/MessageReplyComposer.tsx": {
+      "feature-typography": 2,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/messaging/ui/MessageThreadList.tsx": {
+      "feature-typography": 12,
+      "text-truncation": 3
+    },
+    "src/features/messaging/ui/MessageThreadView.tsx": {
+      "feature-typography": 6,
+      "spacing-step": 2,
+      "surface-style": 2,
+      "text-truncation": 4
+    },
+    "src/features/messaging/ui/MessagesPanel.tsx": {
+      "feature-typography": 1,
+      "spacing-step": 1,
+      "surface-style": 3
+    },
+    "src/features/messaging/ui/messages.module.css": {
+      "feature-typography": 5,
+      "surface-style": 5
+    },
+    "src/features/notes/ui/NoteDraftRecoveryNotice.tsx": {
+      "feature-typography": 8
+    },
+    "src/features/notes/ui/NoteEditablePreview.tsx": {
+      "feature-typography": 2,
+      "inline-style-property": 1
+    },
+    "src/features/notes/ui/NoteMiniCard.tsx": {
+      "feature-typography": 7,
+      "spacing-step": 3,
+      "surface-style": 1,
+      "text-truncation": 3
+    },
+    "src/features/notes/ui/NoteSaveStatus.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/notes/ui/NotesView.tsx": {
+      "feature-motion": 1,
+      "feature-typography": 23,
+      "interaction-state": 1,
+      "spacing-step": 1,
+      "surface-style": 6,
+      "text-truncation": 8
+    },
+    "src/features/notes/ui/SessionNotesPanel.tsx": {
+      "feature-motion": 1,
+      "feature-typography": 5,
+      "surface-style": 2,
+      "text-truncation": 2
+    },
+    "src/features/notes/ui/notes.css": {
+      "feature-typography": 17,
+      "scrollbar-style": 2,
+      "spacing-step": 1,
+      "surface-style": 10
+    },
+    "src/features/notifications/ui/InboxApprovalPreview.tsx": {
+      "feature-typography": 9,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/notifications/ui/NotificationMuteControl.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/notifications/ui/NotificationMuteDatePicker.tsx": {
+      "feature-typography": 2,
+      "surface-style": 2
+    },
+    "src/features/notifications/ui/OwnerApprovalRequests.tsx": {
+      "feature-typography": 6,
+      "surface-style": 2
+    },
+    "src/features/notifications/ui/OwnerSecretInput.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/notifications/ui/ProjectNotificationSettings.css": {
+      "feature-typography": 13,
+      "spacing-step": 3,
+      "surface-style": 6,
+      "text-truncation": 1
+    },
+    "src/features/notifications/ui/ProjectNotificationSettings.tsx": {
+      "feature-typography": 4,
+      "inline-style-property": 1,
+      "interaction-state": 1,
+      "surface-style": 1
+    },
+    "src/features/onboarding/ui/FeatureHighlightMarkers.tsx": {
+      "inline-style-property": 1
+    },
+    "src/features/onboarding/ui/featureHighlights.css": {
+      "feature-motion": 1,
+      "spacing-step": 1,
+      "surface-style": 5
+    },
+    "src/features/onboarding/ui/guideHub.css": {
+      "feature-typography": 18,
+      "spacing-step": 1,
+      "surface-style": 7,
+      "text-truncation": 1
+    },
+    "src/features/onboarding/ui/onboarding.css": {
+      "feature-motion": 1,
+      "feature-typography": 46,
+      "interaction-state": 5,
+      "spacing-step": 10,
+      "surface-style": 24,
+      "text-truncation": 3
+    },
+    "src/features/onboarding/ui/usageGuide.css": {
+      "feature-motion": 2,
+      "feature-typography": 17,
+      "scrollbar-style": 1,
+      "surface-style": 12
+    },
+    "src/features/orchestration/ui/OrchestrationPreview.tsx": {
+      "feature-typography": 29,
+      "fixed-control-size": 1,
+      "inline-style-property": 1,
+      "spacing-step": 2,
+      "surface-style": 2,
+      "text-truncation": 5
+    },
+    "src/features/orchestration/ui/OrchestrationSidebarAgents.tsx": {
+      "feature-typography": 22,
+      "spacing-step": 6,
+      "surface-style": 3,
+      "text-truncation": 2
     },
     "src/features/projects/model/projectCodeIcons.ts": {
       "theme-palette-literal": 56
     },
+    "src/features/projects/ui/AdditionalDirsDialog.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 2
+    },
+    "src/features/projects/ui/CwdPicker.tsx": {
+      "feature-typography": 16,
+      "text-truncation": 5
+    },
+    "src/features/projects/ui/ExternalEditorIcon.tsx": {
+      "feature-typography": 6,
+      "surface-style": 3
+    },
+    "src/features/projects/ui/FolderPicker.tsx": {
+      "feature-typography": 2,
+      "fixed-control-size": 1,
+      "interaction-state": 3,
+      "spacing-step": 1,
+      "surface-style": 9,
+      "text-truncation": 1
+    },
+    "src/features/projects/ui/GroupFetchPopover.tsx": {
+      "feature-typography": 8,
+      "text-truncation": 1
+    },
+    "src/features/projects/ui/GroupGitPopover.tsx": {
+      "feature-typography": 11,
+      "text-truncation": 2
+    },
+    "src/features/projects/ui/NewSessionProjectDialog.tsx": {
+      "surface-style": 1
+    },
+    "src/features/projects/ui/ProjectActionDialog.tsx": {
+      "feature-typography": 5,
+      "fixed-control-size": 1,
+      "surface-style": 2
+    },
+    "src/features/projects/ui/ProjectBackgroundDialog.tsx": {
+      "feature-typography": 17,
+      "inline-style-property": 1,
+      "surface-style": 7,
+      "text-truncation": 1
+    },
+    "src/features/projects/ui/ProjectGitChangeRow.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 1
+    },
+    "src/features/projects/ui/ProjectIconPicker.tsx": {
+      "feature-typography": 6,
+      "fixed-control-size": 1,
+      "spacing-step": 3,
+      "text-truncation": 2
+    },
+    "src/features/projects/ui/ProjectLogoIcon.tsx": {
+      "surface-style": 1
+    },
+    "src/features/projects/ui/ProjectNameConflictDialog.tsx": {
+      "feature-typography": 3,
+      "text-truncation": 1
+    },
+    "src/features/projects/ui/ProjectQuickActions.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/projects/ui/ProjectSearch.tsx": {
+      "feature-typography": 16,
+      "spacing-step": 1,
+      "surface-style": 10,
+      "text-truncation": 4
+    },
+    "src/features/projects/ui/RailBackgroundControls.tsx": {
+      "feature-typography": 3,
+      "inline-style-property": 1,
+      "spacing-step": 1,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/projects/ui/RemoveProjectDialog.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/projects/ui/RenameProjectFolderDialog.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/projects/ui/SearchableProjectPicker.tsx": {
+      "feature-motion": 1,
+      "feature-typography": 10,
+      "fixed-control-size": 2,
+      "surface-style": 4,
+      "text-truncation": 3
+    },
+    "src/features/providers/ui/AccountColorDot.tsx": {
+      "inline-style-property": 1,
+      "surface-style": 1
+    },
+    "src/features/providers/ui/CatalogReceiptStatus.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/providers/ui/GenericAcpSettings.tsx": {
+      "feature-typography": 35,
+      "spacing-step": 2,
+      "surface-style": 9,
+      "text-truncation": 3
+    },
+    "src/features/providers/ui/HarnessUpdateNotice.tsx": {
+      "feature-typography": 8,
+      "surface-style": 2
+    },
+    "src/features/providers/ui/ProviderAccountUsage.tsx": {
+      "feature-typography": 7,
+      "text-truncation": 2
+    },
+    "src/features/providers/ui/ProviderList.tsx": {
+      "feature-typography": 1,
+      "text-truncation": 1
+    },
+    "src/features/providers/ui/ProviderStatusGroup.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/quick-composer/ui/QuickComposer.tsx": {
+      "feature-motion": 1,
+      "feature-typography": 13,
+      "interaction-state": 2,
+      "scrollbar-style": 1,
+      "spacing-step": 1,
+      "surface-style": 11,
+      "text-truncation": 5
+    },
+    "src/features/quick-composer/ui/QuickGitPopup.tsx": {
+      "feature-typography": 3,
+      "surface-style": 3
+    },
+    "src/features/quick-composer/ui/QuickModelSelector.tsx": {
+      "feature-typography": 5,
+      "surface-style": 4,
+      "text-truncation": 3
+    },
+    "src/features/quick-composer/ui/QuickPermissions.tsx": {
+      "feature-typography": 1,
+      "surface-style": 2
+    },
+    "src/features/quick-composer/ui/QuickProjectIcon.tsx": {
+      "surface-style": 1
+    },
+    "src/features/quick-composer/ui/QuickWorkspaceControls.tsx": {
+      "text-truncation": 1
+    },
+    "src/features/search/ui/ChatSearchResults.tsx": {
+      "feature-typography": 7
+    },
+    "src/features/search/ui/SearchView.tsx": {
+      "feature-typography": 11
+    },
+    "src/features/search/ui/search.css": {
+      "feature-motion": 1,
+      "feature-typography": 22,
+      "interaction-state": 4,
+      "spacing-step": 4,
+      "surface-style": 3,
+      "text-truncation": 4
+    },
+    "src/features/search/ui/searchRowCopy.tsx": {
+      "feature-typography": 1,
+      "surface-style": 1
+    },
+    "src/features/sessions/ui/AccessPicker.tsx": {
+      "feature-typography": 6,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/ActivityDock.tsx": {
+      "feature-motion": 3,
+      "feature-typography": 20,
+      "spacing-step": 3,
+      "surface-style": 1,
+      "text-truncation": 5
+    },
+    "src/features/sessions/ui/AgentTabView.tsx": {
+      "feature-typography": 5,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
+      "fixed-control-size": 1
+    },
+    "src/features/sessions/ui/ApprovalToasts.tsx": {
+      "feature-typography": 6,
+      "surface-style": 3
+    },
+    "src/features/sessions/ui/AttachmentChip.module.css": {
+      "feature-motion": 2,
+      "feature-typography": 8,
+      "interaction-state": 1,
+      "spacing-step": 1,
+      "surface-style": 2,
+      "text-truncation": 2
+    },
+    "src/features/sessions/ui/AttachmentChip.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/sessions/ui/AttachmentFilePreview.tsx": {
+      "feature-typography": 2,
+      "surface-style": 1
+    },
+    "src/features/sessions/ui/AttachmentIdentity.tsx": {
+      "inline-style-property": 1
+    },
+    "src/features/sessions/ui/AttachmentTokenText.module.css": {
+      "feature-typography": 4,
+      "interaction-state": 2,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/AttachmentTokenText.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/sessions/ui/BtwQuestionBurst.tsx": {
+      "inline-style-property": 1
+    },
+    "src/features/sessions/ui/BtwSheet.tsx": {
+      "feature-typography": 7,
+      "scrollbar-style": 1,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
     "src/features/sessions/ui/BycodaSession.css": {
-      "font-weight": 1
+      "feature-typography": 3,
+      "spacing-step": 2
+    },
+    "src/features/sessions/ui/ChatCitationText.module.css": {
+      "feature-typography": 12,
+      "spacing-step": 1,
+      "surface-style": 6,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/ClaudeSessionPicker.tsx": {
+      "feature-typography": 2,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/ComposerCitations.module.css": {
+      "feature-typography": 7,
+      "spacing-step": 2,
+      "surface-style": 6,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/ComposerCrewMentionRow.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/ComposerSuggestions.tsx": {
+      "inline-style-property": 1
+    },
+    "src/features/sessions/ui/ComposerTips.css": {
+      "feature-motion": 1,
+      "feature-typography": 7
+    },
+    "src/features/sessions/ui/DelegationSettings.tsx": {
+      "feature-typography": 5,
+      "fixed-control-size": 1,
+      "inline-style-property": 1,
+      "surface-style": 3,
+      "text-truncation": 3
+    },
+    "src/features/sessions/ui/DeliveryProgressNotice.tsx": {
+      "feature-motion": 2,
+      "feature-typography": 5,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/DeliveryReviewChoice.tsx": {
+      "feature-typography": 2,
+      "spacing-step": 1,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/DiscussionEmpty.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/sessions/ui/DocumentImage.tsx": {
+      "feature-typography": 2,
+      "inline-style-property": 1
+    },
+    "src/features/sessions/ui/EditFromHereDialog.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/sessions/ui/FileMentionPicker.tsx": {
+      "feature-typography": 11,
+      "spacing-step": 1,
+      "surface-style": 3,
+      "text-truncation": 2
+    },
+    "src/features/sessions/ui/GeneratedImage.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/HandoffMiniCard.tsx": {
+      "feature-typography": 11,
+      "surface-style": 2,
+      "text-truncation": 3
+    },
+    "src/features/sessions/ui/InlineVisual.tsx": {
+      "feature-typography": 2,
+      "inline-style-property": 2,
+      "text-truncation": 2
+    },
+    "src/features/sessions/ui/LinkSessionWorkItemDialog.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/sessions/ui/LiveAgentsPreview.tsx": {
+      "feature-typography": 16,
+      "fixed-control-size": 1,
+      "spacing-step": 3,
+      "surface-style": 7,
+      "text-truncation": 5
+    },
+    "src/features/sessions/ui/LocalMedia.tsx": {
+      "fixed-control-size": 1
+    },
+    "src/features/sessions/ui/LocalSessionReferenceLink.tsx": {
+      "feature-typography": 7
+    },
+    "src/features/sessions/ui/MarkdownModeToggle.tsx": {
+      "spacing-step": 1
+    },
+    "src/features/sessions/ui/McpServerPicker.tsx": {
+      "feature-typography": 3,
+      "surface-style": 3,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/MessageQueue.tsx": {
+      "feature-typography": 15,
+      "surface-style": 4,
+      "text-truncation": 8
+    },
+    "src/features/sessions/ui/ModelAccountSwitcher.tsx": {
+      "feature-typography": 10,
+      "inline-style-property": 1,
+      "spacing-step": 2,
+      "surface-style": 2,
+      "text-truncation": 4
+    },
+    "src/features/sessions/ui/ModelBrowser.tsx": {
+      "feature-typography": 6,
+      "fixed-control-size": 1,
+      "inline-style-property": 1,
+      "surface-style": 3,
+      "text-truncation": 3
+    },
+    "src/features/sessions/ui/ModelExtras.tsx": {
+      "feature-typography": 16,
+      "spacing-step": 2,
+      "surface-style": 7,
+      "text-truncation": 4
+    },
+    "src/features/sessions/ui/ModelFlyout.tsx": {
+      "feature-typography": 1,
+      "inline-style-property": 1,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/ModelPanel.tsx": {
+      "feature-typography": 4,
+      "inline-style-property": 1
+    },
+    "src/features/sessions/ui/ModelPicker.css": {
+      "feature-motion": 1,
+      "feature-typography": 3,
+      "fixed-control-size": 3,
+      "interaction-state": 7,
+      "surface-style": 12
+    },
+    "src/features/sessions/ui/ModelPicker.tsx": {
+      "feature-typography": 12,
+      "text-truncation": 6
+    },
+    "src/features/sessions/ui/ModelSettingPicker.tsx": {
+      "feature-typography": 8,
+      "spacing-step": 1,
+      "surface-style": 1,
+      "text-truncation": 3
+    },
+    "src/features/sessions/ui/ModelSettingsColumn.tsx": {
+      "feature-typography": 16,
+      "inline-style-property": 1,
+      "spacing-step": 3,
+      "surface-style": 6,
+      "text-truncation": 6
+    },
+    "src/features/sessions/ui/ModelSwitchRow.tsx": {
+      "feature-typography": 29,
+      "spacing-step": 1,
+      "surface-style": 3,
+      "text-truncation": 5
+    },
+    "src/features/sessions/ui/NotificationRequestCard.tsx": {
+      "feature-typography": 9,
+      "spacing-step": 1,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/PlanPreview.tsx": {
+      "feature-typography": 8,
+      "spacing-step": 4,
+      "text-truncation": 3
+    },
+    "src/features/sessions/ui/PromptOutline.css": {
+      "feature-motion": 1
+    },
+    "src/features/sessions/ui/PromptOutline.tsx": {
+      "feature-motion": 3,
+      "feature-typography": 7,
+      "inline-style-property": 1,
+      "surface-style": 2,
+      "text-truncation": 2
+    },
+    "src/features/sessions/ui/ProviderAccountMenu.tsx": {
+      "feature-typography": 2,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/ProviderRetryNotice.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/sessions/ui/ProviderSignInPanel.tsx": {
+      "feature-typography": 7,
+      "surface-style": 5
+    },
+    "src/features/sessions/ui/QuestionFields.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/QuestionForm.module.css": {
+      "feature-typography": 24,
+      "fixed-control-size": 1,
+      "interaction-state": 2,
+      "spacing-step": 3,
+      "surface-style": 8
+    },
+    "src/features/sessions/ui/QuestionForm.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/QueuedMessageEditDialog.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/sessions/ui/ReminderNotices.tsx": {
+      "feature-typography": 11,
+      "surface-style": 2,
+      "text-truncation": 2
+    },
+    "src/features/sessions/ui/RemoteActivityNotices.tsx": {
+      "surface-style": 2
+    },
+    "src/features/sessions/ui/RemoteOriginMark.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/ResumeTurnRow.tsx": {
+      "feature-typography": 3,
+      "spacing-step": 1
+    },
+    "src/features/sessions/ui/RewoundHistoryDisclosure.tsx": {
+      "feature-typography": 4,
+      "surface-style": 1
+    },
+    "src/features/sessions/ui/SecondOpinionButton.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/sessions/ui/SecondOpinionCard.tsx": {
+      "feature-typography": 11,
+      "text-truncation": 2
+    },
+    "src/features/sessions/ui/SessionAgentIdentity.tsx": {
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/SessionBulkDeletionNotice.tsx": {
+      "feature-typography": 2,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/SessionDeletionNotice.tsx": {
+      "feature-typography": 5,
+      "surface-style": 2
+    },
+    "src/features/sessions/ui/SessionDirsPicker.tsx": {
+      "feature-typography": 18,
+      "spacing-step": 2,
+      "surface-style": 1,
+      "text-truncation": 3
+    },
+    "src/features/sessions/ui/SessionFolderPicker.tsx": {
+      "feature-typography": 3,
+      "surface-style": 3
+    },
+    "src/features/sessions/ui/SessionImportDialog.tsx": {
+      "feature-typography": 39,
+      "fixed-control-size": 1,
+      "spacing-step": 6,
+      "surface-style": 7,
+      "text-truncation": 4
+    },
+    "src/features/sessions/ui/SessionImportResult.tsx": {
+      "feature-typography": 13,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/SessionPane.tsx": {
+      "feature-typography": 5,
+      "interaction-state": 1,
+      "scrollbar-style": 1,
+      "spacing-step": 1,
+      "surface-style": 4,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/SessionReview.tsx": {
+      "feature-typography": 17,
+      "scrollbar-style": 1,
+      "spacing-step": 2,
+      "surface-style": 2,
+      "text-truncation": 2
+    },
+    "src/features/sessions/ui/SessionRowStatus.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/SessionWorkingStatus.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/SessionsEmpty.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/sessions/ui/SessionsNoMatch.tsx": {
+      "feature-typography": 5,
+      "spacing-step": 1,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/SkillTokenText.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/SubagentAnatomy.tsx": {
+      "feature-typography": 7,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/SubagentCards.tsx": {
+      "feature-motion": 4,
+      "feature-typography": 7,
+      "interaction-state": 2,
+      "spacing-step": 2,
+      "text-truncation": 2
+    },
+    "src/features/sessions/ui/SubagentMessageForm.tsx": {
+      "feature-typography": 8,
+      "surface-style": 1
+    },
+    "src/features/sessions/ui/SubagentSheet.module.css": {
+      "scrollbar-style": 2
+    },
+    "src/features/sessions/ui/SubagentSheet.tsx": {
+      "feature-typography": 25,
+      "interaction-state": 6,
+      "scrollbar-style": 2,
+      "surface-style": 4
+    },
+    "src/features/sessions/ui/TaskListPreview.tsx": {
+      "feature-typography": 10,
+      "spacing-step": 4,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/TerminalSpinner.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/ToolInspectionPanel.tsx": {
+      "feature-typography": 12,
+      "interaction-state": 3
+    },
+    "src/features/sessions/ui/TranscriptFind.tsx": {
+      "feature-typography": 2,
+      "surface-style": 3
+    },
+    "src/features/sessions/ui/TranscriptMessageActions.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/TranscriptSelectionMenu.module.css": {
+      "feature-typography": 5,
+      "surface-style": 1
+    },
+    "src/features/sessions/ui/TranscriptSelectionMenu.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/sessions/ui/TranslationResultDialog.module.css": {
+      "feature-typography": 8,
+      "surface-style": 4
+    },
+    "src/features/sessions/ui/TurnActivityLine.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 1
+    },
+    "src/features/sessions/ui/UsageLimitNotice.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/UserLinkPreview.tsx": {
+      "feature-motion": 4,
+      "feature-typography": 42,
+      "inline-style-property": 3,
+      "interaction-state": 5,
+      "spacing-step": 4,
+      "surface-style": 20,
+      "text-truncation": 6
+    },
+    "src/features/sessions/ui/UserTextPreview.tsx": {
+      "feature-typography": 16,
+      "surface-style": 4
+    },
+    "src/features/sessions/ui/chat-controls.css": {
+      "feature-motion": 5,
+      "feature-typography": 26,
+      "interaction-state": 12,
+      "spacing-step": 1,
+      "surface-style": 20,
+      "text-truncation": 3
     },
     "src/features/sessions/ui/crewCharacters.ts": {
       "theme-palette-literal": 135
@@ -38,6 +1813,17 @@
     "src/features/sessions/ui/matrix/matrixPainter.ts": {
       "theme-palette-literal": 8
     },
+    "src/features/sessions/ui/modeCommands.tsx": {
+      "feature-typography": 13,
+      "inline-style-property": 1
+    },
+    "src/features/sessions/ui/notification-sheet.css": {
+      "feature-motion": 2,
+      "feature-typography": 13,
+      "scrollbar-style": 1,
+      "surface-style": 5,
+      "text-truncation": 5
+    },
     "src/features/sessions/ui/pacingAgentArt.ts": {
       "theme-palette-literal": 10
     },
@@ -52,6 +1838,13 @@
     },
     "src/features/sessions/ui/pacingUncleArt.ts": {
       "theme-palette-literal": 22
+    },
+    "src/features/sessions/ui/runtimeModeOptions.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/session-notes-layout.css": {
+      "spacing-step": 1,
+      "surface-style": 2
     },
     "src/features/sessions/ui/starWarsCrew.ts": {
       "theme-palette-literal": 7
@@ -71,23 +1864,881 @@
     "src/features/settings/model/themePalettes.ts": {
       "theme-palette-literal": 6
     },
+    "src/features/settings/ui/AntigravityAccountSettings.tsx": {
+      "feature-typography": 10,
+      "surface-style": 9
+    },
+    "src/features/settings/ui/AppearanceSettings.css": {
+      "feature-typography": 2,
+      "scrollbar-style": 1,
+      "spacing-step": 1,
+      "surface-style": 17,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/ArchiveSettings.css": {
+      "feature-typography": 3,
+      "spacing-step": 1
+    },
+    "src/features/settings/ui/ArchiveSettings.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/settings/ui/BuildIdentityDetails.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/settings/ui/BycodaSettings.css": {
+      "feature-motion": 5,
+      "feature-typography": 20,
+      "fixed-control-size": 1,
+      "interaction-state": 1,
+      "spacing-step": 9,
+      "surface-style": 29,
+      "text-truncation": 2
+    },
+    "src/features/settings/ui/ChatSettings.css": {
+      "feature-typography": 4,
+      "surface-style": 5,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/DiagnosticsSettings.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/settings/ui/ExternalMcpAccess.module.css": {
+      "feature-typography": 7,
+      "interaction-state": 1,
+      "scrollbar-style": 1,
+      "surface-style": 4
+    },
+    "src/features/settings/ui/GeneralSettings.css": {
+      "feature-typography": 5
+    },
+    "src/features/settings/ui/GradientBackgroundCard.module.css": {
+      "surface-style": 8
+    },
+    "src/features/settings/ui/InboxConnectionStatus.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/settings/ui/InboxSettings.css": {
+      "feature-typography": 2,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/InboxSettings.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/settings/ui/JiraSettings.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/settings/ui/LiveBackgroundPicker.tsx": {
+      "feature-typography": 2,
+      "spacing-step": 1,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/McpAddServer.tsx": {
+      "feature-typography": 7
+    },
+    "src/features/settings/ui/McpSettings.module.css": {
+      "feature-typography": 15,
+      "interaction-state": 1,
+      "surface-style": 4,
+      "text-truncation": 3
+    },
+    "src/features/settings/ui/McpSettings.tsx": {
+      "feature-typography": 2,
+      "spacing-step": 2
+    },
+    "src/features/settings/ui/NewProjectFolderSettings.tsx": {
+      "feature-typography": 2,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/NotificationsSettings.css": {
+      "feature-typography": 3,
+      "scrollbar-style": 1,
+      "surface-style": 1
+    },
+    "src/features/settings/ui/NotificationsSettings.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/settings/ui/ProjectScopeIcon.tsx": {
+      "surface-style": 1
+    },
+    "src/features/settings/ui/ProviderAccountsSettings.tsx": {
+      "feature-typography": 5,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/ProviderBinarySettings.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/settings/ui/ProviderDefaultsForm.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/settings/ui/ProviderDefaultsSaveBar.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/settings/ui/ProviderModelsGroup.tsx": {
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/ProviderSettings.css": {
+      "feature-motion": 2,
+      "feature-typography": 30,
+      "interaction-state": 1,
+      "spacing-step": 3,
+      "surface-style": 13,
+      "text-truncation": 3
+    },
+    "src/features/settings/ui/ProviderSettings.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/settings/ui/SessionFolderSettings.tsx": {
+      "feature-typography": 2,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/SettingsCollection.css": {
+      "feature-typography": 12,
+      "interaction-state": 3,
+      "scrollbar-style": 1,
+      "surface-style": 6,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/SettingsLoadingSurface.css": {
+      "spacing-step": 1,
+      "surface-style": 5
+    },
+    "src/features/settings/ui/SettingsView.tsx": {
+      "feature-typography": 1,
+      "scrollbar-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/ShortcutSettings.module.css": {
+      "feature-typography": 15,
+      "interaction-state": 1,
+      "spacing-step": 3,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/ShortcutSettings.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/settings/ui/SourceControlSettings.tsx": {
+      "spacing-step": 1
+    },
+    "src/features/settings/ui/TerminalProfileDiscovery.tsx": {
+      "feature-typography": 16
+    },
+    "src/features/settings/ui/TerminalSettings.css": {
+      "spacing-step": 3,
+      "surface-style": 4
+    },
+    "src/features/settings/ui/WorkspaceSettings.css": {
+      "spacing-step": 1
+    },
     "src/features/settings/ui/appearance/controls/AccentColorPicker.tsx": {
       "theme-palette-literal": 6
     },
+    "src/features/settings/ui/appearance/controls/AngleDial.tsx": {
+      "inline-style-property": 1
+    },
+    "src/features/settings/ui/appearance/controls/BackgroundImage.module.css": {
+      "feature-typography": 4,
+      "surface-style": 5
+    },
+    "src/features/settings/ui/appearance/controls/BackgroundLibrary.module.css": {
+      "feature-typography": 3,
+      "interaction-state": 1,
+      "surface-style": 6
+    },
+    "src/features/settings/ui/appearance/controls/FontPicker.css": {
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/appearance/controls/GradientStrip.module.css": {
+      "feature-typography": 4,
+      "interaction-state": 2,
+      "spacing-step": 1,
+      "surface-style": 13
+    },
+    "src/features/settings/ui/appearance/controls/GradientStrip.tsx": {
+      "inline-style-property": 4
+    },
+    "src/features/settings/ui/appearance/controls/InterfaceSections.css": {
+      "feature-typography": 16,
+      "spacing-step": 6,
+      "surface-style": 12,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/appearance/controls/InterfaceSizeGroup.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/settings/ui/appearance/controls/LayerStack.module.css": {
+      "feature-motion": 1,
+      "feature-typography": 9,
+      "interaction-state": 1,
+      "surface-style": 11,
+      "text-truncation": 3
+    },
+    "src/features/settings/ui/appearance/controls/PaletteCards.tsx": {
+      "inline-style-property": 1
+    },
+    "src/features/settings/ui/appearance/controls/SavedThemes.tsx": {
+      "inline-style-property": 1
+    },
     "src/features/settings/ui/appearance/controls/ScrollbarGroup.tsx": {
+      "inline-style-property": 1,
+      "scrollbar-style": 3,
       "theme-palette-literal": 1
     },
+    "src/features/settings/ui/appearance/controls/StateLadder.css": {
+      "feature-typography": 3,
+      "interaction-state": 2,
+      "spacing-step": 1,
+      "surface-style": 6,
+      "text-truncation": 1
+    },
     "src/features/settings/ui/appearance/controls/StateLadder.tsx": {
+      "inline-style-property": 1,
       "theme-palette-literal": 2
+    },
+    "src/features/settings/ui/appearance/controls/ThemeControls.css": {
+      "feature-typography": 17,
+      "interaction-state": 1,
+      "spacing-step": 5,
+      "surface-style": 34,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/appearance/controls/ThemeGenerator.tsx": {
+      "inline-style-property": 4
+    },
+    "src/features/settings/ui/appearance/controls/ToneSliders.css": {
+      "feature-typography": 2,
+      "surface-style": 6,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/appearance/controls/TypographySamples.css": {
+      "feature-typography": 23,
+      "spacing-step": 1,
+      "surface-style": 19,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/appearance/controls/WorkingIndicatorGroup.tsx": {
+      "feature-typography": 1,
+      "inline-style-property": 1,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/settings/ui/appearance/sections/BackgroundSection.tsx": {
+      "feature-typography": 4,
+      "spacing-step": 2,
+      "surface-style": 4
+    },
+    "src/features/settings/ui/appearance/sections/ThemeSection.css": {
+      "surface-style": 2
+    },
+    "src/features/settings/ui/integrations/BrowserSignIn.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/settings/ui/integrations/EmailAccountForm.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/settings/ui/integrations/IntegrationsSettings.css": {
+      "feature-typography": 6,
+      "surface-style": 3
+    },
+    "src/features/settings/ui/integrations/MicrosoftDeviceSignIn.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/settings/ui/integrations/SetupSteps.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/settings/ui/policies.css": {
+      "feature-typography": 7,
+      "scrollbar-style": 2,
+      "spacing-step": 1,
+      "surface-style": 3
+    },
+    "src/features/settings/ui/settingsControls.tsx": {
+      "feature-typography": 3
+    },
+    "src/features/skills/ui/RecommendedSkills.module.css": {
+      "feature-typography": 14,
+      "surface-style": 3
+    },
+    "src/features/skills/ui/SkillPicker.tsx": {
+      "feature-typography": 17,
+      "spacing-step": 1,
+      "surface-style": 1,
+      "text-truncation": 3
+    },
+    "src/features/skills/ui/SkillPromptField.tsx": {
+      "feature-typography": 1,
+      "inline-style-property": 1
+    },
+    "src/features/skills/ui/SkillsPage.module.css": {
+      "feature-typography": 20,
+      "interaction-state": 2,
+      "surface-style": 14,
+      "text-truncation": 2
+    },
+    "src/features/social/ui/SocialShortcut.tsx": {
+      "text-truncation": 1
+    },
+    "src/features/social/ui/accounts/accounts.css": {
+      "feature-typography": 13,
+      "interaction-state": 2,
+      "surface-style": 5,
+      "text-truncation": 3
+    },
+    "src/features/social/ui/audience/audience.css": {
+      "feature-typography": 19,
+      "spacing-step": 3,
+      "surface-style": 12,
+      "text-truncation": 3
+    },
+    "src/features/social/ui/browser/LiveBrowserPanel.tsx": {
+      "inline-style-property": 1
+    },
+    "src/features/social/ui/browser/needs-human.css": {
+      "feature-typography": 5,
+      "surface-style": 1
+    },
+    "src/features/social/ui/command/command.css": {
+      "feature-typography": 17,
+      "spacing-step": 3,
+      "surface-style": 3
+    },
+    "src/features/social/ui/common/activity-row.css": {
+      "feature-typography": 8,
+      "spacing-step": 1,
+      "surface-style": 7
+    },
+    "src/features/social/ui/common/common.css": {
+      "feature-typography": 21,
+      "spacing-step": 2,
+      "surface-style": 8
+    },
+    "src/features/social/ui/content/content.css": {
+      "feature-typography": 38,
+      "spacing-step": 4,
+      "surface-style": 20,
+      "text-truncation": 9
+    },
+    "src/features/social/ui/inbox/inbox.css": {
+      "feature-typography": 22,
+      "spacing-step": 5,
+      "surface-style": 8,
+      "text-truncation": 4
+    },
+    "src/features/social/ui/shell/SocialShell.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/social/ui/shell/social-shell.css": {
+      "feature-typography": 2,
+      "surface-style": 1
     },
     "src/features/source-control/model/gitGraph.ts": {
       "theme-palette-literal": 7
+    },
+    "src/features/source-control/ui/BranchManagerDialog.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/BranchPicker.tsx": {
+      "feature-typography": 1,
+      "surface-style": 4,
+      "text-truncation": 2
+    },
+    "src/features/source-control/ui/ChangeRow.tsx": {
+      "feature-typography": 14,
+      "fixed-control-size": 2,
+      "interaction-state": 1,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/CheckoutHeader.module.css": {
+      "feature-typography": 13,
+      "spacing-step": 2,
+      "surface-style": 2,
+      "text-truncation": 2
+    },
+    "src/features/source-control/ui/CreateWorktreeDialog.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/source-control/ui/DeleteWorktreeDialog.tsx": {
+      "feature-typography": 5
+    },
+    "src/features/source-control/ui/DiffCommentComposer.tsx": {
+      "feature-typography": 4,
+      "spacing-step": 1,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/DiffLayoutToggle.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/source-control/ui/GitChangesList.tsx": {
+      "feature-typography": 8,
+      "fixed-control-size": 2,
+      "surface-style": 2
+    },
+    "src/features/source-control/ui/GitChangesPanel.tsx": {
+      "feature-typography": 32,
+      "text-truncation": 5
+    },
+    "src/features/source-control/ui/GitCommitBlameView.tsx": {
+      "feature-typography": 6,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/GitConflictCompare.tsx": {
+      "feature-typography": 2,
+      "surface-style": 2
+    },
+    "src/features/source-control/ui/GitConflictImages.tsx": {
+      "feature-typography": 6,
+      "inline-style-property": 1,
+      "surface-style": 4
+    },
+    "src/features/source-control/ui/GitConflictRows.tsx": {
+      "feature-typography": 8,
+      "fixed-control-size": 1,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/GitFeedback.tsx": {
+      "feature-typography": 7,
+      "spacing-step": 1
+    },
+    "src/features/source-control/ui/GitFileInspector.tsx": {
+      "feature-typography": 9,
+      "surface-style": 1,
+      "text-truncation": 3
+    },
+    "src/features/source-control/ui/GitGenerationSettings.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/source-control/ui/GitGraphBranches.tsx": {
+      "feature-typography": 3,
+      "fixed-control-size": 1,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/GitGraphColumnFilter.tsx": {
+      "feature-typography": 4,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/GitGraphCommitInspector.tsx": {
+      "feature-typography": 14,
+      "surface-style": 4,
+      "text-truncation": 2
+    },
+    "src/features/source-control/ui/GitGraphDialog.tsx": {
+      "surface-style": 1
+    },
+    "src/features/source-control/ui/GitGraphHoverCard.tsx": {
+      "feature-typography": 8,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/GitGraphList.module.css": {
+      "feature-typography": 6,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/GitGraphList.tsx": {
+      "feature-typography": 14,
+      "fixed-control-size": 2,
+      "inline-style-property": 6,
+      "surface-style": 2,
+      "text-truncation": 6
+    },
+    "src/features/source-control/ui/GitGraphParts.tsx": {
+      "feature-typography": 9,
+      "inline-style-property": 3,
+      "spacing-step": 1,
+      "surface-style": 7,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/GitGraphWorkspace.tsx": {
+      "feature-typography": 8,
+      "surface-style": 5,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/GitHistoryGraph.tsx": {
+      "feature-typography": 3,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/GitOperationBanner.tsx": {
+      "surface-style": 2
+    },
+    "src/features/source-control/ui/GitPanelSections.tsx": {
+      "surface-style": 2
+    },
+    "src/features/source-control/ui/GitPickerTrigger.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/source-control/ui/GitStashSection.tsx": {
+      "fixed-control-size": 1,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/QuickDeleteWorktreeDialog.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/source-control/ui/SidebarWorktreeSwitcher.tsx": {
+      "feature-typography": 11,
+      "fixed-control-size": 1,
+      "surface-style": 2,
+      "text-truncation": 1
+    },
+    "src/features/source-control/ui/SourceControl.tsx": {
+      "feature-typography": 2,
+      "spacing-step": 1,
+      "surface-style": 2
+    },
+    "src/features/source-control/ui/UnifiedDiffView.tsx": {
+      "fixed-control-size": 1
+    },
+    "src/features/source-control/ui/WorkspaceSourceControl.module.css": {
+      "surface-style": 1
+    },
+    "src/features/source-control/ui/WorkspaceSourceControl.tsx": {
+      "feature-typography": 2,
+      "spacing-step": 1
+    },
+    "src/features/source-control/ui/WorktreePicker.tsx": {
+      "feature-typography": 10,
+      "surface-style": 2
+    },
+    "src/features/source-control/ui/WorktreesPage.module.css": {
+      "feature-typography": 12,
+      "interaction-state": 1,
+      "spacing-step": 2,
+      "text-truncation": 2
+    },
+    "src/features/source-control/ui/conflict-layout.css": {
+      "feature-typography": 30,
+      "interaction-state": 4,
+      "spacing-step": 6,
+      "surface-style": 15,
+      "text-truncation": 1
+    },
+    "src/features/tasks/ui/BackgroundSessionDialog.tsx": {
+      "feature-typography": 9,
+      "surface-style": 1
+    },
+    "src/features/tasks/ui/GoalCard.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/tasks/ui/GoalFinalReview.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/tasks/ui/GoalForm.tsx": {
+      "feature-typography": 8,
+      "text-truncation": 1
+    },
+    "src/features/tasks/ui/GoalSessionsDialog.tsx": {
+      "feature-typography": 5
+    },
+    "src/features/tasks/ui/GoalSettingsDialog.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/tasks/ui/TaskAcceptanceEvidence.tsx": {
+      "feature-typography": 14
+    },
+    "src/features/tasks/ui/TaskAccountPicker.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/tasks/ui/TaskAttemptHistory.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/tasks/ui/TaskBoardCard.tsx": {
+      "feature-typography": 6,
+      "text-truncation": 4
+    },
+    "src/features/tasks/ui/TaskBudgetControls.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/tasks/ui/TaskCardVerification.tsx": {
+      "feature-typography": 8,
+      "surface-style": 1
+    },
+    "src/features/tasks/ui/TaskDetail.tsx": {
+      "feature-typography": 7,
+      "surface-style": 5,
+      "text-truncation": 1
+    },
+    "src/features/tasks/ui/TaskForm.tsx": {
+      "text-truncation": 2
+    },
+    "src/features/tasks/ui/TaskReviewNotes.tsx": {
+      "feature-typography": 14
+    },
+    "src/features/tasks/ui/TaskRunInsights.tsx": {
+      "feature-typography": 21,
+      "surface-style": 1
+    },
+    "src/features/tasks/ui/TaskStatusLine.tsx": {
+      "feature-typography": 11,
+      "spacing-step": 2,
+      "text-truncation": 2
+    },
+    "src/features/tasks/ui/TaskStatusReason.tsx": {
+      "feature-typography": 6
+    },
+    "src/features/tasks/ui/TaskStewardForm.tsx": {
+      "feature-typography": 1
+    },
+    "src/features/tasks/ui/TaskStewardRow.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/tasks/ui/TaskSummaryPanel.tsx": {
+      "text-truncation": 1
+    },
+    "src/features/tasks/ui/TaskWorkflowControls.tsx": {
+      "feature-typography": 5
+    },
+    "src/features/tasks/ui/TasksView.tsx": {
+      "feature-typography": 2,
+      "scrollbar-style": 1
+    },
+    "src/features/tasks/ui/sprints.css": {
+      "feature-typography": 18,
+      "interaction-state": 1,
+      "surface-style": 4,
+      "text-truncation": 1
+    },
+    "src/features/tasks/ui/task-board.css": {
+      "feature-motion": 1,
+      "feature-typography": 7,
+      "interaction-state": 3,
+      "spacing-step": 1,
+      "surface-style": 13,
+      "text-truncation": 3
+    },
+    "src/features/tasks/ui/task-detail.css": {
+      "feature-typography": 6,
+      "spacing-step": 1,
+      "surface-style": 2
+    },
+    "src/features/tasks/ui/task-form.css": {
+      "feature-typography": 8,
+      "interaction-state": 1,
+      "spacing-step": 1,
+      "surface-style": 1,
+      "text-truncation": 1
+    },
+    "src/features/tasks/ui/task-goals.css": {
+      "feature-typography": 22,
+      "spacing-step": 2,
+      "surface-style": 12,
+      "text-truncation": 2
+    },
+    "src/features/tasks/ui/task-list.css": {
+      "feature-typography": 13,
+      "interaction-state": 1,
+      "surface-style": 2,
+      "text-truncation": 4
+    },
+    "src/features/tasks/ui/task-ops.css": {
+      "feature-typography": 10,
+      "spacing-step": 2,
+      "surface-style": 10,
+      "text-truncation": 1
+    },
+    "src/features/tasks/ui/tasks-shell.css": {
+      "feature-typography": 35,
+      "spacing-step": 1,
+      "surface-style": 6
+    },
+    "src/features/tasks/ui/tasks.css": {
+      "feature-typography": 36,
+      "interaction-state": 1,
+      "surface-style": 10
     },
     "src/features/terminal/model/terminalRenderingPolicy.ts": {
       "theme-palette-literal": 1
     },
     "src/features/terminal/runtime/terminalTheme.ts": {
       "theme-palette-literal": 37
+    },
+    "src/features/terminal/ui/ProjectTerminalDock.tsx": {
+      "inline-style-property": 2,
+      "surface-style": 5,
+      "text-truncation": 1
+    },
+    "src/features/terminal/ui/TerminalTools.module.css": {
+      "feature-typography": 8,
+      "interaction-state": 4,
+      "spacing-step": 4,
+      "surface-style": 5,
+      "text-truncation": 1
+    },
+    "src/features/terminal/ui/TerminalTools.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/today/ui/today.module.css": {
+      "feature-typography": 6,
+      "spacing-step": 1
+    },
+    "src/features/usage/ui/UsageActiveTime.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/usage/ui/UsageAnalytics.css": {
+      "feature-typography": 34,
+      "spacing-step": 6,
+      "surface-style": 22,
+      "text-truncation": 1
+    },
+    "src/features/usage/ui/UsageBudgets.tsx": {
+      "feature-typography": 19,
+      "surface-style": 1
+    },
+    "src/features/usage/ui/UsagePage.css": {
+      "feature-typography": 17,
+      "interaction-state": 1,
+      "spacing-step": 2,
+      "surface-style": 1,
+      "text-truncation": 2
+    },
+    "src/features/usage/ui/UsagePage.tsx": {
+      "feature-typography": 8,
+      "inline-style-property": 1,
+      "surface-style": 1
+    },
+    "src/features/usage/ui/UsageProviderIdentity.tsx": {
+      "text-truncation": 1
+    },
+    "src/features/usage/ui/UsageQuotaHistory.tsx": {
+      "inline-style-property": 2
+    },
+    "src/features/usage/ui/UsageVisualizations.css": {
+      "feature-typography": 1
+    },
+    "src/features/usage/ui/UsageVisualizations.tsx": {
+      "inline-style-property": 2
+    },
+    "src/features/voice/ui/DictationButton.module.css": {
+      "feature-motion": 7,
+      "spacing-step": 1,
+      "surface-style": 7
+    },
+    "src/features/voice/ui/DictationButton.tsx": {
+      "surface-style": 1
+    },
+    "src/features/voice/ui/HiddenDictationIndicator.tsx": {
+      "text-truncation": 1
+    },
+    "src/features/voice/ui/VoiceActivityRow.tsx": {
+      "feature-typography": 1,
+      "text-truncation": 1
+    },
+    "src/features/voice/ui/VoiceCompanion.module.css": {
+      "feature-motion": 2,
+      "feature-typography": 16,
+      "fixed-control-size": 1,
+      "spacing-step": 2,
+      "surface-style": 17,
+      "text-truncation": 2
+    },
+    "src/features/voice/ui/VoiceJobReview.module.css": {
+      "surface-style": 3
+    },
+    "src/features/voice/ui/VoiceMemoryDialog.module.css": {
+      "feature-typography": 3,
+      "surface-style": 2
+    },
+    "src/features/voice/ui/VoiceOverlayWindow.module.css": {
+      "feature-motion": 3,
+      "feature-typography": 18,
+      "spacing-step": 3,
+      "surface-style": 14,
+      "text-truncation": 1
+    },
+    "src/features/voice/ui/VoicePersonaDialog.module.css": {
+      "feature-typography": 3
+    },
+    "src/features/voice/ui/VoiceSettings.module.css": {
+      "feature-typography": 3,
+      "surface-style": 4
+    },
+    "src/features/voice/ui/VoiceSetupSteps.module.css": {
+      "feature-typography": 6,
+      "surface-style": 3
+    },
+    "src/features/voice/ui/VoiceToolActivityPanel.module.css": {
+      "feature-motion": 2,
+      "feature-typography": 7,
+      "spacing-step": 3,
+      "surface-style": 3,
+      "text-truncation": 1
+    },
+    "src/features/voice/ui/VoiceVisualizer.module.css": {
+      "feature-typography": 5,
+      "surface-style": 3
+    },
+    "src/features/voice/ui/VoiceVisualizer.tsx": {
+      "surface-style": 1
+    },
+    "src/features/voice/ui/VoiceWakeIndicator.module.css": {
+      "feature-typography": 2,
+      "surface-style": 3,
+      "text-truncation": 1
+    },
+    "src/features/voice/ui/companion/VoiceCompanionParts.module.css": {
+      "feature-motion": 4,
+      "feature-typography": 12,
+      "surface-style": 20,
+      "text-truncation": 1
+    },
+    "src/features/voice/ui/companion/VoiceErrorNotice.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/voice/ui/companion/VoiceSidePanel.tsx": {
+      "inline-style-property": 1
+    },
+    "src/features/workspace/ui/PaneTree.tsx": {
+      "inline-style-property": 1,
+      "surface-style": 6,
+      "text-truncation": 1
+    },
+    "src/features/workspace/ui/SurfaceTabs.tsx": {
+      "feature-typography": 2,
+      "fixed-control-size": 1,
+      "interaction-state": 2,
+      "scrollbar-style": 1,
+      "spacing-step": 2,
+      "surface-style": 7
+    },
+    "src/features/workspace/ui/TabGroupMenu.tsx": {
+      "feature-typography": 5,
+      "spacing-step": 1,
+      "surface-style": 1,
+      "text-truncation": 2
+    },
+    "src/features/workspace/ui/WorkspacePicker.tsx": {
+      "feature-typography": 3,
+      "text-truncation": 2
+    },
+    "src/features/workspaces/ui/SessionWorkspaceActions.tsx": {
+      "feature-typography": 7
+    },
+    "src/features/workspaces/ui/WorkspaceCreationStatus.tsx": {
+      "feature-typography": 4
+    },
+    "src/features/workspaces/ui/WorkspaceDirectoryRemoval.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/workspaces/ui/WorkspaceManagedRow.module.css": {
+      "feature-typography": 4,
+      "interaction-state": 1,
+      "spacing-step": 2,
+      "text-truncation": 2
+    },
+    "src/features/workspaces/ui/WorkspacePolicySettings.module.css": {
+      "feature-typography": 9,
+      "spacing-step": 1,
+      "surface-style": 8,
+      "text-truncation": 1
+    },
+    "src/features/workspaces/ui/WorkspacePolicySettings.tsx": {
+      "feature-typography": 2
+    },
+    "src/features/workspaces/ui/WorkspaceReview.tsx": {
+      "feature-typography": 10
+    },
+    "src/features/workspaces/ui/WorkspaceRewindPreview.tsx": {
+      "feature-typography": 5
     }
   }
 }

@@ -1,6 +1,6 @@
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { GOAL_FINAL_ACCEPTANCE_CRITERIA } from "../model/hostGoals";
+import { GOAL_FINAL_ACCEPTANCE_CRITERIA, goalPlanReviews } from "../model/hostGoals";
 import type { BoardGoal } from "../model/goalClient";
 import { TaskAcceptanceEvidence } from "./TaskAcceptanceEvidence";
 import "./task-goals.css";
@@ -18,6 +18,8 @@ export function GoalFinalReview({
   onOpenFinal?: () => void;
 }) {
   if (!goal.finalReview) return null;
+  // A single-task or simple plan runs no final review, so there is nothing to show.
+  if (!goal.finalAcceptance && goal.plan && !goalPlanReviews(goal).final) return null;
   return (
     <div className="grid min-w-0 gap-2">
       <p role="status">

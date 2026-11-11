@@ -63,7 +63,7 @@ content. Operating-system dialogs use the OS language.
   Turkish editorial corrections.
 - `pnpm test src/shared/i18n/i18n.test.ts` checks persistence, system-language
   selection, window synchronization, interpolation, formatting and input state.
-- `pnpm exec playwright test tests/browser/localization.spec.ts --project=chromium`
+- `pnpm exec playwright test tests/browser/settings/localization.spec.ts --project=chromium`
   checks the actual selector in all languages, Turkish search and narrow CJK UI.
 
 Add explicit translations when authoring components and review catalog changes

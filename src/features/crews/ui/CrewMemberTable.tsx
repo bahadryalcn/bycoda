@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from "react";
+import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
@@ -228,7 +229,9 @@ export function CrewMemberTable({
             className="flex min-w-0 flex-col gap-1"
           >
             <div className="flex min-w-0 items-center gap-2">
-              <h4 className="text-ui-body font-medium">{section.title}</h4>
+              <Heading size="item" level={4}>
+                {section.title}
+              </Heading>
               <span className="min-w-0 flex-1 text-ui-caption tabular-nums text-(--ui-text-secondary)">
                 {queryActive ? `${shown.length}/${all.length}` : all.length}
               </span>

@@ -116,7 +116,7 @@ const bigKey = `native-activity/buffers/${"e".repeat(64)}.json`;
 const rowCount = async (store: HostStore, table: string) =>
   Number((await store.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get())?.n);
 const marker = async (store: HostStore) =>
-  await store.db.prepare("SELECT 1 AS n FROM metadata WHERE key='nativeBufferLegacyVacuum'").get();
+  await store.db.prepare("SELECT 1 AS n FROM metadata WHERE key='hostDbCompactedAt'").get();
 
 it("releases legacy rows in bounded batches across passes and keeps clocks and other tables", async () => {
   const { store } = await storeWithOrphan();
@@ -160,7 +160,14 @@ it("does not touch legacy rows without a git store", async () => {
   expect(await rowCount(store, "native_buffer_artifacts")).toBe(before);
 });
 
-it("vacuums once after the release, only when idle, mostly free and up long enough", async () => {
+const DAY_MS = 24 * 60 * 60 * 1000;
+const freeRatio = async (store: HostStore) => {
+  const pragma = async (name: string) =>
+    Number(Object.values((await store.db.prepare(`PRAGMA ${name}`).get()) ?? {})[0]);
+  return (await pragma("freelist_count")) / (await pragma("page_count"));
+};
+
+it("vacuums a mostly free database only when idle and up long enough, at most once a day", async () => {
   const { store, persistence } = await storeWithOrphan();
   const device = await store.issueDevice("vacuum fixture");
   await persistence.complete({
@@ -177,23 +184,39 @@ it("vacuums once after the release, only when idle, mostly free and up long enou
      INSERT OR IGNORE INTO session_state (id, project_id, status, shell_running) VALUES ('s','p','running',0);
      UPDATE session_state SET status='running' WHERE id='s'`,
   );
+  const at = (now: number, uptime = 3_600_000) => ({ uptimeMs: () => uptime, now: () => now });
   // Too early: rows are released, no VACUUM.
-  const early = await runHostDbMaintenance(store, () => false, git, { uptimeMs: () => 1000 });
+  const early = await runHostDbMaintenance(store, () => false, git, at(0, 1000));
   expect(early.legacyRowsDeleted).toBeGreaterThan(0);
-  expect(early.legacyVacuum).toBeUndefined();
+  expect(early.vacuum).toBeUndefined();
   // Up long enough but a session is running.
-  const busy = await runHostDbMaintenance(store, () => false, git, { uptimeMs: () => 3_600_000 });
-  expect(busy.legacyVacuum).toBeUndefined();
+  expect((await runHostDbMaintenance(store, () => false, git, at(0))).vacuum).toBeUndefined();
   expect(await marker(store)).toBeUndefined();
   // Idle: VACUUM runs and shrinks the file.
   await store.db.exec("UPDATE session_state SET status='idle'");
   const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
-  const idle = await runHostDbMaintenance(store, () => false, git, { uptimeMs: () => 3_600_000 });
-  expect(idle.legacyVacuum).toBeDefined();
-  expect(idle.legacyVacuum!.after).toBeLessThan(idle.legacyVacuum!.before);
+  const idle = await runHostDbMaintenance(store, () => false, git, at(0));
+  expect(idle.vacuum).toBeDefined();
+  expect(idle.vacuum!.after).toBeLessThan(idle.vacuum!.before);
   expect(await marker(store)).toBeDefined();
+  expect(await freeRatio(store)).toBe(0);
+  // The rewrite switches the file to incremental auto-vacuum.
+  expect(await autoVacuum(store)).toBe(2);
+  // Nothing free: no rewrite, however long ago the last one was.
+  expect(
+    (await runHostDbMaintenance(store, () => false, git, at(2 * DAY_MS))).vacuum,
+  ).toBeUndefined();
+  // Mostly free again: waits out the day, then runs without a git store too.
+  await store.db.exec(
+    "CREATE TABLE filler (b BLOB); INSERT INTO filler VALUES (zeroblob(3000000)); DROP TABLE filler",
+  );
+  expect(await freeRatio(store)).toBeGreaterThan(0.25);
+  expect(
+    (await runHostDbMaintenance(store, () => false, undefined, at(DAY_MS - 1))).vacuum,
+  ).toBeUndefined();
+  expect(
+    (await runHostDbMaintenance(store, () => false, undefined, at(DAY_MS))).vacuum,
+  ).toBeDefined();
+  expect(await freeRatio(store)).toBe(0);
   info.mockRestore();
-  // Never repeats.
-  const again = await runHostDbMaintenance(store, () => false, git, { uptimeMs: () => 3_600_000 });
-  expect(again.legacyVacuum).toBeUndefined();
 });

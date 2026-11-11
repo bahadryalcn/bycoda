@@ -1,0 +1,35 @@
+import { defineConfig } from "@playwright/test";
+export default defineConfig({
+  testDir: "..",
+  testMatch: [
+    "live-backgrounds.e2e.ts",
+    "settings-open.e2e.ts",
+    "settings-organization.e2e.ts",
+    "workspace-settings.e2e.ts",
+    "terminal-settings.e2e.ts",
+    "settings.e2e.ts",
+    "policies.e2e.ts",
+    "settings-subviews.e2e.ts",
+    "settings-skills.e2e.ts",
+    "settings-notifications.e2e.ts",
+    "settings-layout.e2e.ts",
+    "settings-ui-details.e2e.ts",
+    "voice-settings.e2e.ts",
+  ],
+  outputDir: "../../../temp/test-results/settings",
+  workers: 1,
+  timeout: 60_000,
+  use: {
+    baseURL: "http://127.0.0.1:1468",
+    viewport: { width: 1280, height: 900 },
+    trace: "retain-on-failure",
+  },
+  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+  webServer: {
+    command: "node tests/browser/settings/serve-settings.mjs",
+    cwd: "../../..",
+    url: "http://127.0.0.1:1468/tests/browser/settings/settings.html",
+    reuseExistingServer: false,
+    timeout: 120_000,
+  },
+});

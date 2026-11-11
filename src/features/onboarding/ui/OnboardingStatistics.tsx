@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { getStatsChoice, setStatsChoice, subscribeAnonymousStats } from "../../account";
 
 /** Optional statistics question. Both answers are equal; skipping leaves it off and asks later. */
@@ -11,7 +12,9 @@ export function OnboardingStatistics() {
   return (
     <>
       <div className="onboarding-heading">
-        <h3>{t("Share anonymous statistics?")}</h3>
+        <Heading size="page" level={3}>
+          {t("Share anonymous statistics?")}
+        </Heading>
         <p>
           {t(
             "Once a day bycoda can send a small signal that helps count installs and plan support. It is off unless you say yes.",

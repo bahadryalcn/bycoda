@@ -22,6 +22,6 @@ All code paths are repository-relative.
 
 ## Focused checks
 
-Inspect colocated tests for recents/projectData, `RemoveProjectDialog`, `useProjectRemoval`, sessionFilters/sessionHistory, archiveShortcut/sessionRemoval and ConfirmMorph. Relevant browser scenarios live in `tests/browser/settings-subviews.e2e.ts`, `settings-layout.e2e.ts`, `settings-organization.e2e.ts` under the Settings fixture/config.
+Inspect colocated tests for recents/projectData, `RemoveProjectDialog`, `useProjectRemoval`, sessionFilters/sessionHistory, archiveShortcut/sessionRemoval and ConfirmMorph. Relevant browser scenarios live in `tests/browser/settings/settings-subviews.e2e.ts`, `settings-layout.e2e.ts`, `settings-organization.e2e.ts` under the Settings fixture/config.
 
 Cover zero/one/large collections, full-search reachability, scope changes, sibling writes, unavailable reads, duplicate row actions, cancel/false/reject/partial outcomes, relock races and folder-preserving removal. Use fake repositories/stores for destructive cases; runtime ownership checks require isolated native/Host evidence.

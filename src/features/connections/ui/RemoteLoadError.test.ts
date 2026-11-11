@@ -21,7 +21,9 @@ vi.mock("../model/useRemoteConnection", () => ({
     machine: { id: "env", name: "Server", ssh: true },
   }),
 }));
-vi.mock("./RemoteConnectionFeedback", () => ({ useRemoteConnectionFeedback: () => state.shared }));
+vi.mock("./RemoteConnectionFeedback", () => ({
+  useRemoteConnectionFeedback: () => state.shared,
+}));
 vi.mock("../../settings/model/settings", () => ({
   loadRemoteAutoReconnect: () => state.auto,
   subscribeRemoteAutoReconnect: () => () => {},
@@ -66,8 +68,15 @@ it("retains loaded content without adding a duplicate status row", async () => {
   expect(container.textContent).toBe("");
 });
 
-it("keeps the compact title, reconnect and disclosure in one row", async () => {
+it("keeps the compact notice to one row and the raw transport text behind Details", async () => {
   state.shared = false;
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   await act(async () =>
     root.render(
       createElement(RemoteLoadError, {
@@ -80,16 +89,51 @@ it("keeps the compact title, reconnect and disclosure in one row", async () => {
   const row = container.querySelector("[data-remote-feedback-row]");
   expect(row?.textContent).toContain("Server");
   expect(row?.querySelector("button")?.textContent).toContain("Reconnect");
-  const details = row?.querySelector("details");
-  expect(details?.open).toBe(false);
-  expect(details?.querySelector("summary")?.textContent).toContain("Details");
-  expect(details?.textContent).toContain("SSH timed out");
-  expect(details?.textContent).toContain("Connection settings");
+  expect(row?.querySelector("details")).toBeNull();
+  // The bar never carries the raw message or the secondary actions.
+  expect(container.textContent).not.toContain("SSH timed out");
+  expect(container.textContent).not.toContain("Connection settings");
+  const details = [...row!.querySelectorAll("button")].find(
+    (entry) => entry.textContent === "Details",
+  )!;
+  expect(details.getAttribute("aria-haspopup")).toBe("dialog");
+  await act(async () => details.click());
+  const dialog = document.querySelector('[role="dialog"]');
+  expect(dialog?.textContent).toContain("SSH timed out");
+  expect(dialog?.textContent).toContain("Edit address…");
+  expect(dialog?.textContent).toContain("Connection settings");
+  // Opening another surface closes the popover first.
+  await act(async () =>
+    [...dialog!.querySelectorAll("button")]
+      .find((entry) => entry.textContent?.includes("Connection settings"))!
+      .click(),
+  );
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  vi.unstubAllGlobals();
+});
+
+it("shows the secondary actions in the row when there is no message to explain", async () => {
+  state.shared = false;
+  await act(async () =>
+    root.render(
+      createElement(RemoteLoadError, {
+        cwd: "env",
+        failure: { kind: "unreachable", message: "" },
+        compact: true,
+      }),
+    ),
+  );
+  const row = container.querySelector("[data-remote-feedback-row]");
+  expect(row?.textContent).not.toContain("Details");
+  expect(row?.textContent).toContain("Connection settings");
 });
 
 it("ignores a reconnect superseded by Cancel or an address edit", async () => {
   state.shared = false;
-  state.reconnect.mockResolvedValue({ ok: false, error: SUPERSEDED_CONNECTION });
+  state.reconnect.mockResolvedValue({
+    ok: false,
+    error: SUPERSEDED_CONNECTION,
+  });
   await render();
   const button = [...container.querySelectorAll("button")].find((entry) =>
     entry.textContent?.includes("Reconnect"),

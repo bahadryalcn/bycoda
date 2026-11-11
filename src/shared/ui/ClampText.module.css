@@ -1,0 +1,24 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+@layer components {
+  .root {
+    min-inline-size: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .body {
+    inline-size: 100%;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .body[data-clamped] {
+    max-block-size: calc(var(--clamp-lines, 4) * 1lh);
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, var(--color-content) calc(100% - 1lh), transparent);
+  }
+}

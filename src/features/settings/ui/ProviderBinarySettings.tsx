@@ -2,6 +2,7 @@ import { SettingsFeedback } from "./settingsControls";
 
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ExternalLink, FolderOpen, Pencil, RefreshCw } from "../../../shared/ui/icons";
@@ -361,7 +362,7 @@ export function ProviderBinaryControl({
               pathForm
             ) : (
               <>
-                <div className="mt-2 rounded-md border border-(--color-stroke) bg-(--ui-surface-muted) px-2.5 py-2">
+                <Surface variant="inset" padding="sm" className="mt-2">
                   <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-ui-caption text-(--ui-text-secondary)">
                     {inspection?.path ??
                       (error ? t("CLI could not be resolved") : t("Checking the selected CLI…"))}
@@ -370,7 +371,7 @@ export function ProviderBinaryControl({
                     {inspection?.version ??
                       (error ? t("Retry to check this CLI") : t("Checking version…"))}
                   </span>
-                </div>
+                </Surface>
                 {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
                 {revealError ? (
                   <SettingsFeedback state="error">

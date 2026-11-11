@@ -57,7 +57,7 @@ import {
   inWorktreeFocus,
   useWorktreeFocus,
 } from "../../features/source-control/model/worktreeFocus";
-import { SidebarWorktreeSwitcher } from "../../features/source-control/ui/SidebarWorktreeSwitcher";
+import { SidebarWorkspaceSwitcher } from "./SidebarWorkspaceSwitcher";
 import { OrchestrationSidebarAgents } from "../../features/orchestration/ui/OrchestrationSidebarAgents";
 import { nextCrewManagedSessions } from "../../features/crews/model/crewPresentation";
 import { CrewSidebar } from "../../features/crews/ui/CrewSessions";
@@ -140,7 +140,7 @@ import {
   classifyRemoteError,
   isConnectionFailure,
 } from "../../features/connections/model/remoteFailure";
-import { resolveModel } from "../../features/sessions/model/models";
+import { useResolvedModelName } from "../../features/sessions/model/reactiveReads";
 import {
   type SessionListDensity,
   useSessionListDisplay,
@@ -1377,50 +1377,51 @@ function SidebarComponent({
 
   useEffect(() => {
     if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return;
-    setOrganizationNotice(t("Loading folders…"));
     let alive = true;
     let reconciliation = 0;
-    const unsubscribe = subscribeSessionOrganization(
-      () => {
-        const snapshot = cachedSessionOrganization();
-        if (!snapshot) return;
-        try {
-          setSessionFolders(folderCollapse.overlay(organizationFoldersForProject(snapshot, cwd)));
-          setSessionOrder(organizationOrderForProject(snapshot, cwd));
-          organizationRefreshRequired.current = false;
-          if (!organizationBusy.current) {
-            const generation = ++reconciliation;
-            void Promise.all([unresolvedSessionOrganizationGestures(), listPinSagas()])
-              .then(([pending, sagas]) => {
-                if (!alive || organizationBusy.current || generation !== reconciliation) return;
-                const openSagas = sagas.filter(
-                  (saga) => saga.state !== "applied" && saga.state !== "accepted",
+    const clearLoadingNotice = () =>
+      setOrganizationNotice((current) => (current === t("Loading folders…") ? null : current));
+    const onOrganizationChange = () => {
+      const snapshot = cachedSessionOrganization();
+      if (!snapshot) return;
+      try {
+        setSessionFolders(folderCollapse.overlay(organizationFoldersForProject(snapshot, cwd)));
+        setSessionOrder(organizationOrderForProject(snapshot, cwd));
+        // The folders are on screen now; the reconciliation below only decides
+        // whether a follow-up notice is needed and must not hold the loading one.
+        clearLoadingNotice();
+        organizationRefreshRequired.current = false;
+        if (!organizationBusy.current) {
+          const generation = ++reconciliation;
+          void Promise.all([unresolvedSessionOrganizationGestures(), listPinSagas()])
+            .then(([pending, sagas]) => {
+              if (!alive || organizationBusy.current || generation !== reconciliation) return;
+              const openSagas = sagas.filter(
+                (saga) => saga.state !== "applied" && saga.state !== "accepted",
+              );
+              setPartialPinSagas(openSagas.filter((saga) => saga.state === "partial"));
+              organizationUnresolved.current = pending.length > 0 || openSagas.length > 0;
+              organizationReady.current = true;
+              if (pending.length)
+                setOrganizationNotice(
+                  t("Folder change outcome is unknown: {p0}", { p0: pending[0].operationId }),
                 );
-                setPartialPinSagas(openSagas.filter((saga) => saga.state === "partial"));
-                organizationUnresolved.current = pending.length > 0 || openSagas.length > 0;
-                organizationReady.current = true;
-                if (pending.length)
-                  setOrganizationNotice(
-                    t("Folder change outcome is unknown: {p0}", { p0: pending[0].operationId }),
-                  );
-                else if (openSagas.length)
-                  setOrganizationNotice(
-                    t("Pin change needs review: {p0}", { p0: openSagas[0].id }),
-                  );
-                else
-                  setOrganizationNotice((current) =>
-                    current === t("Loading folders…") ? null : current,
-                  );
-              })
-              .catch((error: unknown) => {
-                if (alive && generation === reconciliation) setOrganizationNotice(String(error));
-              });
-          }
-        } catch (error) {
-          setOrganizationNotice(String(error));
+              else if (openSagas.length)
+                setOrganizationNotice(t("Pin change needs review: {p0}", { p0: openSagas[0].id }));
+            })
+            .catch((error: unknown) => {
+              if (alive && generation === reconciliation) setOrganizationNotice(String(error));
+            });
         }
-      },
-      (error) => setOrganizationNotice(String(error)),
+      } catch (error) {
+        setOrganizationNotice(String(error));
+      }
+    };
+    // A snapshot already in memory (another project was open) shows at once.
+    if (cachedSessionOrganization()) onOrganizationChange();
+    else setOrganizationNotice(t("Loading folders…"));
+    const unsubscribe = subscribeSessionOrganization(onOrganizationChange, (error) =>
+      setOrganizationNotice(String(error)),
     );
     return () => {
       alive = false;
@@ -3263,7 +3264,7 @@ function SidebarComponent({
         titleAs={switcher ? "div" : "h2"}
         title={
           switcher ? (
-            <SidebarWorktreeSwitcher
+            <SidebarWorkspaceSwitcher
               cwd={cwd}
               tabStats={worktreeTabStats}
               onSelect={onSelectWorkspace}
@@ -5250,6 +5251,7 @@ const SessionCard = memo(function SessionCard({
   const skipNextClick = useRef(false);
   const cancelSessionDrag = useRef<(() => void) | null>(null);
   const cancelLongPress = useRef<(() => void) | null>(null);
+  const detailTimer = useRef<number | null>(null);
   useEffect(
     () => () => {
       cancelSessionDrag.current?.();
@@ -5263,7 +5265,6 @@ const SessionCard = memo(function SessionCard({
   const orchestrationTooltipRootRef = useRef<HTMLDivElement>(null);
   const orchestrationTooltipId = useId();
   const detailRootRef = useRef<HTMLDivElement>(null);
-  const detailTimer = useRef<number | null>(null);
   const detailId = useId();
   const [detailOpen, setDetailOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -5283,11 +5284,18 @@ const SessionCard = memo(function SessionCard({
     ? NO_BRANCH_LABEL
     : formatGitLabel(session.repo, session.branch);
   const compact = density === "compact";
+  // Reactive lookups: the live model catalog changes outside React.
+  const activeModelName = useResolvedModelName(
+    providerHistory.activeHarness,
+    providerHistory.activeModel,
+  );
+  const sessionModelName = useResolvedModelName(session.harness, session.model);
+  const fallbackModelName = HARNESS_TITLE[providerHistory.activeHarness];
   const model = providerHistory.activeModel
-    ? resolveModel(providerHistory.activeHarness, providerHistory.activeModel).name
+    ? (activeModelName ?? fallbackModelName)
     : providerHistory.activeHarness === session.harness
-      ? resolveModel(session.harness, session.model).name
-      : HARNESS_TITLE[providerHistory.activeHarness];
+      ? (sessionModelName ?? fallbackModelName)
+      : fallbackModelName;
   const worktree = !!session.worktreeCwd && !session.worktreeRemoved;
   // Standard rows name the branch only; detailed rows add the repository only when it
   // differs from the project already named above the title (owner 2026-11-04: the

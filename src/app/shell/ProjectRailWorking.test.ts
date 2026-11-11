@@ -77,7 +77,7 @@ it("places recovery beside Search and Working below Inbox, preserving navigation
     ).toBeTruthy();
     expect(inbox.compareDocumentPosition(recovery) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(inbox.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(inbox.closest('[role="toolbar"]')?.hasAttribute("data-full-width")).toBe(true);
+    expect(inbox.closest('nav[aria-label="Workspace tools"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-live-agents-preview="full"]')).toHaveLength(1);
     const header = preview.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
     act(() => header.click());

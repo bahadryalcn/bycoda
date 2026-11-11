@@ -1025,7 +1025,7 @@ describe("Host HTTP/WS read composition", () => {
     await host.http("sessions.delete", { projectId: host.project.id, sessionId: value.session.id });
     expect((await fetch(`${url}?offset=0`, { headers })).status).toBe(404);
   });
-  it("publishes a fresh authority snapshot when the transcript revision is unchanged", async () => {
+  it("publishes a fresh authority snapshot when the authority generation changes", async () => {
     const host = await setup();
     const value = await host.saveSession();
     const socket = await host.ready();
@@ -1051,12 +1051,7 @@ describe("Host HTTP/WS read composition", () => {
         .prepare("INSERT INTO host_authority_heads VALUES(?,?,?,?,?)")
         .run(host.store.environmentId, value.session.id, 2, "fixture-migration", "host-active");
       await host.store.withAuthorityGeneration(value.session.id, 2, () =>
-        (async () => {
-          await host.store.db
-            .prepare("DELETE FROM events WHERE session_id=?")
-            .run(value.session.id);
-          return host.store.save({ ...value, authorityGeneration: 2 }, {});
-        })(),
+        host.store.save({ ...value, revision: value.revision + 1, authorityGeneration: 2 }, {}),
       );
       host.store.authorityDecisionCommitted({
         sessionId: value.session.id,
@@ -1077,8 +1072,8 @@ describe("Host HTTP/WS read composition", () => {
       expect(events.at(-1)).toMatchObject({
         subscriptionId: "after-authority",
         kind: "snapshot",
-        revision: 1,
-        data: { revision: 1, authorityGeneration: 2 },
+        revision: 2,
+        data: { revision: 2, authorityGeneration: 2 },
       }),
     );
   });

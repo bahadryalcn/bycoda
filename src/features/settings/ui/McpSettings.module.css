@@ -30,9 +30,6 @@
   color: var(--color-content);
   font-size: var(--ui-font-secondary);
 }
-.filterPanel h3 {
-  font-weight: 500;
-}
 .healthError {
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
@@ -51,9 +48,9 @@
   gap: 8px;
 }
 .list {
-  border: 1px solid var(--ui-settings-group-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-settings-group-surface);
+  background: var(--ui-card-surface);
   max-block-size: min(60dvh, 38rem);
   overflow: auto;
   overscroll-behavior: contain;

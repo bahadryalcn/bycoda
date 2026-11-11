@@ -1,3 +1,6 @@
+import { Heading } from "../../../shared/ui/Heading";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Surface } from "../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -72,12 +75,15 @@ export function TaskOwnerNotices({ task }: { task: HostTask }) {
   )
     return null;
   return (
-    <section
+    <Surface
+      as="section"
+      variant="card"
+      padding="md"
       aria-label={t("What you should know")}
       data-task-owner-notices
-      className="space-y-1.5 rounded-(--ui-radius-card) border border-(--ui-pane-border) px-3 py-2 text-ui-caption"
+      className="space-y-1.5 text-ui-caption"
     >
-      <h3 className="font-medium text-(--ui-tone-neutral-fg)">{t("What you should know")}</h3>
+      <Heading size="item">{t("What you should know")}</Heading>
       {task.completedWithFindings ? (
         <p className="text-(--ui-tone-warning-fg)">
           {t("Completed after automatic correction ran out; the review did not pass.")}
@@ -101,7 +107,7 @@ export function TaskOwnerNotices({ task }: { task: HostTask }) {
           </div>
         );
       })}
-    </section>
+    </Surface>
   );
 }
 
@@ -173,9 +179,7 @@ export function TaskOutcomeSummary({ task }: { task: HostTask }) {
   if (!summary && !diff) return null;
   return (
     <section aria-label={t("What was done")} data-task-outcome className="space-y-1">
-      <h3 className="text-ui-caption font-medium text-(--ui-tone-neutral-fg)">
-        {t("What was done")}
-      </h3>
+      <SectionLabel as="h3">{t("What was done")}</SectionLabel>
       {summary ? <ClampedMarkdown text={summary} /> : null}
       {diff ? <p className="font-mono text-ui-micro text-(--ui-text-muted)">{diff}</p> : null}
     </section>

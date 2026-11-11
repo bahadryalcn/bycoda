@@ -337,9 +337,26 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
   }
 }
 
+/** Another task's worker is still writing in this task's shared checkout. Its
+ * edits would void the snapshot an acceptance review is bound to, so the checks
+ * wait for the next tick instead of spending a review that cannot settle. */
+export async function sharedCheckoutWriterActive(
+  context: TaskContext,
+  task: HostTask,
+): Promise<boolean> {
+  if (task.crewRunId || task.worktreeCwd) return false;
+  if (!readTaskInstructions(task.prompt)?.acceptance.length) return false;
+  // shortcut: compares tasks of one project; upgrade to checkout paths if two
+  // projects ever share a folder.
+  return (await context.list(task.projectId, false)).some(
+    (other) => other.id !== task.id && other.status === "running" && !other.worktreeCwd,
+  );
+}
+
 export async function verify(context: TaskContext, task: HostTask): Promise<void> {
   if (context.closing) return;
   if (!(await context.goalExecutionAllowed(task.goalId))) return;
+  if (await sharedCheckoutWriterActive(context, task)) return;
   const { id } = task;
   if (context.jobs.has(id)) return;
   const controller = new AbortController();
@@ -537,7 +554,7 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
               modelSettings: task.reviewerConfig.modelSettings,
             }
           : {}),
-        prompt: `${task.reviewerConfig?.instructions ?? ""}\n${reviewPrompt(task)}`,
+        prompt: `${task.reviewerConfig?.instructions ?? ""}\n${reviewPrompt({ ...task, verification })}`,
       },
       async () => !controller.signal.aborted && (await context.goalExecutionAllowed(task.goalId)),
     );

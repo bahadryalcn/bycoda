@@ -156,13 +156,12 @@ it("renders stored message text as text and never as markup or a link", async ()
       }),
     ],
   });
-  await act(async () => button("Details")?.click());
   expect(element.querySelector("img")).toBeNull();
   expect(element.querySelector("a")).toBeNull();
   expect(element.textContent).toContain("<img src=x onerror=alert(1)> hello");
 });
 
-it("shortens long message text to 160 characters and hides the Host error behind Technical details", async () => {
+it("shortens long message text to 160 characters and shows the Host error as a helper line without expanding", async () => {
   await mount({
     jobs: [
       job({
@@ -172,12 +171,8 @@ it("shortens long message text to 160 characters and hides the Host error behind
       }),
     ],
   });
-  expect(element.textContent).not.toContain("Rate limited");
-  await act(async () => button("Details")?.click());
   expect(element.textContent).toContain(`${"a".repeat(159)}…`);
   expect(element.textContent).not.toContain("a".repeat(160));
-  expect(element.textContent).not.toContain("Rate limited");
-  await act(async () => button("Technical details")?.click());
   expect(element.textContent).toContain("Rate limited");
 });
 
@@ -204,13 +199,7 @@ it("never offers to send a held, failed or uncertain job again", async () => {
   expect(labels.filter((label) => /retry|resend|send again/i.test(label))).toEqual([]);
   // Jobs never carry an Undo; the no-inverse action has none either.
   expect(labels.filter((label) => label === "Undo")).toEqual([]);
-  // The reason for the missing Undo sits under Details, which is closed until the owner opens it.
-  expect(element.textContent).not.toContain("This action cannot be undone.");
-  const actionRow = rows()[rows().length - 1];
-  const details = [...(actionRow?.querySelectorAll("button") ?? [])].find(
-    (b) => b.textContent?.trim() === "Details",
-  );
-  await act(async () => details?.click());
+  // The reason for the missing Undo is shown directly in the row.
   expect(element.textContent).toContain("This action cannot be undone.");
 });
 
@@ -264,12 +253,8 @@ it("falls back to a plain message when an undo fails without a reason", async ()
   expect(element.textContent).toContain("The action could not be undone. Try again.");
 });
 
-it("shows technical action names and reasons only behind Technical details", async () => {
+it("shows technical action names and reasons directly", async () => {
   await mount({ actions: [action({ status: "failed", reason: "Account paused." })] });
-  expect(element.textContent).not.toContain("lists.addMembers");
-  await act(async () => button("Details")?.click());
-  expect(element.textContent).not.toContain("lists.addMembers");
-  await act(async () => button("Technical details")?.click());
   expect(element.textContent).toContain("lists.addMembers");
   expect(element.textContent).toContain("Account paused.");
 });

@@ -818,7 +818,12 @@ function VirtualRows({
     const body = bodyRef.current;
     if (!body) return;
     const apply = () => {
-      body.style.setProperty("--unified-body-width", `${body.clientWidth}px`);
+      // A custom property write restyles every row under it, so skip an unchanged width
+      // (a height-only resize fires this observer too).
+      const next = `${body.clientWidth}px`;
+      if (body.style.getPropertyValue("--unified-body-width") !== next) {
+        body.style.setProperty("--unified-body-width", next);
+      }
     };
     apply();
     const observer = new ResizeObserver(apply);

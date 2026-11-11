@@ -80,6 +80,15 @@ it("skips an uninitialized submodule instead of treating it as its parent reposi
   expect(await hostGitSubmodules(source)).toEqual([]);
 });
 
+it("treats a plain folder as having no submodules and still discovers its repositories", async () => {
+  const f = fixture();
+  const plain = join(f.root, "plain");
+  mkdirSync(plain);
+  expect(await hostGitSubmodules(plain)).toEqual([]);
+  f.repo("plain/app");
+  expect(await hostGitSubmodules(plain, true)).toEqual(["app"]);
+});
+
 it("opts into ignored independent repositories and worktree gitfiles without following directory links", async () => {
   const f = fixture();
   const parent = f.repo("parent");

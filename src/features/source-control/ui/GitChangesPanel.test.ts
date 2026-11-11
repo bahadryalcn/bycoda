@@ -31,6 +31,7 @@ vi.mock("../../../platform/tauri/fs", () => ({
   deleteGeneratedImages: vi.fn(),
   gitDiffIndex: vi.fn(),
   gitTrustRepository: vi.fn(async () => {}),
+  gitInit: vi.fn(async () => {}),
   gitHistory: vi.fn(async () => []),
   gitOperationState: vi.fn(async () => null),
   gitConflicts: vi.fn(async () => []),
@@ -100,6 +101,7 @@ import {
   gitStashAction,
   gitDiffIndex,
   gitTrustRepository,
+  gitInit,
   gitPrCreate,
   gitPrStatus,
   gitPull,
@@ -1656,6 +1658,17 @@ describe("GitChangesPanel loading and publication recovery", () => {
     await renderPanel("/ordinary-folder");
     expect(container.textContent).toContain("This folder is not a Git repository");
     expect(container.textContent).not.toContain("No uncommitted changes");
+    // Nothing to commit, stash or graph in a plain folder.
+    expect(container.querySelector("textarea")).toBeNull();
+    expect(container.textContent).not.toContain("Stashes");
+    expect(container.textContent).not.toContain("Commit");
+    const initialize = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Initialize Repository",
+    )!;
+    vi.mocked(gitDiffIndex).mockResolvedValue(index());
+    await act(async () => initialize.click());
+    expect(gitInit).toHaveBeenCalledExactlyOnceWith("/ordinary-folder");
+    expect(container.textContent).not.toContain("This folder is not a Git repository");
   });
 
   it("retries a failed push without creating another commit", async () => {

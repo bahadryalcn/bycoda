@@ -9,9 +9,9 @@
 .task-board-columns > section.bycoda-task-column {
   flex: 1 1 0;
   min-inline-size: 12.5rem;
-  border: 0;
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-fill-faint);
+  background: var(--ui-card-surface);
 }
 .task-board-columns > section.bycoda-task-column[data-empty] {
   flex: 0.6 1 0;
@@ -97,13 +97,13 @@
   gap: 0.25rem;
   min-inline-size: 0;
   padding: 0.75rem;
-  border: 1px solid var(--ui-pane-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
-  background: var(--color-background-base);
+  background: var(--ui-card-surface);
 }
 .task-board-card:hover,
 .task-board-card:focus-visible {
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-hover);
 }
 .task-board-card > * {
   min-inline-size: 0;
@@ -123,9 +123,6 @@
   overflow: hidden;
   padding-inline-end: 1rem;
   overflow-wrap: anywhere;
-  color: var(--color-content);
-  font-size: var(--ui-font-body);
-  font-weight: 500;
 }
 .task-card-meta,
 .task-card-note,

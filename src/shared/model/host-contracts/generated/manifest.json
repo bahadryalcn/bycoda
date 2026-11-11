@@ -3939,10 +3939,7 @@
                 "properties": {
                   "idleMs": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "since": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "state": {
-                    "enum": ["present", "idle", "away", "locked", "unknown"],
-                    "type": "string"
-                  },
+                  "state": { "enum": ["present", "idle", "away", "locked"], "type": "string" },
                   "supported": { "type": "boolean" },
                   "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
@@ -4018,10 +4015,7 @@
                   { "const": 365, "type": "number" }
                 ]
               },
-              "effectivePresence": {
-                "enum": ["present", "idle", "away", "dnd", "unknown"],
-                "type": "string"
-              },
+              "effectivePresence": { "enum": ["present", "idle", "away", "dnd"], "type": "string" },
               "jobHolds": {
                 "additionalProperties": {
                   "enum": [
@@ -32649,7 +32643,7 @@
         "properties": {
           "assistantName": { "type": "string" },
           "setupComplete": { "type": "boolean" },
-          "state": { "enum": ["present", "idle", "away", "dnd", "unknown"], "type": "string" }
+          "state": { "enum": ["present", "idle", "away", "dnd"], "type": "string" }
         },
         "required": ["state", "setupComplete"],
         "type": "object"
@@ -32678,7 +32672,7 @@
         "properties": {
           "assistantName": { "type": "string" },
           "setupComplete": { "type": "boolean" },
-          "state": { "enum": ["present", "idle", "away", "dnd", "unknown"], "type": "string" }
+          "state": { "enum": ["present", "idle", "away", "dnd"], "type": "string" }
         },
         "required": ["state", "setupComplete"],
         "type": "object"
@@ -70770,5 +70764,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "2ccf84f4bdf2fe4d39f9ee9d66fc477dd4332268b1bbf8ab6619d3b8f53325d9"
+  "schemaHash": "3754f73e3d546cc810c7e5345176969e55a5ca64273028b1511c6abbebc596c8"
 }

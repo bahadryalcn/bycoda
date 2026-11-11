@@ -33,3 +33,27 @@ Owner decision, 2026-11-11, source: owner chat:
 > Butonda isim varsa bunu kod ile değil direk kaldırmamız gerekiyor gereksiz kodlara workaroundlar istemiyorum.
 
 Recorded decision: remove redundant tooltip content at its source. Shared Tooltip renders explicitly supplied content unchanged; it does not compare the title with visible control text and remove matching words. Visible text buttons do not generate name tooltips automatically. Keep icon explanations, shortcuts, disabled reasons, additional context and explicit recovery of clipped or responsively hidden text.
+
+## Cards, control groups, titles and file pickers come from shared components
+
+Owner decision, 2026-11-11, source: owner chat:
+
+> Elle yazılmış kart filan demişsin ya bunların hepsini düzeltelim form legend fieldset vs hiç birini elle istemiyorum ortak componentler variantlar la gösterimi değişebilir.
+
+Recorded decision: features do not hand-write cards, `fieldset`/`legend` groups, titles or native file inputs. `Surface` (variant `card` for the grouped card), `FieldGroup`, `Heading` (roles `page`, `section`, `item`) and `FileField` own that presentation; a different look is a variant of the shared component, not a feature recipe.
+
+## Full-black canvases keep visible layers and the lift is adjustable
+
+Owner decision, 2026-11-11, source: owner chat:
+
+> full siyah renklerde arka planlar yapabilmek istiyorum ... insanlarda kendileri ayarlıyabilmelilier ... zemin renginden yada otomatik olarak ayarlansın kendi.
+
+Recorded decision: derived layers mix from `--ui-layer-base`, which never drops below the default depth, so a pure black canvas keeps its card, field, hover and border steps. On the pure dark canvas floating surfaces sit one visible step above the ground and grouped cards carry a faint fill; this replaces the earlier "settings groups have no fill" rule for that canvas only. The Appearance preference Surface contrast (`surfaceContrast`, `--appearance-layer-strength`) scales the lift and is part of saved and AI-generated looks.
+
+## Feature code does not choose appearance
+
+Owner decision, 2026-11-11, source: owner chat:
+
+> Feature kodu görünüm seçmez; görünüm ortak bileşenden gelir. ... Kural yasaklanan özellik üzerinedir, bileşen adı üzerine değil. ... Her madde check-ui-drift'te ayrı kural; mevcut sayı baseline olur, sadece düşer.
+
+Recorded decision: in `src/features` and `src/app`, type, surfaces, interaction states, control sizes, truncation, motion, scrollbars and inline style properties come from shared components; layout stays in the feature; `var(--space-*)` is always allowed and only a literal off the spacing scale (Tailwind steps 0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6) is reported. Bespoke surfaces are exempt by explicit file path, never by a word in the file name. Each ban is its own `check:ui-drift` rule with the existing count as its baseline. An inline style carries custom properties only. Known empty, loading and failure shapes are rules; the rest is a review item. Breakpoint steps are deferred until a shared list exists. Migration does not start for a need the catalog cannot meet; `Text`, `ScrollArea` and `Motion` were written first, with variants taken from the existing feature usage and defaults equal to the most common value.

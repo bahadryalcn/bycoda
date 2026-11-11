@@ -44,6 +44,10 @@
   font-variant-numeric: tabular-nums;
   color: var(--ui-text-muted);
 }
+.root[data-size="micro"] :is(.text, .count) {
+  font-size: var(--ui-font-micro);
+  line-height: var(--ui-leading-micro);
+}
 .actions {
   display: flex;
   flex: none;
@@ -177,12 +181,6 @@
 :global([data-rail-section-header]) :global([data-rail-section-mark]) svg {
   inline-size: var(--ui-icon-sm);
   block-size: var(--ui-icon-sm);
-}
-:global([data-rail-section-header]) :global([data-rail-section-text]) {
-  font-size: var(--ui-font-body);
-  line-height: var(--ui-leading-body);
-  font-weight: 600;
-  color: var(--ui-text);
 }
 @container rail (max-width: 140px) {
   :global([data-rail-section-header]) {

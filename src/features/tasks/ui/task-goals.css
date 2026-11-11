@@ -17,7 +17,7 @@
   min-inline-size: 0;
   gap: 0.5rem;
   padding: 0.625rem 0.75rem;
-  border: 1px solid var(--ui-pane-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
 }
 .goal-card-head {
@@ -58,9 +58,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
-  color: var(--color-content);
 }
 .goal-card-meta {
   font-size: var(--ui-font-caption);
@@ -183,11 +180,11 @@
 .goal-section-rows {
   display: grid;
   min-inline-size: 0;
-  border: 1px solid var(--ui-pane-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
 }
 .goal-section-rows > * + * {
-  border-block-start: 1px solid var(--ui-pane-border);
+  border-block-start: 1px solid var(--ui-card-border);
 }
 .goal-section-pad {
   display: grid;

@@ -22,6 +22,7 @@ export const APPEARANCE_RANGES = {
   codeSize: { min: 11, max: 18 },
   terminalSize: { min: 8, max: 40 },
   contrast: { min: 75, max: 150 },
+  surfaceContrast: { min: 50, max: 200 },
 } as const;
 
 /** Enumerated choices a generated theme may set; drift tests check each against its normalizer. */

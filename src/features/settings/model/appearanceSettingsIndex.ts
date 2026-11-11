@@ -28,6 +28,14 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "borders secondary text softer stronger",
   },
   {
+    id: "surface-contrast",
+    section: "appearance",
+    get label() {
+      return t("Surface contrast");
+    },
+    keywords: "card cards layer layers elevation depth black field dialog surface lift canvas",
+  },
+  {
     id: "accent-readability",
     section: "appearance",
     get label() {

@@ -1,5 +1,6 @@
-import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import type { BadgeTone } from "../../../shared/ui/Badge";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import type { BoardTask } from "../model/taskClient";
 import { canMoveTask, TASK_COLUMNS, taskColumn, type TaskColumn } from "../model/hostTasks";
@@ -68,7 +69,11 @@ export function TaskBoardColumns({
   bulkBusy: boolean;
   selectedKey: string | null;
   openingSessions: ReadonlySet<string>;
-  taskContext: (task: BoardTask) => { project: string; goal?: string; waitingFor: string[] };
+  taskContext: (task: BoardTask) => {
+    project: string;
+    goal?: string;
+    waitingFor: string[];
+  };
   planningLabel: (task: BoardTask) => string;
   actionsFor: ComponentProps<typeof TaskCard>["actionsFor"];
   onOpen: (key: string) => void;
@@ -174,19 +179,22 @@ export function TaskBoardColumns({
                 }}
                 className="bycoda-task-column flex min-h-0 min-w-0 flex-col"
               >
-                <h2 className="flex shrink-0 items-center gap-2 px-3 text-ui-caption font-medium text-(--ui-text-secondary)">
-                  {COLUMN_TONES[status] ? (
-                    <StatusDot
-                      tone={COLUMN_TONES[status]}
-                      label={t(COLUMN_LABELS[status])}
-                      aria-hidden
-                    />
-                  ) : null}
-                  <span className="min-w-0 flex-1 truncate">{t(COLUMN_LABELS[status])}</span>
-                  <Badge variant="count" className="shrink-0 tabular-nums">
-                    {column.length}
-                  </Badge>
-                </h2>
+                <SectionLabel
+                  as="h2"
+                  className="shrink-0 px-3"
+                  count={column.length}
+                  icon={
+                    COLUMN_TONES[status] ? (
+                      <StatusDot
+                        tone={COLUMN_TONES[status]}
+                        label={t(COLUMN_LABELS[status])}
+                        aria-hidden
+                      />
+                    ) : undefined
+                  }
+                >
+                  {t(COLUMN_LABELS[status])}
+                </SectionLabel>
                 <ul>
                   {column.map((task) => (
                     <li

@@ -1,6 +1,7 @@
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
 import { Link, X } from "../../../shared/ui/icons";
 import { tokenLabel } from "../model/attachmentTokens";
@@ -54,7 +55,12 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
   // An image card is only its thumbnail; the message text names it as `image1 113 KB`.
   const imageDetails = [label, attachment.name, size].filter(Boolean).join(" · ");
 
-  const fileDetails = [attachment.name, t(presentation.label), size].filter(Boolean).join(" · ");
+  const typeText = presentation.typeExtension ?? t(presentation.label);
+  // The app tooltip carries what a native `title` would: the full path (or name), type and size.
+  const fileTooltip = {
+    label: attachment.path ?? attachment.name,
+    details: [[typeText, size].filter(Boolean).join(" · ")],
+  };
   const fileBody = (
     <span className={styles.fileBody}>
       <span className={styles.fileIcon}>
@@ -66,7 +72,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
           <span className="text-(--ui-tone-warning-fg)">{t("missing")}</span>
         ) : (
           <>
-            {t(presentation.label)}
+            {typeText}
             {size ? ` · ${size}` : ""}
           </>
         )}
@@ -81,7 +87,6 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
         data-attachment-chip={image ? "image" : "file"}
         data-attachment-kind={presentation.kind}
         className={`group ${styles.card} ${image ? styles.image : styles.file}`}
-        title={image ? undefined : (attachment.path ?? attachment.name)}
       >
         {image ? (
           <span className="relative flex size-full shrink-0">
@@ -157,7 +162,9 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 aria-label={t("Open {p0} full screen", {
                   p0: attachment.name,
                 })}
-                tooltip={fileDetails}
+                tooltip={fileTooltip.label}
+                tooltipDetails={fileTooltip.details}
+                tooltipWide
                 onClick={(event) => {
                   event.stopPropagation();
                   if (canOpenFile) {
@@ -169,12 +176,14 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 {fileBody}
               </Button>
             ) : (
-              <span className={styles.thumbnail}>{fileBody}</span>
+              <Tooltip {...fileTooltip} wide>
+                <span className={styles.thumbnail}>{fileBody}</span>
+              </Tooltip>
             )}
             {token && onInsertToken ? (
               <Button
                 motion="none"
-                className={`absolute left-1 top-1 ${styles.action}`}
+                className={`absolute bottom-1 left-1 ${styles.action}`}
                 size="sm"
                 iconOnly
                 label={t("Insert {p0} into the message", { p0: token })}

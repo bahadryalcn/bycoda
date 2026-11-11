@@ -234,7 +234,12 @@ describe("mounted shared appearance preferences", () => {
       saveInteractionTint({ ...INTERACTION_TINT_DEFAULT, strength: 150 });
       saveScrollbarStyle({ ...SCROLLBAR_STYLE_DEFAULT, size: "large" });
       saveWorkingIndicator({ ...WORKING_INDICATOR_DEFAULT, style: "off" });
-      states[0].onPreferences({ ...states[0].preferences, wheelZoom: false, codeSize: 18 });
+      states[0].onPreferences({
+        ...states[0].preferences,
+        wheelZoom: false,
+        codeSize: 18,
+        surfaceContrast: 150,
+      });
       states[0].onUiScale(150);
     });
     await act(async () => states[0].restoreDefaults());
@@ -248,7 +253,11 @@ describe("mounted shared appearance preferences", () => {
     expect(loadInteractionTint()).toEqual(INTERACTION_TINT_DEFAULT);
     expect(loadScrollbarStyle()).toEqual(SCROLLBAR_STYLE_DEFAULT);
     expect(loadWorkingIndicator()).toEqual(WORKING_INDICATOR_DEFAULT);
-    expect(states[0].preferences).toMatchObject({ wheelZoom: true, codeSize: 13 });
+    expect(states[0].preferences).toMatchObject({
+      wheelZoom: true,
+      codeSize: 13,
+      surfaceContrast: 100,
+    });
     expect(states[0].uiScale).toBe(1);
   });
 });

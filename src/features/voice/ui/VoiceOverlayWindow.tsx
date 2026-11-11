@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import {
   Maximize2,
   Minimize2,
@@ -43,7 +44,6 @@ import { VoiceVisualizer } from "./VoiceVisualizer";
 import styles from "./VoiceOverlayWindow.module.css";
 import { VoiceChoiceCard } from "./VoiceChoiceCard";
 import { VoiceJobReview } from "./VoiceJobReview";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { VoiceToolActivityPanel } from "./VoiceToolActivityPanel";
@@ -308,7 +308,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         state={state?.visualState ?? "connecting"}
         working={Boolean(state?.working)}
         level={level}
-        small
+        small="icon"
       />
     </Button>
   );
@@ -345,7 +345,9 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           )}
           <div className={styles.heading}>
             <OverflowTooltip label={state?.title}>
-              <h1 className={styles.title}>{state?.title ?? t("Voice companion")}</h1>
+              <Heading size="caption" level={1} className={styles.title}>
+                {state?.title ?? t("Voice companion")}
+              </Heading>
             </OverflowTooltip>
             {compact && (
               <OverflowTooltip label={summary}>
@@ -391,6 +393,16 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               )}
             </Button>
           )}
+          {!compact && (
+            <VoiceToolActivityPanel
+              entries={state?.activity ?? []}
+              onStopWaiting={(id) => {
+                void emitTo(owner, VOICE_OVERLAY_ACTIVITY_EVENT, id).catch(() =>
+                  setMenuError(t("Voice window could not connect. Return to the app and retry.")),
+                );
+              }}
+            />
+          )}
           <Button
             iconOnly
             label={sizeLabel}
@@ -410,14 +422,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         {!compact && (
           <>
             <div className={styles.body}>
-              <VoiceToolActivityPanel
-                entries={state?.activity ?? []}
-                onStopWaiting={(id) => {
-                  void emitTo(owner, VOICE_OVERLAY_ACTIVITY_EVENT, id).catch(() =>
-                    setMenuError(t("Voice window could not connect. Return to the app and retry.")),
-                  );
-                }}
-              />
               {menuError && (
                 <InlineError
                   className={styles.feedback}
@@ -453,9 +457,9 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                     {voiceErrorTitle(state.error)}
                   </InlineError>
                   {!isActionableVoiceError(state.error) && (
-                    <Disclosure size="sm" className={styles.feedback} summary={t("Error details")}>
+                    <div className={styles.feedback}>
                       <p>{state.error}</p>
-                    </Disclosure>
+                    </div>
                   )}
                 </>
               )}

@@ -184,6 +184,15 @@ it("selects a remote worktree without changing machine identity and returns to a
   });
   expect(container.querySelectorAll("[data-checkout-overview] section")).toHaveLength(2);
 });
+it("shows no worktree discovery failure for a folder that is not a repository", async () => {
+  state.snapshot = {
+    error: "fatal: not a git repository (or any of the parent directories): .git",
+  };
+  await render();
+  expect(container.querySelector("section")?.dataset.cwd).toBe("/repo");
+  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(container.textContent).not.toContain("Retry");
+});
 it("preserves the ordinary panel when discovery fails and keeps a usable list on refresh failure", async () => {
   state.snapshot = { error: "Unavailable" };
   await render();

@@ -32,7 +32,7 @@ export function VerificationSummary({ verification }: { verification: TaskVerifi
             </>
           }
         >
-          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-pane-border) px-2 py-1 font-mono text-ui-caption text-(--ui-text-secondary)">
+          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-card-border) px-2 py-1 font-mono text-ui-caption text-(--ui-text-secondary)">
             {command.output.trim() || t("No output.")}
           </pre>
         </Disclosure>

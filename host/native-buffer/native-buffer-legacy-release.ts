@@ -20,11 +20,6 @@ export const NATIVE_BUFFER_LEGACY_TABLES = [
 export const NATIVE_BUFFER_LEGACY_BATCH_ROWS = 20_000;
 export const NATIVE_BUFFER_LEGACY_PASS_MAX_BATCHES = 200;
 export const NATIVE_BUFFER_LEGACY_PASS_MAX_MS = 2 * 60 * 1000;
-/** One-time VACUUM gates after the release. */
-export const NATIVE_BUFFER_LEGACY_VACUUM_MIN_FREE_RATIO = 0.25;
-export const NATIVE_BUFFER_LEGACY_VACUUM_MIN_UPTIME_MS = 10 * 60 * 1000;
-export const NATIVE_BUFFER_LEGACY_VACUUM_MARKER = "nativeBufferLegacyVacuum";
-
 export type NativeBufferLegacyTableStat = { table: string; rows: number; bytes: number };
 export type NativeBufferLegacyRelease = {
   tables: NativeBufferLegacyTableStat[];
@@ -165,49 +160,4 @@ export async function releaseNativeBufferLegacyBatches(
     }
   }
   return { deletedRows, done: true };
-}
-
-async function pragmaNumber(store: HostStore, name: string) {
-  const row = await store.db.prepare(`PRAGMA ${name}`).get();
-  return Number(row && Object.values(row)[0]);
-}
-
-/**
- * After the release finished: WAL truncate, then a single VACUUM, only while no session
- * is running, more than a quarter of the pages are free and the Host has been up long
- * enough. Returns the sizes when it ran. The marker row makes it never repeat.
- */
-export async function vacuumAfterNativeBufferLegacyRelease(
-  store: HostStore,
-  options: { uptimeMs?: () => number; stopped?: () => boolean } = {},
-): Promise<{ before: number; after: number } | undefined> {
-  if (options.stopped?.()) return undefined;
-  const uptime = options.uptimeMs?.() ?? process.uptime() * 1000;
-  return store.db.storeScope(async () => {
-    const marker = await store.db
-      .prepare("SELECT 1 AS found FROM metadata WHERE key = ?")
-      .get(NATIVE_BUFFER_LEGACY_VACUUM_MARKER);
-    if (marker || uptime < NATIVE_BUFFER_LEGACY_VACUUM_MIN_UPTIME_MS) return undefined;
-    await withShortBusyTimeout(store.db, () =>
-      store.db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get(),
-    );
-    const busy = await store.db
-      .prepare(
-        "SELECT COUNT(*) AS n FROM session_state WHERE status = 'running' OR shell_running = 1",
-      )
-      .get();
-    if (Number(busy?.n ?? 1) > 0) return undefined;
-    const pages = await pragmaNumber(store, "page_count");
-    const free = await pragmaNumber(store, "freelist_count");
-    const pageSize = await pragmaNumber(store, "page_size");
-    if (!pages || free / pages <= NATIVE_BUFFER_LEGACY_VACUUM_MIN_FREE_RATIO) return undefined;
-    await store.db.exec("VACUUM");
-    await store.db
-      .prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)")
-      .run(NATIVE_BUFFER_LEGACY_VACUUM_MARKER, new Date().toISOString());
-    return {
-      before: pages * pageSize,
-      after: (await pragmaNumber(store, "page_count")) * pageSize,
-    };
-  });
 }

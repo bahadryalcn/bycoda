@@ -12,10 +12,13 @@ Source paths are repository-relative.
 
 ## Source starts
 
-- `docs/reference/code-invariants.md`: the rule index, sanctioned helpers and suppression form.
-- `scripts/checks/invariants/rules/*.yml` (ast-grep, TypeScript + Rust) and
-  `.oxlint-invariants.json` (restricted APIs, jsx-a11y), run by `scripts/checks/check-invariants.mjs`
-  against `scripts/checks/invariants-baseline.json`.
+- `docs/reference/rules.md`: the generated list of every enforced rule (`scripts/checks/rule-index.mjs`).
+  `docs/reference/code-invariants.md`: rationale, sanctioned helpers and suppression form.
+- `scripts/checks/oxlint-plugin/` (repository TypeScript rules, one file per rule),
+  `scripts/checks/lint-config.mjs` (the `lint` and `fmt` blocks of `vite.config.ts`, run by Vite+:
+  plugin switches, restricted APIs, jsx-a11y) and
+  `scripts/checks/invariants/rules/*.yml` (ast-grep, Rust), run by
+  `scripts/checks/check-invariants.mjs` against `scripts/checks/invariants-baseline.json`.
 - `scripts/checks/check-ui-drift.mjs` (`rules` map, `scanFile`) with `check-ui-drift.test.mjs` and
   `scripts/checks/ui-drift-baseline.json`.
 - Helpers: `src/platform/tauri/listenWindow.ts`, `src/platform/tauri/openExternal.ts`,
@@ -30,9 +33,10 @@ Source paths are repository-relative.
    rule with an English message that names the helper and the rule ID, calibrate with
    `node scripts/checks/check-invariants.mjs --report`, then `--update-baseline` and review the diff.
 3. UI conventions go into `check-ui-drift.mjs` with accepted and rejected fixtures in its test;
-   platform patterns go into ast-grep rules (`language: tsx` covers `.ts` and `.tsx`; Rust rules
-   run without compiling).
-4. Document the rule in `code-invariants.md` (and `ui-design-system.md` for UI conventions).
+   TypeScript patterns go into the oxlint plugin; Rust patterns into ast-grep rules, which run
+   without compiling.
+4. Define a rule once: widen an existing rule before adding one, then regenerate the list with
+   `node scripts/checks/rule-index.mjs --write`. Add the rationale to `code-invariants.md`.
 
 ## Preserve
 

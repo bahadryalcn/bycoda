@@ -11,9 +11,13 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::dirs_home;
 
-const OAUTH_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+// `cedar_ember=1` adds the account's banked limit resets to the usage body.
+const OAUTH_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
-const USER_AGENT: &str = "claude-code/2.1.0";
+// The server lists banked resets only for a Claude Code CLI surface at or above
+// a minimum version. shortcut: pinned version, read the installed CLI version
+// if the server raises its minimum.
+const USER_AGENT: &str = "claude-cli/2.1.322 (external, cli)";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[cfg(target_os = "macos")]

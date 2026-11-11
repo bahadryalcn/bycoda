@@ -70,10 +70,24 @@ export function validateManifest(source = manifest, files = discoverBrowserFiles
   };
 }
 
+/** Relative paths (forward slashes) of every file under tests/browser, outside temp/. */
+export function listBrowserDirectory() {
+  return readdirSync(browserDirectory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) =>
+      relative(browserDirectory, join(entry.parentPath, entry.name)).replaceAll("\\", "/"),
+    )
+    .filter((path) => !path.startsWith("temp/"));
+}
+
+/** Spec basenames; suites and Playwright `testMatch` select files by basename in any folder. */
 export function discoverBrowserFiles() {
-  return readdirSync(browserDirectory)
-    .filter((name) => /\.(?:spec|e2e)\.ts$/.test(name))
-    .sort();
+  const names = listBrowserDirectory()
+    .filter((path) => /\.(?:spec|e2e)\.ts$/.test(path))
+    .map((path) => path.slice(path.lastIndexOf("/") + 1));
+  const duplicate = names.find((name, index) => names.indexOf(name) !== index);
+  if (duplicate) throw new Error(`Browser spec basenames must be unique: ${duplicate}`);
+  return names.sort();
 }
 
 export function artifactPath(value) {

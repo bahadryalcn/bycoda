@@ -29,7 +29,11 @@ portable helpers with explicit exports, independent types and tests under
 | `vendor/`           | Vendored dependencies with their license and upstream provenance.        |
 
 Focused tests stay beside their source modules when possible. Browser scenarios
-belong in `tests/browser/`; host and native tests stay with their runtimes.
+belong in `tests/browser/<feature>/`, named after the owning `src/features/`
+folder (plus `app-shell/`, `shared-ui/` and `support/` for shared helpers); every
+file of one fixture (HTML, entry, spec, Playwright/Vite configs, server) stays
+together. Spec basenames are unique because suites select them by basename.
+Host and native tests stay with their runtimes.
 
 Browser suite ownership and explicit variants live in `tests/browser/suites.json`.
 Use the shared runner to select the suite and preserve fixture/port/output

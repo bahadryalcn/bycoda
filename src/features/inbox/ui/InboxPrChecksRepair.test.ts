@@ -201,6 +201,12 @@ it.each([1, 0.8])(
       notice: null,
     });
     const host = document.createElement("div");
+    const rowToggle = (os: string) =>
+      Array.from(host.querySelectorAll("summary")).find(
+        (summary) =>
+          summary.querySelector("[data-check-name]")?.textContent === `Unit tests / ${os}`,
+      );
+    const rowOpen = (os: string) => rowToggle(os)?.parentElement?.hasAttribute("open");
     const shell = document.createElement("div");
     shell.style.overflow = "hidden";
     const panel = document.createElement("div");
@@ -251,11 +257,7 @@ it.each([1, 0.8])(
       },
     };
     await act(async () => root.render(createElement(InboxPrChecks, props)));
-    expect(
-      host
-        .querySelector('[aria-label="Unit tests / Linux details"]')
-        ?.getAttribute("aria-expanded"),
-    ).toBe("true");
+    expect(rowOpen("Linux")).toBe(true);
     act(() =>
       trackCiRepair(
         props.cwd,
@@ -297,14 +299,8 @@ it.each([1, 0.8])(
     const card = host.querySelector('[aria-label="Repair progress"]')!;
     expect(card.textContent).toContain("Unit tests / Linux");
     expect(card.textContent).toContain("CI passed");
-    expect(
-      host
-        .querySelector('[aria-label="Unit tests / Windows details"]')
-        ?.getAttribute("aria-expanded"),
-    ).toBe("false");
-    const linuxRow = host
-      .querySelector('[aria-label="Unit tests / Linux details"]')!
-      .closest("li")!;
+    expect(rowOpen("Windows")).toBe(false);
+    const linuxRow = rowToggle("Linux")!.closest("li")!;
     vi.spyOn(linuxRow, "getBoundingClientRect").mockImplementation(
       () => new DOMRect(0, (782 - panel.scrollTop) * scale, 480 * scale, 80 * scale),
     );
@@ -312,7 +308,7 @@ it.each([1, 0.8])(
     Object.defineProperty(linuxRow, "scrollIntoView", {
       value: unboundedScroll,
     });
-    expect(linuxRow.closest("[hidden]")).not.toBeNull();
+    expect(linuxRow.closest("details:not([open])")).not.toBeNull();
     const show = [...card.querySelectorAll("button")].find(
       (button) => button.textContent === "Show check",
     )!;
@@ -323,19 +319,17 @@ it.each([1, 0.8])(
     expect(panel.scrollLeft).toBe(12);
     expect(shell.scrollTop).toBe(0);
     expect(document.documentElement.scrollTop).toBe(0);
-    expect(linuxRow.closest("[hidden]")).toBeNull();
+    expect(linuxRow.closest("details:not([open])")).toBeNull();
     expect(host.querySelector('button[data-value="all"]')?.getAttribute("aria-pressed")).toBe(
       "true",
     );
     expect(document.activeElement).toBe(linuxRow);
-    const detailsToggle = host.querySelector<HTMLButtonElement>(
-      '[aria-label="Unit tests / Linux details"]',
-    )!;
-    expect(detailsToggle.getAttribute("aria-expanded")).toBe("true");
+    const detailsToggle = rowToggle("Linux")!;
+    expect(rowOpen("Linux")).toBe(true);
     await act(async () => detailsToggle.click());
-    expect(detailsToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(rowOpen("Linux")).toBe(false);
     await act(async () => show.click());
-    expect(detailsToggle.getAttribute("aria-expanded")).toBe("true");
+    expect(rowOpen("Linux")).toBe(true);
   },
 );
 
@@ -389,14 +383,17 @@ it("collapses a batch into one conversation card and keeps results in the check 
       (button) => button.textContent === "Open conversation",
     );
   expect(buttons()).toHaveLength(1);
-  const toggle = host.querySelector<HTMLButtonElement>(
-    'button[aria-label="Repair details for 10 checks"]',
+  const toggle = host.querySelector<HTMLElement>(
+    '[aria-label="Repair progress"] details > summary',
   )!;
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  expect(host.querySelector('[aria-label="Repair progress"]')?.textContent).not.toContain("Test 1");
+  const details = toggle.parentElement as HTMLDetailsElement;
+  expect(details.open).toBe(false);
+  expect(
+    visibleText(host.querySelector<HTMLElement>('[aria-label="Repair progress"]')!),
+  ).not.toContain("Test 1");
   expect(host.querySelectorAll("[data-repair-status]")).toHaveLength(10);
   act(() => toggle.click());
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(details.open).toBe(true);
   expect(host.querySelector('[aria-label="Repair progress"]')?.textContent).toContain("Test 10");
   act(() => buttons()[0].click());
   expect(open).toHaveBeenCalledWith("batch-chat");
@@ -572,9 +569,7 @@ it("reports fresh checks for a later PR commit without confirming old or stale r
   expect(visibleText(host)).toContain("CI passed");
   expect(visibleText(host)).not.toContain("new-com");
   act(() =>
-    host
-      .querySelector<HTMLButtonElement>('button[aria-label="Repair details for 1 check"]')!
-      .click(),
+    host.querySelector<HTMLElement>('[aria-label="Repair progress"] details > summary')!.click(),
   );
   expect(visibleText(host)).toContain("new-com");
   await render("new-commit", [passed], { stale: true });
@@ -962,5 +957,11 @@ it("keeps the selected failed job when another check changes", async () => {
 function visibleText(node: HTMLElement) {
   const copy = node.cloneNode(true) as HTMLElement;
   copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
+  // A closed Disclosure keeps its body mounted; only the summary is shown.
+  copy.querySelectorAll("details:not([open])").forEach((details) =>
+    [...details.children].forEach((child) => {
+      if (child.tagName !== "SUMMARY") child.remove();
+    }),
+  );
   return copy.textContent;
 }

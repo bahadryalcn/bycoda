@@ -38,16 +38,18 @@ export function checkStaged({ root = defaultRoot, runTool, checkDrift = checkUiD
   const blobs = stagedBlobs(root);
   if (!blobs.length) return { evidence: "staged-source-only", checked: [], success: true };
   const require = createRequire(join(root, "package.json"));
-  const tool = (name) => {
+  // Vite+ runs both tools with the `fmt` and `lint` blocks of vite.config.ts.
+  const vpCommand = { oxfmt: "fmt", oxlint: "lint" };
+  const tool = (name, binName) => {
     const manifestPath = require.resolve(`${name}/package.json`);
     const manifest = require(manifestPath);
-    const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin[name];
+    const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin[binName];
     return resolve(dirname(manifestPath), bin);
   };
   const execute =
     runTool ??
     ((name, args, input) =>
-      spawnSync(process.execPath, [tool(name), ...args], {
+      spawnSync(process.execPath, [tool("vite-plus", "vp"), vpCommand[name], ...args], {
         cwd: root,
         input,
         encoding: "utf8",
@@ -80,24 +82,16 @@ export function checkStaged({ root = defaultRoot, runTool, checkDrift = checkUiD
           throw new Error("Staged snapshot escaped its root");
         mkdirSync(dirname(copy), { recursive: true });
         writeFileSync(copy, text);
-        const configs = [
-          ".oxlintrc.json",
-          ...(file.startsWith("src/") && /\.[jt]sx?$/.test(file) ? [".oxlint-hooks.json"] : []),
-        ];
-        for (const config of configs) {
-          const lint = execute("oxlint", [
-            "--no-ignore",
-            "--config",
-            join(root, config),
-            "--tsconfig",
-            join(root, "tsconfig.json"),
-            copy,
-          ]);
-          if (lint.error || lint.status !== 0)
-            throw new Error(
-              `Staged lint failed: ${file}: ${lint.error?.message ?? lint.stderr ?? "lint error"}`,
-            );
-        }
+        const lint = execute("oxlint", [
+          "--no-ignore",
+          "--tsconfig",
+          join(root, "tsconfig.json"),
+          copy,
+        ]);
+        if (lint.error || lint.status !== 0)
+          throw new Error(
+            `Staged lint failed: ${file}: ${lint.error?.message ?? lint.stderr ?? "lint error"}`,
+          );
       }
       checked.push(file);
     }

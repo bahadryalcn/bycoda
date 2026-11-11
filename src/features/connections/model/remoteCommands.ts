@@ -68,6 +68,7 @@ export const HOST_COMMANDS = new Set([
   // paths: `git_conflicts` and the file arguments are repo-relative.
   "git_stash",
   "git_trust_repository",
+  "git_init",
   "git_stash_list",
   "git_stash_action",
   "git_stash_clear",

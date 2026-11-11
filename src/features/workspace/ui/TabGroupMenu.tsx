@@ -1,6 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   AppWindow,
@@ -44,6 +45,8 @@ export type TabGroupMenuExtraItem = {
   label: string;
   description?: string;
   icon: IconComponent;
+  /** A status dot on the icon's corner; `label` names it for assistive tech. */
+  badge?: { tone: "success" | "warning" | "danger"; label: string };
   danger?: boolean;
   sepBefore?: boolean;
   disabled?: boolean;
@@ -83,6 +86,10 @@ type Props = {
   /** Return false to keep the menu open after validation or persistence errors. */
   onExtraPick?: (id: string) => void | boolean;
   footer?: ReactNode;
+  /** Name field caption and accessible name; "Group name" unless the menu is for a project. */
+  nameLabel?: string;
+  /** Read-only line under the name, such as the project's Git changes. */
+  info?: ReactNode;
   railBackgrounds?: RailBackgrounds;
   onRailBackgroundChange?: (value: RailBackgrounds) => void;
   groupBackground?: boolean;
@@ -169,6 +176,8 @@ export function TabGroupMenu({
   extraItems,
   onExtraPick,
   footer,
+  nameLabel,
+  info,
   railBackgrounds,
   onRailBackgroundChange,
   groupBackground = false,
@@ -179,6 +188,7 @@ export function TabGroupMenu({
   const pickExtra = (id: string) => {
     if (onExtraPick?.(id) !== false) onClose();
   };
+  const nameCaption = nameLabel ?? t("Group name");
   const input = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(label);
   const [customPickerOpen, setCustomPickerOpen] = useState(false);
@@ -344,7 +354,7 @@ export function TabGroupMenu({
   const action = (
     item: Pick<
       TabGroupMenuExtraItem,
-      "id" | "label" | "icon" | "description" | "danger" | "disabled"
+      "id" | "label" | "icon" | "description" | "danger" | "disabled" | "badge"
     >,
     extra: Partial<DropdownMenuAction> = {},
   ): DropdownMenuAction => {
@@ -356,7 +366,18 @@ export function TabGroupMenu({
       description: item.description,
       danger: item.danger,
       disabled: item.disabled,
-      icon: <Icon className="icon-sm" strokeWidth={1.75} />,
+      icon: item.badge ? (
+        <span className="relative grid shrink-0 place-items-center">
+          <Icon className="icon-sm" strokeWidth={1.75} />
+          <StatusDot
+            label={item.badge.label}
+            tone={item.badge.tone}
+            className="absolute -right-0.5 -bottom-0.5"
+          />
+        </span>
+      ) : (
+        <Icon className="icon-sm" strokeWidth={1.75} />
+      ),
       ...extra,
     };
   };
@@ -369,8 +390,8 @@ export function TabGroupMenu({
       node: (
         <>
           <TextField
-            fieldClassName="min-w-0 flex-1"
-            label={t("Group name")}
+            fieldClassName="mb-2 min-w-0 flex-1"
+            label={nameCaption}
             startAdornment={<Pencil className="icon-sm" strokeWidth={1.75} />}
             ref={input}
             value={name}
@@ -381,14 +402,14 @@ export function TabGroupMenu({
               e.preventDefault();
               if (commitName()) onClose();
             }}
-            aria-label={t("Group name")}
+            aria-label={nameCaption}
             aria-invalid={nameError ? true : undefined}
-            className="mb-2 w-full"
           />
           {nameError ? <Alert tone="danger">{nameError}</Alert> : null}
         </>
       ),
     },
+    ...(info ? [{ kind: "content", id: "info", node: info } as const] : []),
     compactAppearance
       ? action(
           { id: "appearance", label: t("Appearance"), icon: ImagePlus },

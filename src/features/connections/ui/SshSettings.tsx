@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { Heading } from "../../../shared/ui/Heading";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { t } from "../../../shared/i18n";
@@ -148,7 +149,9 @@ export function SshSettings({
           {error ? <Alert tone="danger">{error}</Alert> : null}
           <TabPanel value="keys" keepMounted>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-ui-body font-medium">{t("Keys")}</h3>
+              <Heading size="section" level={3}>
+                {t("Keys")}
+              </Heading>
               {generateKey ? (
                 <Button
                   disabled={busy}
@@ -303,10 +306,10 @@ export function SshSettings({
             </div>
           </TabPanel>
           <TabPanel value="hosts" keepMounted className="flex min-w-0 flex-col gap-3">
-            <h3 className="text-ui-body font-medium">
+            <Heading size="section" level={3}>
               {t("Known hosts")}
               {hostInventory.value ? ` (${hosts.length})` : ""}
-            </h3>
+            </Heading>
             <SearchInput
               appearance="field"
               aria-label={t("Search known hosts")}
@@ -339,7 +342,9 @@ export function SshSettings({
               ))}
           </TabPanel>
           <TabPanel value="import" keepMounted className="flex flex-col gap-3">
-            <h3 className="text-ui-body font-medium">{t("Import SSH config")}</h3>
+            <Heading size="section" level={3}>
+              {t("Import SSH config")}
+            </Heading>
             <TextareaField
               label={t("SSH config")}
               value={config}

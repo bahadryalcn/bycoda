@@ -1,4 +1,5 @@
 import { t } from "../../../../shared/i18n";
+import { Surface } from "../../../../shared/ui/Surface";
 import { PlatformMark } from "../common/PlatformIcon";
 import type { SocialAccount, SocialPolicies } from "../../model/social";
 import { withUtm, type ContentDraft } from "./contentDraft";
@@ -25,7 +26,14 @@ export function PlatformPreviews({ accounts, draft, policies, problems }: Platfo
         const over = limit !== undefined && count > limit;
         const own = problems.filter((problem) => problem.accountId === account.id);
         return (
-          <article key={account.id} className="content-preview" data-over={over || undefined}>
+          <Surface
+            as="article"
+            variant="card"
+            padding="sm"
+            key={account.id}
+            className="content-preview"
+            data-over={over || undefined}
+          >
             <header className="content-preview-head">
               <PlatformMark platform={account.platform} size="sm" />
               <strong>{account.name}</strong>
@@ -48,7 +56,7 @@ export function PlatformPreviews({ accounts, draft, policies, problems }: Platfo
                 ))}
               </ul>
             ) : null}
-          </article>
+          </Surface>
         );
       })}
     </section>

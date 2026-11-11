@@ -69,6 +69,7 @@ export const THEME_FIELD_SPECS = {
       Math.max(RANGES.contrast.min, THEME_SUGGESTION_GUARDS.contrastMin),
       RANGES.contrast.max,
     ),
+    surfaceContrast: number(RANGES.surfaceContrast.min, RANGES.surfaceContrast.max),
     // Only ever raises the accent contrast target; the default "auto" is never lowered.
     accentReadability: choice(["strong"] as const),
     diffPalette: choice(CHOICES.diffPalette),

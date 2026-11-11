@@ -102,7 +102,7 @@ it("keeps application chrome on the panel and removes it from the project naviga
   expect(select).toHaveBeenLastCalledWith("G:/wallet/mobile");
 });
 
-it("opens Servers from expanded and compact tools without a project", async () => {
+it("opens Servers from the rail tools without a project", async () => {
   const onOpenServers = vi.fn();
   await act(async () =>
     root.render(
@@ -117,9 +117,9 @@ it("opens Servers from expanded and compact tools without a project", async () =
     ),
   );
   const buttons = [...host.querySelectorAll<HTMLButtonElement>('button[aria-label="Servers"]')];
-  expect(buttons).toHaveLength(2);
-  for (const button of buttons) await act(async () => button.click());
-  expect(onOpenServers).toHaveBeenCalledTimes(2);
+  expect(buttons).toHaveLength(1);
+  await act(async () => buttons[0]!.click());
+  expect(onOpenServers).toHaveBeenCalledTimes(1);
   expect(select).not.toHaveBeenCalled();
 });
 

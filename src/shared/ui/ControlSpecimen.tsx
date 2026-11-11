@@ -742,7 +742,7 @@ function StateMatrix({ layout }: { layout: ControlMatrixLayout }) {
 }
 
 /**
- * The single local-only control reference (see tests/browser/arc-controls.tsx): live samples, an
+ * The single local-only control reference (see tests/browser/shared-ui/arc-controls.tsx): live samples, an
  * optional wider family set (`expanded`) and the per-family state matrix (`matrix`). No production
  * route imports it, and it must not be added to normal settings. Add new families and states here,
  * not in a second specimen list.

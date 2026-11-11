@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT, formatDate } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { QuestionForm } from "../../sessions/ui/QuestionForm";
 import {
@@ -158,7 +159,9 @@ function PendingPresentation({
   };
   return (
     <article className={styles.card}>
-      <p className={styles.title}>{value.input.title ?? value.input.questions[0].prompt}</p>
+      <Heading size="section" level={3} className={styles.title}>
+        {value.input.title ?? value.input.questions[0].prompt}
+      </Heading>
       {error ? (
         <InlineError>{error}</InlineError>
       ) : (
@@ -323,7 +326,9 @@ function OwnerQuestionCard({
   if (!creation.model)
     return (
       <article className={styles.card}>
-        <p className={styles.title}>{question.prompt.title ?? t("Question")}</p>
+        <Heading size="section" level={3} className={styles.title}>
+          {question.prompt.title ?? t("Question")}
+        </Heading>
         <InlineError>
           {t(
             creation.error ??
@@ -346,9 +351,9 @@ function OwnerQuestionCard({
     >
       {snoozed || stale ? (
         <>
-          <p className={styles.title}>
+          <Heading size="section" level={3} className={styles.title}>
             {question.prompt.title ?? question.prompt.questions[0].prompt}
-          </p>
+          </Heading>
           <p className={styles.status}>
             {stale
               ? t("This question changed with its work. Refresh it before answering.")

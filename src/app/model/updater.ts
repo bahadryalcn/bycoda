@@ -8,6 +8,7 @@ import type { DownloadEvent, Update } from "@tauri-apps/plugin-updater";
 import { checkForAppUpdate } from "../../features/settings/model/updateChannel";
 import { announceUpdateAvailable } from "../../features/settings/model/sounds";
 import { rememberInstalledUpdate } from "./updateNotice";
+import { settleUpdateCheck } from "./updateProbeBackoff";
 import { appName } from "../../shared/lib/appName";
 
 export type UpdaterPhase = "idle" | "checking" | "current" | "available" | "downloading" | "error";
@@ -72,9 +73,22 @@ export async function readAppVersion(): Promise<string> {
   }
 }
 
-export async function probeForUpdate(): Promise<Update | null> {
+/** One feed check. Its outcome sets the cadence of the background probes. */
+async function checkFeeds(currentVersion: string, explicit: boolean): Promise<Update | null> {
+  let failed = true;
+  try {
+    const update = await checkForAppUpdate(currentVersion);
+    failed = false;
+    return update;
+  } finally {
+    settleUpdateCheck(failed, explicit);
+  }
+}
+
+/** `explicit` marks a check the user asked for, as opposed to a background probe. */
+export async function probeForUpdate(explicit = false): Promise<Update | null> {
   if (!(await isUpdaterEnabled())) return null;
-  const update = await checkForAppUpdate(await readAppVersion());
+  const update = await checkFeeds(await readAppVersion(), explicit);
   pendingUpdate = update;
   if (update) announceUpdateAvailable(update.version);
   return update;
@@ -114,7 +128,7 @@ async function runUpdateFlowOnce(
   onProgress?.(base);
 
   try {
-    const update = await checkForAppUpdate(currentVersion);
+    const update = await checkFeeds(currentVersion, manual);
     if (!update) {
       pendingUpdate = null;
       const current: UpdaterSnapshot = { phase: "current", currentVersion };

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
+import { Surface } from "../../../shared/ui/Surface";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import type { LocalRecommendation } from "../model/decisionTypes";
 import { localOffer, recommendationText } from "../model/decisionView";
@@ -45,13 +47,16 @@ export function DecisionModelsFirstRunCard({
   if (recommendation === null) return null;
   const offer = localOffer(recommendation);
   return (
-    <section
+    <Surface
+      as="section"
+      variant="card"
+      padding="lg"
       aria-label={t("Decision models")}
-      className="flex min-w-0 flex-col gap-3 rounded-(--ui-radius-card) border border-(--ui-settings-group-border) p-4"
+      className="flex min-w-0 flex-col gap-3"
     >
-      <h3 className="font-medium">
+      <Heading size="item">
         {offer === "install" ? t("Set up a local decision model?") : t("Set up a decision model?")}
-      </h3>
+      </Heading>
       <p className="text-ui-caption text-(--ui-text-secondary)">
         {recommendationText(recommendation.tier)}
       </p>
@@ -63,6 +68,6 @@ export function DecisionModelsFirstRunCard({
           {t("Set up")}
         </Button>
       </div>
-    </section>
+    </Surface>
   );
 }

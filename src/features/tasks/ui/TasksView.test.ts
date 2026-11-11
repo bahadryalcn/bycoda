@@ -17,7 +17,7 @@ import {
   saveStoredDailySummary,
 } from "../model/dailySummaryClient";
 import { TasksView as RawTasksView } from "./TasksView";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import {
   button,
   buttonName,

@@ -18,6 +18,7 @@ import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Badge } from "../../../shared/ui/Badge";
 import { useTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { SettingsOperationFeedback, type SettingsFeedbackProps } from "./SettingsFeedback";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ChevronRight, RotateCcw } from "../../../shared/ui/icons";
@@ -266,7 +267,7 @@ export function AdvancedSettings({
       aria-labelledby={headingId}
       tabIndex={-1}
     >
-      <h3 id={headingId} className="settings-subheading">
+      <Heading size="item" level={3} id={headingId} className="settings-subheading">
         <Button
           type="button"
           variant="ghost"
@@ -287,7 +288,7 @@ export function AdvancedSettings({
           />
           {title ?? t("Advanced")}
         </Button>
-      </h3>
+      </Heading>
       {keepMounted ? (
         <div
           id={contentId}
@@ -317,7 +318,9 @@ export function PageHeader({
 }) {
   return (
     <header className="settings-page-header">
-      <h1 className="settings-page-title">{title}</h1>
+      <Heading size="page" className="settings-page-title">
+        {title}
+      </Heading>
       <SettingsPageHelp description={description} automaticSave={automaticSave} />
     </header>
   );
@@ -412,9 +415,9 @@ export function Group({
       <div className="settings-group-heading">
         <div className="settings-group-title">
           <div className="settings-title-line">
-            <h2 id={headingId} className="settings-section-title">
+            <Heading id={headingId} className="settings-section-title">
               {title}
-            </h2>
+            </Heading>
             {hasInfo ? (
               <InfoPopover className="shrink-0">
                 <p>{description}</p>

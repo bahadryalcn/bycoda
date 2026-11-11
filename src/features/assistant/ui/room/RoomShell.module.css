@@ -49,12 +49,9 @@
 }
 .name {
   min-inline-size: 0;
-  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
 }
 .mode {
   flex: none;
@@ -121,11 +118,6 @@
   margin-inline: auto;
   padding: 40px 20px;
 }
-.setupPrompt h2 {
-  margin: 0;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
-}
 .setupPrompt p {
   margin: 0;
   color: var(--ui-text-secondary);
@@ -153,7 +145,7 @@
   gap: 8px;
   margin: 8px 16px 12px;
   padding: 4px 4px 4px 12px;
-  border: 1px solid var(--ui-pane-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
   min-inline-size: 0;
 }

@@ -142,13 +142,6 @@
   flex: 1 1 14rem;
   min-inline-size: 0;
 }
-.readerTitle h3 {
-  margin: 0;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
 .readerMeta {
   margin: 0;
   color: var(--ui-text-muted);
@@ -209,17 +202,9 @@
   gap: 6px;
   max-inline-size: 48rem;
   margin-block-end: 20px;
-  padding: 12px 14px;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
 }
-.summary h3,
 .summary p {
   margin: 0;
-}
-.summary h3 {
-  font-size: var(--ui-font-body);
-  font-weight: 500;
 }
 .summary p {
   font-size: var(--ui-font-secondary);
@@ -234,4 +219,7 @@
   margin: 0 0 12px;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-secondary);
+}
+.readerTitle h3 {
+  overflow-wrap: anywhere;
 }

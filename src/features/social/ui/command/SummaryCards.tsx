@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { Meter } from "../../../../shared/ui/Meter";
+import { Surface } from "../../../../shared/ui/Surface";
 import { Check, Clock, MessageSquare, UserRound } from "../../../../shared/ui/icons";
 import type { AiSummary } from "../../model/socialActions";
 import { summaryCards, type SummaryCard } from "./commandModel";
@@ -26,7 +27,7 @@ export function SummaryCards({
   return (
     <div className="command-cards">
       {summaryCards(summary).map((card) => (
-        <div key={card.key} className="command-card">
+        <Surface key={card.key} variant="card" className="command-card">
           <span className="command-card-icon">{ICONS[card.key]}</span>
           <div className="command-card-body">
             <span className="command-card-label">{card.label}</span>
@@ -40,7 +41,7 @@ export function SummaryCards({
               </span>
             ) : null}
           </div>
-        </div>
+        </Surface>
       ))}
     </div>
   );

@@ -287,7 +287,7 @@ export function PhonePairingFlow({
 
       {state.stage === "qr" ? (
         <div className="phone-pairing-code">
-          <div className="rounded-(--ui-radius-card) border border-stroke bg-on-solid p-2">
+          <div className="rounded-(--ui-radius-card) border border-(--ui-card-border) bg-on-solid p-2">
             <QRCodeSVG
               value={JSON.stringify(state.session.code)}
               size={260}

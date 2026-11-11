@@ -78,6 +78,7 @@ export function useCloseAllTabs({
           closingTabId: tab.id,
           scope: tabCloseScope,
           worktreeOf: tabWorktreeOf,
+          activeCwd: projectCwd,
         });
         if (closePlan.action === "close") {
           onCloseTab(tab.id);
@@ -98,7 +99,9 @@ export function useCloseAllTabs({
           );
         } else {
           // The tab held only editor panes and must stay: seed a session.
-          const session = seedSession(editorFiles[0].cwd || projectCwd);
+          const session = seedSession(
+            editorFiles[0].projectCwd || editorFiles[0].cwd || projectCwd,
+          );
           setSessions((prev) => [...prev, session]);
           nextTab = resetTabToSession(tab, session.id);
           focusesSession = true;
@@ -174,7 +177,9 @@ export function useCloseAllTabs({
         return;
       }
       // The tab held no session: seed one so the workspace stays usable.
-      const session = seedSession(terminalFiles[0]?.cwd || projectCwd);
+      const session = seedSession(
+        terminalFiles[0]?.projectCwd || terminalFiles[0]?.cwd || projectCwd,
+      );
       setSessions((prev) => [...prev, session]);
       setTabs((prev) =>
         prev.map((entry) => (entry.id === tab.id ? resetTabToSession(entry, session.id) : entry)),

@@ -1,5 +1,9 @@
 import { createStore } from "../../../shared/lib/store";
-import { queueRoomPrivacyProjection, withRoomPrivacyMutation } from "./roomPrivacyProjection";
+import {
+  queueRoomPrivacyProjection,
+  settleHeldRoomPrivacyProjection,
+  withRoomPrivacyMutation,
+} from "./roomPrivacyProjection";
 import {
   loadProjectGroupAssignments,
   loadProjectGroups,
@@ -358,7 +362,10 @@ export async function changeLockPassword(current: string, next: string): Promise
   const revision = privacyRevision;
   const result = await verifyLockPassword(current);
   if (result.ok && privacyRevision !== revision) return staleVerification();
-  if (result.ok) await setLockPassword(next);
+  if (result.ok) {
+    await settleHeldRoomPrivacyProjection();
+    await setLockPassword(next);
+  }
   return result;
 }
 
@@ -396,6 +403,7 @@ export async function removeLockPassword(current: string): Promise<VerifyResult>
   const result = await verifyLockPassword(current);
   if (result.ok && privacyRevision !== revision) return staleVerification();
   if (result.ok) {
+    await settleHeldRoomPrivacyProjection();
     const outcome = await withRoomPrivacyMutation(() =>
       privacyRevision === revision ? clearPassword() : null,
     );
@@ -520,6 +528,7 @@ export async function unlockGroup(groupId: string, password: string): Promise<Ve
   if (!group) return staleVerification();
   const result = await verifyLockPassword(password);
   if (!result.ok) return result;
+  await settleHeldRoomPrivacyProjection();
   if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
     return staleVerification();
   return withRoomPrivacyMutation(() => {
@@ -541,6 +550,7 @@ export async function removeGroupLock(groupId: string, password: string): Promis
   if (!group) return staleVerification();
   const result = await verifyLockPassword(password);
   if (!result.ok) return result;
+  await settleHeldRoomPrivacyProjection();
   if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
     return staleVerification();
   return withRoomPrivacyMutation(() => {

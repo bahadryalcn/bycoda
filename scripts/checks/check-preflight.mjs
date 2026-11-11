@@ -14,11 +14,12 @@ import { localSourceIdentity } from "./check-local.mjs";
 
 const node = (...args) => [process.execPath, ...args];
 // Resolve installed tool entry points from their manifests; this runner never installs.
-const bin = (name, ...args) => {
+const bin = (name, ...args) => binary(name, name, ...args);
+const binary = (name, binName, ...args) => {
   const manifest = JSON.parse(
     readFileSync(path.join(repositoryRoot, "node_modules", name, "package.json"), "utf8"),
   );
-  const entry = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[name];
+  const entry = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[binName];
   if (!entry) throw new Error(`Installed ${name} executable is unavailable`);
   return node(path.join("node_modules", name, entry), ...args);
 };
@@ -37,8 +38,8 @@ export const preflightGates = [
   },
   {
     job: "repository-hygiene",
-    name: "Formatting (oxfmt, whole repo)",
-    command: bin("oxfmt", "--check", "."),
+    name: "Formatting (vp fmt, whole repo)",
+    command: binary("vite-plus", "vp", "fmt", "--check", "."),
   },
   {
     job: "repository-hygiene",
@@ -61,6 +62,11 @@ export const preflightGates = [
     job: "repository-hygiene",
     name: "UI drift ratchet",
     command: node("scripts/checks/check-ui-drift.mjs"),
+  },
+  {
+    job: "web",
+    name: "React Compiler coverage ratchet",
+    command: node("scripts/checks/check-compiler-coverage.mjs"),
   },
   {
     job: "repository-hygiene",
@@ -101,6 +107,11 @@ export const preflightGates = [
     job: "web",
     name: "Workspace package boundaries",
     command: node("scripts/checks/check-package-boundaries.mjs"),
+  },
+  {
+    job: "web",
+    name: "Rule set (one definition per rule, generated list current)",
+    command: node("scripts/checks/rule-index.mjs"),
   },
   {
     job: "web",

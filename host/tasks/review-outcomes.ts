@@ -10,6 +10,7 @@ import { HOST_INTERRUPTED, STOPPED_BY_USER } from "../sessions/sessionRuns";
 import type { HostStore } from "../store";
 import { RUNTIME_RETRY_NOTICE } from "./constants";
 import { QUESTION_NOTICE } from "./constants";
+import { REVIEW_RERUN_NOTICE } from "./constants";
 /** The verdict of the reviewer's last turn: from its latest message that
  * ends with one, since a short message may follow the verdict. */
 export function reviewerVerdict(
@@ -115,6 +116,11 @@ export function isTransientRunFailure(task: HostTask, error: string | undefined)
 
 export function runtimeRetryCount(task: HostTask): number {
   return (task.ownerNotices ?? []).filter((notice) => notice.id.startsWith(RUNTIME_RETRY_NOTICE))
+    .length;
+}
+
+export function reviewRerunCount(task: HostTask): number {
+  return (task.ownerNotices ?? []).filter((notice) => notice.id.startsWith(REVIEW_RERUN_NOTICE))
     .length;
 }
 

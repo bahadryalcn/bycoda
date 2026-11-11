@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beginResizeGesture } from "../../../shared/lib/resizeGesture";
 import { OverviewRuler } from "./overviewRulerView";
 
 describe("retained editor overview ownership", () => {
@@ -101,5 +102,52 @@ describe("retained editor overview ownership", () => {
     );
     expect(reveal).not.toHaveBeenCalled();
     expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("does not redraw for an ancestor geometry write, but does for a real hide", async () => {
+    const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+    draw();
+    frame = undefined;
+    owner.style.width = "320px";
+    owner.style.left = "12px";
+    await settle();
+    expect(frame).toBeUndefined();
+    owner.style.display = "none";
+    await settle();
+    expect(frame).toBeDefined();
+  });
+
+  it("holds a size-driven repaint until the resize gesture ends", () => {
+    const observers: Array<() => void> = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          observers.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const sized = new OverviewRuler(
+      {
+        marks: () => [],
+        geometry: () => ({ contentHeight: 1000, viewportHeight: 100, scrollTop: 0 }),
+        scrollTo,
+        reveal,
+      },
+      { interactive: false, band: false },
+    );
+    try {
+      frame = undefined;
+      const end = beginResizeGesture();
+      observers.forEach((callback) => callback());
+      expect(frame).toBeUndefined();
+      end();
+      expect(frame).toBeDefined();
+    } finally {
+      sized.destroy();
+      vi.unstubAllGlobals();
+    }
   });
 });

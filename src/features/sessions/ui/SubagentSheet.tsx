@@ -1,3 +1,5 @@
+import { Surface } from "../../../shared/ui/Surface";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useFollowBottom } from "../hooks/useFollowBottom";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
@@ -28,6 +30,7 @@ import { AgentMarkdown } from "./AgentMarkdown";
 import { VIEW_SUBAGENT_EVENT } from "./subagentFocus";
 import { useStopRequests } from "./useStopRequests";
 import { Button } from "../../../shared/ui/Button";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Sheet } from "../../../shared/ui/Sheet";
@@ -424,7 +427,7 @@ function CommandDetails({
         className="flex max-h-[min(22rem,55dvh)] min-h-0 shrink flex-col gap-1 overflow-y-auto overscroll-contain"
       >
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-ui-caption font-medium text-(--ui-text-secondary)">{t("Command")}</h3>
+          <SectionLabel>{t("Command")}</SectionLabel>
           {longCommand ? (
             <Button
               variant="ghost"
@@ -438,7 +441,7 @@ function CommandDetails({
         </div>
         <pre
           tabIndex={0}
-          className={`select-text overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) px-3 py-2 font-mono text-ui-caption leading-5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color) ${
+          className={`select-text overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-card-border) bg-(--ui-card-surface) px-3 py-2 font-mono text-ui-caption leading-5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color) ${
             commandOpen || !longCommand ? "max-h-[min(16rem,32dvh)]" : "max-h-20"
           }`}
         >
@@ -460,14 +463,14 @@ function CommandDetails({
         aria-label={t("Output")}
         className="relative flex min-h-[8rem] flex-1 flex-col gap-1"
       >
-        <h3 className="text-ui-caption font-medium text-(--ui-text-secondary)">{t("Output")}</h3>
+        <SectionLabel>{t("Output")}</SectionLabel>
         <div className="relative flex min-h-0 flex-1 flex-col">
           {/* The one scroll owner of the sheet: error and output read in one quiet
               panel. Always mounted: the follow hook attaches to this element once. */}
           <div
             ref={scroller}
             tabIndex={0}
-            className="min-h-0 flex-1 overflow-auto overscroll-none rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) [scrollbar-gutter:stable] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)"
+            className="min-h-0 flex-1 overflow-auto overscroll-none rounded-(--ui-radius-card) border border-(--ui-card-border) bg-(--ui-card-surface) [scrollbar-gutter:stable] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)"
           >
             <div className="flex min-w-0 flex-col gap-2 px-3 py-2">
               {error ? (
@@ -585,34 +588,21 @@ function CopyTranscriptButton({
 /** What the subagent was asked, clamped until the reader opens it. */
 function PromptCard({ prompt }: { prompt: string }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
-  const long = prompt.length > 360 || prompt.split("\n").length > 6;
   return (
-    <section
+    <Surface
+      as="section"
+      variant="card"
+      padding="none"
       aria-label={t("Prompt")}
-      className="mb-2 rounded-lg bg-(--ui-surface-panel) px-3 py-2 text-ui-secondary leading-5"
+      className="mb-2 px-3 py-2 text-ui-secondary leading-5"
     >
-      <h3 className="pb-0.5 text-ui-caption font-medium text-(--ui-text-secondary)">
-        {t("Prompt")}
-      </h3>
-      <p
-        className={`min-w-0 whitespace-pre-wrap break-words text-(--ui-text-secondary) ${
-          open || !long ? "" : "line-clamp-6"
-        }`}
-      >
-        {prompt}
-      </p>
-      {long ? (
-        <Button
-          variant="ghost"
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? t("Show less") : t("Show full prompt")}
-        </Button>
-      ) : null}
-    </section>
+      <SectionLabel>{t("Prompt")}</SectionLabel>
+      <ClampText lines={6} moreLabel={t("Show full prompt")}>
+        <p className="min-w-0 whitespace-pre-wrap break-words text-(--ui-text-secondary)">
+          {prompt}
+        </p>
+      </ClampText>
+    </Surface>
   );
 }
 

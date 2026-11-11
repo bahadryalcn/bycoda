@@ -8,6 +8,7 @@ export type AttachmentPresentationKind =
   | "pdf"
   | "markdown"
   | "text"
+  | "spreadsheet"
   | "code"
   | "archive"
   | "folder"
@@ -20,11 +21,20 @@ const labels = {
   pdf: "PDF",
   markdown: "Markdown",
   text: "Text",
+  spreadsheet: "Spreadsheet",
   code: "Code",
   archive: "Compressed archive",
   folder: "Folder",
   file: "File",
 } as const;
+
+const extensionTypeKinds = new Set<AttachmentPresentationKind>([
+  "spreadsheet",
+  "text",
+  "code",
+  "archive",
+  "file",
+]);
 
 const extensions: Partial<Record<string, AttachmentPresentationKind>> = {};
 for (const [kind, names] of Object.entries({
@@ -33,7 +43,8 @@ for (const [kind, names] of Object.entries({
   video: "mp4 webm mov m4v avi mkv mpg mpeg ogv 3gp",
   pdf: "pdf",
   markdown: "md markdown mdx mdown",
-  text: "txt text log csv tsv rtf",
+  text: "txt text log rtf",
+  spreadsheet: "csv tsv xls xlsx ods numbers",
   code: "js jsx ts tsx mjs cjs json jsonc html htm css scss sass less xml yaml yml toml py rb rs go java kt kts swift c h cpp hpp cs php sh bash zsh ps1 sql vue svelte ipynb",
   archive: "zip gz gzip tgz tar bz2 xz 7z rar zst",
 })) {
@@ -55,6 +66,12 @@ export function attachmentPresentation(attachment: Pick<Attachment, "name" | "mi
   else if (mime === "application/pdf") kind = "pdf";
   else if (mime === "text/markdown" || mime === "text/x-markdown") kind = "markdown";
   else if (
+    /^(?:text\/(?:csv|tab-separated-values)|application\/(?:vnd\.ms-excel|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|vnd\.oasis\.opendocument\.spreadsheet))$/.test(
+      mime,
+    )
+  )
+    kind = "spreadsheet";
+  else if (
     /^application\/(?:zip|x-zip-compressed|gzip|x-gzip|x-tar|x-bzip2|x-xz|x-7z-compressed|x-rar-compressed|vnd\.rar|zstd)$/.test(
       mime,
     )
@@ -69,5 +86,13 @@ export function attachmentPresentation(attachment: Pick<Attachment, "name" | "mi
   else if (attachment.kind === "image" || attachment.kind === "audio") kind = attachment.kind;
   else kind = extensions[extension] ?? (mime.startsWith("text/") ? "text" : "file");
 
-  return { kind, label: labels[kind], extension: kind === "folder" ? "" : extension };
+  const shownExtension = kind === "folder" ? "" : extension;
+  return {
+    kind,
+    label: labels[kind],
+    extension: shownExtension,
+    // Broad kinds read better as the real format ("CSV", "ZIP"); null keeps the translated label.
+    typeExtension:
+      extensionTypeKinds.has(kind) && shownExtension ? shownExtension.toUpperCase() : null,
+  };
 }

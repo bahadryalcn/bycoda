@@ -1,5 +1,6 @@
 import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useT } from "../../../shared/i18n";
 import { createContext, useContext } from "react";
 import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
@@ -182,7 +183,7 @@ export function SubagentReport({
   block,
   cwd,
   onOpenFile,
-  heading: Heading = "h3",
+  heading = "h3",
   className = "",
 }: {
   block: Block;
@@ -200,9 +201,7 @@ export function SubagentReport({
       aria-label={failed ? t("Failure") : t("Report")}
       className={`flex min-w-0 flex-col gap-1 ${className}`}
     >
-      <Heading className="text-ui-caption font-medium text-(--ui-text-secondary)">
-        {failed ? t("Failure") : t("Report")}
-      </Heading>
+      <SectionLabel as={heading}>{failed ? t("Failure") : t("Report")}</SectionLabel>
       {failed ? (
         <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
           {report}

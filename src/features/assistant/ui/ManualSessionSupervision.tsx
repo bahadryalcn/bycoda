@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Surface } from "../../../shared/ui/Surface";
+import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
@@ -167,11 +169,19 @@ export function ManualSessionSupervision({
   const idle = !settings && data && !enabled && !grants.length && !error && !pending && !stopping;
   if (idle)
     return (
-      <section className={sessionStyles.frame} aria-label={t("Manual session supervision")}>
+      <Surface
+        as="section"
+        variant="card"
+        padding="md"
+        className={sessionStyles.frame}
+        aria-label={t("Manual session supervision")}
+      >
         <div className={sessionStyles.statusRow}>
           <div className={sessionStyles.statusText}>
             <div className={sessionStyles.titleGroup}>
-              <h2>{t("Manual session supervision")}</h2>
+              <Heading size="item" level={2}>
+                {t("Manual session supervision")}
+              </Heading>
               <Badge size="sm">{t("Off")}</Badge>
             </div>
             <p className={sessionStyles.description}>
@@ -183,7 +193,7 @@ export function ManualSessionSupervision({
             <RefreshIcon onClick={reload} />
           </div>
         </div>
-      </section>
+      </Surface>
     );
   const refresh = settings ? (
     <Button loading={pending === "list"} disabled={!!pending || stopping} onClick={reload}>
@@ -322,11 +332,19 @@ export function ManualSessionSupervision({
       </>
     );
   return (
-    <section className={sessionStyles.frame} aria-label={t("Manual session supervision")}>
+    <Surface
+      as="section"
+      variant="card"
+      padding="md"
+      className={sessionStyles.frame}
+      aria-label={t("Manual session supervision")}
+    >
       <div className={sessionStyles.statusRow}>
         <div className={sessionStyles.statusText}>
           <div className={sessionStyles.titleGroup}>
-            <h2>{t("Manual session supervision")}</h2>
+            <Heading size="item" level={2}>
+              {t("Manual session supervision")}
+            </Heading>
             <Badge size="sm" tone={status === "Enabled" ? "success" : "neutral"}>
               {t(status)}
             </Badge>
@@ -460,6 +478,6 @@ export function ManualSessionSupervision({
         </p>
       )}
       {openError && <InlineError className={styles.error}>{t(openError)}</InlineError>}
-    </section>
+    </Surface>
   );
 }

@@ -419,6 +419,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           dispatchStarted = true;
           const result = await options.dispatch(request.method, request.params, {
             environmentId: options.environmentId,
+            requestId: request.id,
             principal: { kind: "device", id: peer.principal.id },
             authorized: () => authorized(peer),
             executionAuthorized: () => executionAuthorized(peer),

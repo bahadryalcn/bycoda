@@ -1,4 +1,5 @@
 import { t } from "../../../../../shared/i18n";
+import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { Checkbox } from "../../../../../shared/ui/Checkbox";
 import { NativeSelect } from "../../../../../shared/ui/Select";
 import { TextField } from "../../../../../shared/ui/TextField";
@@ -13,8 +14,7 @@ export function YouTubeFields({ value, disabled, onChange }: PlatformFieldProps)
     onChange({ ...value, youtube: { ...options, ...patch } });
   const titleLength = Array.from(options.title ?? "").length;
   return (
-    <fieldset className="content-platform" disabled={disabled}>
-      <legend>{t("YouTube")}</legend>
+    <FieldGroup legend={t("YouTube")} className="content-platform" disabled={disabled}>
       <TextField
         label={t("Title")}
         required
@@ -48,6 +48,6 @@ export function YouTubeFields({ value, disabled, onChange }: PlatformFieldProps)
         label={t("Contains altered or synthetic content")}
         className="content-check"
       />
-    </fieldset>
+    </FieldGroup>
   );
 }

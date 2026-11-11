@@ -1,4 +1,5 @@
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatDate, t } from "../../../shared/i18n";
@@ -446,9 +447,7 @@ export function SshRunbooks({
                   {target.reason ? (
                     <div className="w-full min-w-0 text-(--ui-text-muted)">
                       <p>{t(sshRunReasonMessage(target.reason))}</p>
-                      <Disclosure size="sm" summary={t("Status details")}>
-                        <code className="break-all">{target.reason}</code>
-                      </Disclosure>
+                      <code className="break-all">{target.reason}</code>
                     </div>
                   ) : null}
                   {target.state === "queued" || target.state === "running" ? (
@@ -520,115 +519,112 @@ export function SshRunbooks({
               {t("Refresh")}
             </Button>
           </div>
-          <fieldset disabled={busy || frozen} className="flex min-w-0 flex-col gap-3 border-0 p-0">
-            <TextField
-              label={t("Runbook name")}
-              value={draft.name}
-              onChange={(event) => change({ name: event.target.value })}
-            />
-            <SearchableSelect
-              multiple
-              label={t("SSH targets")}
-              value={draft.targetIds}
-              onChange={(ids) =>
-                change({
-                  targetIds: ids,
-                  ...(draft.triggers
-                    ? {
-                        triggers: {
-                          ...draft.triggers,
-                          startupServerIds: draft.triggers.startupServerIds.filter((id) =>
-                            ids.includes(id),
-                          ),
-                        },
-                      }
-                    : {}),
-                })
-              }
-              options={choices.map((item) => ({
-                value: item.id,
-                label: item.name,
-                description: sshEndpointPreview(item.effectiveSshEndpoint ?? item.sshEndpoint!),
-              }))}
-            />
-            <SegmentedControl
-              label={t("Runbook shell")}
-              value={draft.shell}
-              onValueChange={(shell) => change({ shell: shell as "posix" | "powershell" })}
-              options={[
-                { value: "posix", label: "POSIX" },
-                { value: "powershell", label: "PowerShell" },
-              ]}
-            />
-            <TextareaField
-              label={t("SSH script")}
-              value={draft.script}
-              rows={5}
-              spellCheck={false}
-              onChange={(event) => change({ script: event.target.value })}
-            />
-            <div className="grid grid-cols-2 gap-2">
+          <FieldGroup variant="bare" disabled={busy || frozen}>
+            <div className="flex min-w-0 flex-col gap-3">
               <TextField
-                label={t("Concurrency")}
-                inputMode="numeric"
-                value={draft.concurrency}
-                onChange={(event) => change({ concurrency: event.target.value })}
+                label={t("Runbook name")}
+                value={draft.name}
+                onChange={(event) => change({ name: event.target.value })}
               />
-              <TextField
-                label={t("Timeout per target (seconds)")}
-                inputMode="numeric"
-                value={draft.timeoutSeconds}
-                onChange={(event) => change({ timeoutSeconds: event.target.value })}
+              <SearchableSelect
+                multiple
+                label={t("SSH targets")}
+                value={draft.targetIds}
+                onChange={(ids) =>
+                  change({
+                    targetIds: ids,
+                    ...(draft.triggers
+                      ? {
+                          triggers: {
+                            ...draft.triggers,
+                            startupServerIds: draft.triggers.startupServerIds.filter((id) =>
+                              ids.includes(id),
+                            ),
+                          },
+                        }
+                      : {}),
+                  })
+                }
+                options={choices.map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                  description: sshEndpointPreview(item.effectiveSshEndpoint ?? item.sshEndpoint!),
+                }))}
               />
-            </div>
-            <Disclosure size="sm" className="text-ui-caption" summary={t("Runbook triggers")}>
-              <div className="flex min-w-0 flex-col gap-3">
+              <SegmentedControl
+                label={t("Runbook shell")}
+                value={draft.shell}
+                onValueChange={(shell) => change({ shell: shell as "posix" | "powershell" })}
+                options={[
+                  { value: "posix", label: "POSIX" },
+                  { value: "powershell", label: "PowerShell" },
+                ]}
+              />
+              <TextareaField
+                label={t("SSH script")}
+                value={draft.script}
+                rows={5}
+                spellCheck={false}
+                onChange={(event) => change({ script: event.target.value })}
+              />
+              <div className="grid grid-cols-2 gap-2">
                 <TextField
-                  label={t("Schedule interval (minutes)")}
+                  label={t("Concurrency")}
                   inputMode="numeric"
-                  value={draft.intervalMinutes ?? ""}
-                  onChange={(event) => change({ intervalMinutes: event.target.value })}
+                  value={draft.concurrency}
+                  onChange={(event) => change({ concurrency: event.target.value })}
                 />
-                <SearchableSelect
-                  multiple
-                  label={t("Review after connecting to")}
-                  value={draft.triggers?.startupServerIds ?? []}
-                  options={choices
-                    .filter((item) => draft.targetIds.includes(item.id))
-                    .map((item) => ({ value: item.id, label: item.name }))}
-                  onChange={(ids) =>
-                    change({ triggers: { ...draft.triggers, startupServerIds: ids } })
-                  }
+                <TextField
+                  label={t("Timeout per target (seconds)")}
+                  inputMode="numeric"
+                  value={draft.timeoutSeconds}
+                  onChange={(event) => change({ timeoutSeconds: event.target.value })}
                 />
-                <p className="text-(--ui-text-muted)">
-                  {t(
-                    "Triggers create pending reviews. Connecting, restoring or reaching a schedule never runs a script automatically.",
-                  )}
-                </p>
-                <p className="text-(--ui-text-muted)">
-                  {t(
-                    "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.",
-                  )}
-                </p>
-                {saved?.triggers?.nextRunAt ? (
-                  <p>
-                    {t("Next review")}: {formatDate(new Date(saved.triggers.nextRunAt), DATE_TIME)}
-                  </p>
-                ) : null}
               </div>
-            </Disclosure>
-          </fieldset>
-          <Disclosure
-            size="sm"
-            className="text-ui-caption text-(--ui-text-muted)"
-            summary={t("Execution details")}
-          >
-            <p>
-              {t(
-                "Choose up to 16 saved SSH targets, 1–4 concurrent processes and a 1–86400 second timeout. Scripts are saved definitions; keep secrets in the remote environment or a credential provider. Output is not captured. Saving never runs a script.",
-              )}
-            </p>
-          </Disclosure>
+              <Disclosure size="sm" className="text-ui-caption" summary={t("Runbook triggers")}>
+                <div className="flex min-w-0 flex-col gap-3">
+                  <TextField
+                    label={t("Schedule interval (minutes)")}
+                    inputMode="numeric"
+                    value={draft.intervalMinutes ?? ""}
+                    onChange={(event) => change({ intervalMinutes: event.target.value })}
+                  />
+                  <SearchableSelect
+                    multiple
+                    label={t("Review after connecting to")}
+                    value={draft.triggers?.startupServerIds ?? []}
+                    options={choices
+                      .filter((item) => draft.targetIds.includes(item.id))
+                      .map((item) => ({ value: item.id, label: item.name }))}
+                    onChange={(ids) =>
+                      change({ triggers: { ...draft.triggers, startupServerIds: ids } })
+                    }
+                  />
+                  <p className="text-(--ui-text-muted)">
+                    {t(
+                      "Triggers create pending reviews. Connecting, restoring or reaching a schedule never runs a script automatically.",
+                    )}
+                  </p>
+                  <p className="text-(--ui-text-muted)">
+                    {t(
+                      "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.",
+                    )}
+                  </p>
+                  {saved?.triggers?.nextRunAt ? (
+                    <p>
+                      {t("Next review")}:{" "}
+                      {formatDate(new Date(saved.triggers.nextRunAt), DATE_TIME)}
+                    </p>
+                  ) : null}
+                </div>
+              </Disclosure>
+            </div>
+          </FieldGroup>
+          <p className="text-ui-caption text-(--ui-text-muted)">
+            {t(
+              "Choose up to 16 saved SSH targets, 1–4 concurrent processes and a 1–86400 second timeout. Scripts are saved definitions; keep secrets in the remote environment or a credential provider. Output is not captured. Saving never runs a script.",
+            )}
+          </p>
           {!profile ? (
             <InlineError live="polite">
               {t("Enter a name, script, valid targets and execution limits.")}

@@ -67,7 +67,9 @@ export function SkillPicker({
     <div
       data-skill-picker
       className={
-        compact ? "overflow-hidden" : "overflow-hidden rounded-lg border border-(--color-stroke)"
+        compact
+          ? "overflow-hidden"
+          : "overflow-hidden rounded-(--ui-radius-card) border border-(--ui-card-border)"
       }
     >
       {creating ? (

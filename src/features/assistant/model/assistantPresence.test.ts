@@ -39,23 +39,23 @@ it("sends only exact captured native source and finite owner choice", async () =
   await expect(nativeAssistantPresencePort.set("captured", "idle" as "away")).rejects.toThrow();
   expect(api.invoke).toHaveBeenCalledTimes(count);
 });
-it("suppresses invalid native events including injected fields and retains unknown", async () => {
+it("suppresses invalid native events including injected fields and suppresses the removed unknown state", async () => {
   const receive = vi.fn(),
     release = await nativeAssistantPresencePort.subscribe(receive);
   api.receive!({ payload: { ...ready, secret: "no" } });
   expect(receive).not.toHaveBeenCalled();
-  const unknown = { ...ready, status: { ...ready.status!, state: "unknown" as const } };
+  const unknown = { ...ready, status: { ...ready.status!, state: "unknown" } };
   api.receive!({ payload: unknown });
-  expect(receive).toHaveBeenCalledWith(unknown);
+  expect(receive).not.toHaveBeenCalled();
+  const away = { ...ready, status: { ...ready.status!, state: "away" as const } };
+  api.receive!({ payload: away });
+  expect(receive).toHaveBeenCalledWith(away);
   release();
 });
-it("allows explicit manual state with fresh sensor-unknown proof, while denying missing/error/changed sources", () => {
+it("allows explicit manual state with a fresh away reading, while denying missing/error/changed sources", () => {
   expect(canSetAssistantPresence(ready, "captured")).toBe(true);
   expect(
-    canSetAssistantPresence(
-      { ...ready, status: { ...ready.status!, state: "unknown" } },
-      "captured",
-    ),
+    canSetAssistantPresence({ ...ready, status: { ...ready.status!, state: "away" } }, "captured"),
   ).toBe(true);
   for (const view of [
     { ...ready, sourceToken: "other" },

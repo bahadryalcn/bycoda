@@ -1,8 +1,0 @@
-@import "../../src/styles/index.css";
-@source "./compact-navigation.tsx";
-
-@media (max-width: 640px) {
-  .fixture-conversation {
-    visibility: hidden;
-  }
-}

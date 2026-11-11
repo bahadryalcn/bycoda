@@ -1,5 +1,6 @@
 import { SplitButton, type SplitButtonAction } from "../../../shared/ui/SplitButton";
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -64,6 +65,7 @@ import {
   gitDiscardAll,
   gitDiscardFile,
   gitFetch,
+  gitInit,
   gitTrustRepository,
   gitHeadMessage,
   gitPrCreate,
@@ -129,7 +131,8 @@ import { GitGenerationSettings } from "./GitGenerationSettings";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
@@ -226,6 +229,9 @@ export function GitChangesPanel({
   // A collapsed repository row shows only its summary; its hidden list stays
   // mounted for the header menu but does no background work.
   const detailsOpen = !repository || (repository.expanded ?? !!operation);
+  // A plain folder has nothing to stage, commit, stash or graph.
+  const notRepository = index?.repository === false;
+  const [initError, setInitError] = useState<string | null>(null);
   // Lets the header menu drive the commit box and bulk stage actions below.
   const changesRef = useRef<ChangesActions | null>(null);
   // Shared across the header and the changed-files list so no two Git
@@ -516,7 +522,7 @@ export function GitChangesPanel({
               ) : null}
             </span>
             <span className={styles.branchSlot}>
-              {worktreesInTarget ? null : (
+              {worktreesInTarget || notRepository ? null : (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -530,7 +536,7 @@ export function GitChangesPanel({
               )}
             </span>
             <span className={styles.branchSlot}>
-              {index ? (
+              {index && !notRepository ? (
                 <GitActionsMenu
                   cwd={cwd}
                   index={index}
@@ -557,7 +563,7 @@ export function GitChangesPanel({
         </InlineMessage>
       ) : null}
       {repository && loadError && !detailsOpen ? (
-        <InlineError className="px-2">{loadError}</InlineError>
+        <DetailedInlineError className="px-2" error={loadError} />
       ) : null}
       {loadError?.includes("dubious ownership") ? (
         <Button
@@ -601,36 +607,79 @@ export function GitChangesPanel({
           onChanged={() => onMutated()}
         />
       ) : null}
-      <div className={detailsOpen ? "contents" : "hidden"}>
-        <ChangedFiles
-          cwd={cwd}
-          textHarness={textHarness}
-          index={index}
-          loadError={loadError}
-          loading={loading}
-          checking={checking}
-          files={files}
-          submodules={submodules}
-          conflicts={conflicts}
-          selected={selectedPath}
-          selectedKind={selectedKind}
-          enabled={enabled}
-          fill={!repository}
-          busy={busy}
-          setBusy={setBusy}
-          pending={pending}
-          setPending={setPending}
-          showOptimistic={showOptimistic}
-          actionsRef={changesRef}
-          onOpenFile={onOpenFile}
-          onOpenInEditor={onOpenInEditor}
-          onOpenAllChanges={onOpenAllChanges}
-          active={detailsOpen}
-          onMutated={onMutated}
-          notices={notices}
-        />
-      </div>
-      {!embedded && detailsOpen ? (
+      {notRepository ? (
+        detailsOpen ? (
+          <>
+            <EmptyState
+              context="panel"
+              kind="empty"
+              title={t("This folder is not a Git repository")}
+              description={t("Initialize a repository to track changes in this folder.")}
+              action={
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={!enabled || (!!busy && busy !== "init")}
+                  loading={busy === "init"}
+                  onClick={async () => {
+                    setBusy("init");
+                    setInitError(null);
+                    try {
+                      await gitInit(cwd);
+                      onMutated();
+                    } catch (error) {
+                      setInitError(String(error).replace(/^Error: /, ""));
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                >
+                  {t("Initialize Repository")}
+                </Button>
+              }
+            />
+            {initError ? (
+              <GitFeedback
+                title={t("Could not initialize the repository")}
+                detail={initError}
+                onDismiss={() => setInitError(null)}
+              />
+            ) : null}
+          </>
+        ) : null
+      ) : (
+        <div className={detailsOpen ? "contents" : "hidden"}>
+          <ChangedFiles
+            cwd={cwd}
+            textHarness={textHarness}
+            index={index}
+            loadError={loadError}
+            loading={loading}
+            checking={checking}
+            files={files}
+            submodules={submodules}
+            conflicts={conflicts}
+            selected={selectedPath}
+            selectedKind={selectedKind}
+            enabled={enabled}
+            fill={!repository}
+            busy={busy}
+            setBusy={setBusy}
+            pending={pending}
+            setPending={setPending}
+            showOptimistic={showOptimistic}
+            actionsRef={changesRef}
+            onOpenFile={onOpenFile}
+            onOpenInEditor={onOpenInEditor}
+            onOpenAllChanges={onOpenAllChanges}
+            active={detailsOpen}
+            onMutated={onMutated}
+            notices={notices}
+          />
+        </div>
+      )}
+      {/* An overview row leaves Stashes and Graph to the one shared set below the rows. */}
+      {!embedded && !repository && !notRepository ? (
         <GitPanelSections
           cwd={cwd}
           enabled={enabled}
@@ -638,7 +687,6 @@ export function GitChangesPanel({
           selectedSha={selectedSha}
           onOpenCommit={onOpenCommit}
           paneRef={paneRef}
-          repository={!!repository}
         />
       ) : null}
     </div>
@@ -1375,9 +1423,6 @@ function ChangedFiles({
           stale={!!index}
           onRetry={() => onMutated()}
         />
-      ) : null}
-      {index?.repository === false ? (
-        <GitFeedback kind="info" title={t("This folder is not a Git repository")} />
       ) : null}
       {loading && index ? (
         <p role="status" className="px-3 py-1 text-ui-micro text-(--ui-text-secondary)">

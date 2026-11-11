@@ -16,6 +16,7 @@ import { AssistantQuickAutomationFields } from "../../assistant/ui/AssistantQuic
 import { t } from "../../../shared/i18n";
 import type { VoiceJobDraft, VoiceJobReviewState } from "../model/voiceJobs";
 import styles from "./VoiceJobReview.module.css";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -100,8 +101,12 @@ export function VoiceJobReview({
     >
       <div className={styles.review}>
         {rows.map((row, index) => (
-          <fieldset className={styles.job} key={row.id} disabled={locked}>
-            <legend>{t("Job {p0}", { p0: index + 1 })}</legend>
+          <FieldGroup
+            className={styles.job}
+            key={row.id}
+            legend={t("Job {p0}", { p0: index + 1 })}
+            disabled={locked}
+          >
             <Select
               label={t("Job type")}
               value={
@@ -198,7 +203,7 @@ export function VoiceJobReview({
                 />
               </>
             )}
-          </fieldset>
+          </FieldGroup>
         ))}
         {/* A failed start shows only its error; the accepted count is not a second result. */}
         <LiveText

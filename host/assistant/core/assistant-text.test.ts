@@ -118,6 +118,18 @@ it("refuses late output after reasoning cancellation", async () => {
     name: "AbortError",
   });
 });
+it("counts Codex cached reads at one tenth of a token in supervisor tokens", async () => {
+  vi.mocked(runHarnessTextPrompt).mockImplementation(async (input) => {
+    input.onEvent?.({
+      type: "turn.metrics",
+      inputTokens: 1_000_000,
+      outputTokens: 20_000,
+      cacheReadTokens: 950_000,
+    });
+    return "Answer";
+  });
+  expect(await runner()(profile, "Prompt")).toEqual({ text: "Answer", tokens: 165_000 });
+});
 it("adds actual compaction and reasoning metrics without counting repeated snapshots twice", async () => {
   const receipt = vi.fn(async () => undefined);
   vi.mocked(runHarnessTextPrompt).mockImplementation(async (input) => {

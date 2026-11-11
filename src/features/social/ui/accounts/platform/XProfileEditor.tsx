@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
+import { Heading } from "../../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../../shared/ui/InlineError";
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../../shared/ui/TextField";
@@ -86,7 +87,7 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
 
   return (
     <section className="social-card" aria-label={t("X profile")}>
-      <h3 className="social-card-title">{t("X profile and following")}</h3>
+      <Heading size="item">{t("X profile and following")}</Heading>
       <p className="social-muted">{t("Public profile fields of {p1}.", { p1: accountName })}</p>
       <Button
         variant="secondary"

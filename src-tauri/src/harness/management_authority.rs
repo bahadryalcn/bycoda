@@ -537,6 +537,13 @@ pub(super) fn validate_input(
                                     .and_then(|v| v.as_array())
                                     .is_some_and(|servers| servers.is_empty())
                         }))
+                // Read-only account usage for the footer quota probe.
+                || (matches!(policy, InputPolicy::Grok)
+                    && method == Some("_x.ai/billing")
+                    && object
+                        .get("params")
+                        .and_then(|v| v.as_object())
+                        .is_some_and(|params| params.is_empty()))
                 || (matches!(policy, InputPolicy::Grok)
                     && method == Some("authenticate")
                     && object
@@ -653,6 +660,16 @@ mod tests {
                 "{method}"
             );
         }
+    }
+
+    #[test]
+    fn grok_management_allows_only_empty_billing_reads() {
+        let cwd = std::path::Path::new(".");
+        let billing = r#"{"jsonrpc":"2.0","id":3,"method":"_x.ai/billing","params":{}}"#;
+        assert_eq!(validate_input(InputPolicy::Grok, billing, cwd), Ok(()));
+        let with_params = r#"{"jsonrpc":"2.0","id":3,"method":"_x.ai/billing","params":{"x":1}}"#;
+        assert!(validate_input(InputPolicy::Grok, with_params, cwd).is_err());
+        assert!(validate_input(InputPolicy::Acp, billing, cwd).is_err());
     }
 
     #[test]

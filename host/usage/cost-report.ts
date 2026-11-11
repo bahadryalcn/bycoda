@@ -55,7 +55,7 @@ export function costParams(value: unknown): CostParams {
 
 const dayIndex = (ms: number, offsetMinutes: number) =>
   Math.floor((ms + offsetMinutes * 60_000) / DAY_MS);
-// ast-grep-ignore: ts-date-toisostring-unguarded -- index is a finite day number from dayIndex, so the date is always valid
+// oxlint-disable-next-line bycoda/safe-timestamp-render -- index is a finite day number from dayIndex, so the date is always valid
 const dayKey = (index: number) => new Date(index * DAY_MS).toISOString().slice(0, 10);
 const projectLabel = (path: string) =>
   path

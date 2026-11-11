@@ -184,9 +184,6 @@ it("keeps exact branch identity distinct when a managed workspace has no session
   const rows = [...container.querySelectorAll<HTMLElement>('[role="listitem"]')];
   expect(rows[0].textContent).toContain("Provider settings parity");
   expect(rows[1].textContent).toContain("bycoda/s/branch-b");
-  await act(async () =>
-    rows[0].querySelector<HTMLButtonElement>('button[aria-label="Details"]')!.click(),
-  );
   const details = rows[0].querySelector("dl")!;
   expect([...details.querySelectorAll("dt")].map((label) => label.textContent)).toEqual([
     "Folder",

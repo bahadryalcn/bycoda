@@ -334,8 +334,7 @@ jobs:
 
       - uses: ./.github/actions/setup-deps
         with:
-          # Keep the package runtime separate from Node 24 source/test jobs.
-          node-version: 22
+          node-version: 24
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
@@ -415,7 +414,7 @@ jobs:
 
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 22
+          node-version: 24
           install: "false"
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4

@@ -5,8 +5,10 @@ import { BarChart, LineChart, type LineChartDatum } from "../../../shared/ui/Cha
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Gauge, RefreshCw } from "../../../shared/ui/icons";
+import { Heading } from "../../../shared/ui/Heading";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Surface } from "../../../shared/ui/Surface";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { sprintProjectKey, type SprintReport, type SprintTotals } from "../model/hostSprints";
 import type { SprintBoardController } from "../model/sprintClient";
@@ -254,7 +256,7 @@ export function SprintReports({
       <div className="sprint-heading">
         <div className="sprint-title-block">
           <div className="sprint-title">
-            <h2>{report?.sprint.name ?? t("Sprint reports")}</h2>
+            <Heading size="section">{report?.sprint.name ?? t("Sprint reports")}</Heading>
             {report ? <SprintStatusBadge state={report.sprint.state} /> : null}
           </div>
           {!sprintId ? (
@@ -454,7 +456,12 @@ export function SprintReports({
         </>
       ) : null}
       {sprintId || velocity.length ? (
-        <section className="sprint-section sprint-velocity">
+        <Surface
+          as="section"
+          variant="card"
+          padding="md"
+          className="sprint-section sprint-velocity"
+        >
           <div className="sprint-velocity-head">
             <SectionLabel>{t("Sprint velocity")}</SectionLabel>
           </div>
@@ -486,7 +493,7 @@ export function SprintReports({
           ) : sprintId ? (
             <p className="sprint-muted">{t("Complete a sprint to see recorded velocity.")}</p>
           ) : null}
-        </section>
+        </Surface>
       ) : null}
     </section>
   );

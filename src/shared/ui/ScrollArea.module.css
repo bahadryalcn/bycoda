@@ -1,0 +1,23 @@
+/* The bar's look (size, colour, visibility) is the shared family in src/styles/index.css. */
+.area[data-axis="y"] {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.area[data-axis="x"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.area[data-axis="both"] {
+  overflow: auto;
+}
+
+.area[data-gutter="stable"] {
+  scrollbar-gutter: stable;
+}
+
+.area[data-scrollbar="hidden"] {
+  scrollbar-width: none;
+}
+.area[data-scrollbar="hidden"]::-webkit-scrollbar {
+  display: none;
+}

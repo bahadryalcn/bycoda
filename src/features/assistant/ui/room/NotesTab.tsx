@@ -5,6 +5,8 @@ import type {
 } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Heading } from "../../../../shared/ui/Heading";
+import { Surface } from "../../../../shared/ui/Surface";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { deleteNotesInOrder } from "./noteBulkDelete";
 import { matches } from "./assistantRoomHelpers";
@@ -112,10 +114,12 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           {dailySummary &&
             dailySummary.environmentId === environmentId &&
             dailySummary.scopeKey === privacy.key && (
-              <div className={styles.summary}>
+              <Surface variant="card" padding="md" className={styles.summary}>
                 {dailySummary.snapshot.briefing && canReadBriefing(dailySummary.snapshot) ? (
                   <>
-                    <h3>{t("Daily summary")}</h3>
+                    <Heading size="item" level={3}>
+                      {t("Daily summary")}
+                    </Heading>
                     <p className={styles.summaryMeta}>
                       {t("Saved daily summary · {p0}", {
                         p0: formatDate(dailySummary.snapshot.briefing.createdAt, {
@@ -132,7 +136,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                 ) : (
                   <p>{t("Nothing new to report.")}</p>
                 )}
-              </div>
+              </Surface>
             )}
           {!snapshot.capabilities.notes && (
             <p className={styles.unavailable}>{t("Global notes are unavailable on this Host.")}</p>

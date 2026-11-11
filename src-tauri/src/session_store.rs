@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager};
 pub(crate) mod authority;
 pub(crate) mod canonical_store;
 pub(crate) mod cohort;
+mod compaction;
 mod content_search;
 mod delete_with_images;
 mod deletions;
@@ -295,6 +296,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     start_search_indexing(app);
     wal_watchdog::start(app);
     legacy_blob::start(app);
+    compaction::start(app);
     Ok(())
 }
 

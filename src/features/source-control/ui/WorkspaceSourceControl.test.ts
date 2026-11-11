@@ -46,6 +46,34 @@ vi.mock("../../../shared/ui/SearchableSelect", () => ({
       ),
     ),
 }));
+vi.mock("../hooks/useProjectDiffStats", () => ({ useProjectDiffStats: () => null }));
+vi.mock("./GitPanelSections", () => ({
+  GitPanelSections: (props: {
+    cwd: string;
+    repositories: {
+      value: string;
+      options: { value: string; label: string }[];
+      onChange: (value: string) => void;
+    };
+    onOpenCommit: (commit: { sha: string }) => void;
+  }) =>
+    createElement(
+      "aside",
+      {
+        "data-sections": props.cwd,
+        "data-choice": props.repositories.value,
+        "data-options": props.repositories.options.map((option) => option.label).join("|"),
+      },
+      props.repositories.options.map((option) =>
+        createElement(
+          "button",
+          { key: option.value, onClick: () => props.repositories.onChange(option.value) },
+          `show ${option.value}`,
+        ),
+      ),
+      createElement("button", { onClick: () => props.onOpenCommit({ sha: "def" }) }, "history"),
+    ),
+}));
 vi.mock("./GitChangesPanel", () => ({
   GitChangesPanel: (props: {
     cwd: string;
@@ -119,6 +147,47 @@ const remount = async () => {
   await act(async () => root.unmount());
   root = createRoot(host);
 };
+
+it("shows one Stashes and Graph below the rows, following the repository last used", async () => {
+  await render();
+  const sections = () => host.querySelectorAll<HTMLElement>("[data-sections]");
+  const press = async (label: string) =>
+    act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>("aside button")]
+        .find((button) => button.textContent === label)!
+        .click(),
+    );
+  expect(sections()).toHaveLength(1);
+  expect(sections()[0].dataset.sections).toBe("/wallet/api");
+  expect(sections()[0].dataset.options).toBe("Auto · api|api|mobile");
+  await act(async () =>
+    host
+      .querySelector('[data-cwd="/wallet/mobile"]')!
+      .dispatchEvent(new Event("pointerdown", { bubbles: true })),
+  );
+  expect(sections()[0].dataset.sections).toBe("/wallet/mobile");
+  expect(sections()[0].dataset.choice).toBe("");
+  await press("history");
+  expect(opened).toHaveBeenLastCalledWith({
+    type: "commit",
+    cwd: "/wallet/mobile",
+    commit: { sha: "def" },
+    pin: undefined,
+  });
+  // A manual choice stays while another row is used, until Auto is chosen again.
+  await press("show /wallet/api");
+  await act(async () =>
+    host
+      .querySelector('[data-cwd="/wallet/mobile"]')!
+      .dispatchEvent(new Event("pointerdown", { bubbles: true })),
+  );
+  expect(sections()[0].dataset.sections).toBe("/wallet/api");
+  expect(sections()[0].dataset.choice).toBe("/wallet/api");
+  await press("show ");
+  expect(sections()[0].dataset.sections).toBe("/wallet/mobile");
+  await choose("/wallet/api");
+  expect(sections()).toHaveLength(0);
+});
 
 it("restores repository choice immediately after session navigation and app reload", async () => {
   await render();

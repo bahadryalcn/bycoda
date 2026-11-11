@@ -1,7 +1,7 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
-import { Button } from "../../../../shared/ui/Button";
+import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { assistantPolicy } from "../../../../shared/model/assistantPolicy";
@@ -67,7 +67,6 @@ export function AssistantCostFields({
 }) {
   const rows = useProfileRows();
   const [advancedWorkerContext, setAdvancedWorkerContext] = useState(false);
-  const workerContextId = useId();
   const workerContext = workerContextSettings(value);
   const policy = assistantPolicy(value);
   const number = (
@@ -149,23 +148,14 @@ export function AssistantCostFields({
   return (
     <div className={`${roleStyles.wide} ${styles.cost}`}>
       <div className={styles.fieldGrid}>{limits}</div>
-      <div>
-        <Button
-          variant="link"
-          size="sm"
-          className={styles.disclosure}
-          aria-expanded={advancedWorkerContext}
-          aria-controls={workerContextId}
-          onClick={() => setAdvancedWorkerContext((current) => !current)}
-        >
-          {t("Advanced worker context limits")}
-        </Button>
-      </div>
-      {advancedWorkerContext && (
-        <div id={workerContextId} className={styles.fieldGrid}>
-          {workerLimits}
-        </div>
-      )}
+      <Disclosure
+        size="sm"
+        summary={t("Advanced worker context limits")}
+        open={advancedWorkerContext}
+        onOpenChange={setAdvancedWorkerContext}
+      >
+        <div className={styles.fieldGrid}>{workerLimits}</div>
+      </Disclosure>
       {contextError}
     </div>
   );

@@ -4,6 +4,7 @@ import { createProjectsService } from "../domains/projects/service";
 import { HostDomainOutcomeError, HostDomainRefusalError } from "../domains/context";
 import { RpcErrorSchema } from "../../src/shared/model/host-contracts";
 import { SessionReadError, type SessionReadErrorKind } from "../domains/sessions/read-errors";
+import { sessionNotFound } from "../sessions/session-authority";
 import {
   createHostReadDispatcher,
   HostDispatchError,
@@ -255,6 +256,19 @@ describe("pre-execution refusals keep their message and code", () => {
       expect(JSON.stringify(error.details)).not.toMatch(/private/);
     },
   );
+
+  it("reports a session the Host does not store as not-sent, never as an unknown outcome", async () => {
+    expect(await refusing(sessionNotFound())).toMatchObject({
+      code: "invalid-params",
+      message: "Session not found on this machine",
+      details: {
+        category: "validation",
+        retryable: false,
+        delivery: "not-sent",
+        code: "COMMAND_INVALID",
+      },
+    });
+  });
 
   it("does not let a plain error thrown after execution pass as not-sent", async () => {
     const error = await refusing(new Error("write committed, reply failed"));

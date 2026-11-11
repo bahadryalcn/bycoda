@@ -6,11 +6,11 @@ import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
 import { useWorktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
 import { createWorktree } from "../model/worktrees";
-import { pathKey, prettyCwd } from "../../../shared/lib/paths";
+import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Check, ChevronsUpDown, FolderTree, GitBranch, Plus } from "../../../shared/ui/icons";
@@ -19,12 +19,18 @@ import { Check, ChevronsUpDown, FolderTree, GitBranch, Plus } from "../../../sha
  * sessions opened from it, to that working copy and names it here. */
 export function SidebarWorktreeSwitcher({
   cwd,
+  projectLabel,
+  projectIcon,
   tabStats,
   onSelect,
   pending = false,
   switchError,
 }: {
   cwd: string;
+  /** The project's saved display name; defaults to its folder name. */
+  projectLabel?: string;
+  /** The project's saved identity (logo or mascot), shown before its name. */
+  projectIcon?: ReactNode;
   onSelect?: (focus?: WorktreeFocus) => void;
   pending?: boolean;
   switchError?: string;
@@ -156,7 +162,12 @@ export function SidebarWorktreeSwitcher({
   }
 
   const focused = focus && worktrees.find((tree) => pathKey(tree.path) === pathKey(focus.path));
-  const title = focus ? (focused?.branch ?? focus.branch ?? "Detached worktree") : "Workspace";
+  // The working copy shown after the project name: the focused worktree, or the project folder's branch when known.
+  const copyName = focus
+    ? (focused?.branch ?? focus.branch ?? "Detached worktree")
+    : (main?.branch ?? undefined);
+  const project = projectLabel ?? projectName(cwd);
+  const fullTitle = copyName ? `${project} · ${copyName}` : project;
   return (
     <>
       <Button
@@ -170,11 +181,9 @@ export function SidebarWorktreeSwitcher({
         aria-expanded={open}
         aria-busy={pending || creating}
         disabled={creating}
-        tooltip={focus ? (focus.branch ?? "detached") : (main?.branch ?? t("Project folder"))}
+        tooltip={fullTitle}
         tooltipDetails={focus ? [prettyCwd(focus.path)] : undefined}
-        tooltipWhen={
-          !focus && (main?.branch ?? t("Project folder")) === title ? "overflow" : "always"
-        }
+        tooltipWhen={focus ? "always" : "overflow"}
         onClick={() => {
           if (open) closePicker();
           else openPicker();
@@ -186,7 +195,17 @@ export function SidebarWorktreeSwitcher({
         }}
         className="flex h-6.5 w-fit min-w-0 max-w-full items-center gap-2 leading-tight"
       >
-        <MiddleTruncate mode="text">{title}</MiddleTruncate>
+        {projectIcon ? (
+          <span className="grid size-4 shrink-0 place-items-center">{projectIcon}</span>
+        ) : null}
+        <MiddleTruncate mode="text" className="min-w-0">
+          {project}
+        </MiddleTruncate>
+        {copyName ? (
+          <MiddleTruncate mode="text" className="min-w-0 text-(--ui-text-muted)">
+            {copyName}
+          </MiddleTruncate>
+        ) : null}
         {pending || creating ? (
           <Spinner
             label={creating ? t("Creating worktree") : t("Switching working copy")}

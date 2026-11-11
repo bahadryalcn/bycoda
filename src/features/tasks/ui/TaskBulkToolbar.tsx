@@ -3,7 +3,6 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { deleteTask, moveTask, startTask, type BoardTask } from "../model/taskClient";
@@ -165,7 +164,10 @@ export function TaskBulkToolbar({
           className="task-bulk-status"
           text={
             activeAction
-              ? t("Processed {p0} of {p1}", { p0: progress.completed, p1: progress.total })
+              ? t("Processed {p0} of {p1}", {
+                  p0: progress.completed,
+                  p1: progress.total,
+                })
               : t("{p0} succeeded, {p1} skipped, {p2} failed", {
                   p0: results.filter((row) => row.status === "succeeded").length,
                   p1: results.filter((row) => row.status === "skipped").length,
@@ -175,7 +177,7 @@ export function TaskBulkToolbar({
         />
       ) : null}
       {results.some((row) => row.status !== "succeeded") ? (
-        <Disclosure className="task-bulk-results" summary={t("Operation details")}>
+        <div className="task-bulk-results">
           <ul>
             {results
               .filter((row) => row.status !== "succeeded")
@@ -187,7 +189,7 @@ export function TaskBulkToolbar({
                 </li>
               ))}
           </ul>
-        </Disclosure>
+        </div>
       ) : null}
       {failures.length || activeAction === "retry-failed" ? (
         <Button

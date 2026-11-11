@@ -98,7 +98,7 @@ it("resizes the terminal list by drag and keyboard, resets it, and follows dock 
       sash.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 })),
     );
     expect(sash.getAttribute("aria-valuenow")).toBe("300");
-    expect(document.documentElement.classList.contains("is-resizing")).toBe(false);
+    expect(document.querySelector("[data-resize-shield]")).toBeNull();
     await act(async () =>
       sash.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })),
     );

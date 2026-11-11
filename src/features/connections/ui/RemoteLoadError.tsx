@@ -1,6 +1,6 @@
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -56,17 +56,32 @@ export function RemoteLoadError({
     });
   };
   const openConnections = () => window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT));
-  const secondaryActions = (
+  /** `after` closes the details popover before another surface opens. */
+  const secondaryActions = (after?: () => void) => (
     <>
       {failure.kind === "unreachable" && machine?.ssh ? (
-        <Button type="button" variant="secondary" onClick={() => requestMachineEdit(machine.id)}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            after?.();
+            requestMachineEdit(machine.id);
+          }}
+        >
           {t("Edit address…")}
         </Button>
       ) : null}
       {failure.kind === "unreachable" ||
       failure.kind === "outdated" ||
       failure.kind === "identity" ? (
-        <Button type="button" variant="secondary" onClick={openConnections}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            after?.();
+            openConnections();
+          }}
+        >
           {t("Connection settings")}
         </Button>
       ) : null}
@@ -90,7 +105,7 @@ export function RemoteLoadError({
               : t("Reconnect")}
         </Button>
       ) : null}
-      {!compact ? secondaryActions : null}
+      {!compact ? secondaryActions() : null}
       {failure.kind === "other" && onRetry ? (
         <Button type="button" variant="secondary" onClick={onRetry}>
           {t("Retry")}
@@ -100,20 +115,29 @@ export function RemoteLoadError({
   );
   const reconnectFailed = reconnectError && reconnectError !== failure.message;
   if (compact) {
+    // One stable row: the raw transport text stays behind Details, never in the bar.
     return (
       <Alert tone="warning" inline onDismiss={onDismiss} dismissLabel={`${t("Dismiss")}: ${title}`}>
-        <div className="flex flex-wrap items-start gap-x-3 gap-y-1" data-remote-feedback-row>
-          <strong className="min-w-0 self-center">{title}</strong>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-remote-feedback-row>
+          <strong className="min-w-0">{title}</strong>
           <div className="flex flex-wrap items-center gap-2">{actions}</div>
-          <Disclosure size="sm" className="min-w-0 self-center" summary={t("Details")}>
-            <p className="break-words">{failure.message}</p>
-            <div className="mt-2 flex flex-wrap gap-2">{secondaryActions}</div>
-          </Disclosure>
+          {failure.message ? (
+            <ErrorDetails title={title} detail={failure.message} actions={secondaryActions} />
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">{secondaryActions()}</div>
+          )}
         </div>
         {reconnectFailed ? (
-          <p className="mt-1 break-words">
-            {t("Reconnecting failed: ")}
-            {reconnectError}
+          <p className="mt-1 flex min-w-0 items-baseline gap-2">
+            <span className="min-w-0 truncate">
+              {t("Reconnecting failed: ")}
+              {reconnectError}
+            </span>
+            <ErrorDetails
+              className="shrink-0"
+              title={t("Reconnecting failed: ")}
+              detail={reconnectError}
+            />
           </p>
         ) : null}
         {stale ? <p className="mt-1">{t("Showing what was last loaded.")}</p> : null}

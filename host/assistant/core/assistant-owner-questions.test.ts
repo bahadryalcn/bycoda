@@ -659,7 +659,7 @@ it("narrates a current canonical Chief question once and rejects a stale source"
     version: 0,
     createdAt: f.now,
     updatedAt: f.now,
-    value: { state: "present", updatedAt: f.now },
+    value: { state: "present", since: f.now, updatedAt: f.now, supported: true },
   });
   const question = await f.ask();
   const room = await f.assistant.globalRoomBinding();

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
+import { Heading } from "../../../../shared/ui/Heading";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import type { SocialScreenProps } from "../shell/screens";
 import { NeedsHumanList } from "../browser/NeedsHumanList";
@@ -50,7 +51,7 @@ export function CommandScreen({ client, machineId, projectId, active }: SocialSc
               onRun={state.runPlan}
             />
           ) : null}
-          <h3 className="command-section-title">{t("Activity")}</h3>
+          <Heading size="section">{t("Activity")}</Heading>
           <ActivityFeed items={state.actions} onUndo={state.undo} />
         </div>
         <aside className="command-side">

@@ -9,6 +9,7 @@ import { Popover } from "./Popover";
 import { NativePopupHost } from "./NativePopupHost";
 import { SearchableSelect } from "./SearchableSelect";
 import { useDragResize } from "../hooks/useDragResize";
+import { Sash } from "./Sash";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -428,7 +429,7 @@ it("clamps resized viewports below min and allows keyboard reset", async () => {
     return createElement(
       "div",
       { ref: resize.setPaneRef },
-      createElement("div", { ...resize.separatorProps }),
+      createElement(Sash, { ...resize.sashProps, label: "Resize" }),
     );
   }
   await act(async () => root.render(createElement(Example)));
@@ -477,7 +478,7 @@ it("changes resize axis without retaining the previous dimension", async () => {
     return createElement(
       "div",
       { ref: resize.setPaneRef },
-      createElement("div", { ...resize.separatorProps }),
+      createElement(Sash, { ...resize.sashProps, label: "Resize" }),
     );
   }
   await act(async () => root.render(createElement(Example, { vertical: false })));

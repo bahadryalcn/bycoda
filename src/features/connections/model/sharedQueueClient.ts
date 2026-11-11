@@ -29,6 +29,8 @@ export const desktopQueueClientId = `desktop:${desktopInstanceId()}`;
 const CLAIM_RACE = /shared queue changed/i;
 /** Another window holds the drain lease, or the lease moved on while asking. */
 export const LEASE_HELD = /drain lease/i;
+/** The host's refusal of a conversation it does not store: nothing was read or changed. */
+const SESSION_UNKNOWN = /\bSession not found on this machine\b/;
 const CLAIM_RACE_RETRIES = 3;
 /** The host answered that it has no `sessions.queue.release`. */
 let releaseUnsupported = false;
@@ -48,6 +50,7 @@ export class SharedQueueClient {
   /** Host clock minus this clock, to judge a lease expiry. */
   private skew = 0;
   private conflict = false;
+  private missing = false;
   private hasBaseline = false;
   private state: {
     queue: SharedQueue;
@@ -305,7 +308,16 @@ export class SharedQueueClient {
       return true;
     }
   }
+  /**
+   * The host does not store this conversation, so it keeps no queue for it: the
+   * conversation's own queue is all there is. Never with a send journal, whose
+   * claim still has an outcome to settle.
+   */
+  absent(): boolean {
+    return this.missing;
+  }
   async initialize(legacy?: RemoteQueue): Promise<void> {
+    this.missing = false;
     try {
       await this.recoverAcknowledgement();
       if (!this.dirty()) {
@@ -334,7 +346,9 @@ export class SharedQueueClient {
       this.emit(true);
       await this.sync();
     } catch (error) {
-      this.emit(this.state.loaded, String(error).replace(/^Error: /, ""));
+      const message = String(error).replace(/^Error: /, "");
+      this.missing = SESSION_UNKNOWN.test(message) && !this.journal();
+      this.emit(this.state.loaded, message);
     }
   }
   private async call<T>(

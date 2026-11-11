@@ -18,11 +18,6 @@
   gap: 8px;
   min-inline-size: 0;
 }
-.title h2 {
-  margin: 0;
-  font-size: var(--ui-font-heading);
-  font-weight: 500;
-}
 .search {
   flex: 0 1 280px;
   min-inline-size: 0;
@@ -39,7 +34,7 @@
 .list {
   display: grid;
   min-inline-size: 0;
-  border: 1px solid var(--ui-pane-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
   overflow: hidden;
 }

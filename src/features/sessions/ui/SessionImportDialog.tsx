@@ -1,4 +1,5 @@
 import { ActionHost } from "../../../shared/ui/ActionHost";
+import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -476,7 +477,11 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               ) : null}
             </div>
 
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-(--ui-tone-neutral-border)">
+            <Surface
+              variant="outline"
+              padding="none"
+              className="flex min-h-0 flex-col overflow-hidden"
+            >
               <div className="flex items-center gap-2.5 border-b border-(--ui-tone-neutral-border) px-3 py-1.5 text-ui-micro text-(--ui-text-secondary)">
                 <Checkbox
                   aria-label={t("Select all shown")}
@@ -574,7 +579,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                   </>
                 )}
               </div>
-            </div>
+            </Surface>
 
             <div className="flex flex-col gap-2.5 border-t border-(--ui-tone-neutral-border) pt-3">
               <div className="flex min-w-0 items-center gap-2">

@@ -6,6 +6,7 @@ import type { HostStore } from "../store";
 import { mkdir, open, readdir, stat, type FileHandle } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { parseBrowserAnnotation } from "../../src/shared/lib/browserAnnotation";
+import { HostDomainRefusalError } from "../domains/context";
 // Reads, status hashes and writes of the same file observe a single ordered stream.
 // Each operation closes its handle; settled queues retain neither handles nor stores.
 const attachmentOperations = new Map<string, Promise<void>>();
@@ -225,6 +226,8 @@ export async function resolveQuestionAttachments(
     }),
   );
 }
+/** Clients match this wording to stop asking for a file this machine does not hold. */
+export const ATTACHMENT_MISSING_MESSAGE = "Attachment file is missing on this machine.";
 /** Reads only an attachment already accepted into this session. Paths supplied
  * by the client are never used, and each response stays below the RPC cap. */
 export async function readAttachmentChunk(
@@ -256,7 +259,23 @@ export async function readAttachmentChunk(
     throw new Error("Invalid generated image path");
   // Non-final chunks are divisible by three, so the client can join base64.
   return serializeAttachment(path, async () => {
-    const handle = await open(path, "r");
+    let handle: FileHandle;
+    try {
+      handle = await open(path, "r");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      // A session can reference a file whose bytes never reached this machine. Nothing was
+      // read, and asking again cannot succeed, so the answer is a non-retryable refusal.
+      // The code set is closed for connected clients, so this uses the generic
+      // refused-before-execution code; clients match the message.
+      throw new HostDomainRefusalError(
+        "COMMAND_INVALID",
+        "validation",
+        false,
+        ATTACHMENT_MISSING_MESSAGE,
+        { cause: error },
+      );
+    }
     try {
       const info = await handle.stat();
       if (!info.isFile() || info.size !== attachment.size)

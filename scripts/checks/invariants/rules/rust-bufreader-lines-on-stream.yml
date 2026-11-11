@@ -2,7 +2,7 @@ id: rust-bufreader-lines-on-stream
 language: rust
 severity: error
 message: "`BufRead::lines()` stops with an error at the first byte that is not valid UTF-8 (Windows code-page output, a chunk cut inside a multibyte character); the loop then ends and the writer gets EPIPE. For child-process and socket streams use `read_until(b'\\n')` and `String::from_utf8_lossy`, and keep draining after a bad line."
-note: Rule K-UTF8 in docs/reference/code-invariants.md
+note: docs/reference/code-invariants.md
 files:
   - "src-tauri/src/**"
   - "packages/**/src/**"

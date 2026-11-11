@@ -13,6 +13,8 @@ export type HostAutomationsSnapshot = {
   machines: RemoteMachine[];
   /** Machines that did not answer; their automations are last-known ones. */
   unreachable: string[];
+  /** Why each of them did not answer, one line per machine. */
+  unreachableDetail?: string;
   automations: Automation[];
 };
 
@@ -71,6 +73,17 @@ export function useHostAutomations(enabled: boolean) {
       return {
         machines: reach.capable,
         unreachable: failedMachineNames(results),
+        unreachableDetail:
+          results
+            .filter((result) => result.status === "error")
+            // The probe keeps the actual transport failure; the list result only says "not reachable".
+            .map((result) => [
+              result.machineName,
+              reach.unreachableErrors?.[result.machineId] ?? result.error,
+            ])
+            .filter(([, reason]) => reason)
+            .map(([name, reason]) => `${name}: ${reason}`)
+            .join("\n") || undefined,
         automations,
       };
     },
@@ -114,6 +127,7 @@ export function useHostAutomations(enabled: boolean) {
   return {
     machines: data?.machines ?? NO_MACHINES,
     unreachable: data?.unreachable ?? NO_NAMES,
+    unreachableDetail: data?.unreachableDetail,
     automations: data?.automations ?? NO_AUTOMATIONS,
     /** False until the first host read lands (or while hidden/failed with no data). */
     loaded: data !== undefined,

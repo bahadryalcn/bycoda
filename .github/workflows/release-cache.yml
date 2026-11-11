@@ -85,7 +85,7 @@ jobs:
       - uses: ./.github/actions/setup-deps
         if: steps.cache.outputs.cache-hit != 'true'
         with:
-          node-version: "22"
+          node-version: "24"
       - run: pnpm run host:package
         if: steps.cache.outputs.cache-hit != 'true'
       # Compile with the same Tauri configuration without installers, signing

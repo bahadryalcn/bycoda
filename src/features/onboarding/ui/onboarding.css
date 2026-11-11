@@ -109,10 +109,6 @@
   margin-block-end: 14px;
 }
 .onboarding-heading h3 {
-  font-size: var(--ui-font-heading);
-  font-weight: 500;
-  letter-spacing: -0.035em;
-  line-height: 1.25;
   margin-block-end: 7px;
 }
 .onboarding-scroll {
@@ -155,9 +151,6 @@
 }
 .onboarding-section-title {
   margin-block-end: 8px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
 }
 .onboarding-row {
   display: flex;
@@ -166,7 +159,7 @@
   gap: 12px;
   min-block-size: 44px;
   padding: 8px 12px;
-  border: 1px solid var(--color-stroke);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
   cursor: pointer;
 }
@@ -187,12 +180,12 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--ui-radius-card);
 }
 .onboarding-feature {
   min-block-size: 64px;
+  padding: 12px;
+  border: 1px solid var(--ui-card-border);
+  border-radius: var(--ui-radius-card);
   cursor: pointer;
 }
 .onboarding-feature[data-fixed] {
@@ -257,7 +250,7 @@
   min-block-size: 0;
   min-inline-size: 0;
   padding: 8px;
-  border: 1px solid var(--color-stroke);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
   text-align: start;
 }
@@ -295,7 +288,7 @@
 }
 .onboarding-crew-none {
   background: transparent;
-  border: 1px dashed var(--color-stroke);
+  border: 1px dashed var(--ui-card-border);
   color: var(--ui-text-muted);
 }
 
@@ -450,7 +443,7 @@
   margin: 0;
 }
 .onboarding-projects-frame {
-  border: 1px solid var(--color-stroke);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
   overflow: clip;
 }

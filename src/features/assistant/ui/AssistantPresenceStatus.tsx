@@ -19,19 +19,20 @@ function label(state: string) {
     case "dnd":
       return t("Do not disturb");
     default:
-      return t("Unknown");
+      return t("Offline");
   }
 }
 export function AssistantPresenceStatus({
   snapshot,
   details = false,
   compact = false,
-  unconfirmed = false,
+  offline = false,
 }: {
   snapshot: Pick<AssistantSnapshot, "presence" | "automaticPresence" | "effectivePresence">;
   details?: boolean;
   compact?: boolean;
-  unconfirmed?: boolean;
+  /** The Host could not be read, so the snapshot's availability is not current. */
+  offline?: boolean;
 }) {
   const [, refresh] = useState(0);
   useEffect(() => {
@@ -39,7 +40,7 @@ export function AssistantPresenceStatus({
     return () => clearInterval(timer);
   }, []);
   const state = assistantPresenceState(snapshot, Date.now());
-  const effective = unconfirmed ? "unknown" : state.effective;
+  const effective = offline ? "offline" : state.effective;
   if (compact)
     return (
       <span role="status" aria-label={t("Current availability: {p0}", { p0: label(effective) })}>

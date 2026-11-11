@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert, type AlertTone } from "../../../shared/ui/Alert";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { TASK_INPUT_REQUIRED, type HostTask } from "../model/hostTasks";
 import { taskRequiresInstructions, taskReviewFailureCount } from "../model/taskRules";
 import type { TaskStatusLine, TaskStatusTone } from "../model/taskStatusLine";
@@ -73,7 +72,7 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
       {status.detail ? <p>{status.detail}</p> : null}
       {nextStep ? <p className="mt-1">{nextStep}</p> : null}
       {facts.length > 0 || task.status === "blocked" ? (
-        <Disclosure className="mt-1.5" size="sm" summary={t("Full details")}>
+        <div className="mt-1.5">
           <div className="space-y-1.5">
             {facts}
             {task.status === "blocked" ? (
@@ -84,7 +83,7 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
               </p>
             ) : null}
           </div>
-        </Disclosure>
+        </div>
       ) : null}
     </Alert>
   );

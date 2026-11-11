@@ -105,7 +105,7 @@ it("requests a switch without publishing the destination and permits a newer sel
   expect(worktreeFocus("/picker")).toBeUndefined();
   await render(true);
   expect(trigger().getAttribute("aria-busy")).toBe("true");
-  expect(trigger().textContent).toBe("Workspace");
+  expect(trigger().textContent).toBe("pickermain");
   await act(async () => trigger().click());
   await act(async () => option("feature-b").click());
   expect(select).toHaveBeenLastCalledWith({
@@ -122,7 +122,13 @@ it("shows a switch failure in the reopened picker", async () => {
   expect(document.querySelector('[role="alert"]')?.textContent).toBe(
     "Working copy no longer exists",
   );
-  expect(trigger().textContent).toBe("Workspace");
+  expect(trigger().textContent).toBe("pickermain");
+});
+
+it("names the project and the focused working copy in the trigger", async () => {
+  setWorktreeFocus("/picker", { path: "/picker-a", branch: "feature-a" });
+  await render();
+  expect(trigger().textContent).toBe("pickerfeature-a");
 });
 
 it("requests fallback from a deleted worktree once and does not retry while pending or failed", async () => {

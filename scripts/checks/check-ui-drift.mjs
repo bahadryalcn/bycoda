@@ -13,6 +13,17 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  appearanceRuleOfDeclaration,
+  appearanceRules,
+  controlSizeClass,
+  end,
+  isBespokeSurface,
+  scanAppearanceTsx,
+  sizedControls,
+  tw,
+  variantChars,
+} from "./ui-drift-appearance.mjs";
 
 // The UI catalog (JSDoc on shared/ui exports) drives the raw-tag, deprecated-import and modal rules.
 // Loaded defensively: a missing module or an unreadable catalog means "no catalog rules".
@@ -44,7 +55,8 @@ export const rules = {
   "popover-menu": "Popover with role=menu/listbox (use DropdownMenu/picker)",
   "hover-bg": "hover:bg-* recipe in TSX (use shared interaction states)",
   "disabled-opacity": "opacity-30..60 used as the disabled state",
-  "fixed-control-size": "fixed h-7/h-8/size-7/size-8 on Button/ActionHost (breaks density)",
+  "fixed-control-size":
+    "height, min-height, square size or padding set on a shared control by class, or height/min-height on a button/input/select/textarea/[role=button] selector (use the control's size prop)",
   "motion-literal":
     "literal cubic-bezier( or Nms transition/animation outside :root tokens (use var(--motion-duration-*) / var(--motion-ease-*))",
   // Component-usage conventions (docs/reference/ui-components.md, code-invariants.md).
@@ -78,6 +90,8 @@ export const rules = {
     "named import of a shared/ui export whose catalog status is deprecated (use its @instead)",
   "modal-padded-child":
     '<Modal>/<Sheet> without padding="none" or scroll="none" whose first child adds its own padding (the body already pads; drop the child padding or set padding="none")',
+  // Appearance ownership: feature code places things, shared components decide how they look.
+  ...appearanceRules,
 };
 
 /** Tag tokens already covered by the static native-control rule. */
@@ -307,9 +321,6 @@ function jsxTags(text) {
   return tags;
 }
 
-// Variant prefixes may carry `/` (named containers/groups: @max-[950px]/main-row:) and `(` `)`
-// (arbitrary values: has-(--x):); a narrower charset lets those classes escape every Tailwind rule.
-const variantChars = String.raw`[\w\-\[\]&@*=/().,%]`;
 const paddingUtility = new RegExp(
   String.raw`(?<![\w-])(?:${variantChars}+:)*(?:p|px|py|pt|pb|ps|pe)-(?:\d|\[)`,
 );
@@ -407,10 +418,6 @@ const isDefined = (name, definitions) =>
 
 /* ---------- scanning ---------- */
 
-const variant = String.raw`(?<![\w\-\[(:/])((?:${variantChars}+:)*)`;
-const end = String.raw`(?![\w.\-])`;
-const tw = (body, flags = "g") => new RegExp(variant + body, flags);
-
 const twRules = [
   ["typography", tw(String.raw`text-\[\d+(?:\.\d+)?px\]`)],
   ["typography", tw(String.raw`text-(?:xs|sm|base|lg|xl)` + end)],
@@ -448,7 +455,6 @@ const inlineStyleLayout =
 const varUse = /var\(\s*(--[\w-]+)(?![\w-]|\$\{)/g;
 const twVarUse = /-\((?:[a-z-]+:)?(--[\w-]+)\)/g;
 const iconSizeClass = tw(String.raw`size-(?:3|3\.5|4|5)` + end, "");
-const fixedControlSize = tw(String.raw`(?:h|size)-(?:7|8)(?![\w.\-/])`, "");
 
 /**
  * True when `previous` (the line above a finding) carries `ui-drift-ignore: <rule>[, <rule>] -- <why>`.
@@ -473,7 +479,12 @@ export function scanFile(file, text, definitions) {
   const source = isCss ? stripCssComments(text) : stripTsComments(text);
   const starts = lineStarts(text);
   const lines = text.split("\n");
+  // A narrower rule reports first; an appearance rule never reports the same spot again.
+  const reported = new Set();
+  const appearance = scope === "app" && !isBespokeSurface(file);
   const add = (rule, offset) => {
+    if (rule in appearanceRules && reported.has(offset)) return;
+    reported.add(offset);
     const line = lineAt(starts, offset);
     if (ignoredOn(lines[line - 2], rule)) return;
     findings.push({ file, rule, line, text: (lines[line - 1] ?? "").trim().slice(0, 160) });
@@ -530,6 +541,10 @@ export function scanFile(file, text, definitions) {
           /^(?:transition|animation)(?:-duration|-delay|-timing-function)?$/.test(property);
         if (/cubic-bezier\(/.test(value) || (motionProperty && /(?<![\w.])\d+ms\b/.test(value)))
           add("motion-literal", valueOffset);
+      }
+      if (appearance && !isTokenBlock(selectors)) {
+        const rule = appearanceRuleOfDeclaration(declaration);
+        if (rule) add(rule, valueOffset);
       }
     }
     return findings;
@@ -656,7 +671,7 @@ export function scanFile(file, text, definitions) {
         /\brole:\s*["'](?:menu|listbox)["']/.test(tag.span))
     )
       add("popover-menu", tag.start);
-    if ((tag.name === "Button" || tag.name === "ActionHost") && fixedControlSize.test(tag.span))
+    if (sizedControls.has(tag.name) && controlSizeClass.test(classNameText(tag.span)))
       add("fixed-control-size", tag.start);
   }
   for (const match of source.matchAll(jsxProse)) {
@@ -666,6 +681,7 @@ export function scanFile(file, text, definitions) {
     add("untranslated-jsx-text", match.index + 1);
   }
   for (const match of source.matchAll(inlineStyleLayout)) add("inline-style-layout", match.index);
+  if (appearance) scanAppearanceTsx(source, add);
   return findings;
 }
 

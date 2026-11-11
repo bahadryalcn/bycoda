@@ -112,10 +112,15 @@ html[data-control-density="touch"] {
   --ui-tone-neutral-fg: var(--ui-island-text);
   --ui-tone-neutral-solid: var(--ui-island-text);
   --ui-tone-neutral-on-solid: var(--ui-island-surface);
-  --ui-tone-neutral-subtle: var(--ui-island-hover);
+  /* Selected is one step stronger than hover (10%), pressed one step stronger than selected. */
+  --ui-tone-neutral-subtle: color-mix(in srgb, var(--ui-island-text) 17%, var(--ui-island-surface));
   --ui-tone-neutral-border: var(--ui-island-border);
   --ui-tone-neutral-hover: var(--ui-island-hover);
-  --ui-tone-neutral-pressed: var(--ui-island-hover);
+  --ui-tone-neutral-pressed: color-mix(
+    in srgb,
+    var(--ui-island-text) 23%,
+    var(--ui-island-surface)
+  );
   --ui-tone-neutral-solid-hover: var(--ui-island-text-secondary);
   --ui-tone-neutral-solid-pressed: var(--ui-island-text-secondary);
   --ui-tone-neutral-disabled-fg: var(--ui-island-text-secondary);
@@ -127,7 +132,7 @@ html[data-control-density="touch"] {
   --text-secondary: var(--ui-island-text-secondary);
   --border: var(--ui-island-border);
   --border-subtle: var(--ui-island-border);
-  --accent-subtle: var(--ui-island-hover);
+  --accent-subtle: color-mix(in srgb, var(--ui-island-text) 17%, var(--ui-island-surface));
 }
 .bycoda-arc[data-ui-appearance="island"] .bycoda-arc[data-button-variant="ghost"] {
   --surface-muted: var(--ui-island-surface);

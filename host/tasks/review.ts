@@ -30,6 +30,8 @@ import {
 } from "../sessions/sessionRuns";
 import { reviewerVerdict } from "./review-outcomes";
 import { reviewerReply } from "./review-outcomes";
+import { ownerNotice, reviewRerunCount } from "./review-outcomes";
+import { MAX_REVIEW_RERUNS, OWNER_NOTICE_LIMIT, REVIEW_RERUN_NOTICE } from "./constants";
 import type { TaskContext } from "./context";
 import { newRequestId } from "../../src/shared/lib/id/requestId";
 export async function settleVerification(
@@ -212,6 +214,27 @@ export async function settleVerification(
       task.reviewer.workspaceFingerprint &&
       acceptanceFingerprint !== task.reviewer.workspaceFingerprint
     ) {
+      const reruns = reviewRerunCount(task);
+      if (reruns < MAX_REVIEW_RERUNS) {
+        // The verdict describes contents that no longer exist. A fresh review
+        // of the current contents costs less than a blocked task and its dependents.
+        await context.write({
+          ...task,
+          reviewer: undefined,
+          needsInput: undefined,
+          ownerNotices: [
+            ...(task.ownerNotices ?? []),
+            ownerNotice(
+              "auto_continued",
+              `Reviewed again because the working copy changed during the review (${reruns + 1}/${MAX_REVIEW_RERUNS}).`,
+              now,
+              `${REVIEW_RERUN_NOTICE}${randomUUID()}`,
+            ),
+          ].slice(-OWNER_NOTICE_LIMIT),
+          updatedAt: now,
+        });
+        return;
+      }
       const reason =
         "The working copy changed during acceptance review. Recheck the current result.";
       acceptance.criteria = acceptance.criteria.map((criterion) => ({

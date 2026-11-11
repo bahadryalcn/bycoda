@@ -137,11 +137,18 @@ export async function probeHostOwner(directory: string): Promise<HostOwnerStatus
 }
 
 /** Kernel-backed SQLite locking survives neither crashes nor PID reuse. The
- * PID file remains for compatibility with hosts installed before this lock. */
+ * PID file remains for compatibility with hosts installed before this lock.
+ * `serve` takes the lease before any slow start-up work, so the sentinel's `startedAt`
+ * (Unix milliseconds) is the boot time a prober measures its start-up grace from. */
 export async function acquireHostOwner(directory: string): Promise<() => void> {
   const db = new DatabaseSync(join(directory, "owner.db"));
   const path = join(directory, "owner.lock");
-  const ownerText = JSON.stringify({ version: 2, pid: process.pid, nonce: randomUUID() });
+  const ownerText = JSON.stringify({
+    version: 2,
+    pid: process.pid,
+    nonce: randomUUID(),
+    startedAt: Date.now(),
+  });
   try {
     try {
       db.exec("BEGIN EXCLUSIVE");

@@ -15,8 +15,8 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager, State};
 
 use crate::bundled_host::{
-    install_running, job_pending, lifecycle_status, probe_lifecycle_status, running_port,
-    LifecycleProbeError,
+    install_running, job_pending, lifecycle_status, owner_state, probe_lifecycle_status,
+    running_port, LifecycleProbeError, OwnerState, HOST_BOOT_GRACE,
 };
 
 use crate::remote::{
@@ -344,8 +344,17 @@ fn start_service() -> bool {
         command = Command::new("systemctl");
         command.args(["--user", "start", "bycoda-host.service"]);
     }
-    run_with_timeout(command, Duration::from_secs(30)).is_some()
+    let started = run_with_timeout(command, Duration::from_secs(30)).is_some();
+    log::info!("local host: start service result={started}");
+    started
 }
+
+/// How long to keep asking before the owner lease decides: a service manager
+/// needs this long to launch the Host process after a start request, and a busy
+/// Host to answer again.
+const SERVICE_LAUNCH_SETTLE: Duration = Duration::from_secs(20);
+/// The same margin after `service install`, which waits for the Host itself.
+const INSTALL_SETTLE: Duration = Duration::from_secs(10);
 
 static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -364,9 +373,9 @@ pub async fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String>
             launcher_command(&data_dir).ok_or("bycoda Host is not installed on this computer.")?;
         // One bounded probe, no retry: a host that answers needs no restart. A
         // failed probe is either Stopped (service not running) or Unconfirmed
-        // (corrupt running.json, port reused by another app, hung Host); both still
-        // go through the idempotent install/start path, which returns early when a
-        // Host really answers.
+        // (starting or hung Host, corrupt running.json, port reused by another app).
+        // Without a live owner both go through the idempotent install/start path,
+        // which returns early when a Host really answers.
         let stopped = match probe_lifecycle_status(&data_dir) {
             Ok(_) => None,
             Err(error) => Some(error == LifecycleProbeError::Stopped),
@@ -386,20 +395,42 @@ pub async fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String>
                             .into(),
                     );
                 }
-                // Starting the task is a no-op for a running or hung process, so only
-                // wait for it when the host was actually stopped.
-                let started = stopped
-                    && start_service()
-                    && wait_until_responding(&data_dir, Duration::from_secs(20));
-                if !started {
+                // Starting or reinstalling the service is a no-op for a process that
+                // already holds the owner lease, so a live owner is only waited for.
+                let mut outcome = if stopped {
+                    if start_service() {
+                        wait_for_host(&data_dir, SERVICE_LAUNCH_SETTLE)
+                    } else {
+                        HostWait::Silent
+                    }
+                } else if matches!(owner_state(&data_dir), OwnerState::Live { .. }) {
+                    // A busy Host can miss the single probe above.
+                    wait_for_host(&data_dir, SERVICE_LAUNCH_SETTLE)
+                } else {
+                    HostWait::Silent
+                };
+                if outcome == HostWait::Silent {
                     let port = running_port(&data_dir).unwrap_or(3776).to_string();
-                    run_launcher(
+                    let installed = run_launcher(
                         &program,
                         &base_args,
                         &["service", "install", "--port", &port],
                         Duration::from_secs(60),
-                    );
-                    if !wait_until_responding(&data_dir, Duration::from_secs(10)) {
+                    )
+                    .is_some();
+                    log::info!("local host: service install result={installed}");
+                    outcome = wait_for_host(&data_dir, INSTALL_SETTLE);
+                }
+                log::info!("local host: start outcome={outcome:?}");
+                match outcome {
+                    HostWait::Ready => {}
+                    HostWait::Alive => {
+                        return Err(format!(
+                            "The host on this computer is still starting and has not answered yet. Try again in a moment; if it stays this way, check {}.",
+                            data_dir.join("host.log").display()
+                        ));
+                    }
+                    HostWait::Silent => {
                         return Err(format!(
                             "The host on this computer did not start. Check {}.",
                             data_dir.join("host.log").display()
@@ -413,16 +444,52 @@ pub async fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String>
     .await
 }
 
-fn wait_until_responding(data_dir: &Path, timeout: Duration) -> bool {
-    let deadline = Instant::now() + timeout;
+/// How a wait for this computer's host ended.
+#[derive(Debug, PartialEq, Eq)]
+enum HostWait {
+    /// The lifecycle endpoint answered.
+    Ready,
+    /// A process holds the owner lease but has not answered.
+    Alive,
+    /// No live owner was found.
+    Silent,
+}
+
+/// Waits for the lifecycle endpoint. `settle` covers a service manager that has
+/// not launched the process yet; past it the wait continues only while a Host
+/// inside its boot grace holds the owner lease.
+fn wait_for_host(data_dir: &Path, settle: Duration) -> HostWait {
+    wait_for_host_with(
+        data_dir,
+        settle,
+        HOST_BOOT_GRACE,
+        Duration::from_millis(500),
+    )
+}
+
+fn wait_for_host_with(
+    data_dir: &Path,
+    settle: Duration,
+    grace: Duration,
+    poll: Duration,
+) -> HostWait {
+    let begun = Instant::now();
+    // A Host that restarts renews its boot time, so the whole wait is bounded too.
+    let limit = settle + grace;
     loop {
         if lifecycle_status(data_dir).is_some() {
-            return true;
+            return HostWait::Ready;
         }
-        if Instant::now() >= deadline {
-            return false;
+        let owner = owner_state(data_dir);
+        let waited = begun.elapsed();
+        if waited >= limit || (waited >= settle && !owner.starting()) {
+            return if matches!(owner, OwnerState::Live { .. }) {
+                HostWait::Alive
+            } else {
+                HostWait::Silent
+            };
         }
-        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(poll);
     }
 }
 
@@ -437,6 +504,58 @@ mod tests {
         assert_eq!(local_host_state(true, true, true), "running");
         assert_eq!(local_host_state(true, false, true), "updating");
         assert_eq!(local_host_state(true, false, false), "stopped");
+    }
+
+    #[test]
+    fn waits_for_a_booting_host_but_not_for_a_silent_or_overdue_one() {
+        let directory =
+            std::env::temp_dir().join(format!("bycoda-local-host-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&directory).unwrap();
+        let poll = Duration::from_millis(20);
+        let sentinel = |started_at: u128| {
+            fs::write(
+                directory.join("owner.lock"),
+                format!(r#"{{"version":2,"pid":123,"nonce":"n","startedAt":{started_at}}}"#),
+            )
+            .unwrap();
+        };
+        let now = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        };
+
+        // Nothing holds the lease: only the settle window is waited.
+        let begun = Instant::now();
+        assert_eq!(
+            wait_for_host_with(&directory, Duration::from_millis(60), HOST_BOOT_GRACE, poll),
+            HostWait::Silent
+        );
+        assert!(begun.elapsed() < Duration::from_secs(5));
+
+        // A booting Host holds the lease: the wait outlasts the settle window and
+        // ends as alive, not as a failed start.
+        let lease = rusqlite::Connection::open(directory.join("owner.db")).unwrap();
+        lease.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        sentinel(now());
+        let begun = Instant::now();
+        assert_eq!(
+            wait_for_host_with(&directory, Duration::ZERO, Duration::from_millis(300), poll),
+            HostWait::Alive
+        );
+        assert!(begun.elapsed() >= Duration::from_millis(300));
+
+        // A live owner past its boot grace is reported at once.
+        sentinel(now() - HOST_BOOT_GRACE.as_millis() - 1_000);
+        let begun = Instant::now();
+        assert_eq!(
+            wait_for_host_with(&directory, Duration::ZERO, HOST_BOOT_GRACE, poll),
+            HostWait::Alive
+        );
+        assert!(begun.elapsed() < Duration::from_secs(5));
+        drop(lease);
+        let _ = fs::remove_dir_all(&directory);
     }
 
     #[test]

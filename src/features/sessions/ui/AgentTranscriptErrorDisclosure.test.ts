@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 describe("tool error disclosure", () => {
-  it("keeps grouped error output collapsed until its failed row is clicked", () => {
+  it("shows the error summary and keeps the raw output collapsed until its failed row is clicked", () => {
     const blocks: Block[] = [
       { id: "user", role: "user", text: "Start the app" },
       {
@@ -51,6 +51,7 @@ describe("tool error disclosure", () => {
     );
     expect(trigger).not.toBeNull();
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).toContain("Error: listen EPERM");
     expect(container.textContent).not.toContain("Server.setupListenHandle");
 
     const failedRow = container.querySelector<HTMLElement>('[aria-label^="Failed tool call:"]');
@@ -104,7 +105,7 @@ describe("Bycoda CLI disclosure", () => {
     expect(row?.textContent).toContain("Ideas");
   });
 
-  it("reveals a failed call's error when clicked", () => {
+  it("shows a failed call's error and opens its output when clicked", () => {
     const blocks: Block[] = [
       { id: "user", role: "user", text: "/bycoda list notes" },
       {
@@ -120,11 +121,12 @@ describe("Bycoda CLI disclosure", () => {
       'button[aria-label="Show error details for bycoda: List notes"]',
     );
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
-    expect(container.textContent).not.toContain("Connection refused");
+    const count = () => (container.textContent ?? "").split("Connection refused").length - 1;
+    expect(count()).toBe(1);
 
     act(() => trigger?.click());
     expect(trigger?.getAttribute("aria-expanded")).toBe("true");
-    expect(container.textContent).toContain("Connection refused");
+    expect(count()).toBe(2);
   });
 });
 

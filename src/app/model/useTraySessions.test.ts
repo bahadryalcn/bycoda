@@ -98,6 +98,7 @@ it("publishes status and canonical ownership and routes only visible selections"
           here: "Here",
           away: "Away",
           dnd: "Do not disturb",
+          offline: "Offline",
         }),
       }),
       rows: [

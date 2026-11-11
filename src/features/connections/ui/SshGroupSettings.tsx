@@ -1,4 +1,5 @@
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
@@ -221,17 +222,11 @@ export function SshGroupSettings({
         <p className="text-ui-caption text-(--ui-text-muted)">
           {t("Target")}: {server.name}
         </p>
-        <Disclosure
-          size="sm"
-          className="text-ui-caption text-(--ui-text-muted)"
-          summary={t("About group settings")}
-        >
-          <p>
-            {t(
-              "Local connection values stay saved. Only checked fields inherit from the selected group.",
-            )}
-          </p>
-        </Disclosure>
+        <p className="text-ui-caption text-(--ui-text-muted)">
+          {t(
+            "Local connection values stay saved. Only checked fields inherit from the selected group.",
+          )}
+        </p>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <LiveText
           text={notice === "applied" ? t("SSH inheritance updated.") : ""}
@@ -276,34 +271,35 @@ export function SshGroupSettings({
             {t("Edit group")}
           </Button>
         </div>
-        <fieldset className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-x-3 gap-y-2 border-0 p-0">
-          <legend className="mbe-2 text-ui-caption font-medium">{t("Inherited fields")}</legend>
-          {SSH_INHERITED_FIELDS.map((field) => (
+        <FieldGroup legend={t("Inherited fields")}>
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-x-3 gap-y-2">
+            {SSH_INHERITED_FIELDS.map((field) => (
+              <Checkbox
+                disabled={!selected || busy || loading}
+                checked={fields.includes(field)}
+                onChange={(event) =>
+                  change(() =>
+                    setFields(
+                      event.target.checked
+                        ? [...fields, field]
+                        : fields.filter((entry) => entry !== field),
+                    ),
+                  )
+                }
+                label={t(labels[field])}
+                key={field}
+                className="flex items-center gap-1 text-ui-caption"
+              />
+            ))}
             <Checkbox
               disabled={!selected || busy || loading}
-              checked={fields.includes(field)}
-              onChange={(event) =>
-                change(() =>
-                  setFields(
-                    event.target.checked
-                      ? [...fields, field]
-                      : fields.filter((entry) => entry !== field),
-                  ),
-                )
-              }
-              label={t(labels[field])}
-              key={field}
+              checked={environment}
+              onChange={(event) => change(() => setEnvironment(event.target.checked))}
+              label={t("Remote environment")}
               className="flex items-center gap-1 text-ui-caption"
             />
-          ))}
-          <Checkbox
-            disabled={!selected || busy || loading}
-            checked={environment}
-            onChange={(event) => change(() => setEnvironment(event.target.checked))}
-            label={t("Remote environment")}
-            className="flex items-center gap-1 text-ui-caption"
-          />
-        </fieldset>
+          </div>
+        </FieldGroup>
         {activePreview ? (
           <section
             aria-label={t("Effective SSH configuration")}
@@ -409,7 +405,7 @@ export function SshGroupSettings({
                   "Literal non-secret values apply only to new interactive SSH terminals. SFTP and port forwarding inherit connection defaults only. Do not put passwords, tokens or private keys here.",
                 )}
               </p>
-              <fieldset disabled={busy} className="min-w-0 border-0 p-0">
+              <FieldGroup variant="bare" disabled={busy}>
                 <SegmentedControl
                   label={t("Environment shell")}
                   value={draft.value.shellKind}
@@ -421,7 +417,7 @@ export function SshGroupSettings({
                     { value: "powershell", label: "PowerShell" },
                   ]}
                 />
-              </fieldset>
+              </FieldGroup>
               {draft.value.environment.map((entry, index) => (
                 <div key={environmentIds[index]} className="mbs-2 flex min-w-0 items-end gap-1">
                   <TextField

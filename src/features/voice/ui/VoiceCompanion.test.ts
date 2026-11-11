@@ -8,6 +8,7 @@ import type { Session } from "../../sessions/model/session";
 import type { VoiceAssistantInput } from "../model/voiceAssistant";
 import * as historyTransport from "../model/voiceHistoryTransport";
 import * as groupLock from "../../group-lock/model/groupLock";
+import * as roomPrivacy from "../../group-lock/model/roomPrivacyProjection";
 import { pendingOwnerQuestionPresentations } from "../../assistant/model/assistantOwnerQuestionPresentations";
 /** Dialogs portal to the document body, outside the companion container. */
 const page = document.body;
@@ -1195,13 +1196,12 @@ it("keeps the panel in the app when the floating window cannot open", async () =
     await setup();
     await floatOut();
     expect(container.querySelector("section")).not.toBeNull();
-    // The error is a header mark that tints the card; its message opens on demand.
-    const mark = container.querySelector<HTMLButtonElement>("[data-voice-error]")!;
+    // The error is a header mark that tints the card; its message is visible in the body.
+    expect(container.querySelector("[data-voice-error]")).not.toBeNull();
     const alert = "Voice needs attention: Window creation failed";
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(alert);
-    await act(() => mark.click());
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Window creation");
-    const ok = [...document.querySelectorAll("button")].find((b) => b.textContent === "Dismiss")!;
+    expect(container.textContent).toContain("Window creation");
+    const ok = [...container.querySelectorAll("button")].find((b) => b.textContent === "Dismiss")!;
     await act(() => ok.click());
     expect(container.querySelector("[data-voice-error]")).toBeNull();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("");
@@ -2788,6 +2788,52 @@ it("links accepted jobs to the original owner turn and retries only metadata aft
     ).toHaveLength(1);
     expect(original.jobIds).toContain(first.jobId);
   } finally {
+    assistantHost.request.mockImplementation(base);
+  }
+});
+it("settles a held room privacy failure before starting voice jobs", async () => {
+  const { render } = await setupGlobal();
+  const base = assistantHost.request.getMockImplementation()!;
+  let held = true;
+  assistantHost.request.mockImplementation(async (input: any) => {
+    if (input.op === "jobs.create" && held)
+      throw new Error("Host rejected request: Privacy scope request was refused");
+    return base(input);
+  });
+  const status = vi
+    .spyOn(roomPrivacy, "getRoomPrivacyStatus")
+    .mockImplementation(() => ({ pending: false, error: held ? "projection failed" : null }));
+  const canRetry = vi.spyOn(roomPrivacy, "canRetryRoomPrivacyProjection").mockReturnValue(true);
+  const recover = vi
+    .spyOn(roomPrivacy, "recoverRoomPrivacyProjection")
+    .mockImplementation(async () => {
+      held = false;
+    });
+  try {
+    await act(async () => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Create a privacy job");
+    });
+    await act(async () => {
+      void mock.realtime.tool("give_jobs", {
+        jobs: [{ title: "Privacy", request: "Privacy retry request", projectPath: "/a" }],
+      });
+    });
+    await render("b");
+    await act(async () => {
+      [...page.querySelectorAll("button")]
+        .find((button) => button.textContent === "Start jobs")
+        ?.click();
+    });
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(assistantHost.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(
+      true,
+    );
+    expect(page.textContent).not.toContain("Privacy scope request was refused");
+  } finally {
+    status.mockRestore();
+    canRetry.mockRestore();
+    recover.mockRestore();
     assistantHost.request.mockImplementation(base);
   }
 });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Heading } from "../../../../shared/ui/Heading";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { BrowserViewFrame, BrowserViewInput } from "../../model/socialActions";
 import type { SocialClient } from "../../model/socialClient";
@@ -95,7 +96,7 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
   return (
     <section aria-label={t("Live browser view")}>
       <header>
-        <h3>{t("Browser window")}</h3>
+        <Heading size="item">{t("Browser window")}</Heading>
         <Button variant="ghost" size="sm" onClick={onClose}>
           {t("Close view")}
         </Button>

@@ -1,4 +1,17 @@
 import { useEffect, useRef } from "react";
+import { hasActiveModalOverlay } from "../../shared/ui/overlay";
+
+/** A modal owns the screen: Back dismisses it like Escape, and nothing navigates underneath. */
+function dismissModalInstead(back: boolean): boolean {
+  if (!hasActiveModalOverlay()) return false;
+  if (back) {
+    const target = document.activeElement ?? document.body;
+    target.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  }
+  return true;
+}
 
 /** Route mouse side buttons through the same navigation as the shell arrows. */
 export function useMouseNavigation(onBack: () => void, onForward: () => void) {
@@ -14,6 +27,7 @@ export function useMouseNavigation(onBack: () => void, onForward: () => void) {
       event.preventDefault();
       event.stopImmediatePropagation();
       if (event.type === "mousedown") {
+        if (dismissModalInstead(event.button === 3)) return;
         if (event.button === 3) actions.current.onBack();
         else actions.current.onForward();
       }
@@ -24,6 +38,7 @@ export function useMouseNavigation(onBack: () => void, onForward: () => void) {
       event.preventDefault();
       event.stopImmediatePropagation();
       if (event.repeat) return;
+      if (dismissModalInstead(event.key === "BrowserBack")) return;
       if (event.key === "BrowserBack") actions.current.onBack();
       else actions.current.onForward();
     };

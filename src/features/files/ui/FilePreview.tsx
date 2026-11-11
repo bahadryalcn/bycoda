@@ -84,7 +84,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
     <div
       className={
         variant === "card"
-          ? "overflow-hidden rounded-(--ui-radius-card) border border-(--ui-pane-border)"
+          ? "overflow-hidden rounded-(--ui-radius-card) border border-(--ui-card-border)"
           : "min-w-0"
       }
     >

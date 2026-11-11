@@ -20,10 +20,6 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-.disclosure {
-  justify-self: start;
-}
-
 .usage {
   inline-size: 100%;
   display: flex;

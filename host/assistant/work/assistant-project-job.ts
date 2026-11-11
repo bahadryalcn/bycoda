@@ -41,6 +41,16 @@ export async function createAssistantProjectJob(
     const active = (await repository.list<AssistantJob>("jobs", 10000)).filter(
       (job) => !FINISHED.has(job.status),
     );
+    // A repeated request with a new key (a retry after a misread status) would run the
+    // same work twice in one checkout; answer it with the job that is already active.
+    const duplicate = active.find(
+      (job) =>
+        job.kind !== "quick" &&
+        job.request === input.request &&
+        job.projectId === input.projectId &&
+        JSON.stringify(projectIdsOf(job)) === JSON.stringify(projectIds),
+    );
+    if (duplicate) return duplicate;
     if (active.length >= MAX_ACTIVE_JOBS)
       throw new Error("The assistant already tracks 100 active jobs.");
     if (input.after)

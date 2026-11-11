@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { InboxView as RawInboxView } from "./InboxView";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 const InboxView = withQueryClient(RawInboxView);
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 

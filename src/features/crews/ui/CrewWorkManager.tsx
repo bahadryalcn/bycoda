@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
@@ -200,7 +201,9 @@ export function CrewWorkManager({
       <div className="@container/crew-management min-w-0" aria-busy={pending}>
         {layout === "page" && crew && crews.length <= 1 ? (
           <div className="flex min-w-0 items-baseline gap-2 px-4 pt-3">
-            <h2 className="min-w-0 truncate text-ui-body font-medium text-content">{crew.name}</h2>
+            <Heading size="item" level={2} className="min-w-0 truncate">
+              {crew.name}
+            </Heading>
             {crewScope ? (
               <span className="shrink-0 text-ui-caption text-(--ui-text-muted)">{crewScope}</span>
             ) : null}

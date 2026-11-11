@@ -33,6 +33,7 @@ impl PreparedQueue {
             control_bytes: Arc::new(AtomicUsize::new(0)),
             next_generation: broker.next_generation.clone(),
             last_state: Mutex::new(None),
+            logged: Mutex::default(),
             permits: Arc::new(Permits::new("env.1")),
             resume: Mutex::new(HashMap::new()),
             resume_cuts: Mutex::new(HashMap::new()),

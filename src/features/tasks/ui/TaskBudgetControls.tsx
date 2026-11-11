@@ -76,19 +76,15 @@ export function TaskBudgetUsage({
       (budget.maxTokens && usage.reportedTokens >= budget.maxTokens * threshold)),
   );
   return (
-    <Disclosure
-      className="min-w-0 text-ui-caption"
-      summary={
-        <>
-          {t("Run usage")}
-          {nearing ? (
-            <span className="ml-2 text-(--ui-tone-warning-fg)">
-              {t("Run budget is nearing its limit.")}
-            </span>
-          ) : null}
-        </>
-      }
-    >
+    <div className="min-w-0 space-y-1 text-ui-caption">
+      <p className="text-(--ui-text-muted)">
+        {t("Run usage")}
+        {nearing ? (
+          <span className="ml-2 text-(--ui-tone-warning-fg)">
+            {t("Run budget is nearing its limit.")}
+          </span>
+        ) : null}
+      </p>
       {usage ? (
         <DescriptionList size="sm">
           <DescriptionItem term={t("Agent minutes")}>
@@ -116,6 +112,6 @@ export function TaskBudgetUsage({
           )}
         </p>
       ) : null}
-    </Disclosure>
+    </div>
   );
 }

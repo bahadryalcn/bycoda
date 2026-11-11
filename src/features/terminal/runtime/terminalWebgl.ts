@@ -1,10 +1,20 @@
 import type { IDisposable, Terminal } from "@xterm/xterm";
 
 /**
- * How long a hidden terminal keeps its renderer. Quick hide/show cycles (such as
- * toggling the dock) reuse one context instead of building a new one each time.
+ * How long a hidden terminal keeps its renderer. Rebuilding one (dynamic import, new context,
+ * refit) in the frame that reopens the dock is a visible hitch, so it is kept for minutes.
  */
-export const WEBGL_IDLE_DROP_MS = 10_000;
+export const WEBGL_IDLE_DROP_MS = 5 * 60_000;
+
+/**
+ * Browsers cap live WebGL contexts (about 16) and force-lose the oldest, which stalls painting.
+ * Beyond this many held contexts, the longest-hidden terminals release theirs at once instead of
+ * waiting out the idle time.
+ */
+export const WEBGL_CONTEXT_CAP = 8;
+
+/** Adapters holding a context, in load order. The value drops it when the terminal is hidden. */
+const held = new Map<object, () => void>();
 
 /**
  * A WebGL context is only held while the terminal is on screen; browsers cap
@@ -21,6 +31,7 @@ export function createTerminalWebgl(
   let loading = false;
   let disposed = false;
   let dropTimer: ReturnType<typeof setTimeout> | null = null;
+  const id = {};
 
   const cancelDrop = () => {
     if (dropTimer === null) return;
@@ -34,6 +45,7 @@ export function createTerminalWebgl(
     const gl = context;
     webgl = null;
     context = null;
+    held.delete(id);
     if (!addon) return;
     addon.dispose();
     // xterm leaves the context to garbage collection. Freeing it now keeps
@@ -55,6 +67,14 @@ export function createTerminalWebgl(
     }, WEBGL_IDLE_DROP_MS);
   };
 
+  /** Frees the oldest hidden terminals' contexts until the cap holds again. */
+  const enforceCap = () => {
+    for (const [owner, dropIfHidden] of held) {
+      if (held.size <= WEBGL_CONTEXT_CAP) return;
+      if (owner !== id) dropIfHidden();
+    }
+  };
+
   const load = async () => {
     cancelDrop();
     if (webgl || loading || disposed) return;
@@ -71,6 +91,7 @@ export function createTerminalWebgl(
         if (current) {
           webgl = null;
           context = null;
+          held.delete(id);
         }
         addon.dispose();
         if (current && !disposed && canRender()) onRendererChange();
@@ -79,6 +100,10 @@ export function createTerminalWebgl(
       term.loadAddon(addon);
       webgl = addon;
       context = rendererContext(term, before);
+      held.set(id, () => {
+        if (!canRender()) drop();
+      });
+      enforceCap();
       // DOM and WebGL round character metrics differently. A retained PTY must
       // be fitted to the new renderer even when its host size did not change.
       onRendererChange();
@@ -100,6 +125,7 @@ export function createTerminalWebgl(
       }
       webgl = null;
       context = null;
+      held.delete(id);
     } finally {
       loading = false;
     }

@@ -140,7 +140,7 @@ Annotation RPCs are `browser.annotation.start`, `.hover`, `.select`, `.clear`,
 An older host without annotation support reports that it needs updating.
 
 Source acceptance runs with
-`pnpm exec playwright test --config tests/browser/playwright.browser-annotation.config.ts`.
+`pnpm exec playwright test --config tests/browser/host-tools/playwright.browser-annotation.config.ts`.
 The fixture uses the actual BrowserPanel, Composer and source SharedBrowser with
 a separate Chromium page. Its test identity and RPC route are isolated from any
 installed host or provider. It proves fixture behavior only; installed Windows/Mac

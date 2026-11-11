@@ -424,7 +424,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             <Surface
               variant="outline"
               padding="none"
-              className="divide-y divide-(--ui-pane-border) overflow-hidden"
+              className="divide-y divide-(--ui-card-border) overflow-hidden"
             >
               {machines.map((machine) => (
                 <MachineRow

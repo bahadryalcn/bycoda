@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -254,7 +255,11 @@ export function CrewMemberPicker({
             modelError={modelError}
             autoFocus
           />
-          <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-(--ui-radius-card) border border-(--ui-pane-border) p-2">
+          <Surface
+            variant="outline"
+            padding="sm"
+            className="flex min-w-0 flex-wrap items-center gap-3"
+          >
             <Checkbox
               checked={saveToLibrary}
               onChange={(event) => onSaveToLibraryChange(event.target.checked)}
@@ -274,7 +279,7 @@ export function CrewMemberPicker({
                 }
               />
             ) : null}
-          </div>
+          </Surface>
         </>
       )}
     </div>

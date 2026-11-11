@@ -1,4 +1,4 @@
-export type AssistantPresenceState = "present" | "away" | "idle" | "dnd" | "locked" | "unknown";
+export type AssistantPresenceState = "present" | "away" | "idle" | "dnd" | "locked" | "offline";
 export type AssistantPresenceTone = "success" | "warning" | "danger" | "neutral";
 
 const presentations = {
@@ -7,16 +7,14 @@ const presentations = {
   idle: { label: "Idle", tone: "warning" },
   dnd: { label: "Do not disturb", tone: "danger" },
   locked: { label: "Locked", tone: "danger" },
-  unknown: { label: "Unknown", tone: "neutral" },
+  offline: { label: "Offline", tone: "neutral" },
 } as const satisfies Record<AssistantPresenceState, { label: string; tone: AssistantPresenceTone }>;
 
-/** Presentation only. A pending or failed observation cannot certify Here. */
-export function assistantPresencePresentation(value: unknown, unconfirmed = false) {
+/** Presentation only. No status from the Host means it is unreachable: offline. */
+export function assistantPresencePresentation(value: unknown) {
   const state: AssistantPresenceState =
-    !unconfirmed &&
-    typeof value === "string" &&
-    Object.prototype.hasOwnProperty.call(presentations, value)
+    typeof value === "string" && Object.prototype.hasOwnProperty.call(presentations, value)
       ? (value as AssistantPresenceState)
-      : "unknown";
+      : "offline";
   return { state, ...presentations[state] };
 }

@@ -1,4 +1,5 @@
 import { SshSettings } from "./SshSettings";
+import { Heading } from "../../../shared/ui/Heading";
 export { ConfigImportChoices } from "./SshConfigImportChoices";
 import { SshRunbooks } from "./SshRunbooks";
 import { SshGroupSettings } from "./SshGroupSettings";
@@ -122,7 +123,7 @@ export function ServersConnectionTools({
             <section aria-label={t("Credentials")} className="flex min-w-0 flex-col gap-3">
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-col gap-1 text-ui-caption">
-                  <h3 className="font-medium">{t("Credentials")}</h3>
+                  <Heading size="item">{t("Credentials")}</Heading>
                   <p className="break-all text-(--ui-text-muted)">
                     {t("SSH user")}: {sshUser || t("Default")}
                   </p>
@@ -205,7 +206,9 @@ export function ServersConnectionTools({
         ) : null}
         <TabPanel value="automation" keepMounted>
           <div className="mbe-4 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-ui-body font-medium">{t("Automation")}</h3>
+            <Heading size="section" level={3}>
+              {t("Automation")}
+            </Heading>
             {server.kind === "ssh" ? (
               <Button onClick={() => setRunbooks(true)}>{t("SSH runbooks")}</Button>
             ) : null}
@@ -213,7 +216,9 @@ export function ServersConnectionTools({
           <ServerSnippets key={server.id} serverId={server.id} serverName={server.name} embedded />
         </TabPanel>
         <TabPanel value="settings" keepMounted className="min-w-0">
-          <h3 className="mbe-3 text-ui-body font-medium">{t("Organization")}</h3>
+          <Heading size="section" level={3} className="mbe-3">
+            {t("Organization")}
+          </Heading>
           <div className="flex flex-wrap gap-2">
             {(server.kind === "ssh" || server.machine?.ssh) && openAgentTerminal ? (
               <Button onClick={() => setAgentReview(true)}>{t("Forward SSH agent")}</Button>

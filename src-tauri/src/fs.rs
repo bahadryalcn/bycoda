@@ -2348,6 +2348,25 @@ pub async fn git_rebase(cwd: String, reference: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
+/// Start a repository in a folder that is not inside one.
+#[tauri::command]
+pub async fn git_init(cwd: String) -> Result<(), String> {
+    spawn_git_mutation(cwd, git_init_for)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn git_init_for(root: &Path) -> Result<(), String> {
+    // A new repository may only start where Git finds none, never nested in one.
+    match git_checked(root, &["rev-parse", "--is-inside-work-tree"]) {
+        Err(error) if error.to_lowercase().contains("not a git repository") => {
+            git_checked(root, &["init", "--quiet"])
+        }
+        Err(error) => Err(error),
+        Ok(()) => Err("This folder is already inside a Git repository".into()),
+    }
+}
+
 /// Trust only this checkout after an explicit owner confirmation.
 #[tauri::command]
 pub async fn git_trust_repository(cwd: String, confirmed: bool) -> Result<(), String> {
@@ -9630,6 +9649,22 @@ mod tests {
         );
         let mixed = PathBuf::from(format!("{}/", folder.to_string_lossy().replace('\\', "/")));
         assert!(nearest_existing_path(&mixed).unwrap().is_dir());
+    }
+
+    #[test]
+    fn git_init_starts_one_repository_and_never_nests() {
+        let dir = tmp("git-init");
+        // A repository above the temporary folder would own every folder below it.
+        if git_checked(&dir.0, &["rev-parse", "--is-inside-work-tree"]).is_ok() {
+            return;
+        }
+        git_init_for(&dir.0).unwrap();
+        assert!(git_diff_index_checked(&dir.0, true).unwrap().repository);
+        assert!(git_init_for(&dir.0).unwrap_err().contains("already inside"));
+        let nested = dir.0.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert!(git_init_for(&nested).is_err());
+        assert!(!nested.join(".git").exists());
     }
 
     #[test]

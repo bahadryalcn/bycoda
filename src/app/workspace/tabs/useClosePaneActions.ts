@@ -79,6 +79,7 @@ export function useClosePaneActions({
           closingTabId: closingTab.id,
           scope: tabCloseScope,
           worktreeOf: tabWorktreeOf,
+          activeCwd: sidebarCwd,
         });
         if (closePlan.action === "keep") onClearTabSession(closingTab.id);
         else onCloseTab(closingTab.id);

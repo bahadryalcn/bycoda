@@ -49,7 +49,7 @@ it("shows a succeeded post as Sent with its account name", async () => {
 const buttonNamed = (name: string) =>
   [...element.querySelectorAll("button")].find((button) => button.textContent?.trim() === name);
 
-it("hides Undo for an AI action without an inverse and gives the reason under Details", async () => {
+it("hides Undo for an AI action without an inverse and shows the reason directly", async () => {
   render(
     [],
     [
@@ -66,8 +66,6 @@ it("hides Undo for an AI action without an inverse and gives the reason under De
   await act(async () => undefined);
   expect(element.textContent).toContain("Replied to a comment");
   expect(buttonNamed("Undo")).toBeUndefined();
-  expect(element.textContent).not.toContain("This action cannot be undone.");
-  act(() => buttonNamed("Details")?.click());
   expect(element.textContent).toContain("This action cannot be undone.");
 });
 

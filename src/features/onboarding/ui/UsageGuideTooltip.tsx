@@ -5,6 +5,7 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import type { TooltipRenderProps } from "react-joyride";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 
 const guides = [
   { name: "Obi-Wan Kenobi", asset: "obi-wan" },
@@ -66,9 +67,9 @@ function TourCard({
         </Button>
       </header>
       <div className="usage-guide-scroll" key={index}>
-        <h2 id="usage-guide-title" className="usage-guide-tour-title">
+        <Heading size="page" level={2} id="usage-guide-title" className="usage-guide-tour-title">
           {step.title}
-        </h2>
+        </Heading>
         {step.content}
       </div>
       <footer className="usage-guide-footer">
@@ -130,7 +131,9 @@ function UsageGuidePanel({
       <div className="usage-guide-scroll" key={index}>
         <div className="usage-guide-hero">
           <div className="usage-guide-intro">
-            <h2 id="usage-guide-title">{step.title}</h2>
+            <Heading size="page" level={2} id="usage-guide-title">
+              {step.title}
+            </Heading>
             <span className="usage-guide-companion">{guide.name}</span>
           </div>
           <img

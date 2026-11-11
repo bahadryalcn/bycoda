@@ -200,6 +200,26 @@ describe("validation", () => {
       vi.unstubAllEnvs();
     }
   });
+  it("initializes a plain folder once and refuses a folder inside a repository", async () => {
+    const cwd = temp("bycoda-git-init-");
+    const inside = () => {
+      try {
+        execFileSync("git", ["rev-parse", "--show-toplevel"], {
+          cwd,
+          windowsHide: true,
+          stdio: "ignore",
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    // A repository above the temporary folder would own every folder below it.
+    if (inside()) return;
+    await runGitAction("git_init", cwd, {});
+    expect(inside()).toBe(true);
+    await expect(runGitAction("git_init", cwd, {})).rejects.toThrow(/already inside/);
+  });
   it("never lets a UI string become a git option", async () => {
     const r = repo();
     const head = r.commit("a.txt", "one\n");

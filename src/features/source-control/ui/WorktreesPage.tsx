@@ -7,6 +7,7 @@ import { WorktreeRow } from "./WorktreeRow";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
 import { SettingsFeedback } from "../../settings/public/settingsControls";
+import { Heading } from "../../../shared/ui/Heading";
 import { Plus, RefreshCw } from "../../../shared/ui/icons";
 import { revealPath } from "../../../platform/tauri/fs";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
@@ -104,7 +105,7 @@ export function WorktreesPage({
         }}
         renderHeader={(refreshManaged, managedBusy, managedDisabled) => (
           <header className={styles.header}>
-            {boundary && <h2 className="settings-section-title">{t("Worktrees")}</h2>}
+            {boundary && <Heading size="section">{t("Worktrees")}</Heading>}
             <div className={styles.toolbar}>
               <SearchableProjectPicker
                 cwd={project || "~"}

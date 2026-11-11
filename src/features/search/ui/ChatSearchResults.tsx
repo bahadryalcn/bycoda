@@ -4,6 +4,7 @@ import { terminalText } from "../../../shared/lib/terminalText";
 import { MatchText, MAX_MATCH_POSITIONS } from "../../../shared/ui/MatchText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { NativeSelect } from "../../../shared/ui/Select";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Folder, MessageSquare, SlidersHorizontal } from "../../../shared/ui/icons";
@@ -225,7 +226,11 @@ export function ChatSearchResults({
     >
       {groups.map((group) => (
         <section key={group.key} aria-label={group.name} className="app-search-project">
-          <h3 className="app-search-project-heading">
+          <SectionLabel
+            as="h3"
+            className="app-search-project-heading"
+            classNames={{ label: "app-search-project-label" }}
+          >
             <Folder className="icon-xs shrink-0" strokeWidth={1.75} />
             <span className="min-w-0 flex-1 break-words" title={group.cwd}>
               {group.name}
@@ -235,7 +240,7 @@ export function ChatSearchResults({
                 {group.groupName}
               </Badge>
             ) : null}
-          </h3>
+          </SectionLabel>
           <p className="app-search-project-path">{group.cwd}</p>
           {group.sessions.map((session) => {
             const row = rowProps(session.id);

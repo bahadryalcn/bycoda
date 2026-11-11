@@ -86,7 +86,10 @@ function isZero(margin: string | null): boolean {
 describe("agent-markdown Tailwind sources", () => {
   it("resolves every package source relative to the stylesheet", () => {
     const css = readFileSync(CSS_PATH, "utf8");
-    const sources = [...css.matchAll(/@source\s+"([^"]+)"/g)].map(([, source]) => source);
+    // The root entry documents are a product source too; this test covers the package sources.
+    const sources = [...css.matchAll(/@source\s+"([^"]+)"/g)]
+      .map(([, source]) => source)
+      .filter((source) => source.includes("node_modules"));
 
     expect(sources.length).toBeGreaterThan(0);
     for (const source of sources) {

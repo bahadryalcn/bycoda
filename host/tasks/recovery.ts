@@ -268,34 +268,31 @@ export async function retryFeedback(
   if (failedCommand) {
     parts.push(`Check command: ${task.verifyCommand ?? ""}`, command.output);
   }
-  const acceptance = task.verification?.acceptance;
-  if (acceptance) {
+  const open = (task.verification?.acceptance?.criteria ?? []).filter(
+    (entry) => entry.verdict !== "verified",
+  );
+  if (open.length)
     parts.push(
-      "Recorded acceptance evidence from the previous result. Inspect current files before reusing it:",
-      JSON.stringify({
-        checkedAt: acceptance.checkedAt,
-        sessionId: acceptance.sessionId,
-        criteria: [...acceptance.criteria]
-          .sort((a, b) => Number(a.verdict === "verified") - Number(b.verdict === "verified"))
-          .slice(0, 4)
-          .map((entry) => ({
-            criterionIndex: entry.criterionIndex,
-            criterion: entry.criterion.slice(0, 200),
-            verdict: entry.verdict,
-            evidence: entry.evidence.slice(0, 2).map((reference) => reference.slice(0, 200)),
-            note: entry.note?.slice(0, 200),
-          })),
-        omittedCriteria: Math.max(0, acceptance.criteria.length - 4),
-      }),
+      "Acceptance criteria not yet verified (criterion numbers as in the task; inspect current files before reusing evidence):",
+      ...open.slice(0, 6).map(
+        (entry) =>
+          `- #${entry.criterionIndex} ${entry.verdict}: ${[
+            entry.note,
+            ...entry.evidence.slice(0, 2),
+          ]
+            .filter(Boolean)
+            .map((text) => String(text).slice(0, 200))
+            .join(" | ")}`,
+      ),
     );
-  }
   if (review?.verdict === "fail") {
-    parts.push(`Reviewer finding: ${review.note}`);
     const structured = (task.reviewNotes ?? []).filter(
       (note) => note.kind === "finding" && note.resolvedAt === undefined,
     );
-    if (structured.length && structured.every((note) => !note.details))
-      return parts.join("\n\n").slice(0, RETRY_FEEDBACK_LIMIT);
+    // Structured findings travel once, as review notes; copy the reviewer's
+    // own words only when they have nothing else to act on.
+    if (structured.length) return parts.join("\n\n").slice(0, RETRY_FEEDBACK_LIMIT);
+    if (!parts[0].includes(review.note)) parts.push(`Reviewer finding: ${review.note}`);
     try {
       const blocks = (await context.store.session(review.sessionId)).session.blocks;
       const lastUser = blocks.findLastIndex((block) => block.role === "user");

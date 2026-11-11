@@ -5,6 +5,7 @@ import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Heading } from "../../../shared/ui/Heading";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -40,7 +41,7 @@ export function AssistantMemoryPanel(props: Props) {
     <div className={styles.panel}>
       <header className={styles.header}>
         <div className={styles.title}>
-          <h2>{t("Memory")}</h2>
+          <Heading size="page">{t("Memory")}</Heading>
           <Badge size="xs" tone="neutral">
             {t("Rules {p0}/40", { p0: props.ruleCount })}
           </Badge>

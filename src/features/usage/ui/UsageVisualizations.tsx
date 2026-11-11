@@ -2,6 +2,7 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useMemo, useState } from "react";
 import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { ActivityHeatmap, BarChart, DonutChart, LineChart } from "../../../shared/ui/Charts";
 import { ChevronLeft, ChevronRight } from "../../../shared/ui/icons";
 import { Select } from "../../../shared/ui/Select";
@@ -94,7 +95,9 @@ export function UsageTrend({
     <section className="usage-panel usage-trend" data-usage-chart="trend">
       <div className="usage-section-heading">
         <div>
-          <h3>{t("Usage over time")}</h3>
+          <Heading size="item" level={3}>
+            {t("Usage over time")}
+          </Heading>
           <p className="usage-muted">
             {t(metricNames[metric])} ·{" "}
             {t({ "15m": "15 minutes", hour: "Hourly", day: "Daily", week: "Weekly" }[resolution])}
@@ -221,7 +224,9 @@ export function UsageShare({
   return (
     <section className="usage-panel usage-share" data-usage-chart="share">
       <div className="usage-section-heading">
-        <h3>{t("By provider")}</h3>
+        <Heading size="item" level={3}>
+          {t("By provider")}
+        </Heading>
       </div>
       <DonutChart
         label={t("By provider")}
@@ -276,7 +281,9 @@ export function Contribution({
   return (
     <section className="usage-panel">
       <div className="usage-section-heading">
-        <h3>{title}</h3>
+        <Heading size="item" level={3}>
+          {title}
+        </Heading>
         <span>{t("Share of selected usage")}</span>
       </div>
       <div className="usage-contributions">
@@ -422,7 +429,9 @@ export function TimeDistribution({
       <div className="usage-time-secondary">
         <section className="usage-panel usage-hourly-chart" data-usage-chart="hourly">
           <div className="usage-section-heading">
-            <h3>{t(metricNames[metric])}</h3>
+            <Heading size="item" level={3}>
+              {t(metricNames[metric])}
+            </Heading>
             <Select
               hideLabel
               label={t("Time grouping")}
@@ -448,7 +457,9 @@ export function TimeDistribution({
         {calendarDays.length >= 56 && (
           <section className="usage-panel" data-usage-chart="calendar">
             <div className="usage-section-heading">
-              <h3>{t("Daily activity")}</h3>
+              <Heading size="item" level={3}>
+                {t("Daily activity")}
+              </Heading>
               <span>{t("Latest 90 days within the selected interval")}</span>
             </div>
             <ActivityHeatmap
@@ -475,7 +486,9 @@ export function TimeDistribution({
       <section className="usage-panel usage-week-panel" data-usage-chart="week">
         <div className="usage-section-heading">
           <div>
-            <h3>{t("Day and hour activity")}</h3>
+            <Heading size="item" level={3}>
+              {t("Day and hour activity")}
+            </Heading>
             <p className="usage-muted">
               {dateLabel(from)} – {dateLabel(dates[dates.length - 1])}
             </p>

@@ -7,6 +7,8 @@ import { Switch } from "../../../shared/ui/Switch";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Select } from "../../../shared/ui/Select";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
+import { Heading } from "../../../shared/ui/Heading";
 import { Group, Row, SettingsFeedback } from "../../settings/public/settingsControls";
 import type {
   WorkspacePolicy,
@@ -105,7 +107,7 @@ export function WorkspacePolicyEditor({
         label={t("Default workspace")}
         description={t("Worktree gives each session its own folder and branch.")}
       >
-        <fieldset disabled={saving}>
+        <FieldGroup legend={t("Default workspace")} hideLegend disabled={saving}>
           <SegmentedControl
             label={t("Default workspace")}
             value={draft.defaultMode}
@@ -120,7 +122,7 @@ export function WorkspacePolicyEditor({
               })
             }
           />
-        </fieldset>
+        </FieldGroup>
       </Row>
       <Row
         id="workspace-pinning"
@@ -142,10 +144,10 @@ export function WorkspacePolicyEditor({
         aria-labelledby={retentionHeadingId}
         className={styles.block}
       >
-        <h3 id={retentionHeadingId} className={`settings-subheading ${styles.subheading}`}>
+        <Heading size="item" id={retentionHeadingId} className={styles.subheading}>
           {t("Automatic cleanup")}
           <small className={styles.muted}>{t("Active and pinned workspaces are excluded")}</small>
-        </h3>
+        </Heading>
         <div className={styles.grid4}>
           {retentionStates.map((state) => {
             const period = draft.retention[state];
@@ -199,9 +201,9 @@ export function WorkspacePolicyEditor({
         aria-labelledby={limitsHeadingId}
         className={styles.block}
       >
-        <h3 id={limitsHeadingId} className={`settings-subheading ${styles.subheading}`}>
+        <Heading size="item" id={limitsHeadingId} className={styles.subheading}>
           {t("Limits")}
-        </h3>
+        </Heading>
         <div className={styles.grid3}>
           <div className={styles.cell}>
             <span className={styles.cellLabel}>{t("Directory budget (GiB)")}</span>

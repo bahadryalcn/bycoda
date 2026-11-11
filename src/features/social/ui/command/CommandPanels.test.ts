@@ -59,7 +59,7 @@ it("keeps the owner queue section and renders the browser checks inside it", () 
     ),
   );
   const section = element.querySelector('section[aria-label="Waiting for you"]');
-  expect(section?.querySelector("h3")?.textContent).toBe("Waiting for you");
+  expect(section?.querySelector("h2")?.textContent).toBe("Waiting for you");
   expect(section?.querySelector("#browser-checks")?.textContent).toBe("Sign in to continue.");
   expect(section?.querySelector(".command-muted")).toBeNull();
 });
@@ -85,5 +85,5 @@ it("shows the reply rate with a meter and names the approvals on the Pending til
 
 it("adds approvals and browser checks into one count badge", () => {
   act(() => root.render(createElement(WaitingForYou, { approvalCount: 2, humanCount: 1 }, null)));
-  expect(element.querySelector("section h3 + *")?.textContent).toBe("3");
+  expect(element.querySelector("section h2 + *")?.textContent).toBe("3");
 });

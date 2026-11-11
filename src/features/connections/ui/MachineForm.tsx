@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -242,7 +243,7 @@ export function MachineForm({
     >
       <Surface variant="outline" padding="lg" className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-ui-body font-medium">{title}</h3>
+          <Heading size="item">{title}</Heading>
           {ssh ? (
             <div className="flex items-center gap-1">
               <Badge size="sm">{"SSH"}</Badge>

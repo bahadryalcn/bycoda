@@ -1,4 +1,5 @@
 import { t, useLocale } from "../../../shared/i18n";
+import { Heading } from "../../../shared/ui/Heading";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import {
@@ -83,7 +84,9 @@ export function MemberToolsPicker({
   ];
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <h3 className="text-ui-title font-medium">{t("Tools")}</h3>
+      <Heading size="section" level={3}>
+        {t("Tools")}
+      </Heading>
       <RadioGroup
         label={t("Tool profile")}
         compact

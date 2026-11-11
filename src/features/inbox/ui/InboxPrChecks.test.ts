@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxPrChecks, PrChecksTab } from "./InboxPrChecks";
 import { Tabs } from "../../../shared/ui/Tabs";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import {
   InboxDetail as RawInboxDetail,
   LinkedWorkItemPanel as RawLinkedWorkItemPanel,
@@ -96,6 +96,15 @@ async function tooltipText(element: HTMLElement): Promise<string> {
 
 const buttonByLabel = (label: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+const rowToggle = (name: string) =>
+  Array.from(container.querySelectorAll("summary")).find(
+    (summary) => summary.querySelector("[data-check-name]")?.textContent === name,
+  );
+const rowOpen = (name: string) => rowToggle(name)?.parentElement?.hasAttribute("open");
+const stepsDetails = () =>
+  Array.from(container.querySelectorAll("details")).find((details) =>
+    details.querySelector(":scope > summary")?.textContent?.includes("View run steps"),
+  )!;
 
 it("keeps expanded details on the same check when checks share a URL", async () => {
   invoke.mockResolvedValue({ steps: [], annotations: [], notice: null });
@@ -117,10 +126,10 @@ it("keeps expanded details on the same check when checks share a URL", async () 
     );
   };
   await show([first, second]);
-  await act(async () => buttonByLabel("build details")!.click());
+  await act(async () => rowToggle("build")!.click());
   await show([second, first]);
-  expect(buttonByLabel("build details")?.getAttribute("aria-expanded")).toBe("true");
-  expect(buttonByLabel("lint details")?.getAttribute("aria-expanded")).toBe("false");
+  expect(rowOpen("build")).toBe(true);
+  expect(rowOpen("lint")).toBe(false);
 });
 
 it("filters attention checks without hiding cancelled or unknown outcomes", () => {
@@ -146,7 +155,7 @@ it("filters attention checks without hiding cancelled or unknown outcomes", () =
   expect(attention?.getAttribute("aria-pressed")).toBe("true");
   const visibleNames = () =>
     Array.from(container.querySelectorAll("li:not([hidden]) [data-check-name]"))
-      .filter((el) => !el.closest("[hidden]"))
+      .filter((el) => !el.closest("[hidden], details:not([open])"))
       .map((el) => el.textContent);
   expect(visibleNames()).toEqual(["Tests", "Build", "Deploy", "External scan"]);
   act(() => container.querySelector<HTMLButtonElement>('button[data-value="all"]')?.click());
@@ -264,10 +273,10 @@ it("opens the only failed Actions job and shows its failed step and error", asyn
   expect(container.textContent).toContain("Expected 2, received 1");
   expect(container.textContent).toContain("src/app.test.ts:42");
   expect(container.textContent).toContain("12s");
-  const toggle = buttonByLabel("Windows details");
-  expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+  const toggle = rowToggle("Windows");
+  expect(rowOpen("Windows")).toBe(true);
   act(() => toggle?.click());
-  expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+  expect(rowOpen("Windows")).toBe(false);
   expect(container.textContent).not.toContain("src/app.test.ts:42");
   expect(container.textContent).toContain("Expected 2, received 1");
   expect(container.textContent).toContain("Failed at Run tests");
@@ -317,20 +326,20 @@ it("keeps expanded evidence while polling a pending job and shows new steps", as
       }),
     );
   show();
-  await act(async () => buttonByLabel("Windows details")!.click());
+  await act(async () => rowToggle("Windows")!.click());
   await act(async () =>
     Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent?.includes("Show 1 more annotations"))!
       .click(),
   );
-  const steps = container.querySelector<HTMLDetailsElement>("details")!;
+  const steps = stepsDetails();
   steps.open = true;
   expect(container.textContent).toContain("Annotation 6");
   show();
   expect(container.textContent).toContain("Annotation 6");
   expect(container.textContent).toContain("source preview");
   expect(container.textContent).not.toContain("Loading steps");
-  expect(container.querySelector("details")?.open).toBe(true);
+  expect(stepsDetails().open).toBe(true);
   await act(async () =>
     finishRefresh({
       ...details,
@@ -347,7 +356,7 @@ it("keeps expanded evidence while polling a pending job and shows new steps", as
   );
   expect(container.textContent).toContain("Run tests");
   expect(container.textContent).toContain("Annotation 6");
-  expect(container.querySelector("details")?.open).toBe(true);
+  expect(stepsDetails().open).toBe(true);
   expect(invoke.mock.calls.filter(([command]) => command === "git_commit_file_diff")).toHaveLength(
     1,
   );
@@ -379,7 +388,7 @@ it("clears the old failed step when a collapsed job is refreshed", async () => {
     }),
   );
   await act(async () => {});
-  act(() => buttonByLabel("Windows details")?.click());
+  act(() => rowToggle("Windows")!.click());
   expect(container.textContent).toContain("Failed at Old failure");
   render(
     createElement(InboxPrChecks, {
@@ -390,7 +399,7 @@ it("clears the old failed step when a collapsed job is refreshed", async () => {
     }),
   );
   expect(container.textContent).not.toContain("Old failure");
-  expect(buttonByLabel("Windows details")?.getAttribute("aria-expanded")).toBe("false");
+  expect(rowOpen("Windows")).toBe(false);
 });
 
 it("opens a job that fails during polling and lets the user retry unavailable details", async () => {
@@ -418,7 +427,7 @@ it("opens a job that fails during polling and lets the user retry unavailable de
     }),
   );
   await act(async () => {});
-  expect(buttonByLabel("Linux details")?.getAttribute("aria-expanded")).toBe("true");
+  expect(rowOpen("Linux")).toBe(true);
   expect(container.textContent).toContain("Could not load job details.");
   invoke.mockResolvedValueOnce({
     steps: [{ name: "Build", state: "fail", startedAt: null, completedAt: null }],

@@ -24,6 +24,8 @@ import { revealPath } from "../../../platform/tauri/fs";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
 import type { RecentProject } from "../../projects";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ContinuousList, CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -376,7 +378,7 @@ function McpConnections({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-ui-title font-medium">{t("MCP connections")}</h2>
+            <Heading size="section">{t("MCP connections")}</Heading>
             <span
               id="setting-mcp-scopes"
               data-setting-id="mcp-scopes"
@@ -477,7 +479,7 @@ function McpConnections({
           onDismiss={() => setFiltersOpen(false)}
         >
           <div className={styles.filterPanel}>
-            <h3>{t("Provider")}</h3>
+            <SectionLabel as="h3">{t("Provider")}</SectionLabel>
             <SegmentedControl
               label={t("Filter MCP servers by provider")}
               selectionRole="pressed"
@@ -501,7 +503,7 @@ function McpConnections({
                 ),
               }))}
             />
-            <h3>{t("Scope")}</h3>
+            <SectionLabel as="h3">{t("Scope")}</SectionLabel>
             <SegmentedControl
               label={t("Filter MCP servers by scope")}
               selectionRole="pressed"

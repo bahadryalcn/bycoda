@@ -100,7 +100,23 @@ export function useRailNavigation(d: RailNavigationDeps) {
     const h = history.current;
     const back = h.back.filter(valid);
     const forward = h.forward.filter(valid);
-    if (!sameVisit(h.current, current)) {
+    const previous = back[back.length - 1];
+    if (
+      !sameVisit(h.current, current) &&
+      h.current.view !== "workspace" &&
+      previous &&
+      sameVisit(previous, current) &&
+      valid(h.current)
+    ) {
+      // Closing a tool page (its close button, Escape or a click outside) returns
+      // to where it was opened from. That is a Back step, not a new visit, so
+      // Back does not reopen the page that was just closed.
+      history.current = {
+        back: back.slice(0, -1),
+        current,
+        forward: [...forward, h.current].slice(-50),
+      };
+    } else if (!sameVisit(h.current, current)) {
       // Closing/transferring a tab replaces its location; it must not reopen it.
       if (valid(h.current)) back.push(h.current);
       history.current = { back: back.slice(-50), current, forward: [] };

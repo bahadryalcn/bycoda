@@ -1,6 +1,7 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useAccount } from "../../account";
 
@@ -16,7 +17,9 @@ export function OnboardingAccount({ onGuest }: { onGuest: () => void }) {
   return (
     <>
       <div className="onboarding-heading">
-        <h3>{t("Sign in to sync your stats across devices")}</h3>
+        <Heading size="page" level={3}>
+          {t("Sign in to sync your stats across devices")}
+        </Heading>
         <p>
           {t(
             "An account is optional. Your sessions, projects and settings stay on this computer either way.",

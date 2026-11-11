@@ -956,6 +956,13 @@ function ActivityToolRow({
         </div>
       )}
       {pending ? <ApprovalControls block={block} onApproval={onApproval} /> : null}
+      {errorDetail ? (
+        <p
+          className={`m-0 line-clamp-2 min-w-0 break-words text-ui-caption text-(--ui-tone-danger-fg) ${bare ? "" : "pl-5"}`}
+        >
+          {errorSummaryLine(errorDetail)}
+        </p>
+      ) : null}
       {errorOpen && hasResult ? (
         <div className={`min-w-0 py-1 ${bare ? "" : "pl-5"}`}>
           <ToolInspectionPanel block={block} />
@@ -963,6 +970,11 @@ function ActivityToolRow({
       ) : null}
     </div>
   );
+}
+
+/** First non-empty line of a failure's raw output; the full text stays in the inspection panel. */
+function errorSummaryLine(detail: string): string {
+  return detail.trim().split(String.fromCharCode(10), 1)[0]!.trim();
 }
 
 function BycodaMark({ className = "size-4" }: { className?: string }) {
@@ -1042,6 +1054,11 @@ function BycodaCallRow({
       ) : (
         <div className="flex min-w-0 items-center gap-1.5 py-1">{summary}</div>
       )}
+      {hasError && block.tool?.detail?.trim() ? (
+        <p className="m-0 line-clamp-2 min-w-0 break-words py-1 pl-5 text-ui-caption text-(--ui-tone-danger-fg)">
+          {errorSummaryLine(block.tool.detail)}
+        </p>
+      ) : null}
       {errorOpen && hasResult ? <ToolInspectionPanel block={block} /> : null}
       {pendingApproval ? (
         <pre className="max-h-32 min-w-0 overflow-auto whitespace-pre-wrap break-all py-1 pl-5 font-mono text-ui-caption leading-5 text-(--ui-text-secondary)">

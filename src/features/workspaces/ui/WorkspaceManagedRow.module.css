@@ -1,11 +1,18 @@
-/* Doubled class so the grid beats SettingsCollection.css whatever the stylesheet order. */
+/* Doubled class so the block beats SettingsCollection.css whatever the stylesheet order. */
 .row.row {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px 10px;
+  display: block;
   min-block-size: 46px;
   padding: 8px 10px 8px 14px;
+}
+
+/* The summary's main content: status dot column, then the identity. */
+.main {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+  min-inline-size: 0;
+  flex: 1 1 auto;
 }
 
 .dot {
@@ -65,9 +72,11 @@
   opacity: 1;
 }
 
+/* Aligns the facts with the identity column: status dot (14px) plus its gap (10px). */
 .details {
-  grid-column: 2 / -1;
   min-inline-size: 0;
+  padding-block-start: 6px;
+  padding-inline-start: 24px;
 }
 
 @media (hover: none) {

@@ -45,7 +45,8 @@ pub(crate) fn optional_host_deadline() -> Option<std::time::Instant> {
 }
 
 /// A failure that used up its whole budget means the Host accepted the call
-/// but did not answer in time. Fast failures (no Host, refused) do not count.
+/// but did not answer in time. Fast failures (no Host, refused) do not count,
+/// and neither does a budget spent waiting for a refusing local Host to listen.
 pub(crate) fn note_optional_host_outcome(deadline: std::time::Instant, ok: bool) {
     let now = std::time::Instant::now();
     let mut until = optional_host_unhealthy_until()
@@ -53,7 +54,7 @@ pub(crate) fn note_optional_host_outcome(deadline: std::time::Instant, ok: bool)
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     if ok {
         *until = None;
-    } else if now + Duration::from_millis(200) >= deadline {
+    } else if exhausted_by_accepted_call(now, deadline, crate::remote::local_host_refusing()) {
         if !until.is_some_and(|until| until > now) {
             log::warn!(
                 "[session tools] Host did not answer an optional tool request in time; skipping Host tools for {} s",
@@ -62,6 +63,16 @@ pub(crate) fn note_optional_host_outcome(deadline: std::time::Instant, ok: bool)
         }
         *until = Some(now + OPTIONAL_HOST_BACKOFF);
     }
+}
+
+/// A refusing Host never accepted the call, however long the caller waited
+/// for it to listen; backing off then would skip its tools after it returns.
+fn exhausted_by_accepted_call(
+    now: std::time::Instant,
+    deadline: std::time::Instant,
+    host_refusing: bool,
+) -> bool {
+    !host_refusing && now + Duration::from_millis(200) >= deadline
 }
 
 #[derive(Default)]
@@ -818,6 +829,21 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
     use std::thread;
+
+    #[test]
+    fn a_budget_spent_waiting_for_a_refusing_host_does_not_start_the_back_off() {
+        let deadline = std::time::Instant::now() + OPTIONAL_HOST_BUDGET;
+        // The Host accepted the call and stayed silent for the whole budget.
+        assert!(exhausted_by_accepted_call(deadline, deadline, false));
+        // The call waited the whole budget for a restarting Host to listen.
+        assert!(!exhausted_by_accepted_call(deadline, deadline, true));
+        // A fast failure never counted.
+        assert!(!exhausted_by_accepted_call(
+            deadline - Duration::from_secs(1),
+            deadline,
+            false
+        ));
+    }
 
     #[test]
     fn scoped_response_admission_retains_original_principal_without_blocking_revocation() {

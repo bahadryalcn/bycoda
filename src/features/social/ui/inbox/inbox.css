@@ -202,8 +202,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
 }
 
 .inbox-conversation-account {

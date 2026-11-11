@@ -448,20 +448,24 @@ html.theme-light .project-sigil {
   padding: 2px 7px 4px;
   margin-block-end: 4px;
 }
-.bycoda-rail-tools--compact {
-  display: none;
-}
 /* Settings sits at the rail's bottom edge, below the update and repository footers. */
 .bycoda-rail-tools--footer {
   padding-block: 2px 8px;
   margin-block-end: 0;
 }
-@container rail (width <= 280px) {
-  .bycoda-rail-tools--expanding {
-    display: none;
+/* The icon rail has no room for a row: the joined tools stack. */
+@container rail (width <= 140px) {
+  .bycoda-rail-tools > [data-button-group] {
+    flex-direction: column;
   }
-  .bycoda-rail-tools--compact {
-    display: flex;
+  .bycoda-rail-tools.bycoda-rail-tools > [data-button-group="joined"] > button {
+    border-radius: var(--ui-control-radius);
+  }
+  .bycoda-rail-tools.bycoda-rail-tools > [data-button-group="joined"] > button + button::before {
+    inset-block: 0 auto;
+    inset-inline: 0;
+    inline-size: auto;
+    block-size: 1px;
   }
 }
 /* Active agents follow workspace tools and disappear when none are visible. */

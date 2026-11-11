@@ -141,6 +141,47 @@ describe("parseClaudeOAuthUsage", () => {
     expect(limits.weekly?.resetsAt).toBe(Date.parse("2026-09-01T00:00:00.000Z"));
   });
 
+  it("maps banked resets from cedar_ember grants", () => {
+    const limits = parseClaudeOAuthUsage(
+      JSON.stringify({
+        five_hour: null,
+        seven_day: { utilization: 28, resets_at: "2026-11-18T02:59:59Z" },
+        cedar_ember: {
+          grants: [
+            {
+              id: "full-reset-2611",
+              label: "One full limit reset (November 2026)",
+              resets_left: 1,
+              ends_at: "2026-12-10T22:00:00+00:00",
+              usable_now: true,
+            },
+            { id: "two-left", label: "Fable reset", resets_left: 2, usable_now: false },
+            { id: "spent", label: "Spent", resets_left: 0 },
+          ],
+        },
+      }),
+    );
+    expect(limits.session).toBeNull();
+    expect(limits.resetCredits?.availableCount).toBe(3);
+    expect(limits.resetCredits?.credits?.[0]).toMatchObject({
+      id: "full-reset-2611:0",
+      status: "available",
+      title: "One full limit reset (November 2026)",
+      expiresAt: Date.parse("2026-12-10T22:00:00+00:00"),
+    });
+    expect(limits.resetCredits?.credits?.[2]).toMatchObject({
+      id: "two-left:1",
+      status: "unknown",
+    });
+  });
+
+  it("has no banked resets when cedar_ember lists none", () => {
+    const limits = parseClaudeOAuthUsage(
+      JSON.stringify({ seven_day: { utilization: 1 }, cedar_ember: { grants: [] } }),
+    );
+    expect(limits.resetCredits).toBeNull();
+  });
+
   it("returns an error for garbage", () => {
     const limits = parseClaudeOAuthUsage("not json");
     expect(limits.status).toBe("error");

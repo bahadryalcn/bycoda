@@ -1557,7 +1557,17 @@ fn privacy_scope_pinned(
             .map_err(|_| "Privacy scope request timed out")?;
         check()?;
         if response["ok"] != true {
-            return Err("Privacy scope request was refused".into());
+            // Keep the window's own reason so a held privacy failure is diagnosable.
+            return Err(
+                match response["error"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|reason| !reason.is_empty() && reason.chars().count() <= 300)
+                {
+                    Some(reason) => format!("Privacy scope request was refused: {reason}"),
+                    None => "Privacy scope request was refused".into(),
+                },
+            );
         }
         let snapshot = response["result"].clone();
         if !snapshot.is_object()

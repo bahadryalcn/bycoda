@@ -17,7 +17,7 @@ import {
   baselineFile,
   checkInvariants,
   formatRegressions,
-  oxlintConfig,
+  lintConfigModule,
   parseOxlintOutput,
   scanAll,
   writeBaseline,
@@ -33,11 +33,30 @@ function fixtureRoot(t) {
   cpSync(join(repoRoot, dirname(astGrepConfig)), join(root, dirname(astGrepConfig)), {
     recursive: true,
   });
-  cpSync(join(repoRoot, oxlintConfig), join(root, oxlintConfig));
+  // Vite+ finds the `lint` block in the nearest vite.config.*; the fixture gets the same one.
+  mkdirSync(join(root, dirname(lintConfigModule)), { recursive: true });
+  cpSync(join(repoRoot, lintConfigModule), join(root, lintConfigModule));
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fixture", private: true }));
+  writeFileSync(
+    join(root, "vite.config.mjs"),
+    `import { lint } from "./${lintConfigModule}";\nexport default { lint };\n`,
+  );
+  cpSync(
+    join(repoRoot, "scripts/checks/oxlint-plugin"),
+    join(root, "scripts/checks/oxlint-plugin"),
+    {
+      recursive: true,
+    },
+  );
   mkdirSync(join(root, "scripts", "checks"), { recursive: true });
   cpSync(
     join(repoRoot, "scripts", "checks", "privacy-writer-exceptions.json"),
     join(root, "scripts", "checks", "privacy-writer-exceptions.json"),
+  );
+  // compiler-owns-memo reads the files the compiler skips; the fixture has one.
+  writeFileSync(
+    join(root, "scripts", "checks", "compiler-coverage-baseline.json"),
+    JSON.stringify({ counts: { "src/shared/ui/Skipped.tsx": { "uncompiled-function": 1 } } }),
   );
   symlinkSync(
     join(repoRoot, "node_modules"),
@@ -62,7 +81,7 @@ const tsFixture = [
   "",
 ].join("\n");
 
-test("K-FORMAT rejects feature and app formatter definitions and Intl construction", (t) => {
+test("shared-formatters-only rejects feature and app formatter definitions", (t) => {
   const root = fixtureRoot(t);
   const rejected = [
     "function formatBytes(value: number) { return String(value); }",
@@ -78,25 +97,19 @@ test("K-FORMAT rejects feature and app formatter definitions and Intl constructi
     "const helpers = { formatElapsed() { return ''; } };",
     "class Labels { formatDate() { return ''; } }",
     "const helpers = { formatCompactCount: () => '' };",
-    "const value = new Intl.RelativeTimeFormat('en');",
-    "const value = new Intl.NumberFormat('en');",
-    "const value = new Intl.DateTimeFormat('en');",
-    "const value = new Intl.RelativeTimeFormat;",
-    "const value = new Intl.NumberFormat;",
-    "const value = new Intl.DateTimeFormat;",
   ];
   for (const [index, source] of rejected.entries()) {
     write(root, `src/features/demo/reject-${index}.tsx`, source);
   }
   write(root, "src/app/reject.ts", "function formatDateLabel() { return ''; }");
-  const findings = scanAll(root).filter(({ rule }) => rule === "ts-feature-local-format");
+  const findings = scanAll(root).filter(({ rule }) => rule === "bycoda/shared-formatters-only");
   assert.equal(findings.length, rejected.length + 1);
   for (const [index] of rejected.entries()) {
     assert.equal(findings.filter(({ file }) => file.endsWith(`reject-${index}.tsx`)).length, 1);
   }
 });
 
-test("K-FORMAT accepts shared imports, re-exports, calls and non-formatter functions", (t) => {
+test("shared-formatters-only accepts shared imports, re-exports, calls and non-formatter functions", (t) => {
   const root = fixtureRoot(t);
   write(
     root,
@@ -119,8 +132,31 @@ test("K-FORMAT accepts shared imports, re-exports, calls and non-formatter funct
     write(root, file, "function formatBytes() {}\nconst format = new Intl.NumberFormat();");
   }
   assert.deepEqual(
-    scanAll(root).filter(({ rule }) => rule === "ts-feature-local-format"),
+    scanAll(root).filter(({ rule }) => rule === "bycoda/shared-formatters-only"),
     [],
+  );
+});
+
+test("app-locale-formatting alone owns Intl formatter construction, with or without arguments", (t) => {
+  const root = fixtureRoot(t);
+  const constructions = [
+    "const value = new Intl.RelativeTimeFormat('en');",
+    "const value = new Intl.NumberFormat('en');",
+    "const value = new Intl.DateTimeFormat('en');",
+    "const value = new Intl.RelativeTimeFormat;",
+    "const value = new Intl.NumberFormat;",
+    "const value = new Intl.DateTimeFormat;",
+    "const value = Intl.RelativeTimeFormat('en');",
+  ];
+  for (const [index, source] of constructions.entries()) {
+    write(root, `src/features/demo/intl-${index}.ts`, source);
+  }
+  assert.deepEqual(
+    scanAll(root).map(({ file, rule }) => [file, rule]),
+    constructions.map((_, index) => [
+      `src/features/demo/intl-${index}.ts`,
+      "bycoda/app-locale-formatting",
+    ]),
   );
 });
 
@@ -153,18 +189,18 @@ test("the rule set flags each defect class once and names its rule", (t) => {
   const findings = scanAll(root);
   const rules = findings.map((finding) => finding.rule).sort();
   assert.deepEqual(rules, [
+    "bycoda/app-locale-formatting",
+    "bycoda/grapheme-safe-truncate",
+    "bycoda/handled-background-promise",
+    "bycoda/safe-timestamp-render",
+    "bycoda/utf8-child-locale",
+    "bycoda/whole-sentence-translation",
     "oxlint/no-restricted-imports",
     "rust-accept-inherits-nonblocking",
     "rust-bufreader-lines-on-stream",
     "rust-command-output-without-timeout",
     "rust-emit-broadcast",
     "rust-rename-without-fsync",
-    "ts-date-toisostring-unguarded",
-    "ts-i18n-concat",
-    "ts-lc-all-c",
-    "ts-locale-format-outside-shared",
-    "ts-text-truncate-utf16",
-    "ts-void-promise-without-catch",
   ]);
   for (const finding of findings) {
     assert.ok(finding.message.length > 20, `${finding.rule} explains the alternative`);
@@ -183,9 +219,9 @@ test("shared helpers and tests are exempt, and only counts above the baseline fa
   write(root, "host/demo/sample.ts", "void tasks.tick();\n");
   assert.deepEqual(
     scanAll(root).map((finding) => [finding.file, finding.rule]),
-    [["host/demo/sample.ts", "ts-void-promise-without-catch"]],
+    [["host/demo/sample.ts", "bycoda/handled-background-promise"]],
   );
-  writeBaseline(root, { "host/demo/sample.ts": { "ts-void-promise-without-catch": 1 } });
+  writeBaseline(root, { "host/demo/sample.ts": { "bycoda/handled-background-promise": 1 } });
   assert.ok(existsSync(join(root, baselineFile)));
   assert.equal(checkInvariants({ root }).success, true);
   write(root, "host/demo/sample.ts", "void tasks.tick();\nvoid other.run();\n");
@@ -193,7 +229,7 @@ test("shared helpers and tests are exempt, and only counts above the baseline fa
   assert.equal(result.success, false);
   assert.deepEqual(
     result.regressions.map(({ rule, baseline, count }) => [rule, baseline, count]),
-    [["ts-void-promise-without-catch", 1, 2]],
+    [["bycoda/handled-background-promise", 1, 2]],
   );
   assert.match(formatRegressions(result.regressions), /other\.run\(\)/);
   assert.match(formatRegressions(result.regressions), /ast-grep-ignore/);
@@ -217,7 +253,11 @@ test("oxlint tool diagnostics and malformed output fail with useful detail", () 
   assert.deepEqual(
     parseOxlintOutput(
       JSON.stringify({
-        diagnostics: [{ filename: "src\\x.ts", code: "eslint(no-test)", message: "finding" }],
+        diagnostics: [
+          { severity: "error", filename: "src\\x.ts", code: "eslint(no-test)", message: "finding" },
+          // Lint debt: a rule set to "warn" belongs to the lint baseline, not to this check.
+          { severity: "warning", filename: "src\\x.ts", code: "eslint(no-debt)", message: "debt" },
+        ],
       }),
       1,
     ),
@@ -236,7 +276,7 @@ test("privacy writer violations fail the invariant pipeline even with an empty b
 
 const scanRule = (root, rule) => scanAll(root).filter((finding) => finding.rule === rule);
 
-test("K-ASYNC applies to the Host and packages, and a finally alone does not handle a rejection", (t) => {
+test("handled-background-promise applies to the Host and packages, and a finally alone does not handle a rejection", (t) => {
   const root = fixtureRoot(t);
   write(root, "host/demo/rejected.ts", "void p.finally(g);\nvoid p.then(a).finally(g);\n");
   write(
@@ -253,7 +293,7 @@ test("K-ASYNC applies to the Host and packages, and a finally alone does not han
   // The renderer only logs an unhandled rejection, so the rule does not reach it.
   write(root, "src/features/demo/renderer.ts", "void p.finally(g);\nvoid tasks.tick();\n");
   assert.deepEqual(
-    scanRule(root, "ts-void-promise-without-catch").map(({ file, line }) => [file, line]),
+    scanRule(root, "bycoda/handled-background-promise").map(({ file, line }) => [file, line]),
     [
       ["host/demo/rejected.ts", 1],
       ["host/demo/rejected.ts", 2],
@@ -262,7 +302,7 @@ test("K-ASYNC applies to the Host and packages, and a finally alone does not han
   );
 });
 
-test("K-SUPPRESS requires a reason in the same comment and ignores prose", (t) => {
+test("suppression-has-reason requires a reason in the same comment and ignores prose", (t) => {
   const root = fixtureRoot(t);
   write(
     root,
@@ -292,12 +332,12 @@ test("K-SUPPRESS requires a reason in the same comment and ignores prose", (t) =
   );
   write(root, "src/features/demo/rejected.test.ts", "// @ts-ignore\n");
   assert.deepEqual(
-    scanRule(root, "ts-suppression-without-reason").map(({ file, line }) => [file, line]),
+    scanRule(root, "bycoda/suppression-has-reason").map(({ file, line }) => [file, line]),
     [1, 2, 3, 4, 5, 6, 7].map((line) => ["src/features/demo/rejected.ts", line]),
   );
 });
 
-test("K-CLOCK covers Host scheduler, budget and watchdog modules by name", (t) => {
+test("the Date.now ban covers Host scheduler, budget and watchdog modules by name", (t) => {
   const root = fixtureRoot(t);
   const source = "const started = Date.now();\n";
   for (const file of [
@@ -314,4 +354,79 @@ test("K-CLOCK covers Host scheduler, budget and watchdog modules by name", (t) =
       .sort(),
     ["host/demo/job-scheduler.ts", "host/demo/run-budget.ts", "host/demo/turn-watchdog.ts"],
   );
+});
+
+const performanceRules = (root) =>
+  scanAll(root)
+    .filter(({ rule }) => /^bycoda\/(compiler|effect|shared-resize)/.test(rule))
+    .map(({ file, rule, line }) => [file, rule, line]);
+
+test("compiler-owns-memo rejects manual memoization only where the compiler compiles in full", (t) => {
+  const root = fixtureRoot(t);
+  const source = [
+    "function Row() {",
+    '  "use memo";',
+    "  const a = useMemo(() => 1, []);",
+    "  const b = React.useCallback<() => void>(() => {}, []);",
+    "  // oxlint-disable-next-line bycoda/compiler-owns-memo -- the guard opts this function out",
+    "  const c = useMemo(() => 2, []);",
+    "  return memoize(a, b, c);",
+    "}",
+    "export default memo(Row);",
+    "",
+  ].join("\n");
+  for (const file of [
+    "src/shared/ui/Row.tsx",
+    "src/features/sessions/ui/Row.tsx",
+    "src/app/shell/row.ts",
+    "src/features/demo/ui/Row.tsx",
+    "src/shared/ui/Row.test.tsx",
+    // The compiler skips a function of this file, so its manual memoization stays.
+    "src/shared/ui/Skipped.tsx",
+  ]) {
+    write(root, file, source);
+  }
+  write(root, "src/features/demo/ui/OptOut.tsx", 'function A() {\n  "use no memo";\n}\n');
+  const compiled = [
+    "src/app/shell/row.ts",
+    "src/features/sessions/ui/Row.tsx",
+    "src/shared/ui/Row.tsx",
+  ];
+  assert.deepEqual(
+    performanceRules(root).sort(),
+    [
+      ...compiled.flatMap((file) =>
+        [2, 3, 4, 9].map((line) => [file, "bycoda/compiler-owns-memo", line]),
+      ),
+      ["src/features/demo/ui/OptOut.tsx", "bycoda/compiler-stays-on", 2],
+    ].sort(),
+  );
+});
+
+test("effect-names-its-sync reports every effect hook without a reason and shared-resize-observer every raw observer", (t) => {
+  const root = fixtureRoot(t);
+  const source = [
+    "function Panel() {",
+    "  useEffect(() => {}, []);",
+    "  React.useLayoutEffect(() => {});",
+    "  useInsertionEffect(() => {});",
+    "  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the window listener attached",
+    "  useEffect(() => {",
+    "    const observer = new ResizeObserver(() => {});",
+    "    return observeResize(node, () => {});",
+    "  }, []);",
+    "  useEffectEvent(() => {});",
+    "}",
+    "",
+  ].join("\n");
+  write(root, "src/features/demo/ui/Panel.tsx", source);
+  write(root, "src/features/demo/ui/Panel.test.tsx", source);
+  write(root, "src/shared/lib/observeResize.ts", "const shared = new ResizeObserver(deliver);\n");
+  write(root, "host/demo/panel.ts", source);
+  assert.deepEqual(performanceRules(root).sort(), [
+    ["src/features/demo/ui/Panel.tsx", "bycoda/effect-names-its-sync", 2],
+    ["src/features/demo/ui/Panel.tsx", "bycoda/effect-names-its-sync", 3],
+    ["src/features/demo/ui/Panel.tsx", "bycoda/effect-names-its-sync", 4],
+    ["src/features/demo/ui/Panel.tsx", "bycoda/shared-resize-observer", 7],
+  ]);
 });

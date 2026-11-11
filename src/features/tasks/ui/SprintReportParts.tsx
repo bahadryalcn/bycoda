@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Surface } from "../../../shared/ui/Surface";
 import { Meter, type MeterTone } from "../../../shared/ui/Meter";
 import { SortableDataTable, type DataColumn } from "../../../shared/ui/SortableDataTable";
 import "./sprints.css";
@@ -16,7 +17,7 @@ export function SprintKpi({
   meter?: { value: number; max: number; tone?: MeterTone; valueText: string };
 }) {
   return (
-    <div className="sprint-kpi">
+    <Surface variant="card" padding="md" className="sprint-kpi">
       <span className="sprint-kpi-label">{label}</span>
       <span className="sprint-kpi-value">{value}</span>
       {meter && meter.max > 0 ? (
@@ -29,7 +30,7 @@ export function SprintKpi({
         />
       ) : null}
       {detail ? <span className="sprint-kpi-detail">{detail}</span> : null}
-    </div>
+    </Surface>
   );
 }
 

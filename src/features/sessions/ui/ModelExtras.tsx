@@ -1,3 +1,4 @@
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
 import { Button } from "../../../shared/ui/Button";
@@ -5,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
-import { ChevronDown, CircleHelp, SlidersHorizontal } from "../../../shared/ui/icons";
+import { ChevronDown, SlidersHorizontal } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import {
   defaultModelSettings,
@@ -112,14 +113,12 @@ export function ModelExtrasPanel({
     values,
   );
   const id = useId();
-  const [explained, setExplained] = useState<string | null>(null);
   const renderSetting = (setting: ModelSetting) => {
     const value = effective[setting.id] ?? setting.value;
     const dependent = DEPENDENT.has(setting.id);
     const inactive = isInactive(setting.id);
     const modified = value !== (isDelegationSetting(setting) ? "" : setting.value) && !inactive;
     const descriptionId = `${id}-${setting.id}-help`;
-    const showHelp = explained === setting.id;
     const label = t(settingLabel(setting));
     const update = (next: string) => {
       if (disabled) return;
@@ -154,21 +153,6 @@ export function ModelExtrasPanel({
                 className="size-1.5 shrink-0 rounded-full bg-(--color-accent)"
                 title={t("Changed from default")}
               />
-            )}
-            {setting.description && (
-              <Button
-                className="shrink-0"
-                iconOnly
-                label={t("About {p0}", { p0: label })}
-                variant="ghost"
-                type="button"
-                aria-label={t("About {p0}", { p0: label })}
-                aria-expanded={showHelp}
-                aria-controls={descriptionId}
-                onClick={() => setExplained(showHelp ? null : setting.id)}
-              >
-                <CircleHelp className="icon-xs" />
-              </Button>
             )}
           </span>
           {setting.kind === "toggle" ? (
@@ -226,8 +210,7 @@ export function ModelExtrasPanel({
         {setting.description && (
           <p
             id={descriptionId}
-            hidden={!showHelp}
-            className="mb-1 rounded-md border border-(--ui-pane-border) px-2 py-1.5 text-ui-caption leading-4 text-(--ui-text-secondary)"
+            className="mb-1 px-1.5 text-ui-caption leading-4 text-(--ui-text-muted)"
           >
             {t(setting.description)}
           </p>
@@ -265,11 +248,7 @@ export function ModelExtrasPanel({
       <div className="space-y-3 px-3 pt-2 pb-3">
         {groups.map((group) => (
           <section key={group.id}>
-            {group.title && (
-              <h3 className="mb-1 text-ui-caption font-medium text-(--ui-text-secondary)">
-                {t(group.title)}
-              </h3>
-            )}
+            {group.title && <SectionLabel className="mb-1">{t(group.title)}</SectionLabel>}
             <div className="space-y-0.5">
               {group.settings.map((setting) => renderSetting(setting))}
             </div>

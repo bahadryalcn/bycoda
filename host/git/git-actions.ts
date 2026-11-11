@@ -27,6 +27,7 @@ import { hostGitAction, invalidateHostGitIndex, safeGitPath } from "../workspace
 export const GIT_ACTION_COMMANDS = [
   "git_management_snapshot",
   "git_trust_repository",
+  "git_init",
   "git_stash",
   "git_stash_list",
   "git_stash_action",
@@ -604,6 +605,18 @@ async function runGitActionSerialized(
       "refs/heads/bycoda/t/",
     ]);
     if (managedSources.trim()) throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
+  }
+  if (command === "git_init") {
+    // A new repository may only start where Git finds none, never nested in one.
+    try {
+      await git(root, ["rev-parse", "--is-inside-work-tree"]);
+    } catch (error) {
+      if (!/not a git repository/i.test(String(error))) throw error;
+      await git(root, ["init", "--quiet"]);
+      invalidateHostGitIndex(root);
+      return;
+    }
+    throw new Error("This folder is already inside a Git repository");
   }
   if (command === "git_trust_repository") {
     if (input.confirmed !== true) throw new Error("Repository trust requires owner confirmation");

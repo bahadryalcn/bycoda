@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
@@ -212,7 +213,7 @@ export function StartCrewDialog({
             <span className="text-ui-caption font-medium text-content">
               {t("Access for every member")}
             </span>
-            <div className="min-w-0 rounded-md border border-(--ui-pane-border)">
+            <Surface variant="outline" padding="none" className="min-w-0">
               <AccessPicker
                 value={access}
                 onChange={(mode) => {
@@ -220,7 +221,7 @@ export function StartCrewDialog({
                   if (!pending && !sameRequestRetry && !startedRun) setAccessChoice(mode);
                 }}
               />
-            </div>
+            </Surface>
           </div>
         ) : null}
         <TextareaField

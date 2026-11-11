@@ -33,16 +33,9 @@
   min-width: 0;
 }
 
-.command-section-title {
-  margin: 0;
-  color: var(--color-content);
-  font-size: var(--ui-font-body);
-  font-weight: 500;
-}
-
 .command-muted {
   margin: 0;
-  color: var(--ui-text-secondary);
+  color: var(--ui-text-muted);
   font-size: var(--ui-font-caption);
 }
 
@@ -50,9 +43,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  padding: 0.75rem;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
 }
 
 .command-steps {
@@ -121,9 +111,6 @@
   align-items: flex-start;
   gap: 0.75rem;
   min-width: 0;
-  padding: 0.75rem;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
 }
 
 .command-card-icon {
@@ -172,8 +159,6 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
 }
 
 .command-frame-header {
@@ -231,7 +216,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.75rem;
 }
 
 .command-setup-text {

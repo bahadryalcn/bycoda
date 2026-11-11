@@ -101,10 +101,8 @@ export function useAssistantPresence(port: AssistantPresencePort = nativeAssista
   }
   const hidden = !supported || Boolean(view.status && !view.status.setupComplete);
   const error = localError || view.statusError || view.writeError;
-  const state = assistantPresencePresentation(
-    view.status?.state,
-    Boolean(error || view.pending || busy),
-  ).state;
+  // A failed or pending read keeps the last confirmed status; none at all means offline.
+  const state = assistantPresencePresentation(view.status?.state).state;
   const label = t(
     view.pending || busy ? "Updating availability..." : assistantPresencePresentation(state).label,
   );

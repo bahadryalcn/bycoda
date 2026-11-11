@@ -10,6 +10,8 @@ import { parseRemotePath } from "../../connections/model/remoteProjects";
 import { refreshGenericAcpCatalog } from "../../../integrations/harness/providers/generic-acp/genericAcpAdapter";
 import { probeHarnessAvailability } from "../../../integrations/harness/core/availability";
 import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { Surface } from "../../../shared/ui/Surface";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -80,10 +82,13 @@ function AcpSettingsShell({
   }
 
   return (
-    <section
+    <Surface
+      as="section"
+      variant="card"
+      padding="none"
       id={settingDomId("acp-agents")}
       data-setting-id="acp-agents"
-      className="mt-7 min-w-0 overflow-hidden rounded-(--ui-radius-card) border border-(--ui-settings-group-border)"
+      className="mt-7 min-w-0 overflow-hidden"
       aria-label={t("ACP agents")}
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
@@ -96,7 +101,7 @@ function AcpSettingsShell({
         {action}
       </div>
       {children}
-    </section>
+    </Surface>
   );
 }
 
@@ -221,9 +226,9 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       });
     }
   };
-  const openRegistry = () => {
-    if (!activeRef.current || busyRef.current) return;
-    if (registryOpen) {
+  const toggleRegistry = (open: boolean) => {
+    if (loading || !activeRef.current || busyRef.current) return;
+    if (!open) {
       setRegistryOpen(false);
       return;
     }
@@ -524,94 +529,90 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           data-setting-id="acp-registry"
           className="border-t border-(--ui-tone-neutral-border)"
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-            <span className="text-ui-micro text-(--ui-text-secondary)">
-              {t("Install compatible ACP agents from the registry.")}
-            </span>
-            <Button
-              className="shrink-0"
-              aria-expanded={registryOpen}
-              aria-controls="setting-acp-registry-results"
-              disabled={loading || !!busy}
-              onClick={openRegistry}
-            >
-              {t("Browse ACP Registry")}
-            </Button>
-          </div>
-          <div
-            id="setting-acp-registry-results"
-            className="border-t border-(--ui-tone-neutral-border)"
-            hidden={!registryOpen}
+          <Disclosure
+            variant="row"
+            size="sm"
+            summary={t("Browse ACP Registry")}
+            open={registryOpen}
+            onOpenChange={toggleRegistry}
           >
-            <p className="px-3 py-2 text-ui-caption leading-snug text-(--ui-text-secondary)">
-              {t(
-                "Install downloads an exact package version into isolated host storage and may run package installation scripts. Binary and Python distributions can be configured as local commands.",
-              )}
-            </p>
-            {registryState === "loading" ? (
-              <Alert tone="info">{t("Loading ACP registry…")}</Alert>
-            ) : registryState === "error" ? null : registryState === "loaded" &&
-              registry.length > 0 ? (
-              <div className="divide-y divide-stroke">
-                {registry.map((entry) => (
-                  <div
-                    key={`${entry.id}:${entry.version}`}
-                    className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <OverflowTooltip label={`${entry.name} ${entry.version}`}>
-                        <div className="truncate text-ui-caption font-medium text-content">
-                          {entry.name}{" "}
-                          <span className="text-(--ui-text-secondary)">{entry.version}</span>
-                        </div>
-                      </OverflowTooltip>
-                      <p className="mt-0.5 text-ui-caption leading-snug text-(--ui-text-secondary)">
-                        {entry.supported
-                          ? entry.description
-                          : `${entry.description} ${entry.unsupportedReason ?? ""}`.trim()}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      {entry.supported ? (
-                        <Button
-                          className="shrink-0"
-                          disabled={loading || !!busy}
-                          onClick={() =>
-                            void run(t("Installing {p0}…", { p0: entry.id }), () =>
-                              request("generic_acp_install", {
-                                id: entry.id,
-                                version: entry.version,
-                              }),
-                            )
-                          }
-                        >
-                          {t("Install ")}
-                          {entry.package}
-                        </Button>
-                      ) : null}
-                      {busy === t("Installing {p0}…", { p0: entry.id }) ? (
-                        <Button
-                          className="shrink-0"
-                          variant="danger"
-                          disabled={cancelingInstallId === entry.id}
-                          loading={cancelingInstallId === entry.id}
-                          onClick={() => void cancelInstallation(entry.id)}
-                        >
-                          {cancelingInstallId === entry.id
-                            ? t("Cancelling installation…")
-                            : t("Cancel installation")}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : registryState === "loaded" ? (
-              <p className="px-3 pb-2 text-ui-micro text-(--ui-text-secondary)">
-                {t("No ACP registry entries found.")}
+            <div
+              id="setting-acp-registry-results"
+              className="border-t border-(--ui-tone-neutral-border)"
+            >
+              <p className="px-3 pt-2 text-ui-micro text-(--ui-text-secondary)">
+                {t("Install compatible ACP agents from the registry.")}
               </p>
-            ) : null}
-          </div>
+              <p className="px-3 py-2 text-ui-caption leading-snug text-(--ui-text-secondary)">
+                {t(
+                  "Install downloads an exact package version into isolated host storage and may run package installation scripts. Binary and Python distributions can be configured as local commands.",
+                )}
+              </p>
+              {registryState === "loading" ? (
+                <Alert tone="info">{t("Loading ACP registry…")}</Alert>
+              ) : registryState === "error" ? null : registryState === "loaded" &&
+                registry.length > 0 ? (
+                <div className="divide-y divide-stroke">
+                  {registry.map((entry) => (
+                    <div
+                      key={`${entry.id}:${entry.version}`}
+                      className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <OverflowTooltip label={`${entry.name} ${entry.version}`}>
+                          <div className="truncate text-ui-caption font-medium text-content">
+                            {entry.name}{" "}
+                            <span className="text-(--ui-text-secondary)">{entry.version}</span>
+                          </div>
+                        </OverflowTooltip>
+                        <p className="mt-0.5 text-ui-caption leading-snug text-(--ui-text-secondary)">
+                          {entry.supported
+                            ? entry.description
+                            : `${entry.description} ${entry.unsupportedReason ?? ""}`.trim()}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {entry.supported ? (
+                          <Button
+                            className="shrink-0"
+                            disabled={loading || !!busy}
+                            onClick={() =>
+                              void run(t("Installing {p0}…", { p0: entry.id }), () =>
+                                request("generic_acp_install", {
+                                  id: entry.id,
+                                  version: entry.version,
+                                }),
+                              )
+                            }
+                          >
+                            {t("Install ")}
+                            {entry.package}
+                          </Button>
+                        ) : null}
+                        {busy === t("Installing {p0}…", { p0: entry.id }) ? (
+                          <Button
+                            className="shrink-0"
+                            variant="danger"
+                            disabled={cancelingInstallId === entry.id}
+                            loading={cancelingInstallId === entry.id}
+                            onClick={() => void cancelInstallation(entry.id)}
+                          >
+                            {cancelingInstallId === entry.id
+                              ? t("Cancelling installation…")
+                              : t("Cancel installation")}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : registryState === "loaded" ? (
+                <p className="px-3 pb-2 text-ui-micro text-(--ui-text-secondary)">
+                  {t("No ACP registry entries found.")}
+                </p>
+              ) : null}
+            </div>
+          </Disclosure>
         </div>
       </AcpSettingsShell>
     </div>

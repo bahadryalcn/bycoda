@@ -2,7 +2,25 @@
 import { act, createElement, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { saveGitPanelSection } from "../model/panelSections";
+import { saveGitPanelSection, type SectionRepositoryChoice } from "../model/panelSections";
+
+vi.mock("../../../shared/ui/SearchableSelect", () => ({
+  SearchableSelect: (props: {
+    value: string;
+    options: { value: string; label: string }[];
+    onChange: (value: string) => void;
+  }) =>
+    createElement(
+      "select",
+      {
+        value: props.value,
+        onChange: (event: { target: { value: string } }) => props.onChange(event.target.value),
+      },
+      props.options.map((option) =>
+        createElement("option", { key: option.value, value: option.value }, option.label),
+      ),
+    ),
+}));
 
 vi.mock("./GitStashSection", () => ({
   GitStashSection: () => createElement("section", { "data-section": "stashes" }),
@@ -27,7 +45,7 @@ let host: HTMLDivElement;
 let root: Root;
 const toggleAutoFetch = vi.fn();
 
-function Panel({ repository = false }: { repository?: boolean }) {
+function Panel({ repositories }: { repositories?: SectionRepositoryChoice }) {
   const pane = useRef<HTMLDivElement>(null);
   const preferences = usePanelPreferencesMenu({
     autoFetch: false,
@@ -48,7 +66,7 @@ function Panel({ repository = false }: { repository?: boolean }) {
       hasChanges: false,
       onOpenCommit: vi.fn(),
       paneRef: pane,
-      repository,
+      repositories,
     }),
   );
 }
@@ -119,9 +137,28 @@ it("leaves text fields and rows with their own menus alone", async () => {
   expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
-it("starts a repository row's graph folded while the single panel keeps it open", async () => {
+it("offers the repository selector only for an overview and while a section is shown", async () => {
   await act(async () => root.render(createElement(Panel)));
+  expect(host.querySelector("select")).toBeNull();
+  const onChange = vi.fn();
+  const repositories = {
+    value: "",
+    onChange,
+    options: [
+      { value: "", label: "Auto · api" },
+      { value: "/mobile", label: "mobile" },
+    ],
+  };
+  await act(async () => root.render(createElement(Panel, { repositories })));
+  const select = host.querySelector("select")!;
   expect(host.querySelector('[data-section="graph"]')!.getAttribute("aria-expanded")).toBe("true");
-  await act(async () => root.render(createElement(Panel, { key: "row", repository: true })));
-  expect(host.querySelector('[data-section="graph"]')!.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => {
+    select.value = "/mobile";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(onChange).toHaveBeenCalledWith("/mobile");
+  saveGitPanelSection("stashes", false);
+  saveGitPanelSection("graph", false);
+  await act(async () => root.render(createElement(Panel, { repositories })));
+  expect(host.querySelector("select")).toBeNull();
 });

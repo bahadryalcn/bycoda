@@ -1,6 +1,8 @@
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { AppWindow, Globe } from "../../../shared/ui/icons";
+import { Surface } from "../../../shared/ui/Surface";
 
 /** The optional Connections step: this computer, remote computers and the manager. */
 export function OnboardingConnections({
@@ -13,22 +15,24 @@ export function OnboardingConnections({
   return (
     <>
       <div className="onboarding-heading">
-        <h3>{t("Connect your computers")}</h3>
+        <Heading size="page" level={3}>
+          {t("Connect your computers")}
+        </Heading>
         <p>
           {t("Work here, connect another computer, or pair your phone. This step is optional.")}
         </p>
       </div>
       <div className="onboarding-scroll">
-        <div className="onboarding-card">
+        <Surface variant="card" padding="md" className="onboarding-card">
           <AppWindow aria-hidden className="icon-lg" />
           <div>
             <strong>{t("This computer")}</strong>
             <small>{t("Your local projects and agents")}</small>
           </div>
           <span className="onboarding-status">{t("Local")}</span>
-        </div>
+        </Surface>
         {remotes.map((machine) => (
-          <div className="onboarding-card" key={machine.id}>
+          <Surface variant="card" padding="md" className="onboarding-card" key={machine.id}>
             <Globe aria-hidden className="icon-lg" />
             <div>
               <strong>{machine.name}</strong>
@@ -37,7 +41,7 @@ export function OnboardingConnections({
             <Button onClick={onManage} variant="secondary" type="button">
               {t("Manage")}
             </Button>
-          </div>
+          </Surface>
         ))}
         <div className="onboarding-actions">
           <Button onClick={onManage} variant="secondary" type="button">

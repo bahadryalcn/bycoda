@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from "react";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Eye } from "../../../shared/ui/icons";
@@ -138,9 +139,9 @@ export function CrewWorkSessions({
   return (
     <>
       {crewSessionCount(run) > 1 ? (
-        <h4 className="pb-1 pt-4 text-ui-caption font-medium text-(--ui-text-secondary)">
+        <SectionLabel as="h4" className="pb-1 pt-4">
           {t("Sessions")}
-        </h4>
+        </SectionLabel>
       ) : (
         <div className="pt-3" />
       )}

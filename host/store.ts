@@ -3,6 +3,12 @@ import {
   DELEGATION_PARENT_KEY,
 } from "../src/shared/model/host-contracts/delegation";
 import { checkpointWrites } from "./storage/checkpoint-writes";
+import {
+  assertNextRevision,
+  isStorageConstraintFailure,
+  persistenceRetryDelay,
+  reportPersistenceFailure,
+} from "./storage/session-revision";
 import { trimSessionEvents } from "./storage/event-retention";
 import { scheduleHostDbMaintenance } from "./storage/host-db-maintenance";
 import { SessionReadProcesses } from "./session-read-process";
@@ -23,6 +29,7 @@ import { ProjectIdentityFence } from "./projects/project-identity-fence";
 import { ChangeSignal } from "./changeSignal";
 import { cachedProviderHistory, carryProviderHistory } from "./sessions/provider-history-cache";
 import { hostTurnWait } from "./sessions/session-waits";
+import { sessionNotFound } from "./sessions/session-authority";
 import { assistantJobSessionBelongs } from "./assistant/work/assistant-job-scope";
 import type { AssistantJob } from "../src/shared/model/host-contracts/assistant";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -93,6 +100,10 @@ const CHECKPOINT_MS = 1000;
 /** Latest unwritten state of a session plus its event rows, in revision order. */
 interface PendingWrite {
   authorityBlocked?: boolean;
+  /** Consecutive failed checkpoints; spaces the retries out. */
+  failures?: number;
+  /** A constraint refused these rows: the timer stops, the state stays in memory. */
+  unwritable?: boolean;
   value: HostSession;
   events: {
     revision: number;
@@ -1419,7 +1430,7 @@ export class HostStore {
       const pending = this.pending.get(id);
       if (pending) return pending.value.status;
       const row = await this.db.prepare("SELECT status FROM session_state WHERE id=?").get(id);
-      if (!row) throw new Error("Session not found on this machine");
+      if (!row) throw sessionNotFound();
       return String(row.status);
     });
   }
@@ -1884,9 +1895,12 @@ export class HostStore {
             input.session.id,
             input.authorityGeneration,
             async (authorityGeneration) => {
+              const previous = await this.find(input.session.id);
+              // Refused before anything is buffered or written: a stale revision must
+              // never reach the pending rows, where every later write would replay it.
+              assertNextRevision(input.session.id, previous?.revision, input.revision);
               this.bumpChangeVersion();
               this.touchProject(input.projectId);
-              const previous = await this.find(input.session.id);
               // Legacy mirrors may omit display provenance. They cannot erase
               // or replace a Host-accepted author on the same block identity.
               const previousIndex = previous ? indexBlocks(previous.session.blocks) : undefined;
@@ -2020,12 +2034,23 @@ export class HostStore {
       ),
     );
   }
-  /** Writes every session whose latest state is still only in memory. */
+  /** Writes every session whose latest state is still only in memory. A session that
+   * cannot be written never keeps the others from being written; every failure is reported. */
   async flushAll(): Promise<void> {
     return this.db.storeScope(async () => {
-      for (const id of [...this.pending.keys()]) await this.flushPending(id);
+      const failures: unknown[] = [];
+      const attempt = async (work: () => Promise<void>) => {
+        try {
+          await work();
+        } catch (error) {
+          failures.push(error);
+        }
+      };
+      for (const id of [...this.pending.keys()]) await attempt(() => this.flushPending(id));
       for (const row of await this.db.prepare("SELECT session_id FROM session_journal").all())
-        await this.write(await this.session(String(row.session_id)), []);
+        await attempt(async () => this.write(await this.session(String(row.session_id)), []));
+      if (failures.length === 1) throw failures[0];
+      if (failures.length) throw new AggregateError(failures, "Several sessions failed to flush.");
     });
   }
   private async flushPending(id: string): Promise<void> {
@@ -2035,6 +2060,8 @@ export class HostStore {
       await this.writeJournal(entry.value, entry.events, entry);
     } catch (error) {
       if (error instanceof HostAuthorityFenceError) entry.authorityBlocked = true;
+      entry.failures = (entry.failures ?? 0) + 1;
+      entry.unwritable = isStorageConstraintFailure(error);
       this.restore(entry);
       throw error;
     }
@@ -2077,21 +2104,23 @@ export class HostStore {
     this.arm(id, entry);
   }
   private arm(id: string, entry: PendingWrite): void {
-    if (entry.timer || entry.authorityBlocked || this.closePromise || this.db.restartRequired)
-      return;
+    const blocked = entry.authorityBlocked || entry.unwritable;
+    if (entry.timer || blocked || this.closePromise || this.db.restartRequired) return;
+    // Failed checkpoints are retried with growing delays; a refused constraint never is.
+    const delay = persistenceRetryDelay(entry.failures ?? 0, CHECKPOINT_MS);
     entry.timer = this.db.outsideScope(() =>
       setTimeout(async () => {
         entry.timer = undefined;
         try {
           await this.db.storeScope(() => this.flushPending(id));
         } catch (error) {
-          // Stays pending and is retried; a timer must never take the host down.
-          console.error(
-            "Session checkpoint failed:",
-            error instanceof Error ? error.message : "unknown error",
+          // Stays pending; a timer must never take the host down.
+          const reason = error instanceof Error ? error.message : "unknown error";
+          reportPersistenceFailure(
+            `Session ${id} checkpoint failed${entry.unwritable ? "; not retrying" : ""}: ${reason}`,
           );
         }
-      }, CHECKPOINT_MS),
+      }, delay),
     );
     entry.timer.unref?.();
   }

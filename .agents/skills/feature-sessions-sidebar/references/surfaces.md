@@ -25,7 +25,7 @@ compact navigation.
 | Collection and status semantics    | `src/features/sessions/model/sessionListDisplay.ts`, `sessionStatusOrder.ts`, `session.ts` in that directory                                                                                  |
 | Durable history and deletion       | `src/features/sessions/data/sessionHistory.ts`, `sessionStore.ts`; `src/features/sessions/model/confirmSessionDelete.ts`                                                                      |
 | Unsent composer presence           | Search `useUnsentComposerDraft` and `subscribeComposerDraftPresence` in `src/`; preserve mounted and restored draft ownership                                                                 |
-| Repository/update footer           | Search `SidebarUpdateFooter` in `src/app/shell/`; `src/app/model/updateNotice.ts`, `src/app/workspace/surfaces/useUpdateNotices.ts` and adjacent tests; `tests/browser/update-footer.spec.ts` |
+| Repository/update footer           | Search `SidebarUpdateFooter` in `src/app/shell/`; `src/app/model/updateNotice.ts`, `src/app/workspace/surfaces/useUpdateNotices.ts` and adjacent tests; `tests/browser/app-shell/update-footer.spec.ts` |
 | Remote lists/navigation            | `src/features/connections/model/remoteRailSessions.ts`, `remoteSessionLists.ts`, `remoteSessionNavigation.ts`, `remoteSessionActions.ts`, `adoptedSessions.ts` in that directory              |
 | Operation boundaries               | Follow actual list callers to Host/native dispatch; use session-recovery, archive and managed-workspaces contracts for their operations                                                       |
 | Focused checks                     | `src/features/sessions/model/draftCache.test.ts`; search current `tests/browser/` compact-navigation and project-workspace-navigation scenarios                                               |
@@ -54,7 +54,7 @@ Provider-history projection: `src/features/sessions/model/sessionProviderHistory
 `src-tauri/src/session_store/provider_history.rs`, `host/store.ts`,
 `host/desktop/desktopSessions.ts`; preserve optional summary metadata in remote protocol mappings.
 Project identity: `src/app/shell/useSessionProjectAppearance.tsx` reuses rail appearance
-resolvers and ActionHost ground. Layout/interaction fixtures: `tests/browser/session-row-layout.spec.ts`.
+resolvers and ActionHost ground. Layout/interaction fixtures: `tests/browser/sessions/session-row-layout.spec.ts`.
 
 Global Last Sessions workspace: `src/features/sessions/hooks/useGlobalRecentSessions.ts`
 and `src/features/sessions/model/globalRecentSessions.ts` combine the rolling seven-day

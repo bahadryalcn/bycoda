@@ -650,7 +650,7 @@ export async function measure(options) {
   return { path, report };
 }
 
-const help = `Read-only bycoda resource sampler (Node 22+; no dependencies for OS sampling).
+const help = `Read-only bycoda resource sampler (Node 24+; no dependencies for OS sampling).
 Usage: node scripts/checks/measure-performance.mjs [options]
   --output path                JSON output; refuses to overwrite
   --seconds 15 --interval-ms 1000

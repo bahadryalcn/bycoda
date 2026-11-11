@@ -12,6 +12,7 @@ import {
   syncTranscriptViewport,
   WHEEL_HOLD_MS,
 } from "./transcriptScroll";
+import { deferDuringResize, resizeGestureActive } from "../../../shared/lib/resizeGesture";
 import { nextReadingHistory } from "./composerReading";
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { useTurnScrollAnchor } from "./useTurnScrollAnchor";
@@ -408,11 +409,18 @@ export function useTranscriptFollow({
     const el = scrollerEl;
     const inner = el?.querySelector("[data-transcript-content]");
     if (!visible || !el || !inner) return;
+    // A live resize runs this once more at its end for the padding refresh and bookkeeping.
+    const settle = deferDuringResize(() => onResize());
     const onResize = (entries?: ResizeObserverEntry[]) => {
       // A parked transcript's scroller is detached and measures zero.
       if (!el.isConnected) return;
+      const live = resizeGestureActive();
       // The padding only changes with the container, never with its content.
-      syncTranscriptViewport(el, !entries || entries.some((entry) => entry.target === el));
+      syncTranscriptViewport(
+        el,
+        !live && (!entries || entries.some((entry) => entry.target === el)),
+      );
+      if (live) settle();
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       if (stickToBottom.current) {
         if (performance.now() < wheelHold.current) return;
@@ -422,6 +430,8 @@ export function useTranscriptFollow({
         return;
       }
       distanceFromBottom.current = distance;
+      // Anchor bookkeeping walks every turn; the reader is not moving mid-drag.
+      if (live) return;
       rememberScroll(el);
       setShowJump(!isNearBottom(el));
     };
@@ -429,7 +439,10 @@ export function useTranscriptFollow({
     observer.observe(inner);
     observer.observe(el);
     onResize();
-    return () => observer.disconnect();
+    return () => {
+      settle.cancel();
+      observer.disconnect();
+    };
   }, [rememberScroll, scrollerEl, setShowJump, visible]);
 
   useTurnScrollAnchor(scrollerEl, visible, stickToBottom, rememberScroll);

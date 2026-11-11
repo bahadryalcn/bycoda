@@ -207,7 +207,16 @@ function sessionMeta(tab: Tab): string {
   return "";
 }
 
-export function tabCopy(tab: Tab): {
+export function tabCopy(tab: Tab) {
+  return buildTabCopy(tab, t("New session"));
+}
+
+// Takes the translated placeholder so components can pass the `useT()` text instead of the
+// module `t`, which React Compiler cannot see change.
+export function buildTabCopy(
+  tab: Tab,
+  untitled: string,
+): {
   headline: string;
   meta: string;
   tooltip: string;
@@ -216,7 +225,6 @@ export function tabCopy(tab: Tab): {
   const conversation = tab.title.trim();
   const file = tab.files[0] ?? "";
   const sessions = sessionMeta(tab);
-  const untitled = t("New session");
 
   let headline: string;
   const metaParts: string[] = [];
@@ -363,7 +371,7 @@ function TitleTabItem({
   itemRef?: (el: HTMLDivElement | null) => void;
 }) {
   const t = useT();
-  const { headline, meta, tooltip } = tabCopy(tab);
+  const { headline, meta, tooltip } = buildTabCopy(tab, t("New session"));
   const fileIcon = tab.files[0];
   const accessibleTooltip = [
     tooltip,
@@ -834,7 +842,7 @@ function TitleBarComponent({
               : []),
           ]
         : [],
-    [layout, splitRightShortcut, splitDownShortcut, maximizeShortcut],
+    [layout, splitRightShortcut, splitDownShortcut, maximizeShortcut, t],
   );
   const onPickLayoutMenu = (id: string) => {
     setLayoutMenu(null);
@@ -876,10 +884,12 @@ function TitleBarComponent({
           onMove: (tabId, event) => {
             if (onMoveToNewWindow && popOutTab(tabId)) {
               const source = tabs.find((tab) => tab.id === tabId);
-              nativeTabDrag.current ??= beginWindowTabDrag(
-                source?.fileDragId ? `file:${source.fileDragId}` : tabId,
-                source?.paneIds,
-              );
+              // Not `??=`: React Compiler cannot lower that operator.
+              if (!nativeTabDrag.current)
+                nativeTabDrag.current = beginWindowTabDrag(
+                  source?.fileDragId ? `file:${source.fileDragId}` : tabId,
+                  source?.paneIds,
+                );
               nativeTabDrag.current.move(event);
             }
             if (
@@ -996,7 +1006,7 @@ function TitleBarComponent({
   const sortable = useAnimatedReorder(tabIds, onReorder, "x", externalTabDrop, {
     label: (tabId) => {
       const tab = tabs.find((entry) => entry.id === tabId);
-      return tab ? tabCopy(tab).headline : "";
+      return tab ? buildTabCopy(tab, t("New session")).headline : "";
     },
   });
   const paneToTabDrop = useExternalTitleTabDrop();
@@ -1404,7 +1414,7 @@ function TitleBarComponent({
           y={tabMenu.y}
           width={244}
           items={contextMenuItems}
-          ariaLabel={`Tab actions for ${tabCopy(contextTab).headline}`}
+          ariaLabel={`Tab actions for ${buildTabCopy(contextTab, t("New session")).headline}`}
           onPick={onPickTabMenu}
           onClose={() => setTabMenu(null)}
         />

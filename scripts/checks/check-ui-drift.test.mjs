@@ -11,6 +11,10 @@ import {
   rules,
   scanFile,
 } from "./check-ui-drift.mjs";
+import { appearanceRules } from "./ui-drift-appearance.mjs";
+
+// The appearance ownership rules have their own tests (ui-drift-appearance.test.mjs).
+const notAppearance = (rule) => !(rule in appearanceRules);
 
 const arcCss = `.bycoda-arc {\n  --radius-control: 4px;\n  --space-2: 0.375rem;\n}\n`;
 const indexCss = `@source "../node_modules/x/dist/*.js";\n:root { --ui-surface: red; --layer-popover: 80; --color-accent: red; --motion-duration-fast: 1s; --motion-ease-out: ease; --motion: cubic-bezier(0, 0, 1, 1); }\n.a { transition: opacity 120ms ease; z-index: 50; }\n`;
@@ -22,7 +26,9 @@ function rulesOf(file, text, extra = []) {
     ...extra,
     [file, text],
   ]);
-  return scanFile(file, text, collectDefinitions(sources)).map((finding) => finding.rule);
+  return scanFile(file, text, collectDefinitions(sources))
+    .map((finding) => finding.rule)
+    .filter(notAppearance);
 }
 
 test("flags token drift but keeps defined, inline-set and Arc-rooted variables", () => {
@@ -201,7 +207,9 @@ const fakeCatalog = [
 
 function catalogRulesOf(file, text, catalog = fakeCatalog) {
   const definitions = collectDefinitions(new Map([["src/styles/arc.css", arcCss]]), "", catalog);
-  return scanFile(file, text, definitions).map((finding) => finding.rule);
+  return scanFile(file, text, definitions)
+    .map((finding) => finding.rule)
+    .filter(notAppearance);
 }
 
 test("catalog tokens become raw-tag and raw-role rules in app scope only", () => {

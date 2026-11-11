@@ -85,7 +85,7 @@ it("lists the steps in order with what the Host will do with each", () => {
 it("offers Approve only on steps that still need it and approves that one step", () => {
   const { onApprove } = render();
   expect(steps()[0]?.querySelector("button")?.textContent).toBe("Approve");
-  expect(steps()[1]?.querySelector("button")?.textContent).toBe("Technical details");
+  expect(steps()[1]?.querySelector("button")).toBeNull();
   const approve = [...steps()[2]!.querySelectorAll("button")].find(
     (b) => b.textContent === "Approve",
   );
@@ -150,10 +150,7 @@ it("stops asking for approval once a step has finished", () => {
   expect(onApprove).toHaveBeenCalledExactlyOnceWith(["s3"]);
 });
 
-it("keeps the action name behind Technical details", () => {
+it("shows the action name on each step", () => {
   render();
-  expect(element.querySelector("code")).toBeNull();
-  const toggle = steps()[0]!.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
-  act(() => toggle?.click());
   expect(steps()[0]?.querySelector("code")?.textContent).toBe("replies.send");
 });

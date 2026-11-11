@@ -3,6 +3,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useMemo, useState } from "react";
 import { formatDate, formatNumber, t, useLocale } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Heading } from "../../../shared/ui/Heading";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
@@ -71,7 +72,9 @@ export function QuotaHistory({
     <section className="usage-panel">
       <div className="usage-section-heading">
         <div className="flex items-center gap-2">
-          <h3>{t("Limit history")}</h3>
+          <Heading size="item" level={3}>
+            {t("Limit history")}
+          </Heading>
           <InfoPopover label={t("About limit history")}>
             {t(
               "Actual account-wide readings, collected when limits refresh. History starts with collection; gaps and resets are not interpolated. Project and model filters do not apply to account quotas.",

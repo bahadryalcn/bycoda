@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "../../shared/ui/icons";
 import { createContext, useContext, useState } from "react";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
+import { ErrorDetails, errorHeadline, fitsOneLine } from "../../shared/ui/ErrorDetails";
 import { setNativeFullscreen } from "../../platform/tauri/fullscreen";
 import { refreshWindowState, useNativeWindowState } from "../../platform/tauri/windowState";
 
@@ -58,7 +59,8 @@ function NativeWindowControls() {
         <TransientNotice
           tone="danger"
           durationMs={null}
-          message={error}
+          message={errorHeadline(error)}
+          actions={fitsOneLine(error) ? undefined : <ErrorDetails detail={error} />}
           onDismiss={() => setError(null)}
         />
       ) : null}

@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
@@ -182,8 +183,7 @@ export function ConnectAccountDialog({
           required
           onChange={(event) => setName(event.currentTarget.value)}
         />
-        <fieldset className="social-checks">
-          <legend>{t("Projects that may use it")}</legend>
+        <FieldGroup legend={t("Projects that may use it")} layout="row">
           {projects.map((project) => (
             <Checkbox
               checked={picked.includes(project.id)}
@@ -199,7 +199,7 @@ export function ConnectAccountDialog({
               className="social-check"
             />
           ))}
-        </fieldset>
+        </FieldGroup>
         <Button variant="link" size="sm" onClick={() => setKind("email")}>
           {t("Add an email account instead")}
         </Button>

@@ -16,7 +16,9 @@ and contributors. Preserve existing work and use the established locations.
 | Host runtime and its tests | `host/` |
 | Expo mobile routes, feature code, shared UI, tests and package tooling (separate nested Git repository; ignored here) | `mobile/` |
 | Native application and Tauri configuration | `src-tauri/` |
-| Browser scenarios, fixtures, servers, and fixture configurations | `tests/browser/` |
+| Browser scenarios, fixtures, servers, and fixture configurations, one folder per feature | `tests/browser/<feature>/` |
+| Shared browser test helpers | `tests/browser/support/` |
+| Browser suite manifest and shared runner configuration | `tests/browser/` |
 | Offline model behavior cases, deterministic graders and harness | `evals/` |
 | Application workspace entrypoints and independent commands | `apps/<application>/` |
 | Reusable private workspace modules and their public exports/tests | `packages/<package>/` |

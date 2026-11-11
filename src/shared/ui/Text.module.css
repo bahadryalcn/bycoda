@@ -1,0 +1,92 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* Root placement stays caller-adjustable (F3 style-ownership contract). */
+@layer components {
+  .text {
+    margin: 0;
+  }
+  .text[data-truncate] {
+    min-inline-size: 0;
+  }
+}
+
+/* Size sets the font size and its line height together. */
+.text[data-size="micro"] {
+  font-size: var(--ui-font-micro);
+  line-height: var(--ui-leading-micro);
+}
+.text[data-size="caption"] {
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+}
+.text[data-size="secondary"] {
+  font-size: var(--ui-font-secondary);
+  line-height: var(--ui-leading-secondary);
+}
+.text[data-size="body"] {
+  font-size: var(--ui-font-body);
+  line-height: var(--ui-leading-body);
+}
+
+.text[data-tone="secondary"] {
+  color: var(--ui-text-secondary);
+}
+.text[data-tone="muted"] {
+  color: var(--ui-text-muted);
+}
+.text[data-tone="primary"] {
+  color: var(--color-content);
+}
+.text[data-tone="disabled"] {
+  color: var(--ui-text-disabled);
+}
+.text[data-tone="neutral"] {
+  color: var(--ui-tone-neutral-fg);
+}
+.text[data-tone="accent"] {
+  color: var(--ui-tone-accent-fg);
+}
+.text[data-tone="info"] {
+  color: var(--ui-tone-info-fg);
+}
+.text[data-tone="success"] {
+  color: var(--ui-tone-success-fg);
+}
+.text[data-tone="warning"] {
+  color: var(--ui-tone-warning-fg);
+}
+.text[data-tone="danger"] {
+  color: var(--ui-tone-danger-fg);
+}
+
+.text[data-weight="regular"] {
+  font-weight: 400;
+}
+.text[data-weight="medium"] {
+  font-weight: 500;
+}
+
+/* One line with an ellipsis. */
+.text[data-truncate] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An explicit leading wins over the size's own line height. */
+.text[data-leading="none"] {
+  line-height: 1;
+}
+.text[data-leading="tight"] {
+  line-height: 1.25;
+}
+.text[data-leading="snug"] {
+  line-height: 1.375;
+}
+.text[data-leading="normal"] {
+  line-height: 1.5;
+}
+.text[data-leading="relaxed"] {
+  line-height: 1.625;
+}

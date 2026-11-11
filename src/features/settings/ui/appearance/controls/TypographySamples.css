@@ -73,10 +73,7 @@
   min-inline-size: 0;
 }
 .typography-preview-label {
-  margin: 0;
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-  color: var(--ui-text-muted);
+  min-block-size: 0;
 }
 
 /* Interface specimen */

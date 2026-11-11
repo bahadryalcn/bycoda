@@ -105,9 +105,8 @@ async function fixture(bom = false) {
     inspectable: true,
     unavailable: false,
   };
-  const invoke = vi.fn(
-    async (command: string, _args?: Record<string, unknown>): Promise<unknown> =>
-      command.endsWith("_list") ? page : command.endsWith("_status") ? status : read,
+  const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>): Promise<unknown> =>
+    command.endsWith("_list") ? page : command.endsWith("_status") ? status : read,
   );
   const api = createHostBufferRecovery({ invoke, available: () => true });
   return {

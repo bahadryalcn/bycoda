@@ -4,6 +4,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Heading } from "../../../shared/ui/Heading";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { AiIdea, CircleAlert, Lock, MoreHorizontal, Star } from "../../../shared/ui/icons";
@@ -70,7 +71,9 @@ function Brand({ title, text, centered }: { title: string; text: string; centere
     <div className={`${styles.brand} ${centered ? styles.brandCentered : ""}`}>
       <img className={styles.logo} src={PRODUCT_IDENTITY.logoSrc} alt="" />
       <div>
-        <h2 className={styles.brandTitle}>{title}</h2>
+        <Heading size="item" level={2} className={styles.brandTitle}>
+          {title}
+        </Heading>
         <p className={styles.brandText}>{text}</p>
       </div>
     </div>

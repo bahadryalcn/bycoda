@@ -60,6 +60,7 @@ describe("attachmentPresentation", () => {
       kind: "folder",
       label: "Folder",
       extension: "",
+      typeExtension: null,
     });
   });
 
@@ -74,6 +75,29 @@ describe("attachmentPresentation", () => {
       kind: "pdf",
       label: "PDF",
       extension: "pdf",
+      typeExtension: null,
     });
+  });
+
+  it("classifies spreadsheets and shows the file extension as the type", () => {
+    expect(attachmentPresentation(file("data.csv", "text/csv"))).toEqual({
+      kind: "spreadsheet",
+      label: "Spreadsheet",
+      extension: "csv",
+      typeExtension: "CSV",
+    });
+    expect(attachmentPresentation(file("data.tsv")).kind).toBe("spreadsheet");
+    expect(attachmentPresentation(file("book", "application/vnd.ms-excel")).kind).toBe(
+      "spreadsheet",
+    );
+    expect(
+      attachmentPresentation(
+        file("book.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+      ).typeExtension,
+    ).toBe("XLSX");
+    expect(attachmentPresentation(file("a.json", "application/json")).typeExtension).toBe("JSON");
+    expect(attachmentPresentation(file("a.zip", "application/zip")).typeExtension).toBe("ZIP");
+    expect(attachmentPresentation(file("README", "text/plain")).typeExtension).toBeNull();
+    expect(attachmentPresentation(file("report.pdf")).typeExtension).toBeNull();
   });
 });

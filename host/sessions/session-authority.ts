@@ -60,6 +60,20 @@ export class SessionAuthorityUnavailable extends Error {
   }
 }
 
+/**
+ * The caller named a session this machine does not store. Throw it only from an
+ * existence check that runs before any effect: the transport then reports the
+ * request as not sent instead of an unknown outcome. Clients match the message.
+ */
+export function sessionNotFound(): HostDomainRefusalError {
+  return new HostDomainRefusalError(
+    "COMMAND_INVALID",
+    "validation",
+    false,
+    "Session not found on this machine",
+  );
+}
+
 /** How long a metadata read still stands when the desktop database moved after it. */
 const PREPARED_FRESH_MS = 5_000;
 
@@ -92,7 +106,7 @@ export function createSessionAuthorityResolver(
         // The second read stands even if the database moved again: a running
         // desktop keeps writing, and the read itself is one consistent snapshot.
         if (attempt === 0 && desktop.fingerprint() !== fingerprint) continue;
-        if (!value) throw new Error("Session not found on this machine");
+        if (!value) throw sessionNotFound();
         prepared.delete(id);
         prepared.set(id, { fingerprint, cwd: value.cwd, provider: value.harness, at: Date.now() });
         while (prepared.size > 512) prepared.delete(prepared.keys().next().value!);
@@ -115,6 +129,7 @@ export function createSessionAuthorityResolver(
         desktop.samePath(project.cwd, value.cwd),
       );
       if (stale()) throw new SessionAuthorityUnavailable();
+      // Not the typed refusal: this check is also repeated after an effect ran.
       if (!project || (value.provider !== "acp" && !providers.includes(value.provider)))
         throw new Error("Session not found on this machine");
       return { projectId: project.id, provider: value.provider };
@@ -137,4 +152,5 @@ export function assertSessionGrantScope(expected: unknown, current: SessionGrant
     throw new Error("Session grant scope changed; reconnect this session explicitly.");
 }
 import type { DesktopSessions } from "../desktop/desktopSessions";
+import { HostDomainRefusalError } from "../domains/context";
 import type { HostStore } from "../store";

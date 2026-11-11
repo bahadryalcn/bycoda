@@ -1,3 +1,4 @@
+import { deferDuringResize, type DeferredResizeWork } from "../../../shared/lib/resizeGesture";
 import { editorSurfaceActive, observeEditorSurface } from "./editorSurfaceVisibility";
 import {
   buildRulerSpans,
@@ -61,6 +62,7 @@ export class OverviewRuler {
   readonly dom = document.createElement("div");
   private readonly canvas = document.createElement("canvas");
   private readonly resizeObserver: ResizeObserver | null;
+  private readonly scheduleSettled: DeferredResizeWork;
   private frame = 0;
   private dirty = true;
   private hasMarks = false;
@@ -97,8 +99,11 @@ export class OverviewRuler {
       this.dom.addEventListener("lostpointercapture", this.onPointerEnd);
       this.dom.addEventListener("wheel", this.onWheel, { passive: false });
     }
+    // A pane drag resizes the strip every frame; repainting then reallocates the canvas each
+    // time. The stretched canvas is a fair stand-in until the drag ends.
+    this.scheduleSettled = deferDuringResize(this.schedule);
     this.resizeObserver =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(this.schedule);
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(this.scheduleSettled);
     this.resizeObserver?.observe(this.dom);
   }
 
@@ -121,6 +126,7 @@ export class OverviewRuler {
     if (this.frame) cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.resizeObserver?.disconnect();
+    this.scheduleSettled.cancel();
     this.stopObserving?.();
     this.releasePointer();
     this.dom.remove();
@@ -169,6 +175,8 @@ export class OverviewRuler {
     if (!context) return;
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     context.clearRect(0, 0, width, track);
+    // One style resolution per frame; it is the expensive read here.
+    const style = getComputedStyle(this.dom);
 
     if (this.options.band) {
       const band = viewportBand(
@@ -178,13 +186,12 @@ export class OverviewRuler {
         track,
       );
       if (band) {
-        context.fillStyle = getComputedStyle(this.dom).getPropertyValue("--ui-surface-selected");
+        context.fillStyle = style.getPropertyValue("--ui-surface-selected");
         context.fillRect(0, band.top, width, band.height);
       }
     }
     const left = this.options.padLeft ?? 1;
     const inner = Math.max(1, width - left - (this.options.padRight ?? 1));
-    const style = getComputedStyle(this.dom);
     const forcedColors = window.matchMedia("(forced-colors: active)").matches;
     for (const span of this.spans) {
       context.fillStyle = forcedColors

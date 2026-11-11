@@ -36,7 +36,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 ## Focused checks
 
 Run `pnpm exec vitest run src/features/inbox/ui/JiraBoardView.test.ts src/features/inbox/model/jiraBoard.test.ts src/features/inbox/model/jiraBoardProtocol.test.ts` plus changed Inbox/settings/native consumers.
-Use `tests/browser/jira-board.spec.ts` for real-pointer coverage; ensure detail opening is wired rather than a no-op callback. Cover below-threshold click, actual drag, touch pan, keyboard Move, narrow back and partial move failure.
+Use `tests/browser/inbox/jira-board.spec.ts` for real-pointer coverage; ensure detail opening is wired rather than a no-op callback. Cover below-threshold click, actual drag, touch pan, keyboard Move, narrow back and partial move failure.
 
 ## Read when needed
 

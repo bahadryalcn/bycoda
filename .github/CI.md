@@ -51,8 +51,7 @@ see [quality tooling](../docs/reference/quality.md).
 The pnpm store key includes namespace, OS, architecture, Node, pnpm, manifest/lock/
 workspace files, `.npmrc`, `.pnpmfile.cjs`, and patches. Fallback cache restores
 reusable downloads; installation still validates the lockfile. Checkouts do not
-share whole `node_modules` or mutable build output. Source/test jobs use Node 24;
-package jobs retain explicit Node 22. Cargo caches remain separate, with native/RPM
+share whole `node_modules` or mutable build output. Every job uses Node 24. Cargo caches remain separate, with native/RPM
 cache writes restricted to main. No remote test-result cache is enabled.
 
 ## Local entry points

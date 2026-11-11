@@ -4,6 +4,7 @@ import { formatAttachmentSize } from "../../../shared/i18n/format";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Heading } from "../../../shared/ui/Heading";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Timestamp } from "../../../shared/ui/Timestamp";
@@ -125,9 +126,9 @@ export function MessageThreadView({
           className="mt-0.5 block icon-sm shrink-0 text-(--ui-text-secondary)"
         />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-ui-body font-medium" title={thread.title} dir="auto">
+          <Heading size="section" level={2} className="truncate" title={thread.title} dir="auto">
             {thread.title || t("(No subject)")}
-          </h2>
+          </Heading>
           <p
             className="truncate text-ui-micro text-(--ui-text-secondary)"
             title={thread.participants.join(", ")}

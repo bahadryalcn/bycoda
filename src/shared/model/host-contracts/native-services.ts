@@ -6,7 +6,7 @@ export const NATIVE_FORMAT_MAX_RESULT_BYTES = 4 * 1024 * 1024;
 
 const empty = z.strictObject({});
 const assistantPresence = z.strictObject({
-  state: z.enum(["present", "idle", "away", "dnd", "unknown"]),
+  state: z.enum(["present", "idle", "away", "dnd"]),
   assistantName: z.string().optional(),
   setupComplete: z.boolean(),
 });

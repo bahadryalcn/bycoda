@@ -1,4 +1,4 @@
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import type { SshHttpProxyOperation } from "../model/sshHttpProxyApproval";
 import type { SshEndpoint } from "../model/serverInventory";
@@ -298,15 +298,8 @@ export function ServerFiles({
             </div>
           ) : null}
           {recoveries.length ? (
-            <Disclosure
-              size="sm"
-              className="border-y border-stroke py-2"
-              summary={
-                <>
-                  {t("Paused transfers")} ({recoveries.length})
-                </>
-              }
-            >
+            <div className="flex flex-col gap-2 border-y border-stroke py-2">
+              <SectionLabel count={recoveries.length}>{t("Paused transfers")}</SectionLabel>
               <div className="flex flex-col gap-2">
                 {recoveries.map((item) => (
                   <div key={item.id} className="flex flex-wrap items-center gap-2">
@@ -355,7 +348,7 @@ export function ServerFiles({
                   </div>
                 ))}
               </div>
-            </Disclosure>
+            </div>
           ) : null}
           {review ? (
             <section
@@ -498,17 +491,11 @@ export function ServerFiles({
               />
             ) : null}
           </div>
-          <Disclosure
-            size="sm"
-            className="text-ui-caption text-(--ui-text-muted)"
-            summary={t("Connection and transfer details")}
-          >
-            <p>
-              {t(
-                "SFTP uses trusted OpenSSH keys or your agent. Downloads require a new local filename. Uploads require replacement consent. Interrupted transfers keep owned partials for explicit content-verified recovery. Symlink entries are not opened automatically.",
-              )}
-            </p>
-          </Disclosure>
+          <p className="text-ui-caption text-(--ui-text-muted)">
+            {t(
+              "SFTP uses trusted OpenSSH keys or your agent. Downloads require a new local filename. Uploads require replacement consent. Interrupted transfers keep owned partials for explicit content-verified recovery. Symlink entries are not opened automatically.",
+            )}
+          </p>
         </div>
       </Modal>
       {proxy.dialog}

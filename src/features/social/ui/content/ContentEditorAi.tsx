@@ -2,6 +2,7 @@ import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
+import { Surface } from "../../../../shared/ui/Surface";
 import { TextField } from "../../../../shared/ui/TextField";
 import { useSocialPending } from "../../hooks/useSocialPending";
 import type { SocialClient } from "../../model/socialClient";
@@ -103,7 +104,7 @@ export function ContentEditorAi({
             </InlineMessage>
           ) : null}
           {suggestion ? (
-            <div className="content-ai-suggestion">
+            <Surface variant="card" padding="sm" className="content-ai-suggestion">
               <p className="content-preview-text">{suggestion.text}</p>
               <Button
                 variant="primary"
@@ -120,7 +121,7 @@ export function ContentEditorAi({
               <Button variant="ghost" size="sm" onClick={() => setSuggestion(undefined)}>
                 {t("Discard")}
               </Button>
-            </div>
+            </Surface>
           ) : null}
         </div>
       ) : null}

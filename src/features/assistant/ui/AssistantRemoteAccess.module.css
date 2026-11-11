@@ -26,9 +26,6 @@
   display: grid;
   gap: 8px;
   justify-items: start;
-  padding: 12px;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
   min-inline-size: 0;
 }
 .request p {
@@ -51,9 +48,6 @@
 .identity {
   display: grid;
   gap: 4px;
-  padding: 12px;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
   font-size: var(--ui-font-caption);
   min-inline-size: 0;
 }

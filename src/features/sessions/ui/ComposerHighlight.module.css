@@ -1,10 +1,13 @@
 /* A web link in the draft: boxed in the info tone, apart from attachment tokens. */
 .link {
-  /* Block padding on an inline box changes no line height; it matches the token chips. */
-  padding-block: 1px;
+  /* The inline padding gives the link room inside its box; the equal and opposite
+     negative margin cancels it, so the link keeps the advance width of its characters
+     and the textarea underneath stays aligned. Block padding changes no line height. */
+  padding-inline: 3px;
+  margin-inline: -3px;
+  padding-block: 2px;
   border-radius: var(--ui-radius-control);
   background: var(--ui-tone-info-subtle);
-  box-shadow: inset 0 0 0 1px var(--ui-tone-info-border);
   color: var(--ui-tone-info-fg);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;

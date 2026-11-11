@@ -1,4 +1,5 @@
 import { useLayoutEffect, type RefObject } from "react";
+import { deferDuringResize, resizeGestureActive } from "../../../shared/lib/resizeGesture";
 
 /**
  * Hold the reader's place when loaded turns above the viewport change height
@@ -14,6 +15,7 @@ export function useTurnScrollAnchor(
   useLayoutEffect(() => {
     const inner = el?.querySelector("[data-transcript-content]");
     if (!enabled || !el || !inner) return;
+    let observed = new WeakSet<Element>();
     const heights = new WeakMap<Element, number>();
     const widths = new WeakMap<Element, number>();
     const resetTurn = (turn: Element) => {
@@ -25,6 +27,15 @@ export function useTurnScrollAnchor(
       resize.unobserve?.(turn);
       resize.observe(turn);
     };
+    // Turns whose width changed during a live resize. Un-containing them each frame would lay out
+    // every retained turn at every width, so they keep their stale placeholder (the scroll
+    // height holds) and are measured once when the resize ends.
+    const owed = new Set<Element>();
+    const settleOwed = deferDuringResize(() => {
+      const turns = [...owed];
+      owed.clear();
+      for (const turn of turns) if (turn.isConnected && observed.has(turn)) resetTurn(turn);
+    });
     const resize = new ResizeObserver((entries) => {
       // A parked transcript's scroller is detached and measures zero.
       if (!el.isConnected) return;
@@ -47,7 +58,10 @@ export function useTurnScrollAnchor(
           (entry.target as HTMLElement).style.contentVisibility === "auto"
         ) {
           remeasure.add(entry.target);
-          resetTurn(entry.target);
+          if (resizeGestureActive()) {
+            owed.add(entry.target);
+            settleOwed();
+          } else resetTurn(entry.target);
           continue;
         }
         const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
@@ -87,7 +101,6 @@ export function useTurnScrollAnchor(
         turn.style.contentVisibility = "auto";
       }
     });
-    let observed = new WeakSet<Element>();
     const observeTurns = () => {
       for (const turn of inner.children) {
         if (observed.has(turn) || !turn.classList.contains("transcript-turn")) continue;
@@ -174,12 +187,16 @@ export function useTurnScrollAnchor(
     // Root style/class writes arrive in bursts (settings, CSS variables). Check
     // the font once per frame, before paint, instead of once per mutation record.
     let appearanceFrame = 0;
-    const checkAppearance = () => {
-      appearanceFrame = 0;
+    // The font read forces a style recalculation, so it waits out a live resize.
+    const checkFont = deferDuringResize(() => {
       const next = fontSignature();
       if (next === font) return;
       font = next;
       refreshHeights();
+    });
+    const checkAppearance = () => {
+      appearanceFrame = 0;
+      checkFont();
     };
     const appearance = new MutationObserver(() => {
       if (!appearanceFrame) appearanceFrame = requestAnimationFrame(checkAppearance);
@@ -197,6 +214,8 @@ export function useTurnScrollAnchor(
       mutations.disconnect();
       appearance.disconnect();
       cancelAnimationFrame(appearanceFrame);
+      checkFont.cancel();
+      settleOwed.cancel();
       document.fonts?.removeEventListener("loadingdone", refreshHeights);
       resize.disconnect();
       inner.removeEventListener("load", resourceChanged, true);

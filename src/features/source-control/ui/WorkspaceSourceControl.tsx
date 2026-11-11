@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   checkoutTitle,
   checkoutSelectionScope,
@@ -17,6 +17,8 @@ import {
 } from "../../../platform/tauri/fs";
 import { ChevronDown, ChevronRight, FolderTree, RefreshCw } from "../../../shared/ui/icons";
 import { GitChangesPanel } from "./GitChangesPanel";
+import { GitPanelSections } from "./GitPanelSections";
+import { useProjectDiffStats } from "../hooks/useProjectDiffStats";
 import type { HarnessId } from "../../sessions";
 import type { RepositoryReviewRequest } from "../model/workspaceRepositories";
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
@@ -180,6 +182,18 @@ export function WorkspaceSourceControl({
   };
   const plain = singleRepository && repositories.length === 1 && !pendingSelection;
   const showHeader = !plain || !!error;
+  // The overview shows Stashes and Graph once, below every repository row. They follow
+  // the repository last used in the list until the user picks one in their selector.
+  const overview = !target && !plain;
+  const [sectionsChoice, setSectionsChoice] = useRetainedState(`${stateKey}:sections`, "");
+  const [lastUsed, setLastUsed] = useRetainedState(`${stateKey}:last-used`, "");
+  const listed = (path: string) =>
+    path ? repositories.find((item) => projectKey(item) === projectKey(path)) : undefined;
+  const followed = listed(lastUsed) ?? repositories.find(own) ?? repositories[0] ?? "";
+  const sectionsChosen = listed(sectionsChoice);
+  const sectionsCwd = sectionsChosen ?? followed;
+  const sectionsStats = useProjectDiffStats(sectionsCwd, enabled && overview);
+  const listRef = useRef<HTMLDivElement>(null);
   // Checkout, path and session ownership are stated once, in the target selector
   // (visible label plus this tooltip), instead of a second "Reviewing" row.
   const targetTitle = target
@@ -287,6 +301,7 @@ export function WorkspaceSourceControl({
       ) : null}
       <div
         id={repositoryListId}
+        ref={listRef}
         className={!plain && !checkouts && !listOpen ? "hidden" : "flex min-h-0 flex-1 flex-col"}
       >
         {target || plain ? (
@@ -303,41 +318,67 @@ export function WorkspaceSourceControl({
             {...callbacks(target || cwd)}
           />
         ) : (
-          <div
-            ref={overviewScrollRef}
-            className={`min-h-0 flex-1 overflow-y-auto ${styles.overview}`}
-            data-checkout-overview={checkouts || undefined}
-          >
-            {repositories.map((path) => (
-              <div
-                key={path}
-                className={childNames.has(projectKey(path)) ? styles.nested : undefined}
-              >
-                <GitChangesPanel
-                  cwd={path}
-                  submodules={submodulesOf(path)}
-                  enabled={enabled}
-                  textHarness={textHarness}
-                  selectedPath={own(path) ? selectedPath : undefined}
-                  selectedKind={own(path) ? selectedKind : undefined}
-                  selectedSha={own(path) ? selectedSha : undefined}
-                  repository={{
-                    name: name(path),
-                    checkout: worktrees[path],
-                    current: checkouts && own(path),
-                    pointer: pointerOf(path),
-                    expanded: expanded[projectKey(path)] ?? (checkouts ? own(path) : undefined),
-                    onToggle: (value) =>
-                      setExpanded((current) => ({
-                        ...current,
-                        [projectKey(path)]: value,
-                      })),
-                  }}
-                  {...callbacks(path)}
-                />
-              </div>
-            ))}
-          </div>
+          <>
+            <div
+              ref={overviewScrollRef}
+              className={`min-h-0 flex-1 overflow-y-auto ${styles.overview}`}
+              data-checkout-overview={checkouts || undefined}
+            >
+              {repositories.map((path) => (
+                <div
+                  key={path}
+                  className={childNames.has(projectKey(path)) ? styles.nested : undefined}
+                  onPointerDownCapture={() => setLastUsed(path)}
+                  onFocusCapture={() => setLastUsed(path)}
+                >
+                  <GitChangesPanel
+                    cwd={path}
+                    submodules={submodulesOf(path)}
+                    enabled={enabled}
+                    textHarness={textHarness}
+                    selectedPath={own(path) ? selectedPath : undefined}
+                    selectedKind={own(path) ? selectedKind : undefined}
+                    selectedSha={own(path) ? selectedSha : undefined}
+                    repository={{
+                      name: name(path),
+                      checkout: worktrees[path],
+                      current: checkouts && own(path),
+                      pointer: pointerOf(path),
+                      expanded: expanded[projectKey(path)] ?? (checkouts ? own(path) : undefined),
+                      onToggle: (value) =>
+                        setExpanded((current) => ({
+                          ...current,
+                          [projectKey(path)]: value,
+                        })),
+                    }}
+                    {...callbacks(path)}
+                  />
+                </div>
+              ))}
+            </div>
+            {sectionsCwd ? (
+              <GitPanelSections
+                cwd={sectionsCwd}
+                enabled={enabled}
+                hasChanges={(sectionsStats?.files ?? 0) > 0}
+                selectedSha={own(sectionsCwd) ? selectedSha : undefined}
+                onOpenCommit={callbacks(sectionsCwd).onOpenCommit}
+                paneRef={listRef}
+                repositories={{
+                  value: sectionsChosen ?? "",
+                  onChange: setSectionsChoice,
+                  options: [
+                    { value: "", label: `${t("Auto")} · ${optionName(followed)}` },
+                    ...repositories.map((path) => ({
+                      value: path,
+                      label: optionName(path),
+                      description: path,
+                    })),
+                  ],
+                }}
+              />
+            ) : null}
+          </>
         )}
       </div>
     </div>

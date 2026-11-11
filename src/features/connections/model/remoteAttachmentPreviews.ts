@@ -7,6 +7,18 @@ const downloads = new Map<string, Promise<string>>();
 export const PREVIEW_BUDGET_BYTES = 40 * 1024 * 1024;
 const MAX_PREVIEWS = 32;
 const failures = new Map<string, { count: number; retryAt: number }>();
+/** Files the Host answered it does not hold. Asked once per page: the answer cannot change
+ * without a new upload, which produces a new attachment key. */
+const missingOnHost = new Set<string>();
+const MISSING_ON_HOST = "Attachment file is missing on its machine.";
+
+/** The Host refused the read because the file is absent there (the Host's
+ * `ATTACHMENT_MISSING_MESSAGE` refusal, which the native layer forwards as text). A transport
+ * or transient Host failure never matches. */
+export function attachmentMissingOnHost(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return /attachment file is missing on this machine/i.test(message);
+}
 let activeDownloads = 0;
 const waiting: Array<() => void> = [];
 const normalizedBlocks = new WeakMap<object, object>();
@@ -53,6 +65,7 @@ async function downloadPreview(
   if (!Number.isSafeInteger(file.size) || file.size < 0 || file.size > MAX_ATTACHMENT_PREVIEW_BYTES)
     throw new Error("File is too large to preview (maximum 25 MB).");
   const key = downloadKey(machineId, sessionId, file);
+  if (missingOnHost.has(key)) throw new Error(MISSING_ON_HOST);
   if (!manual && (failures.get(key)?.retryAt ?? 0) > Date.now())
     throw new Error("Preview retry is waiting");
   let download = downloads.get(key);
@@ -78,6 +91,13 @@ async function downloadPreview(
       return pieces.join("");
     })
       .catch((error: unknown) => {
+        if (attachmentMissingOnHost(error)) {
+          failures.delete(key);
+          missingOnHost.add(key);
+          // Evicting the oldest key costs one repeated request, never a retry loop.
+          if (missingOnHost.size > 1024) missingOnHost.delete(missingOnHost.keys().next().value!);
+          throw error;
+        }
         const count = Math.min(5, (failures.get(key)?.count ?? 0) + 1);
         failures.delete(key);
         failures.set(key, {
@@ -195,11 +215,11 @@ async function attachmentPreviews(
   for (const block of result.session.blocks)
     for (const file of block.attachments ?? []) {
       if (canPreview(file) && selected.has(file.id) && !file.data && !file.previewUrl) {
+        const key = downloadKey(machineId, sessionId, file);
+        // A file the Host does not hold is settled: it must not keep the snapshot retrying.
+        if (missingOnHost.has(key)) continue;
         missing = true;
-        retryAt = Math.min(
-          retryAt,
-          failures.get(downloadKey(machineId, sessionId, file))?.retryAt ?? 0,
-        );
+        retryAt = Math.min(retryAt, failures.get(key)?.retryAt ?? 0);
       }
     }
   if (!missing) completedSnapshots.add(result);

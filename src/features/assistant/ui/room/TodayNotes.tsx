@@ -44,7 +44,11 @@ export function TodayNotes({
       </SectionLabel>
       {groupLines(todayNoteLines(notes)).map((group) => (
         <div key={group.key} className={styles.noteGroup}>
-          {group.title && <h3 className={styles.noteTitle}>{group.title}</h3>}
+          {group.title && (
+            <SectionLabel as="h3" className={styles.noteTitle}>
+              {group.title}
+            </SectionLabel>
+          )}
           <ul className={styles.noteList}>
             {group.rows.map((row) => (
               <li key={row.key} className={styles.note} data-timed={row.time ? "" : undefined}>

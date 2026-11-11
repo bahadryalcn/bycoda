@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { formatDuration, formatUsageTokens } from "../../../shared/i18n/format";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
@@ -72,7 +73,7 @@ export function CrewWorkTimeline({ run }: { run: CrewRunView }) {
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between gap-2">
-        <h4 className="text-ui-caption font-medium text-(--ui-text-secondary)">{t("Timeline")}</h4>
+        <SectionLabel as="h4">{t("Timeline")}</SectionLabel>
         {events.length > RECENT ? (
           <Button variant="link" size="sm" onClick={() => setAll((value) => !value)}>
             {all ? t("Show less") : t("Show all ({p0})", { p0: events.length })}

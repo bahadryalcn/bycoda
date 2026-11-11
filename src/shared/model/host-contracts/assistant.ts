@@ -256,14 +256,21 @@ export type AssistantPresence = {
   since: number;
   updatedAt: number;
 };
+/**
+ * How long one computer reading stays valid. It spans several Host presence ticks, so a slow or
+ * failed probe keeps the last reading instead of changing the owner's availability.
+ */
+export const ASSISTANT_PRESENCE_FRESH_MS = 300000;
+/** `supported: false` marks a computer that could not be read; it is reported as away. */
 export type AssistantAutomaticPresence = {
-  state: "present" | "idle" | "away" | "locked" | "unknown";
+  state: "present" | "idle" | "away" | "locked";
   since: number;
   updatedAt: number;
   supported: boolean;
   idleMs?: number;
 };
-export type AssistantEffectivePresence = "present" | "idle" | "away" | "dnd" | "unknown";
+/** Availability is always one of these; an unreadable computer counts as away, never as present. */
+export type AssistantEffectivePresence = "present" | "idle" | "away" | "dnd";
 export type AssistantNotification = {
   id: string;
   kind: AssistantNotificationKind;
@@ -877,14 +884,14 @@ export const AssistantSnapshotSchema = z.strictObject({
   }),
   automaticPresence: z
     .strictObject({
-      state: z.enum(["present", "idle", "away", "locked", "unknown"]),
+      state: z.enum(["present", "idle", "away", "locked"]),
       since: version,
       updatedAt: version,
       supported: z.boolean(),
       idleMs: version.optional(),
     })
     .optional(),
-  effectivePresence: z.enum(["present", "idle", "away", "dnd", "unknown"]).optional(),
+  effectivePresence: z.enum(["present", "idle", "away", "dnd"]).optional(),
   chiefReview: z.strictObject({ blocked: z.boolean(), message: z.string().max(1000) }).optional(),
   manualPolicy: manualPolicySchema.optional(),
   manualGrants: z.array(manualGrantSchema).max(100).optional(),

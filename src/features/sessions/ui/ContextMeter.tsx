@@ -7,7 +7,6 @@ import { formatApiTime, formatCost, type SessionUsage } from "../model/sessionUs
 import { Meter, meterTone } from "../../../shared/ui/Meter";
 import { Popover } from "../../../shared/ui/Popover";
 import { useHoverCard } from "../../../shared/ui/HoverCard";
-import { Info } from "../../../shared/ui/icons";
 import type { Block } from "../model/session";
 import { completedResponseSpeed, responseSpeedFill } from "../model/responseSpeed";
 import { isHiddenTool, isSubagentBlock, subagentName } from "../model/transcriptActivity";
@@ -54,8 +53,6 @@ export function ContextMeter({
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [speedInfoOpen, setSpeedInfoOpen] = useState(false);
-  const speedInfoId = useId();
   const root = useRef<HTMLDivElement>(null);
   // Hover and keyboard focus preview the panel; a click pins it (the Popover below).
   const hover = useHoverCard({
@@ -69,7 +66,6 @@ export function ContextMeter({
   function closeActions() {
     hover.close();
     setOpen(false);
-    setSpeedInfoOpen(false);
   }
   const ratio = contextRatio(usage);
   // Scans the whole transcript: only redo it when the blocks change, not per keystroke.
@@ -97,8 +93,6 @@ export function ContextMeter({
       : []),
   ].join(". ");
   const panelOpen = hover.open || open;
-  // The speed explanation is per opening: a hover card closed by Escape or leave starts collapsed.
-  if (!panelOpen && speedInfoOpen) setSpeedInfoOpen(false);
   const percent = ratio === null ? t("Unknown") : `${Math.round(ratio * 100)}%`;
 
   // Built only while a panel shows: the meter re-renders with the composer.
@@ -129,30 +123,12 @@ export function ContextMeter({
       </div>
       <section className="context-meter-speed-details" aria-label={t("Response speed")}>
         <div className="context-meter-heading">
-          <span className="inline-flex items-center gap-1">
-            {t("Response speed")}
-            <Button
-              variant="ghost"
-              size="sm"
-              motion="none"
-              iconOnly
-              label={t("Response speed")}
-              aria-expanded={speedInfoOpen}
-              aria-controls={speedInfoId}
-              onClick={() => setSpeedInfoOpen((value) => !value)}
-            >
-              <Info className="icon-sm" />
-            </Button>
-          </span>
+          <span className="inline-flex items-center gap-1">{t("Response speed")}</span>
           <strong>{speed ? `${speed.tps.toFixed(1)} TPS` : t("Unavailable")}</strong>
         </div>
-        {speedInfoOpen ? (
-          <p id={speedInfoId} className="context-meter-hint">
-            {t(
-              "Average over the full turn, including tools and waiting; not live generation speed.",
-            )}
-          </p>
-        ) : null}
+        <p className="context-meter-hint">
+          {t("Average over the full turn, including tools and waiting; not live generation speed.")}
+        </p>
       </section>
       {agents.size > 0 ? (
         <section className="context-meter-agents" aria-label={t("Subagents")}>

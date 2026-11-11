@@ -22,10 +22,7 @@
   display: grid;
   gap: 8px;
   margin: 0;
-  padding: 8px;
   min-inline-size: 0;
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: var(--ui-radius-card);
 }
 .row[data-dragging] {
   background: var(--ui-surface-muted);

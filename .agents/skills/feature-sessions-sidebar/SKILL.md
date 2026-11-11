@@ -39,7 +39,7 @@ Own conversation collections and rows across the shell, session models, Host/nat
 
 ## Focused checks
 
-Use focused tests in `src/features/sessions/model/`, `src/features/sessions/data/`, `src/app/shell/` and `src/features/connections/model/`. Layout/navigation fixtures: `tests/browser/session-row-layout.spec.ts`; footer: `tests/browser/update-footer.spec.ts`. Run changed-file checks and selected path suites per the testing guide; UI evidence follows task tier. Fixture navigation does not prove live remote or installed updater behavior.
+Use focused tests in `src/features/sessions/model/`, `src/features/sessions/data/`, `src/app/shell/` and `src/features/connections/model/`. Layout/navigation fixtures: `tests/browser/sessions/session-row-layout.spec.ts`; footer: `tests/browser/app-shell/update-footer.spec.ts`. Run changed-file checks and selected path suites per the testing guide; UI evidence follows task tier. Fixture navigation does not prove live remote or installed updater behavior.
 
 ## References
 

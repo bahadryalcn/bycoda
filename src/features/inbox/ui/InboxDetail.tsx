@@ -1,6 +1,7 @@
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { InboxStatusBadge } from "./InboxStatusBadge";
 import { Alert } from "../../../shared/ui/Alert";
+import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
@@ -324,13 +325,9 @@ export function InboxDetail({
           >
             <div className={`flex w-full min-w-0 flex-col gap-2 px-4 pt-3 ${isPr ? "" : "pb-3"}`}>
               <header className={`flex flex-col ${panel ? "gap-2" : "gap-2.5"}`}>
-                <h1
-                  className={`break-words font-medium leading-tight text-(--ui-tone-neutral-fg) ${
-                    panel ? "text-ui-heading" : "text-ui-heading"
-                  }`}
-                >
+                <Heading size="page" className="break-words">
                   {item.title}
-                </h1>
+                </Heading>
                 {panel ? null : identityRow}
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary)">
                   {authorName ? (

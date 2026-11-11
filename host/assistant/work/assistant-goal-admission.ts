@@ -15,8 +15,9 @@ export interface GoalAdmissionDeps {
   repository: AssistantRepository;
   profile(): Promise<AssistantProfile>;
   now(): number;
-  /** Whether today's usage mode is "run". */
-  usageRuns(profile: AssistantProfile): Promise<boolean>;
+  /** Whether today's token budget is spent. Reporting mode (80%) restricts the
+   * supervisor and new jobs only; dispatched children continue until exhaustion. */
+  budgetExhausted(profile: AssistantProfile): Promise<boolean>;
   paused(): Promise<boolean>;
   /** Shutdown, emergency stop or a pending stop of this job. */
   stopping(jobId: string): boolean;
@@ -85,7 +86,7 @@ export async function autonomousJobAllowed(
       !profile.setupComplete ||
       profile.autonomy === "report" ||
       !assistantActiveHours(profile, deps.now()) ||
-      !(await deps.usageRuns(profile)) ||
+      (await deps.budgetExhausted(profile)) ||
       (await deps.paused())
     )
       return false;

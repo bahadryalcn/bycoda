@@ -1,18 +1,7 @@
 .briefing {
   display: grid;
   gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
-  background: transparent;
   min-inline-size: 0;
-}
-
-.clamped {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .header,
@@ -26,12 +15,6 @@
 
 .header {
   justify-content: space-between;
-}
-
-.header h2 {
-  margin: 0;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
 }
 
 .copy {

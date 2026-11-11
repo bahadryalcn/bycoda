@@ -38,7 +38,6 @@ import { useVisibleProjects } from "../../features/group-lock/hooks/useGroupLock
 import type { WorkspaceSessionStub } from "../../features/workspace/model/workspaceSnapshot";
 import { getSession } from "../../features/sessions/data/sessionStore";
 import { MoreHorizontal, Search, X } from "../../shared/ui/icons";
-import { Disclosure } from "../../shared/ui/Disclosure";
 import { RecoveryVerification } from "./RecoveryVerification";
 import "./session-recovery.css";
 
@@ -439,16 +438,13 @@ export function SessionRecoveryPanel({
                   <HarnessIcon harness={stub.harness} className="size-4 shrink-0" />
                   <div className="min-w-0 basis-48 flex-1">
                     <div className="break-words text-ui-secondary font-medium">{title}</div>
-                    <Disclosure
-                      size="sm"
-                      className="break-words"
-                      summary={`${projectDisplayName(stub.cwd)} · ${machine}`}
-                    >
+                    <div className="break-words text-ui-caption text-(--ui-text-muted)">
+                      <p>{`${projectDisplayName(stub.cwd)} · ${machine}`}</p>
                       <p className="select-text [overflow-wrap:anywhere]">{stub.cwd}</p>
                       <p>
                         {HARNESS_TITLE[stub.harness]} · {stub.model}
                       </p>
-                    </Disclosure>
+                    </div>
                     <div className="text-ui-caption text-(--ui-text-secondary)">
                       <RecoveryStatusBadge key={status} status={status} /> ·{" "}
                       {activityAt

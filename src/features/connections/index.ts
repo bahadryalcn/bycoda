@@ -37,6 +37,7 @@ export type * as uiLocalHostDownNoticeApi from "./public/LocalHostDownNotice";
 export type * as uiRemoteLoadErrorApi from "./public/RemoteLoadError";
 export type * as uiRemoteSessionApi from "./public/RemoteSession";
 export type * as uiSharedQueueRecoveryNoticeApi from "./public/SharedQueueRecoveryNotice";
+export type * as uiUnreachableMachinesNoticeApi from "./public/UnreachableMachinesNotice";
 
 export type * as headlessApi from "./public/headless";
 export type * as delegatedRuns from "./public/delegatedRuns";

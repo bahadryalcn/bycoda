@@ -250,6 +250,12 @@ export function recoverRoomPrivacyProjection(): Promise<void> {
   });
 }
 
+/** A password-confirmed owner action is an explicit retry: settle a retryable held failure
+ * first, so one stale Host outage does not refuse every later attempt. */
+export async function settleHeldRoomPrivacyProjection(): Promise<void> {
+  if (status.error && canRetryRoomPrivacyProjection()) await recoverRoomPrivacyProjection();
+}
+
 /** Explicit owner request. Native confirms the live scope in a native dialog
  * while Host admission remains closed before replacing old state. */
 export async function rebuildClosedRoomPrivacyProjection(): Promise<void> {

@@ -217,3 +217,42 @@ it("rechecks session authority after an unavailable bridge preparation", async (
     await backend.close();
   }
 });
+
+it("issues no session grants for management and utility children, which have no stored session", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bycoda-child-sessionless-"));
+  const script = join(directory, "provider.cjs");
+  await writeFile(script, "process.stdin.resume();");
+  const backend = new HostChildBackend();
+  const issueSessionGrant = vi.fn(async () => {
+    throw new Error("Session not found on this machine");
+  });
+  const access = { issueSessionGrant } as unknown as RuntimeLogAccess;
+  backend.setConversationAccess(access, "http://127.0.0.1:1");
+  backend.setRuntimeLogAccess(access, "http://127.0.0.1:1");
+  backend.setSocialAccess({ issueSessionGrant } as unknown as SocialService, "http://127.0.0.1:1");
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const refused = () =>
+    warn.mock.calls.filter(([text]) => String(text).includes("tool access was not granted"));
+  const launch = (sessionId: string, purpose?: string) =>
+    backend.invoke<HarnessProcessReceipt>("harness_spawn", {
+      sessionId,
+      command: script,
+      args: [],
+      cwd: directory,
+      ...(purpose ? { purpose } : {}),
+    });
+  try {
+    await launch("bycoda-codex-text", "utility");
+    await launch("bycoda-codex-probe-one", "management");
+    expect(issueSessionGrant).not.toHaveBeenCalled();
+    expect(refused()).toHaveLength(0);
+    // A conversation child still asks, and its refusal stays visible.
+    await launch("conversation");
+    expect(issueSessionGrant).toHaveBeenCalledTimes(3);
+    expect(refused()).toHaveLength(3);
+  } finally {
+    warn.mockRestore();
+    await backend.close();
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});

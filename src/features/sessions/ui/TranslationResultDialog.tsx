@@ -1,3 +1,4 @@
+import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { useModelSource } from "./modelSource";
@@ -242,7 +243,9 @@ export function TranslationResultDialog({
         <div className={styles.comparison}>
           <section className={styles.pane} aria-labelledby={`${id}-original`}>
             <header className={styles.paneHeader}>
-              <h3 id={`${id}-original`}>{t("Original text")}</h3>
+              <Heading size="item" id={`${id}-original`}>
+                {t("Original text")}
+              </Heading>
             </header>
             <div className={styles.text} tabIndex={0}>
               {text}
@@ -254,9 +257,9 @@ export function TranslationResultDialog({
             aria-busy={pending}
           >
             <header className={styles.paneHeader}>
-              <h3 id={`${id}-translation`}>
+              <Heading size="item" id={`${id}-translation`}>
                 {reprompt ? t("Rewritten prompt") : t("Translation")}
-              </h3>
+              </Heading>
               <span className={styles.status} role="status">
                 {pending ? <Spinner size="xs" /> : null}
                 {pending

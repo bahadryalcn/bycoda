@@ -25,7 +25,6 @@ pub enum Presence {
     Idle,
     Away,
     Dnd,
-    Unknown,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -182,6 +181,9 @@ fn refresh(app: &AppHandle) -> Result<View, String> {
                     owned.core.view.status = None;
                 }
                 owned.source = Some(source);
+            } else {
+                // An unreachable Host is offline; a failed read of a live one keeps the last status.
+                owned.core.view.status = None;
             }
             owned.core.finish(generation, result, false);
         }
@@ -230,7 +232,7 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
                         publish(&app);
                     }
                     // The Host was not up at start or restarted (every local update does):
-                    // reconnect so the mark does not stay Unknown until a menu opens. The new
+                    // reconnect so the mark does not stay Offline until a menu opens. The new
                     // source gets a new token, so a menu opened earlier cannot write to it.
                     None if heartbeat_reconnects(current.2, last_connect.elapsed()) => {
                         last_connect = Instant::now();
@@ -386,7 +388,7 @@ mod tests {
         core.finish(
             generation,
             Ok(Status {
-                state: Presence::Unknown,
+                state: Presence::Idle,
                 setup_complete: true,
                 assistant_name: None,
             }),
@@ -407,6 +409,13 @@ mod tests {
         );
         assert!(!core.view.write_error);
         assert!(core.view.retry.is_none());
+    }
+    #[test]
+    fn failed_read_keeps_last_status() {
+        let mut core = ready();
+        core.finish(core.generation, Err("timeout".into()), false);
+        assert!(core.view.status_error);
+        assert_eq!(core.view.status.unwrap().state, Presence::Present);
     }
     #[test]
     fn effective_away_ack_is_not_claimed_present() {
@@ -431,7 +440,8 @@ mod tests {
     }
     #[test]
     fn strict_status_and_finite_choices() {
-        assert!(Status::parse(&json!({"state":"unknown","setupComplete":true})).is_ok());
+        assert!(Status::parse(&json!({"state":"idle","setupComplete":true})).is_ok());
+        assert!(Status::parse(&json!({"state":"unknown","setupComplete":true})).is_err());
         assert!(
             Status::parse(&json!({"state":"present","setupComplete":true,"secret":"no"})).is_err()
         );

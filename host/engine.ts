@@ -16,6 +16,17 @@ import { executionUserIndex } from "../src/features/sessions/model/executionTurn
 import { HostRunWriters } from "./execution/run-writers";
 import type { HostRunHandle } from "../src/integrations/harness/core/hostRun";
 import { HostAuthorityFenceError } from "./storage/authority-fence";
+import {
+  isStorageConstraintFailure,
+  persistenceRetryDelay,
+  reportPersistenceFailure,
+  SessionRevisionConflictError,
+} from "./storage/session-revision";
+import {
+  preserveLiveBatch,
+  resolveRevisionConflict,
+  type LiveBatch,
+} from "./sessions/live-batch-recovery";
 import { createHash, randomUUID } from "node:crypto";
 import { isApprovalOccurrenceId } from "../src/shared/model/approvalOccurrence";
 import { parseProviderAccountId } from "../src/features/providers/model/providerAccountId";
@@ -648,15 +659,7 @@ export class HostEngine {
     { id: string; provider: HostProvider }
   >();
   /** Running sessions, including streamed events not yet written to disk. */
-  private live = new Map<
-    string,
-    {
-      value: HostSession;
-      events: HarnessEvent[];
-      blockChanges?: Map<string, import("../src/features/sessions/model/session").Block | null>;
-      timer?: ReturnType<typeof setTimeout>;
-    }
-  >();
+  private live = new Map<string, LiveBatch & { timer?: ReturnType<typeof setTimeout> }>();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private recoveryWork = new Map<string, Promise<void>>();
   /** Warm lightweight providers still belong to this engine and drain at shutdown. */
@@ -1990,9 +1993,9 @@ export class HostEngine {
     );
   }
 
-  /** Orders a store-owned session write (assistant attribution) with this session's
+  /** Orders a store-owned session write (assistant attribution, pins) with this session's
    * turn and rebases the live turn on it. Written directly, the live turn stays one
-   * revision behind and every later event of the running turn fails to persist. */
+   * revision behind and the store refuses the next event of the running turn. */
   async sessionStoreWrite<T>(id: string, write: () => Promise<T>): Promise<T> {
     await this.ready;
     return this.store.db.scope(() =>
@@ -2168,13 +2171,29 @@ export class HostEngine {
         const deferred = events.every((event) => BATCHED.has(event.type));
         // Only batched streaming deltas may wait for the store checkpoint; a batch
         // holding anything else (tool start, approval, question, ...) is written now.
-        live.value = await this.save(
-          live.value,
-          { type: "events", events },
-          deferred,
-          live.blockChanges,
-          !deferred,
-        );
+        try {
+          live.value = await this.save(
+            live.value,
+            { type: "events", events },
+            deferred,
+            live.blockChanges,
+            !deferred,
+          );
+        } catch (error) {
+          if (!(error instanceof SessionRevisionConflictError)) throw error;
+          const written = await resolveRevisionConflict(
+            live,
+            await this.store.session(id),
+            dirname(this.store.attachmentDir),
+            (value, event) => this.save(value, event, false, undefined, true),
+          );
+          const original = this.running.get(id);
+          if (written || !original) return;
+          // The preserved batch is missing from the transcript: the turn ends interrupted.
+          original.persistenceFailed = true;
+          void this.retainTurnFailure(id, original, error).catch(() => {});
+          return;
+        }
         live.events = [];
         live.blockChanges = new Map();
       }),
@@ -2195,7 +2214,7 @@ export class HostEngine {
     }
   }
 
-  private retrySettlement(id: string, original: ActiveHostTurn): void {
+  private retrySettlement(id: string, original: ActiveHostTurn, attempt = 0): void {
     if (
       this.closing ||
       this.retryTimers.has(id) ||
@@ -2226,10 +2245,6 @@ export class HostEngine {
             await this.store.db.scope(() =>
               this.operations.run(id, async () => {
                 if (this.running.get(id) !== original) return;
-                const live = this.live.get(id);
-                // A batch built on a superseded revision can never be written: settle
-                // the persisted head instead of retrying the same conflict forever.
-                if (live && before.revision > live.value.revision) live.events = [];
                 await this.flush(id);
                 const latest = await this.store.session(id);
                 if (latest.runId !== original.runId) return;
@@ -2269,29 +2284,41 @@ export class HostEngine {
               }),
             );
           } catch (error) {
-            console.error(
-              `Session ${original.failureStage} recovery failed; retaining original cleanup:`,
-              error instanceof Error ? error.message : "unknown error",
+            // A refused constraint cannot succeed on a retry; other failures back off.
+            const refused = isStorageConstraintFailure(error);
+            reportPersistenceFailure(
+              `Session ${id} ${original.failureStage} recovery failed${refused ? " and is not retried" : ""}; retaining original cleanup: ${
+                error instanceof Error ? error.message : "unknown error"
+              }`,
             );
             original.failure = error;
             original.activity?.recordFailure(error);
             retry =
               original.failureStage === "persistence" &&
+              !refused &&
               !this.store.db.restartRequired &&
               !(error instanceof HostAuthorityFenceError);
+            if (refused) await this.preserveHeldBatch(id, "storage-constraint").catch(() => {});
             throw error;
           }
         })();
         this.recoveryWork.set(id, work);
         const completed = () => {
           if (this.recoveryWork.get(id) === work) this.recoveryWork.delete(id);
-          if (retry) this.retrySettlement(id, original);
+          if (retry) this.retrySettlement(id, original, attempt + 1);
         };
         void work.then(completed, completed);
-      }, 1_000),
+      }, persistenceRetryDelay(attempt)),
     );
     timer.unref?.();
     this.retryTimers.set(id, timer);
+  }
+
+  /** A held turn's unwritten batch exists only in memory; it is never dropped unpreserved. */
+  private async preserveHeldBatch(id: string, reason: "storage-constraint" | "shutdown") {
+    const live = this.live.get(id);
+    if (live?.events.length)
+      await preserveLiveBatch(dirname(this.store.attachmentDir), live, reason);
   }
 
   private async prepareCreation(command: Extract<HostCommand, { type: "create" }>) {
@@ -4801,6 +4828,7 @@ export class HostEngine {
       if (changed === undefined) live.blockChanges = undefined;
       else for (const [blockId, block] of changed) live.blockChanges.set(blockId, block);
     }
+    if (!live.events.length) live.base = live.value;
     live.value = {
       ...live.value,
       session,
@@ -5013,6 +5041,16 @@ export class HostEngine {
     await join([this.operations.drain()]);
     await join([this.providerActivities.drain()]);
     await join([this.runWriters.drain()]);
+    // A turn still held by persistence recovery gets one last write; a batch that still
+    // cannot be written is preserved as evidence before the process ends.
+    await join(
+      [...this.live.keys()].map((id) =>
+        this.flush(id).catch(async (error) => {
+          await this.preserveHeldBatch(id, "shutdown");
+          throw error;
+        }),
+      ),
+    );
     await join([this.store.flushAll()]);
     if (failures.length) throw new AggregateError(failures, "Host session shutdown failed.");
   }

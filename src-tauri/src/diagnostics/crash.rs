@@ -20,7 +20,7 @@ pub(crate) struct CrashMarker {
     pub app_version: String,
 }
 
-/// Truncate on a char boundary (K-TEXT).
+/// Truncate on a char boundary, never inside a character.
 pub(super) fn truncate_chars(text: &str, limit: usize) -> String {
     match text.char_indices().nth(limit) {
         Some((index, _)) => text[..index].to_string(),
@@ -85,7 +85,7 @@ fn now_rfc3339() -> String {
         .unwrap_or_default()
 }
 
-/// Temp file, fsync, then rename (K-ATOMIC).
+/// Temp file, fsync, then rename (rule rust-rename-without-fsync).
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
+import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import type { HostProject } from "../../../connections/public/protocol";
@@ -84,7 +86,7 @@ export function AccountPermissions({
 
   return (
     <section className="social-card" aria-label={t("Who can use this account")}>
-      <h3 className="social-card-title">{t("Who can use this account")}</h3>
+      <Heading size="item">{t("Who can use this account")}</Heading>
       <p className="social-card-description">
         {t(
           "Access applies only to this account and can be revoked here. Sending still requires the autonomy level below.",
@@ -104,8 +106,7 @@ export function AccountPermissions({
           saveAssistant();
         }}
       >
-        <fieldset className="social-checks">
-          <legend>{t("Assistant permissions")}</legend>
+        <FieldGroup legend={t("Assistant permissions")} layout="row">
           <Checkbox
             disabled={locked}
             checked={assistant.includes("read")}
@@ -120,7 +121,7 @@ export function AccountPermissions({
             label={t("Prepare drafts")}
             className="social-check"
           />
-        </fieldset>
+        </FieldGroup>
         <Button
           type="submit"
           variant="secondary"
@@ -157,8 +158,7 @@ export function AccountPermissions({
             saveProject();
           }}
         >
-          <fieldset className="social-checks">
-            <legend>{t("Reading and sending are separate permissions")}</legend>
+          <FieldGroup legend={t("Reading and sending are separate permissions")} layout="row">
             {projectPermissions().map((permission) => (
               <Checkbox
                 disabled={locked}
@@ -175,7 +175,7 @@ export function AccountPermissions({
                 className="social-check"
               />
             ))}
-          </fieldset>
+          </FieldGroup>
           <Button
             type="submit"
             variant="secondary"

@@ -1085,3 +1085,35 @@ describe("one host, two computers (review round 2)", () => {
     expect(calls.length).toBe(2); // the second attempt is not repeated
   });
 });
+
+it("reports a conversation the host does not store as absent, except while a send is unsettled", async () => {
+  const unknown: QueueTransport = async () => {
+    throw new Error("Host rejected request: Session not found on this machine");
+  };
+  const client = new SharedQueueClient("machine", "host", "new-chat", "desktop:a", unknown);
+  await client.initialize({ messages: [message("a")], status: "active" });
+  expect(client.absent()).toBe(true);
+  expect(client.snapshot().loaded).toBe(false);
+
+  const offline = new SharedQueueClient(
+    "machine",
+    "host",
+    "offline-chat",
+    "desktop:a",
+    async () => {
+      throw new Error("offline");
+    },
+  );
+  await offline.initialize();
+  expect(offline.absent()).toBe(false);
+
+  // A claim was written before the host forgot the conversation: its outcome is still owed.
+  localStorage.setItem(
+    `bycoda:shared-queue:v2:${JSON.stringify(["host", "claimed-chat", "desktop:a"])}:send`,
+    JSON.stringify({ id: "a", clientId: "desktop:a", accepted: false, held: false }),
+  );
+  const claimed = new SharedQueueClient("machine", "host", "claimed-chat", "desktop:a", unknown);
+  await claimed.initialize();
+  expect(claimed.absent()).toBe(false);
+  expect(claimed.snapshot().error).toMatch(/Session not found on this machine/);
+});

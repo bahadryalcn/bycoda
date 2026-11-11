@@ -64,13 +64,10 @@ export function AssistantRetentionField({
 export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage"] }) {
   const cache = usage.cacheUsage;
   const unavailable = t("Unavailable");
-  // Worker tokens include cache reads; split them out only when the read count is complete.
-  const cacheReads = cache?.complete ? cache.cacheReadTokens : undefined;
+  // Worker tokens already count cache reads at one tenth; the raw read count is its own chip.
   const chips: [string, string][] = [
     [t("Supervisor tokens"), formatNumber(usage.chiefTokens)],
-    cacheReads === undefined
-      ? [t("Worker tokens"), formatNumber(usage.workerTokens)]
-      : [t("Worker new tokens"), formatNumber(Math.max(0, usage.workerTokens - cacheReads))],
+    [t("Worker tokens"), formatNumber(usage.workerTokens)],
   ];
   if (cache)
     chips.push(
@@ -116,14 +113,11 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
                 p1: formatNumber(cache.totalTurns),
               })}
             </p>
-            {cacheReads !== undefined && (
-              <p className={viewStyles.muted}>
-                {t(
-                  "Worker tokens total {p0}, including {p1} cache reads. Cache reads re-read earlier context and cost far less than new tokens.",
-                  { p0: formatNumber(usage.workerTokens), p1: formatNumber(cacheReads) },
-                )}
-              </p>
-            )}
+            <p className={viewStyles.muted}>
+              {t(
+                "Budgets count cache reads at one tenth of a new token. Cache reads re-read earlier context and cost far less than new tokens.",
+              )}
+            </p>
             {cache.cacheHitPercent !== undefined && (
               <p className={viewStyles.muted}>
                 {t(

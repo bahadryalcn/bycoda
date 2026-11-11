@@ -1,6 +1,6 @@
 export type NativeServiceKind = "conversation" | "runtime-logs" | "social";
 export type NativeAssistantPresence = {
-  state: "present" | "idle" | "away" | "dnd" | "unknown";
+  state: "present" | "idle" | "away" | "dnd";
   assistantName?: string;
   setupComplete: boolean;
 };

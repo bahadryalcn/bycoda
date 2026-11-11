@@ -17,3 +17,8 @@
 .scope {
   flex: 0 0 auto;
 }
+
+.repository {
+  flex: 0 1 14rem;
+  min-inline-size: 7rem;
+}

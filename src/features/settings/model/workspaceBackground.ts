@@ -83,6 +83,30 @@ export function loadWorkspaceBackground(): WorkspaceBackground {
   return snapshot;
 }
 
+/**
+ * Mean colour and HSL lightness of the artwork stops (the first stop for a solid fill). Layers
+ * derive from the canvas veiled over this (--ui-layer-base in src/styles/index.css), so fields,
+ * borders and selection step away from the ground the artwork really shows.
+ */
+export function workspaceBackgroundGround(value: WorkspaceBackground): {
+  color: string;
+  lightness: number;
+} {
+  const stops = value.style === "solid" ? [value.colors[0]] : value.colors;
+  const channels = [1, 3, 5].map((offset) => {
+    const sum = stops.reduce(
+      (total, hex) => total + Number.parseInt(hex.slice(offset, offset + 2), 16),
+      0,
+    );
+    return Math.round(sum / stops.length);
+  });
+  const lightness = (Math.max(...channels) + Math.min(...channels)) / 2 / 2.55;
+  return {
+    color: `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`,
+    lightness: Math.round(lightness * 10) / 10,
+  };
+}
+
 export function applyWorkspaceBackground(value: WorkspaceBackground) {
   const safe = normalizeWorkspaceBackground(value);
   const root = document.documentElement;
@@ -90,7 +114,12 @@ export function applyWorkspaceBackground(value: WorkspaceBackground) {
   if (safe.enabled) {
     root.style.setProperty("--workspace-background-image", workspaceBackgroundImage(safe));
     root.style.setProperty("--workspace-background-strength", String(safe.strength / 100));
+    const ground = workspaceBackgroundGround(safe);
+    root.style.setProperty("--workspace-background-ground", ground.color);
+    root.style.setProperty("--workspace-background-lightness", `${ground.lightness}%`);
   } else {
+    root.style.removeProperty("--workspace-background-ground");
+    root.style.removeProperty("--workspace-background-lightness");
     root.style.removeProperty("--workspace-background-image");
     root.style.removeProperty("--workspace-background-strength");
   }

@@ -59,14 +59,11 @@ it("shows no Undo button when the entry has no undo, and no passive reason in th
   expect(element.textContent).not.toContain("Can't be undone.");
 });
 
-it("shows the plain status word and reveals details on demand", () => {
+it("shows the plain status word and the detail, including an error, without expanding", () => {
   render({ status: "failed", details: "Provider said no." });
   expect(element.textContent).toContain("Failed");
-  expect(element.textContent).not.toContain("Provider said no.");
-  const details = buttonWithText("Details");
-  act(() => details?.click());
   expect(element.textContent).toContain("Provider said no.");
-  expect(details?.getAttribute("aria-expanded")).toBe("true");
+  expect(buttonWithText("Details")).toBeUndefined();
 });
 
 it("draws the status circle for the operation kind and keeps the meta line before the time", () => {

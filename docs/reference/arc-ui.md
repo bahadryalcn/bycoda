@@ -430,7 +430,7 @@ Source interaction checks live in `arcAdapters.test.ts` and
 keyboard interaction, theme changes and narrow-window layout:
 
 ```powershell
-pnpm exec playwright test --config tests/browser/playwright.arc-controls.config.ts
+pnpm exec playwright test --config tests/browser/shared-ui/playwright.arc-controls.config.ts
 ```
 
 The fixture builds into ignored `temp/build/` and uses port 1442, independently

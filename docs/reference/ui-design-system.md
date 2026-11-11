@@ -657,6 +657,17 @@ consumed by name. Do not copy a value into feature CSS.
   popovers, menus, tooltips, toasts and floating panels. Tinted canvases keep the raised step; the
   Pure background maps it near the pure ground (the pane border and floating elevation separate
   it) and controls inside keep their own steps.
+- Layer ground and lift: derived layers (surfaces, fields, hover and selected steps, group
+  borders) mix from `--ui-layer-base`, the tint ground floored at the default depth, so a fully
+  black canvas (Depth 0) keeps its steps. `--appearance-layer-strength` (Appearance -> Surface
+  contrast, 50-200%, default 1) scales how far they lift. Painted canvases keep `--ui-tint-base`.
+- Card role: `--ui-card-surface` and `--ui-card-border` are the one grouped-card fill and frame
+  (`Surface variant="card"`, `FieldGroup variant="card"`, settings groups). The fill is transparent
+  on tinted and light canvases and a faint ink step on the pure dark canvas.
+- Shared structure: cards use `Surface`; a named group of controls uses `FieldGroup` (never a raw
+  `fieldset`/`legend`); titles use `Heading` with the role `page` (16px), `section` (14px),
+  `item` (13px) or `caption` (12px, compact windows and dense tool headers), and `SectionLabel` for a quiet caption; local files use `FileField` (never a text
+  input with `type="file"`). Helper text uses the muted text role, one step below the label size.
 - Pure and Tinted background (Appearance -> Themes -> Background tone, `html[data-canvas-background]`):
   Pure is the default and paints the shared canvas pure black or white for every palette. Derived
   layers still mix from `--ui-tint-base`. Pure paints `--color-background-base` and `--ui-chat-canvas` from `--palette-canvasPureDark` / `--palette-canvasPureLight`; the Pure composer writing area uses `--ui-composer-surface` (one step above that ground). Tokens and components must read well on both; do not
@@ -825,6 +836,9 @@ blur/glow or layout movement just to demonstrate a library component.
 - Dialog actions: `ModalActions` (leading destructive at the start edge, Cancel then primary at
   the end). No per-dialog `flex justify-end gap-2` rows.
 - Errors in a row or form: InlineError. Empty list rows: `EmptyState size="inline"`.
+- Raw command, Host or transport error text: never in a banner, toolbar or row, and never behind
+  an inline `Disclosure`. Show a plain sentence and put the raw text behind `ErrorDetails` (a
+  popover with Copy); in a row use `DetailedInlineError`, which shows a short single line as written.
   Loading lines: `LoadingText`. Pending glyphs: `Spinner` only.
 
 ## Contextual groups and morph interactions
@@ -970,7 +984,7 @@ and `bycoda.css`. The rules cover:
 
 Native dialogs (`alert`, `confirm`, `prompt`), `dangerouslySetInnerHTML`, direct motion-library
 imports, `console.log` in UI files and the `jsx-a11y` keyboard/ARIA rules are enforced by
-`.oxlint-invariants.json` through `pnpm check:invariants`. The complete convention table with
+the `lint` block of `vite.config.ts` through `pnpm check:invariants`. The complete convention table with
 the sanctioned component for each rule is in [code invariants](code-invariants.md).
 
 Existing findings are counted per file and rule in `scripts/checks/ui-drift-baseline.json`. A new

@@ -541,6 +541,11 @@ export function useSharedLocalQueues(
     let machine: RemoteMachine | undefined;
     let checkedAt = 0;
     const owned = new Set<string>();
+    /** Conversations the Host does not store (new, or outside its projects) have no
+     * shared queue: without an entry their own queue is sent as on a local-only
+     * install. The Host is asked again when their turn starts or ends, when it
+     * reports a change, or on the idle pass while work waits; never as a failure. */
+    const unshared = new Map<string, { stateKey: string; askAt: number }>();
     windowSessions = () => sessionsRef.current;
     /** A conversation that left this window (moved or deleted) is no longer its queue to serve:
      * the lease it holds is not renewed, so it runs out and the queue goes to whoever shows it now. */
@@ -557,6 +562,8 @@ export function useSharedLocalQueues(
         void entry?.client.releaseLease();
         pruned = true;
       }
+      for (const id of unshared.keys())
+        if (!sessionById(sessionsRef.current, id)) unshared.delete(id);
       if (pruned) notifyQueues();
     };
     const tick = async () => {
@@ -620,6 +627,15 @@ export function useSharedLocalQueues(
           const interactive = interactiveSession(session) || justChanged;
           // Sorted interactive-first: nothing after the first idle one needs a hidden sync.
           if (!interactive && hidden) break;
+          const absent = unshared.get(session.id);
+          if (
+            absent &&
+            !entry &&
+            !justChanged &&
+            absent.stateKey === stateKeyOf(session) &&
+            !(interactive && Date.now() >= absent.askAt)
+          )
+            continue;
           if (!entry && !interactive && idleInitializations++ >= 8) {
             initPending = true;
             continue;
@@ -763,6 +779,20 @@ export function useSharedLocalQueues(
             if (!entry.client.snapshot().loaded) {
               entry.observed = fields(session);
               await entry.client.initialize(entry.observed);
+              if (entry.client.absent() && !entry.claiming) {
+                localQueues.delete(session.id);
+                owned.delete(session.id);
+                unshared.set(session.id, {
+                  stateKey: stateKeyOf(session),
+                  askAt: Date.now() + IDLE_SYNC_MS,
+                });
+                notifyQueues();
+                // Sending waited for this answer: the dispatcher looks at waiting rows again.
+                if (sessionById(sessionsRef.current, session.id)?.queuedMessages?.length)
+                  setSessions((sessions) => sessions.slice());
+                continue;
+              }
+              unshared.delete(session.id);
               entry.apply();
               continue;
             }

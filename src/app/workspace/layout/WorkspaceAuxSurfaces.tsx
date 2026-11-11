@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
+import { useHeldValue } from "../helpers/stableProps";
 import type { ComponentProps } from "react";
 import { SessionPane } from "../../../features/sessions/ui/SessionPane";
 import { SessionSurface } from "../../../features/sessions/ui/SessionSurface";
@@ -122,5 +123,14 @@ const MemoWorkspaceAuxSurfaces = memo(WorkspaceAuxSurfacesComponent);
 
 /** Workspace recreates most handlers per render; stable proxies let the memo hold. */
 export function WorkspaceAuxSurfaces(props: WorkspaceAuxSurfacesProps) {
-  return <MemoWorkspaceAuxSurfaces {...useStableHandlers(props)} />;
+  // Rail layout only matters while search is shown (see WorkspaceToolPanels).
+  const shown = !!(props.searchViewOpen || props.searchDialogOpen);
+  const projectRailOpen = useHeldValue(props.projectRailOpen, shown);
+  const compactProjectRail = useHeldValue(props.compactProjectRail, shown);
+  const compactRailActive = useHeldValue(props.compactRailActive, shown);
+  return (
+    <MemoWorkspaceAuxSurfaces
+      {...useStableHandlers({ ...props, projectRailOpen, compactProjectRail, compactRailActive })}
+    />
+  );
 }

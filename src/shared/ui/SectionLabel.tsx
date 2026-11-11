@@ -26,6 +26,8 @@ export type SectionLabelClassNames = {
 export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> & {
   /** Compact standalone caption inside a menu; section actions and disclosure do not apply. */
   variant?: "section" | "menu";
+  /** Type size: `caption` (12px, default) or `micro` (11px) for dense popovers and cards. */
+  size?: "caption" | "micro";
   /** The group name, in sentence case (no uppercase eyebrow). */
   children: ReactNode;
   /** Heading element for the label. Default `h3`; use `div`/`span` when it is not a heading. */
@@ -96,6 +98,7 @@ export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> &
 export function SectionLabel({
   children,
   variant = "section",
+  size = "caption",
   as: Heading = "h3",
   labelId,
   count,
@@ -191,6 +194,7 @@ export function SectionLabel({
       {...props}
       {...(host ? { selected } : {})}
       data-section-label=""
+      data-size={size === "micro" ? "micro" : undefined}
       data-compact-rail={compactRail || undefined}
       className={[styles.root, headerProps?.className, className].filter(Boolean).join(" ")}
     >

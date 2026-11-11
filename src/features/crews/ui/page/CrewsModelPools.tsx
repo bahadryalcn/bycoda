@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { t, useLocale } from "../../../../shared/i18n";
 import { Alert } from "../../../../shared/ui/Alert";
 import { Button } from "../../../../shared/ui/Button";
@@ -86,28 +87,32 @@ function PoolDialog({
         </>
       }
     >
-      <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3 border-0">
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        <TextField
-          label={t("Pool name")}
-          value={draft.name}
-          maxLength={80}
-          autoFocus
-          error={nameError}
-          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-        />
-        <MemberCandidateList
-          catalog={data.catalog}
-          candidates={draft.candidates}
-          onChange={(candidates) => setDraft({ ...draft, candidates })}
-        />
-        {attempted && issue === "models" ? (
-          <Alert tone="danger">{t("Choose a model")}</Alert>
-        ) : null}
-        {attempted && issue === "limit" ? (
-          <Alert tone="danger">{t("The model pool limit is reached. Delete a pool first.")}</Alert>
-        ) : null}
-      </fieldset>
+      <FieldGroup variant="bare" disabled={pending}>
+        <div className="flex min-w-0 flex-col gap-3">
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+          <TextField
+            label={t("Pool name")}
+            value={draft.name}
+            maxLength={80}
+            autoFocus
+            error={nameError}
+            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+          />
+          <MemberCandidateList
+            catalog={data.catalog}
+            candidates={draft.candidates}
+            onChange={(candidates) => setDraft({ ...draft, candidates })}
+          />
+          {attempted && issue === "models" ? (
+            <Alert tone="danger">{t("Choose a model")}</Alert>
+          ) : null}
+          {attempted && issue === "limit" ? (
+            <Alert tone="danger">
+              {t("The model pool limit is reached. Delete a pool first.")}
+            </Alert>
+          ) : null}
+        </div>
+      </FieldGroup>
     </Modal>
   );
 }

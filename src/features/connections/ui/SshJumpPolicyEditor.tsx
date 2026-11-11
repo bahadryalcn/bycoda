@@ -1,4 +1,5 @@
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { t } from "../../../shared/i18n";
 import { useRef } from "react";
 import { Button } from "../../../shared/ui/Button";
@@ -41,10 +42,16 @@ export function SshJumpPolicyEditor({
         {t("Strict host-key verification is always enabled for every hop.")}
       </p>
       {value.map((hop, index) => (
-        <fieldset key={ids[index]} disabled={disabled} className="min-w-0 border-0 p-0">
-          <legend className="text-ui-caption text-(--ui-text-muted)">
-            {t("Jump host")} {index + 1}
-          </legend>
+        <FieldGroup
+          key={ids[index]}
+          disabled={disabled}
+          gap="sm"
+          legend={
+            <>
+              {t("Jump host")} {index + 1}
+            </>
+          }
+        >
           <div className="flex min-w-0 items-end gap-1">
             <TextField
               fieldClassName="min-w-0 flex-1"
@@ -142,7 +149,7 @@ export function SshJumpPolicyEditor({
               </p>
             </div>
           </Disclosure>
-        </fieldset>
+        </FieldGroup>
       ))}
       <Button
         variant="ghost"

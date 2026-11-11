@@ -23,7 +23,7 @@ export default defineConfig({
     // Each UI worker transforms the provider graph. CPU-count-sized pools on
     // large hosts starve polling and race tests while builds run alongside them.
     maxWorkers: 4,
-    setupFiles: ["tests/browser/happy-dom-setup.ts"],
+    setupFiles: ["tests/browser/support/happy-dom-setup.ts"],
     environment: "node",
     include: ["src/**/*.test.ts", "packages/**/*.test.ts"],
     server: { deps: { inline: [/codemirror/, /lezer/] } },

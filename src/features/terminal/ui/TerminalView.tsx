@@ -18,7 +18,6 @@ import type { SshEndpoint } from "../../connections/model/serverInventory";
 import { useSshShellIntegration } from "../model/sshShellIntegration";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { t } from "../../../shared/i18n";
@@ -729,13 +728,11 @@ export function TerminalView({
             </div>
             {inputError ? <p className="mbs-2 break-words text-ui-caption">{inputError}</p> : null}
             {inputError ? (
-              <Disclosure size="sm" className="mbs-2" summary={t("Connection details")}>
-                <p className="break-words">
-                  {t(
-                    "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
-                  )}
-                </p>
-              </Disclosure>
+              <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">
+                {t(
+                  "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
+                )}
+              </p>
             ) : null}
           </Alert>
         </div>
@@ -753,9 +750,7 @@ export function TerminalView({
                 "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
               )}
             </p>
-            <Disclosure size="sm" className="mbs-2" summary={t("Connection details")}>
-              <p className="break-words">{inputError}</p>
-            </Disclosure>
+            <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">{inputError}</p>
           </Alert>
         </div>
       ) : null}

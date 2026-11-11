@@ -331,13 +331,11 @@ it("previews certificate and ordered jump references before an import choice", a
   );
   expect(container.textContent).toContain("Public SSH certificate file: C:/keys/user-certificate");
   expect(container.textContent).toContain("alice@first:22 → bob@second:2222");
-  const help = container.querySelector("details")!;
-  expect(help.open).toBe(false);
-  expect(help.querySelector("summary")?.textContent).toBe("Jump host authentication");
-  expect(help.textContent).toContain(
+  expect(container.querySelector("details")).toBeNull();
+  expect(container.textContent).toContain(
     "Each jump host uses its own identity and host-key verification",
   );
-  expect(help.textContent).toContain("choose a different key for each hop");
+  expect(container.textContent).toContain("choose a different key for each hop");
 });
 
 it("offers agent forwarding only with the compatible terminal owner and delegates explicit approval", async () => {

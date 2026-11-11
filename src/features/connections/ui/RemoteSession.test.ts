@@ -2160,8 +2160,16 @@ it("explains a dropped connection above the session and reconnects from there", 
   machineDown = unreachable;
   await render();
   expect(container.textContent).toContain("Can’t reach Home server");
-  expect(container.textContent).toContain("The machine did not answer");
-  expect(container.querySelector("details")?.open).toBe(false);
+  // The transport text stays behind Details instead of filling the bar.
+  expect(container.textContent).not.toContain("The machine did not answer");
+  const details = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Details",
+  )!;
+  await act(async () => details.click());
+  expect(document.querySelector('[aria-label="Error details"]')?.textContent).toContain(
+    "The machine did not answer",
+  );
+  await act(async () => details.click());
   expect(container.querySelector("[data-remote-data-state]")).toBeNull();
   expect(container.querySelector("textarea")).not.toBeNull();
   const reconnect = [...container.querySelectorAll("button")].find(

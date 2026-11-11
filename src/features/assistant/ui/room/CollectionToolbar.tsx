@@ -1,4 +1,5 @@
 import noteStyles from "../AssistantNoteCard.module.css";
+import { Heading } from "../../../../shared/ui/Heading";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -61,17 +62,17 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
       {view !== "Today" && view !== "Memory" && view !== "Conversations" && (
         <div className={`${styles.collectionTools} ${view === "Notes" ? noteStyles.toolbar : ""}`}>
           {view === "Notes" && (
-            <h2>
+            <Heading size="page" level={2}>
               {t("Notes")}{" "}
               <span>
                 {snapshot.notes.filter((note) => matches(query, note.title, note.body)).length}
               </span>
-            </h2>
+            </Heading>
           )}
           {view === "Jobs" && (
-            <h2 className={styles.jobsTitle}>
+            <Heading size="page" level={2} className={styles.jobsTitle}>
               {t("Jobs")} <span>{allJobs.length}</span>
-            </h2>
+            </Heading>
           )}
           <SearchInput
             type="search"

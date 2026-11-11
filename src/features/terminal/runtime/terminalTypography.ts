@@ -49,6 +49,24 @@ export function createTerminalTypography(options: {
   };
   window.addEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
 
+  // xterm measures its cell once, with whatever font is usable at that moment. A
+  // web font that becomes usable later changes the glyph metrics without any
+  // option change, leaving glyphs spread over stale cells. Assigning the same
+  // family is not a change to xterm, so swap it away and back to re-measure.
+  let disposed = false;
+  const fonts = typeof document === "undefined" ? undefined : document.fonts;
+  const remeasureFont = () => {
+    if (disposed) return;
+    const family = monoFont();
+    term.options.fontFamily = "monospace";
+    term.options.fontFamily = family;
+    term.clearTextureAtlas();
+    applySize();
+  };
+  fonts?.addEventListener("loadingdone", remeasureFont);
+  // Covers a font that is still loading and one nobody requested yet.
+  void fonts?.load(`${term.options.fontSize}px ${monoFont()}`).then(remeasureFont, () => undefined);
+
   const changeFontSize = (requested: number) => {
     const size = Math.max(8, Math.min(40, requested));
     if (size === term.options.fontSize) return;
@@ -91,6 +109,8 @@ export function createTerminalTypography(options: {
       applySize();
     },
     dispose() {
+      disposed = true;
+      fonts?.removeEventListener("loadingdone", remeasureFont);
       window.removeEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
       host.removeEventListener("wheel", onZoomWheel, true);
     },

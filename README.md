@@ -65,7 +65,7 @@ Feature availability and model options depend on the provider integration.
 
 Requirements:
 
-- Node.js 22.12 or newer (see [.nvmrc](.nvmrc))
+- Node.js 24.11 or newer (see [.nvmrc](.nvmrc))
 - pnpm, at the version pinned in [package.json](package.json)
 - Rust and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform
 - At least one supported provider CLI, installed and signed in

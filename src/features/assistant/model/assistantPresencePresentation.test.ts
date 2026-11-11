@@ -7,18 +7,18 @@ it.each([
   ["idle", "Idle", "warning"],
   ["dnd", "Do not disturb", "danger"],
   ["locked", "Locked", "danger"],
-  ["unknown", "Unknown", "neutral"],
+  ["offline", "Offline", "neutral"],
 ] as const)("presents %s with its semantic availability tone", (state, label, tone) => {
   expect(assistantPresencePresentation(state)).toEqual({ state, label, tone });
 });
 
-it("never presents failed, pending or unsupported observations as Here", () => {
-  expect(assistantPresencePresentation("present", true)).toEqual({
-    state: "unknown",
-    label: "Unknown",
+it("maps a missing or unrecognized value to offline, never to Here", () => {
+  expect(assistantPresencePresentation(undefined)).toEqual({
+    state: "offline",
+    label: "Offline",
     tone: "neutral",
   });
-  for (const state of [undefined, null, "active", "busy", "constructor", {}, false]) {
-    expect(assistantPresencePresentation(state).state).toBe("unknown");
+  for (const state of [null, "unknown", "active", "busy", "constructor", {}, false]) {
+    expect(assistantPresencePresentation(state).state).toBe("offline");
   }
 });

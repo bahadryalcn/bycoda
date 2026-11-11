@@ -1,4 +1,4 @@
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Popover } from "../../../shared/ui/Popover";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
@@ -216,6 +216,7 @@ function ProjectSearchContent({
           placeholder={t("Search")}
           aria-label={t("Search")}
           spellCheck={false}
+          className="text-ui-caption"
           containerClassName="min-w-0 flex-1"
         />
         <Button
@@ -353,9 +354,15 @@ function ProjectSearchContent({
                     onDoubleClick={() => openMatch(match, true)}
                     className="flex w-full items-start gap-2 text-left"
                   >
-                    <span className="w-7 shrink-0 pt-px text-right font-mono text-ui-micro text-(--ui-text-secondary) tabular-nums">
-                      {match.line}
-                    </span>
+                    <Tooltip label={t("Line {p0}", { p0: match.line })} asChild>
+                      <span
+                        role="img"
+                        aria-label={t("Line {p0}", { p0: match.line })}
+                        className="w-7 shrink-0 pt-px text-right font-mono text-ui-micro text-(--ui-text-muted) tabular-nums"
+                      >
+                        {match.line}
+                      </span>
+                    </Tooltip>
                     <span className="min-w-0 flex-1 truncate font-mono text-ui-micro leading-5 text-content">
                       <MatchPreview
                         preview={match.preview.trimEnd()}

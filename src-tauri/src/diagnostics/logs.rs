@@ -39,7 +39,7 @@ pub(super) fn host_marker_path(host_dir: &Path) -> PathBuf {
     host_dir.join("logs").join("last-crash.json")
 }
 
-/// Last `limit` bytes of `path`, whole lines only, decoded lossily (K-UTF8).
+/// Last `limit` bytes of `path`, whole lines only, decoded lossily (rule rust-bufreader-lines-on-stream).
 pub(super) fn read_tail(path: &Path, limit: u64) -> Option<(String, bool)> {
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();

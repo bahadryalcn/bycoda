@@ -1,6 +1,7 @@
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { TextField } from "../../../shared/ui/TextField";
@@ -835,7 +836,13 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         <header className={styles.libraryHeader}>
           <div className={styles.headingRow}>
             {/* Embedded in Settings the frame header already names the page: no second title row. */}
-            {header ? header : <h1>{t("Skills")}</h1>}
+            {header ? (
+              header
+            ) : (
+              <Heading size="page" level={1}>
+                {t("Skills")}
+              </Heading>
+            )}
             {header ? <div className={styles.filter}>{filterField}</div> : null}
             <Button
               variant="ghost"
@@ -960,7 +967,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                 className={styles.headingRow}
                 aria-busy={policyTarget === JSON.stringify([shownOn, previewSkill.path])}
               >
-                <h2>{previewSkill.name}</h2>
+                <Heading size="page" level={2}>
+                  {previewSkill.name}
+                </Heading>
                 {lists.find((list) => (list.machine?.environmentId ?? "local") === shownOn)
                   ?.policyKnown ? (
                   <Toggle

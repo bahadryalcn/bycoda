@@ -1,6 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Heading } from "../../../shared/ui/Heading";
 import { Popover } from "../../../shared/ui/Popover";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -51,6 +52,7 @@ import {
   readHarnessAuthStatus,
   type HarnessAuthStatus,
 } from "../../../integrations/harness/core/authStatus";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 const GenericAcpSettings = lazy(() =>
   import("../../providers/ui/GenericAcpSettings").then((module) => ({
     default: module.GenericAcpSettings,
@@ -162,7 +164,7 @@ export function OnboardingAgents({
     <>
       <div className="onboarding-provider-heading">
         <div className="onboarding-heading">
-          <h3>{t("Connect your agents")}</h3>
+          <Heading size="page" level={3}>{t("Connect your agents")}</Heading>
           <p>{t("Use the providers found on this computer, or add one from another location.")}</p>
         </div>
         <Button
@@ -445,7 +447,7 @@ export function OnboardingAgents({
             refresh();
           }}
         >
-          <Suspense fallback={<p role="status">{t("Loading…")}</p>}>
+          <Suspense fallback={<LoadingText layout="fill" />}>
             <GenericAcpSettings />
           </Suspense>
         </Modal>

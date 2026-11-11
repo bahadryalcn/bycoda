@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
 import { Popover } from "../../../shared/ui/Popover";
 import { TextField } from "../../../shared/ui/TextField";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -210,11 +211,7 @@ export function BrowserControlsPopover({
           <p className="host-tool-muted">{t("View only · take control to interact")}</p>
         ) : null}
       </section>
-      {error ? (
-        <Disclosure summary={errorSummary} size="sm" className="host-browser-error">
-          <pre>{error}</pre>
-        </Disclosure>
-      ) : null}
+      {error ? <DetailedInlineError summary={errorSummary} error={error} /> : null}
       {busy ? <Alert tone="info">{t("Working on the host…")}</Alert> : null}
       <div className="host-tool-actions">
         <Button

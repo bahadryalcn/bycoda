@@ -1,4 +1,5 @@
 import { t } from "../../../../../shared/i18n";
+import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../../shared/ui/NumberField";
 import { REEL_MIN_FPS, isValidFrameRate } from "../contentRules";
 import type { PlatformFieldProps } from "./PlatformFields";
@@ -15,8 +16,7 @@ export function FacebookReelFields({ value, media, disabled, onChange }: Platfor
     ? undefined
     : t("Enter the frame rate, at least {p0} fps.", { p0: REEL_MIN_FPS });
   return (
-    <fieldset className="content-platform" disabled={disabled}>
-      <legend>{t("Reel")}</legend>
+    <FieldGroup legend={t("Reel")} className="content-platform" disabled={disabled}>
       <p className="content-platform-note">
         {probe?.durationSeconds
           ? t("Video length {p0} seconds.", { p0: Math.round(probe.durationSeconds) })
@@ -41,6 +41,6 @@ export function FacebookReelFields({ value, media, disabled, onChange }: Platfor
           })
         }
       />
-    </fieldset>
+    </FieldGroup>
   );
 }

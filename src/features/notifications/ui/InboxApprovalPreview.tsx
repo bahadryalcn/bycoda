@@ -3,6 +3,7 @@ import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
+import { Surface } from "../../../shared/ui/Surface";
 import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
 import type { InboxApprovalComment, InboxApprovalDetails } from "../model/inboxApprovalDetails";
 
@@ -72,7 +73,7 @@ export function InboxApprovalPreview({
         ) : null}
       </DescriptionList>
       {details.thread ? (
-        <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md border border-(--ui-pane-border) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+        <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-card-border) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
           {details.thread}
         </pre>
       ) : null}
@@ -84,9 +85,12 @@ export function InboxApprovalPreview({
             {t("Line comments")} · {review.comments.length}
           </span>
           {review.comments.map((comment, index) => (
-            <article
+            <Surface
               key={`${comment.path}:${comment.line}:${index}`}
-              className="min-w-0 overflow-hidden rounded-md border border-(--ui-pane-border)"
+              as="article"
+              variant="outline"
+              padding="none"
+              className="min-w-0 overflow-hidden"
             >
               <header className="flex min-w-0 items-center gap-2 border-b border-(--ui-pane-border) px-3 py-1.5 font-mono text-ui-caption">
                 <MiddleTruncate mode="path" className="min-w-0">
@@ -102,7 +106,7 @@ export function InboxApprovalPreview({
               <div className="px-3 py-2">
                 <Body text={comment.body} cwd={details.project} />
               </div>
-            </article>
+            </Surface>
           ))}
         </section>
       ) : null}

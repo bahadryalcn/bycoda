@@ -88,6 +88,7 @@ import { SecondOpinionCard } from "./SecondOpinionCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Popover } from "../../../shared/ui/Popover";
+import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { CollectionFooter } from "../../../shared/ui/ContinuousList";
@@ -2201,9 +2202,11 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
           : null;
   return (
     <div className={`${embedded ? "" : "px-4"} py-2`}>
-      <div
+      <Surface
         data-shell-run
-        className="overflow-hidden rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) font-mono text-ui-caption leading-5"
+        variant="card"
+        padding="none"
+        className="overflow-hidden font-mono text-ui-caption leading-5"
       >
         <div className="flex min-w-0 items-start gap-2 px-3 py-1.5">
           <Terminal
@@ -2229,7 +2232,7 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
             {run.output.trimEnd()}
           </pre>
         ) : null}
-      </div>
+      </Surface>
     </div>
   );
 }

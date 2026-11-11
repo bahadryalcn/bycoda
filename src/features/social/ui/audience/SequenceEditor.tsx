@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { NumberField } from "../../../../shared/ui/NumberField";
@@ -219,8 +220,7 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
           </Button>
         </div>
 
-        <fieldset className="audience-card">
-          <legend>{t("Pace")}</legend>
+        <FieldGroup legend={t("Pace")} variant="card">
           <NumberField
             label={t("Most messages per hour")}
             min={1}
@@ -242,7 +242,7 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
             disabled={saving}
             onChange={(event) => setWarmupDays(event.target.value)}
           />
-        </fieldset>
+        </FieldGroup>
       </div>
     </Modal>
   );

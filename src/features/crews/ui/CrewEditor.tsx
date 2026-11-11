@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
+import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -348,7 +350,9 @@ function ConnectedCrewEditor({
   const roster = (
     <>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <h3 className="text-ui-title font-medium">{t("Members")}</h3>
+        <Heading size="section" level={3}>
+          {t("Members")}
+        </Heading>
         {draft.agents.length ? (
           <div className="flex min-w-0 items-center gap-2">
             {unfinished ? (
@@ -526,60 +530,58 @@ function ConnectedCrewEditor({
         </div>
       }
     >
-      <fieldset
-        ref={body}
-        disabled={pending}
-        className="@container/crew-editor flex min-w-0 flex-col gap-4 border-0"
-      >
-        <CrewEditorBanners
-          error={error}
-          catalogError={data.catalogError}
-          pending={pending}
-          onRetryCatalog={() => state.refetch().catch(() => {})}
-          conflict={conflict ? (missing ? "missing" : "changed") : undefined}
-          onKeepAsNew={() => {
-            forgetCrewDraft(draftKey, draft.id);
-            looks.seedFrom(draft.id);
-            setDraft({ ...draft, id: crypto.randomUUID(), updatedAt: 0 });
-          }}
-          onLoadLatest={
-            latest
-              ? () => {
-                  forgetCrewDraft(draftKey, latest.id);
-                  setDraft(structuredClone(latest));
-                  setPage({ kind: "team" });
-                }
-              : undefined
-          }
-        />
-        {notice ? <InlineMessage tone="success">{notice}</InlineMessage> : null}
-        {page.kind === "add" ? (
-          <CrewEditorAddPage
-            cwd={cwd}
-            data={data}
-            additions={additions}
-            role={page.role}
-            onBack={() => setPage({ kind: "team" })}
+      <FieldGroup ref={body} variant="bare" disabled={pending}>
+        <div className="@container/crew-editor flex min-w-0 flex-col gap-4">
+          <CrewEditorBanners
+            error={error}
+            catalogError={data.catalogError}
+            pending={pending}
+            onRetryCatalog={() => state.refetch().catch(() => {})}
+            conflict={conflict ? (missing ? "missing" : "changed") : undefined}
+            onKeepAsNew={() => {
+              forgetCrewDraft(draftKey, draft.id);
+              looks.seedFrom(draft.id);
+              setDraft({ ...draft, id: crypto.randomUUID(), updatedAt: 0 });
+            }}
+            onLoadLatest={
+              latest
+                ? () => {
+                    forgetCrewDraft(draftKey, latest.id);
+                    setDraft(structuredClone(latest));
+                    setPage({ kind: "team" });
+                  }
+                : undefined
+            }
           />
-        ) : (
-          <>
-            <CrewEditorHeader
-              draft={draft}
-              projectId={data.project.id}
-              isNew={isNew}
-              nameError={showIssues && issues.name ? t("Name the crew.") : undefined}
-              onChange={update}
+          {notice ? <InlineMessage tone="success">{notice}</InlineMessage> : null}
+          {page.kind === "add" ? (
+            <CrewEditorAddPage
+              cwd={cwd}
+              data={data}
+              additions={additions}
+              role={page.role}
+              onBack={() => setPage({ kind: "team" })}
             />
-            <CrewAccessRow
-              policy={draft.policy}
-              accessSupported={data.accessSupported === true}
-              onChange={updatePolicy}
-            />
-            {roster}
-            {advanced}
-          </>
-        )}
-      </fieldset>
+          ) : (
+            <>
+              <CrewEditorHeader
+                draft={draft}
+                projectId={data.project.id}
+                isNew={isNew}
+                nameError={showIssues && issues.name ? t("Name the crew.") : undefined}
+                onChange={update}
+              />
+              <CrewAccessRow
+                policy={draft.policy}
+                accessSupported={data.accessSupported === true}
+                onChange={updatePolicy}
+              />
+              {roster}
+              {advanced}
+            </>
+          )}
+        </div>
+      </FieldGroup>
     </Modal>
   );
 }

@@ -35,6 +35,7 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
     appearance.themeDarkLightness !== THEME_DARK_LIGHTNESS_DEFAULT ||
     !isDefaultAccent(appearance.accentColor) ||
     appearance.preferences.accentReadability !== APPEARANCE_DEFAULTS.accentReadability ||
+    appearance.preferences.surfaceContrast !== APPEARANCE_DEFAULTS.surfaceContrast ||
     appearance.preferences.canvasBackground !== CANVAS_BACKGROUND_DEFAULT;
   const resetColors = () => {
     appearance.onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
@@ -44,6 +45,7 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
     appearance.onPreferences({
       ...appearance.preferences,
       accentReadability: APPEARANCE_DEFAULTS.accentReadability,
+      surfaceContrast: APPEARANCE_DEFAULTS.surfaceContrast,
       canvasBackground: CANVAS_BACKGROUND_DEFAULT,
     });
   };
@@ -84,12 +86,17 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
         modified={
           appearance.themeHue !== THEME_HUE_DEFAULT ||
           appearance.themeSaturation !== THEME_SATURATION_DEFAULT ||
-          appearance.themeDarkLightness !== THEME_DARK_LIGHTNESS_DEFAULT
+          appearance.themeDarkLightness !== THEME_DARK_LIGHTNESS_DEFAULT ||
+          appearance.preferences.surfaceContrast !== APPEARANCE_DEFAULTS.surfaceContrast
         }
         resetLabel={t("Reset tone")}
         onReset={() => {
           appearance.onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
           appearance.onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT);
+          appearance.onPreferences({
+            ...appearance.preferences,
+            surfaceContrast: APPEARANCE_DEFAULTS.surfaceContrast,
+          });
         }}
       >
         <ToneSliders appearance={appearance} />
@@ -112,6 +119,7 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
           "hue",
           "saturation",
           "dark-lightness",
+          "surface-contrast",
           "interaction-tint",
           "interaction-strength",
         ]}

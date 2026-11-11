@@ -4,6 +4,14 @@ import { useSyncExternalStore } from "react";
 export type GitPanelSection = "stashes" | "graph";
 export type GitPanelSections = Readonly<Record<GitPanelSection, boolean>>;
 
+/** Which repository the one Stashes and Graph of a multi-repository overview show. */
+export type SectionRepositoryChoice = {
+  /** A listed repository path, or "" to follow the repository last used in the overview. */
+  value: string;
+  options: readonly { value: string; label: string; description?: string }[];
+  onChange: (value: string) => void;
+};
+
 const KEY = "bycoda.gitPanelSections";
 const listeners = new Set<() => void>();
 let cached: GitPanelSections | null = null;

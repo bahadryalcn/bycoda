@@ -2551,10 +2551,9 @@ describe("a task on its own branch", () => {
     expect(JSON.parse(prompt.slice(prompt.indexOf("{")))).toMatchObject({
       schema: "bycoda.task-contract.v1",
       task: { instructions: { objective: started.prompt } },
-      workspace: { path: started.worktreeCwd, branch: started.branch },
-      // Model text in planned instructions must not override the host's assignment.
-      runtime: { harness: started.harness, model: started.model },
     });
+    // The host's assignment is authoritative over model text in planned instructions.
+    expect(prompt).toContain("The host-assigned agent and model satisfy any model requirement");
     expect((await store.session(started.sessionId!)).session.cwd).toBe(started.worktreeCwd);
     expect(git(started.worktreeCwd!, "symbolic-ref", "--short", "HEAD")).toBe(started.branch);
     expect(git(repo.cwd, "symbolic-ref", "--short", "HEAD")).toBe("main");
@@ -2887,7 +2886,7 @@ describe("task verification", () => {
     expect(await s.task()).toMatchObject({ status: "running", repairAttempts: 1 });
     expect((await s.task()).attemptHistory?.at(-1)?.verdict).toBe("fail");
     expect((await s.task()).repairNote).toContain("Acceptance evidence is incomplete");
-    expect((await s.task()).retryFeedback).toContain('"verdict":"unresolved"');
+    expect((await s.task()).retryFeedback).toContain("unresolved");
   });
   it("retains unresolved evidence even when the reviewer writes PASS", async () => {
     const s = await setup();
@@ -2895,14 +2894,29 @@ describe("task verification", () => {
     await s.finish(started.reviewer!.sessionId!, acceptanceReply("unresolved"));
     expect((await s.task()).status).toBe("running");
     expect((await s.task()).repairNote).toContain("Acceptance evidence is incomplete");
-    expect((await s.task()).retryFeedback).toContain('"verdict":"verified"');
-    expect((await s.task()).retryFeedback).toContain('"verdict":"unresolved"');
+    // Only criteria still needing work are repeated; verified ones are not.
+    expect((await s.task()).retryFeedback).toContain("unresolved");
+    expect((await s.task()).retryFeedback).not.toContain("verified:");
   });
   it("invalidates criterion evidence when the workspace changes during review", async () => {
     const s = await setup();
     const started = await s.reviewing({ prompt: acceptancePrompt });
-    writeFileSync(join(s.turns.at(-1)!.input.cwd, "report.txt"), "Changed after review started");
-    await s.finish(started.reviewer!.sessionId!, acceptanceReply());
+    const cwd = s.turns.at(-1)!.input.cwd;
+    // Each change during a review starts a fresh review of the current contents,
+    // twice; a third change blocks instead of spending reviews without end.
+    for (const round of [1, 2]) {
+      const reviewer = (await s.task()).reviewer!.sessionId!;
+      writeFileSync(join(cwd, "report.txt"), `Changed during review ${round}`);
+      await s.finish(reviewer, acceptanceReply());
+      await s.advance();
+      const again = await s.task();
+      expect(again.status).toBe("verifying");
+      expect(again.reviewer!.sessionId).not.toBe(reviewer);
+      expect(again.ownerNotices).toHaveLength(round);
+    }
+    expect(started.reviewer!.sessionId).toBeTruthy();
+    writeFileSync(join(cwd, "report.txt"), "Changed during review 3");
+    await s.finish((await s.task()).reviewer!.sessionId!, acceptanceReply());
     expect((await s.task()).status).toBe("blocked");
     expect((await s.task()).error).toContain("working copy changed during acceptance review");
     expect(
@@ -2922,8 +2936,11 @@ describe("task verification", () => {
     const started = await s.reviewing({ prompt });
     writeFileSync(join(s.directory, "first", "temp", "local", "report.txt"), "Changed report");
     await s.finish(started.reviewer!.sessionId!, acceptanceReply());
-    expect((await s.task()).status).toBe("blocked");
-    expect((await s.task()).error).toContain("working copy changed during acceptance review");
+    // The stale verdict is discarded and the current contents are reviewed again.
+    const again = await s.task();
+    expect(again.status).toBe("verifying");
+    expect(again.verification?.review?.verdict).not.toBe("pass");
+    expect(again.ownerNotices?.at(-1)?.message).toContain("working copy changed during the review");
   });
   it("carries previous criterion evidence into a correction after clearing current verification", async () => {
     const s = await setup();
@@ -2933,9 +2950,8 @@ describe("task verification", () => {
     const queued = await s.task();
     expect(queued.repairAttempts).toBe(1);
     expect(queued.verification).toBeUndefined();
-    expect(queued.retryFeedback).toContain("Recorded acceptance evidence from the previous result");
-    expect(queued.retryFeedback).toContain("report.txt:1");
-    expect(queued.retryFeedback).toContain('"verdict":"unresolved"');
+    expect(queued.retryFeedback).toContain("Acceptance criteria not yet verified");
+    expect(queued.retryFeedback).toContain("unresolved");
   });
   it("recognizes changed ignored deliverables as progress across failed acceptance reviews", async () => {
     const s = await setup();
@@ -3090,7 +3106,7 @@ describe("task verification", () => {
       model: "claude:test",
     });
     const prompt = turns[1].input.text;
-    expect(prompt).toContain("Task: Ship the report");
+    expect(prompt).toContain('"title": "Ship the report"');
     expect(prompt).toContain("Write the weekly report");
     expect(prompt).toContain(`git diff ${verifying.baseCommit}`);
     await finish(reviewer, "The report covers the week.\n\nVERDICT: PASS");
@@ -3206,7 +3222,7 @@ describe("task verification", () => {
     expect((await task()).ownerNotices).toBeUndefined();
     expect((await task()).completedWithFindings).toBeUndefined();
     expect((await task()).attemptHistory).toHaveLength(3);
-    expect((await task()).retryFeedback).toContain("Friday is still missing.");
+    expect(JSON.stringify((await task()).reviewNotes)).toContain("Friday is still missing.");
   });
   it("still hands legacy blocked work to one independent worker", async () => {
     const { tasks, store, engine, clock, reviewing, legacyFailedReview, task, finish } =
@@ -3846,7 +3862,8 @@ describe("task verification", () => {
         // The correction starts automatically; verification is cleared, the finding kept.
         expect(await task()).toMatchObject({ status: "running", repairAttempts: 1 });
         expect((await task()).verification).toBeUndefined();
-        expect((await task()).retryFeedback).toContain("package.ts:42");
+        // The reviewer's detail travels once, in the structured review note.
+        expect(turns.at(-1)!.input.text).toContain("package.ts:42");
         expect((await task()).retryFeedback!.length).toBeLessThanOrEqual(12000);
         expect((await task()).prompt).toBe(originalPrompt);
         expect((await task()).sessionId).not.toBe(verifying.sessionId);

@@ -33,7 +33,7 @@ vi.mock("@xterm/addon-webgl", () => ({
   },
 }));
 
-import { createTerminalWebgl, WEBGL_IDLE_DROP_MS } from "./terminalWebgl";
+import { createTerminalWebgl, WEBGL_CONTEXT_CAP, WEBGL_IDLE_DROP_MS } from "./terminalWebgl";
 import { fitTerminal } from "../model/terminalLayout";
 
 // Everything a PTY bridge hangs off the terminal. The renderer adapter must
@@ -362,6 +362,35 @@ describe("terminal WebGL renderer adapter", () => {
       vi.advanceTimersByTime(WEBGL_IDLE_DROP_MS);
       expect(webgl.addons[0].dispose).toHaveBeenCalledOnce();
     });
+  });
+
+  it("releases the longest-hidden contexts at once when more than the cap are held", async () => {
+    // The held-context registry is module state: start from an empty one.
+    vi.resetModules();
+    const { createTerminalWebgl } = await import("./terminalWebgl");
+    const visible = new Map<number, boolean>();
+    const adapters = [];
+    for (let i = 0; i < WEBGL_CONTEXT_CAP; i++) {
+      visible.set(i, false);
+      const adapter = createTerminalWebgl(fakeTerminal().term, () => visible.get(i) ?? false);
+      visible.set(i, true);
+      await adapter.load();
+      visible.set(i, i === 3); // terminal 3 stays on screen, the rest are hidden
+      adapters.push(adapter);
+    }
+    const before = webgl.addons.length;
+    expect(before).toBe(WEBGL_CONTEXT_CAP);
+    expect(webgl.addons.every((a) => !a.dispose.mock.calls.length)).toBe(true);
+
+    const extra = createTerminalWebgl(fakeTerminal().term, () => true);
+    await extra.load();
+    const fresh = webgl.addons;
+    // The oldest hidden one (0) is freed; the visible one (3) and the newcomer are kept.
+    expect(fresh[0].dispose).toHaveBeenCalledOnce();
+    expect(fresh[1].dispose).not.toHaveBeenCalled();
+    expect(fresh[3].dispose).not.toHaveBeenCalled();
+    expect(fresh[WEBGL_CONTEXT_CAP].dispose).not.toHaveBeenCalled();
+    for (const adapter of [...adapters, extra]) adapter.dispose();
   });
 
   it("frees the attached WebGL context when the renderer is dropped", async () => {

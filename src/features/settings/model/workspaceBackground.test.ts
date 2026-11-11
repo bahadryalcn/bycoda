@@ -190,3 +190,22 @@ describe("workspace background", () => {
     expect(readWorkspaceBackgroundIssue()).toBeNull();
   });
 });
+
+describe("workspace background ground", () => {
+  it("publishes the mean stop colour and its lightness for layer derivation", async () => {
+    const { workspaceBackgroundGround } = await import("./workspaceBackground");
+    const linear = workspaceBackgroundGround({
+      ...WORKSPACE_BACKGROUND_DEFAULT,
+      style: "linear",
+      colors: ["#000000", "#808080", "#ffffff"],
+    });
+    expect(linear.color).toBe("#808080");
+    expect(linear.lightness).toBeCloseTo(50.2, 0);
+    const solid = workspaceBackgroundGround({
+      ...WORKSPACE_BACKGROUND_DEFAULT,
+      style: "solid",
+      colors: ["#b0b8b6", "#000000", "#000000"],
+    });
+    expect(solid.color).toBe("#b0b8b6");
+  });
+});

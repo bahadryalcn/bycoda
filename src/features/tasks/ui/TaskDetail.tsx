@@ -1,3 +1,4 @@
+import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -204,9 +205,9 @@ export function TaskDetail({
           ) : (
             <>
               <div className="flex items-start gap-2">
-                <h2 className="min-w-0 flex-1 break-words text-ui-title font-medium text-(--color-content)">
+                <Heading size="section" className="min-w-0 flex-1 break-words">
                   {task.title}
-                </h2>
+                </Heading>
                 {editable ? (
                   <Button
                     variant="ghost"

@@ -1,5 +1,6 @@
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
@@ -321,9 +322,9 @@ export function SettingsView({
             onChange={(value) => onReveal(value as SettingsSectionId, null)}
           />
         </div>
-        <h1 className="settings-page-title" tabIndex={-1}>
+        <Heading size="page" className="settings-page-title" tabIndex={-1}>
           {settingsSectionLabel(section)}
-        </h1>
+        </Heading>
         <div className="bycoda-settings-toolbar-actions">
           <SidebarUpdateFooter />
           <SettingsSearch onReveal={onReveal} />

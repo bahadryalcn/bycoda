@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { sessionNotFound } from "../sessions/session-authority";
 import { bindNativeServicesOwner, type NativeServicesAdapters } from "./native-services";
 function fixture() {
   let authorized = true;
@@ -60,4 +61,31 @@ it("rejects status when the actual device is revoked while its read is pending",
     return result;
   });
   await expect(f.port.desktopStatus!()).rejects.toThrow();
+});
+it("refuses access for a session nobody stores as not sent, without wrapping the refusal", async () => {
+  const refusal = sessionNotFound();
+  const issueSessionGrant = vi.fn(async () => {
+    throw refusal;
+  });
+  const port = bindNativeServicesOwner(
+    {
+      store: {
+        environmentId: "environment",
+        db: {
+          withAuthorization: async (_guard: unknown, action: () => Promise<unknown>) => action(),
+        },
+      },
+      inHost: async () => false,
+      desktopProjectCwd: async () => undefined,
+      social: { issueSessionGrant },
+      conversation: { issueSessionGrant },
+      runtimeLogs: { issueSessionGrant },
+    } as unknown as NativeServicesAdapters,
+    "captured-device-hash",
+    async () => true,
+  );
+  for (const kind of ["social", "conversation", "runtime-logs"] as const)
+    await expect(port.issue(kind, "missing", undefined)).rejects.toBe(refusal);
+  expect(issueSessionGrant).toHaveBeenCalledTimes(3);
+  expect(refusal).toMatchObject({ delivery: "not-sent", retryable: false });
 });

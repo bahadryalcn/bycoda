@@ -46,9 +46,6 @@
   gap: 6px;
   margin-inline: 12px;
   margin-block-end: 8px;
-  padding: 8px;
-  border: 1px solid var(--ui-editor-border);
-  border-radius: var(--ui-radius-card);
 }
 .jira-board-transition strong {
   flex-basis: 100%;

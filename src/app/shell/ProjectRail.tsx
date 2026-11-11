@@ -9,9 +9,7 @@ import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Sash } from "../../shared/ui/Sash";
 import { WindowChromeInset } from "../../shared/ui/PaneHeader";
-import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
-import { ExpandingButtonGroup } from "../../shared/ui/ExpandingButtonGroup";
 import { useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
 import {
@@ -53,6 +51,7 @@ import {
 } from "../../shared/ui/icons";
 import {
   Fragment,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -61,6 +60,10 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { useProjectLogoPath } from "./useProjectLogoPath";
+import { useRailBackground } from "./useRailBackground";
+import { useRemoteProject } from "./useRemoteProject";
+import { useMuteStatuses } from "./useMuteStatuses";
 import { useStableCallback } from "../../shared/hooks/useStableCallback";
 import { useDragResize } from "../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
@@ -101,17 +104,16 @@ import {
   type RecentProject,
 } from "../../features/projects/model/recents";
 import {
-  loadRailBackgrounds,
   railBackgroundColor,
   resolveTabGroupColor,
   resolveTabGroupLabel,
-  resolveTabGroupLogo,
   resolveTabGroupMascot,
 } from "../../features/workspace/model/tabGroups";
 import {
   changeProjectGroupMembers,
   projectGroupColor,
   projectGroupIdForPath,
+  projectGroupIdsToExpand,
   projectGroupParentId,
   projectGroupWorkspaceRoot,
   projectGroupWorkspaceRootKeys,
@@ -129,7 +131,7 @@ import {
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
-import { RailAction } from "./RailAction";
+import { RailToolGroup } from "./RailToolGroup";
 import { RailBrand } from "./RailBrand";
 import {
   dismissRemoteProjects,
@@ -151,7 +153,6 @@ import { SidebarAccountFooter } from "./SidebarAccountFooter";
 import type { InstalledUpdate } from "../model/updateNotice";
 import type { SettingsSectionId } from "../../features/settings/model/settings";
 import { InboxNotificationMenu } from "./sidebarSurfaces";
-import { notificationMuteStatus } from "../../features/notifications/ui/notificationMuteActions";
 import { useProjectNotificationPreferences } from "../../features/notifications/hooks/useProjectNotificationPreferences";
 import { useNotificationProjects } from "../../features/notifications/hooks/useNotificationProjects";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
@@ -161,7 +162,6 @@ import {
   useRemoteMachineOnline,
   useRemoteMachines,
 } from "../../features/connections/model/connections";
-import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { machineLabel } from "../../features/connections/model/machineIdentity";
 import { connectionIndicator } from "../../features/connections/model/remoteConnection";
 import { useRemoteConnection } from "../../features/connections/model/useRemoteConnection";
@@ -204,6 +204,8 @@ import { useRetainedWhileClosing } from "./useRetainedWhileClosing";
 
 /** The macOS window buttons take the top 78px, plus room for the panel toggle. */
 const PROJECT_RAIL_MAC_MIN = 112;
+/** Dismissal key for the Projects section shown open for the active project. */
+const PROJECTS_REVEAL_ID = "section:projects";
 const railMin = IS_MAC ? PROJECT_RAIL_MAC_MIN : PROJECT_RAIL_WIDTH_MIN;
 
 // The rail goes icon-only below PROJECT_RAIL_COMPACT_WIDTH (140px). That is a
@@ -353,13 +355,18 @@ export function ProjectRail({
   const automationsShortcut = useKeybindingShortcut("App: Open Automations");
   const tasksShortcut = useKeybindingShortcut("App: Open Tasks");
   const assistantLabel = useAssistantRoomLabel();
+  // Read once: the saved width is localStorage, which the compiler cannot see change.
+  const [initialRailWidth] = useState(loadProjectRailWidth);
+  const commitRailWidth = useCallback((width: number) => saveProjectRailWidth(width), []);
   const resize = useDragResize({
     min: railMin,
     max: () => sidePaneMaxWidth("rail", PROJECT_RAIL_WIDTH_MAX, 0.35, railMin),
     defaultWidth: PROJECT_RAIL_WIDTH_DEFAULT,
-    initial: loadProjectRailWidth(),
-    onCommit: saveProjectRailWidth,
+    initial: initialRailWidth,
+    onCommit: commitRailWidth,
   });
+  // Destructured: the compiler treats a direct `.setPaneRef` read as a ref access during render.
+  const { setPaneRef: attachRailPane } = resize;
   const {
     railOrder,
     pinnedPaths,
@@ -372,6 +379,10 @@ export function ProjectRail({
     remoteOnly,
   } = useProjectRailData();
   const [groupMutationError, setGroupMutationError] = useState(false);
+  const [revealDismissed, setRevealDismissed] = useState<{ cwd: string; ids: string[] }>({
+    cwd,
+    ids: [],
+  });
   const [lastSessionsShown, setLastSessionsShown] = useState(false);
   const [crewsShown, setCrewsShown] = useState(false);
   const [inboxMenu, setInboxMenu] = useState<{
@@ -394,7 +405,8 @@ export function ProjectRail({
         list.querySelector<HTMLElement>("[data-project-path] button[aria-current]") ??
         list.querySelector<HTMLElement>("[data-project-path] button");
       target?.focus();
-      if (document.activeElement !== target && ++attempts < 12)
+      attempts += 1;
+      if (document.activeElement !== target && attempts < 12)
         frame = requestAnimationFrame(focusRow);
     };
     frame = requestAnimationFrame(focusRow);
@@ -418,7 +430,7 @@ export function ProjectRail({
     });
   };
   // Detect picker additions by comparing remembered projects; cancellation changes nothing.
-  const addProjectToGroup = (groupId: string) => {
+  const handleAddProjectToGroup = (groupId: string) => {
     const before = loadRecents().map((item) => item.path);
     void (async () => {
       try {
@@ -444,14 +456,15 @@ export function ProjectRail({
     for (const path of busyPaths ?? []) set.add(path);
     return set;
   }, [busyPaths]);
+  const allProjects = useMemo(() => collectRailProjects(recents, cwd), [cwd, recents]);
   const projectMenu = useProjectMenu({
     onRenameProjectFolder,
     onRemoveProject,
-    projectPaths: [...collectRailProjects(recents, cwd).values()].map((project) => project.path),
+    projectPaths: [...allProjects.values()].map((project) => project.path),
     activeProject: cwd,
     isProjectBusy: (path) => isBusyPath(path, busy),
     onOpenNotificationSettings,
-    onAddProjectToGroup: addProjectToGroup,
+    onAddProjectToGroup: handleAddProjectToGroup,
     onOpen: () => setInboxMenu(null),
   });
   useEffect(() => {
@@ -460,7 +473,6 @@ export function ProjectRail({
     setInboxMenu(null);
   }, [visible]);
   const notificationPreferences = useProjectNotificationPreferences();
-  const allProjects = useMemo(() => collectRailProjects(recents, cwd), [cwd, recents]);
   // Projects in a locked group stay in `allProjects` so their saved order and
   // pins survive, but nothing below lists them while the group is locked.
   const { lock, hiddenGroupIds } = useGroupLock();
@@ -484,11 +496,7 @@ export function ProjectRail({
   const menuTrigger = useRef<HTMLElement | null>(null);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const groupLogos = useTabGroupLogos();
-  const muteStatuses = new Map<string, string | null>();
-  for (const project of notificationProjects.projects) {
-    const status = notificationMuteStatus(notificationPreferences[project.id]);
-    for (const path of project.paths) muteStatuses.set(pathKey(path), status);
-  }
+  const muteStatuses = useMuteStatuses(notificationProjects.projects, notificationPreferences);
   const sections = useMemo(
     () => projectRailSections(recents, cwd, railOrder, pinnedPaths),
     [cwd, pinnedPaths, railOrder, recents],
@@ -498,16 +506,19 @@ export function ProjectRail({
     [projectGroups],
   );
   const filterQuery = projectFilter.trim().toLocaleLowerCase();
-  const projectMatches = (path: string) =>
-    !filterQuery ||
-    [
-      resolveTabGroupLabel(projectKey(path), groupLabels, projectName(path)),
-      projectName(path),
-      path,
-    ]
-      .join("\n")
-      .toLocaleLowerCase()
-      .includes(filterQuery);
+  const projectMatches = useCallback(
+    (path: string) =>
+      !filterQuery ||
+      [
+        resolveTabGroupLabel(projectKey(path), groupLabels, projectName(path)),
+        projectName(path),
+        path,
+      ]
+        .join("\n")
+        .toLocaleLowerCase()
+        .includes(filterQuery),
+    [filterQuery, groupLabels],
+  );
   const pinnedProjects = useMemo(
     () =>
       sections.pinned.filter(
@@ -517,8 +528,7 @@ export function ProjectRail({
           !projectGroupIdForPath(item.path, projectGroupAssignments) &&
           projectMatches(item.path),
       ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lock, sections.pinned, workspaceRootKeys, filterQuery, groupLabels, projectGroupAssignments],
+    [lock, sections.pinned, workspaceRootKeys, projectGroupAssignments, projectMatches],
   );
   const groupedProjectSections = useMemo(() => {
     const byGroup = new Map<string, RecentProject[]>(projectGroups.map((group) => [group.id, []]));
@@ -591,16 +601,14 @@ export function ProjectRail({
           workspaceItems: lock.lockedGroupIds.has(group.id) ? [] : workspaceItemsOf(group.id),
         })),
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     filterQuery,
-    groupLabels,
     lock,
     hiddenGroupIds,
     projectGroupAssignments,
     projectGroups,
-    sections.projects,
-    sections.pinned,
+    projectMatches,
+    sections,
     workspaceRootKeys,
   ]);
   useEffect(() => {
@@ -624,6 +632,15 @@ export function ProjectRail({
     if (!visible || !cwd) return;
     revealProject(cwd);
   }, [cwd, visible]);
+  // Groups holding the active project render open so its row is visible. The
+  // saved collapsed state is untouched; closing one by hand dismisses the reveal
+  // until another project becomes active.
+  const dismissedRevealIds = revealDismissed.cwd === cwd ? revealDismissed.ids : [];
+  const revealedGroupIds = cwd
+    ? projectGroupIdsToExpand(cwd, projectGroups, projectGroupAssignments).filter(
+        (id) => !dismissedRevealIds.includes(id),
+      )
+    : [];
   const closeProjectMenu = useStableCallback(projectMenu.close);
   useEffect(() => {
     if (!projectMenu.isOpen) return;
@@ -700,11 +717,12 @@ export function ProjectRail({
   };
   // A group moves as a block: while one is dragged every group shows only its
   // header (the saved collapsed state is untouched), so the blocks stay one size.
+  const commitGroupOrder = useCallback((ids: readonly string[]) => reorderProjectGroups(ids), []);
   const groupSortable = useAnimatedReorder(
     projectGroups
       .filter((group) => !projectGroupParentId(group, projectGroups, projectGroupAssignments))
       .map((group) => group.id),
-    reorderProjectGroups,
+    commitGroupOrder,
     "y",
     undefined,
     {
@@ -718,6 +736,13 @@ export function ProjectRail({
   if (pinnedProjects.length > 0) shownSections.add("pinned");
   if (projectGroups.length > 0) shownSections.add("groups");
   const rail = useRailSections(shownSections);
+  // A collapsed Projects section still shows the active project's row, under the
+  // same dismissal as the groups above.
+  const activeUngrouped = groupedProjectSections.ungrouped.some((item) =>
+    sameProjectPath(item.path, cwd),
+  );
+  const projectsRevealed =
+    rail.collapsed.projects && activeUngrouped && !dismissedRevealIds.includes(PROJECTS_REVEAL_ID);
   const selectionBuckets = {
     pinned: pinnedIds,
     groups: groupedProjectSections.grouped
@@ -782,6 +807,7 @@ export function ProjectRail({
       items={items}
       workspaceItems={workspaceItems}
       locked={locked}
+      revealed={revealedGroupIds.includes(group.id)}
       sortableGroups={sortableGroups}
       muteStatuses={muteStatuses}
       nameCollisions={nameCollisions}
@@ -796,14 +822,20 @@ export function ProjectRail({
         projectMenu.open(path, x, y, undefined, onSelectForBulk, rowMove(path))
       }
       onReorder={onReorderProjects}
-      onToggleCollapsed={() =>
-        locked
-          ? projectMenu.requestUnlock(group.id)
-          : updateProjectGroup(group.id, (current) => ({
-              ...current,
-              collapsed: !current.collapsed,
-            }))
-      }
+      onToggleCollapsed={() => {
+        if (locked) {
+          projectMenu.requestUnlock(group.id);
+          return;
+        }
+        const revealed = revealedGroupIds.includes(group.id);
+        if (revealed) setRevealDismissed({ cwd, ids: [...dismissedRevealIds, group.id] });
+        // A group shown open only for the active project is already saved collapsed.
+        if (revealed && group.collapsed) return;
+        updateProjectGroup(group.id, (current) => ({
+          ...current,
+          collapsed: !current.collapsed,
+        }));
+      }}
       onToggleLock={() => projectMenu.toggleGroupLock(group.id)}
       onOpenGroupMenu={(x, y, onOpenGitOverview) =>
         projectMenu.openGroupMenu(
@@ -832,6 +864,9 @@ export function ProjectRail({
       }}
     </ProjectGroupSection>
   );
+  // Destructured: the compiler treats a direct `.setRef` read as a ref access during render.
+  const groupsDrag = rail.drag("groups");
+  const { setRef: setGroupsSectionRef } = groupsDrag;
   const sectionNodes: Record<RailSectionId, ReactNode> = {
     "last-sessions": recentSessions ? (
       <div className="shrink-0 @max-[140px]/rail:hidden">
@@ -891,13 +926,13 @@ export function ProjectRail({
     groups:
       projectGroups.length > 0 ? (
         <div
-          ref={rail.drag("groups").setRef}
+          ref={setGroupsSectionRef}
           className={RAIL_SECTION_BLOCK}
           data-collapsed={rail.collapsed.groups || undefined}
         >
           <ProjectSectionHeader
             label={t("Groups")}
-            drag={rail.drag("groups")}
+            drag={groupsDrag}
             collapsed={rail.collapsed.groups}
             onToggleCollapsed={() => rail.toggleCollapsed("groups")}
             onAddGroup={(x, y) => projectMenu.createGroup(x, y)}
@@ -927,8 +962,14 @@ export function ProjectRail({
     projects: (
       <ProjectSection
         label={t("Projects")}
-        collapsed={rail.collapsed.projects}
-        onToggleCollapsed={() => rail.toggleCollapsed("projects")}
+        collapsed={rail.collapsed.projects && !projectsRevealed}
+        onToggleCollapsed={() => {
+          if (activeUngrouped)
+            setRevealDismissed({ cwd, ids: [...dismissedRevealIds, PROJECTS_REVEAL_ID] });
+          // Shown open only for the active project: the saved state is already collapsed.
+          if (projectsRevealed) return;
+          rail.toggleCollapsed("projects");
+        }}
         items={groupedProjectSections.ungrouped}
         muteStatuses={muteStatuses}
         nameCollisions={nameCollisions}
@@ -996,7 +1037,7 @@ export function ProjectRail({
   ) : null;
   return (
     <nav
-      ref={resize.setPaneRef}
+      ref={attachRailPane}
       data-side-pane="rail"
       data-usage-guide="project-navigation"
       aria-label={t("Projects")}
@@ -1061,65 +1102,29 @@ export function ProjectRail({
                 <nav
                   aria-label={t("Workspace tools")}
                   data-usage-guide="rail-tools"
-                  className="bycoda-rail-tools bycoda-rail-tools--expanding shrink-0"
+                  className="bycoda-rail-tools shrink-0"
                 >
-                  <ExpandingButtonGroup
+                  <RailToolGroup
                     label={t("Workspace tools")}
-                    size="sm"
-                    chrome="bare"
-                    fit
-                    fullWidth
-                    defaultExpanded={
-                      serversActive
-                        ? "servers"
-                        : inboxActive
-                          ? "inbox"
-                          : notesActive
-                            ? "notes"
-                            : automationsActive
-                              ? "automations"
-                              : socialActive
-                                ? "social"
-                                : tasksActive
-                                  ? "tasks"
-                                  : assistantActive
-                                    ? "assistant"
-                                    : null
-                    }
-                    items={[
+                    tools={[
                       {
                         id: "servers",
                         label: t("Servers"),
-                        icon: <Server />,
+                        icon: <Server className="icon-sm" />,
                         active: serversActive,
                         onSelect: onOpenServers,
-                        disabled: !onOpenServers,
                       },
                       ...(workspaceFeatures.inbox || inboxActive
                         ? [
                             {
                               id: "inbox",
                               label: t("Inbox"),
+                              icon: <Inbox className="icon-sm" />,
                               active: inboxActive,
                               shortcut: inboxShortcut,
-                              tooltip: inboxUnseen ? t("New items") : undefined,
-                              ariaLabel: inboxUnseen
-                                ? `${t("Inbox")}, ${t("New items")}`
-                                : t("Inbox"),
-                              icon: (
-                                <span className="relative">
-                                  <Inbox />
-                                  {inboxUnseen ? (
-                                    <StatusDot
-                                      label={t("New items")}
-                                      aria-hidden
-                                      className="absolute [inset-inline-end:-3px] [inset-block-start:-2px]"
-                                    />
-                                  ) : null}
-                                </span>
-                              ),
+                              dot: inboxUnseen ? t("New items") : undefined,
+                              guide: "rail-inbox",
                               onSelect: onOpenInbox,
-                              disabled: !onOpenInbox,
                               onOpenContextMenu: (x: number, y: number) => {
                                 menuTrigger.current =
                                   document.activeElement instanceof HTMLElement
@@ -1136,11 +1141,11 @@ export function ProjectRail({
                             {
                               id: "notes",
                               label: t("Notes"),
-                              icon: <StickyNote />,
+                              icon: <StickyNote className="icon-sm" />,
                               active: notesActive,
                               shortcut: notesShortcut,
+                              guide: "rail-notes",
                               onSelect: onOpenNotes,
-                              disabled: !onOpenNotes,
                             },
                           ]
                         : []),
@@ -1149,11 +1154,11 @@ export function ProjectRail({
                             {
                               id: "automations",
                               label: t("Automations"),
-                              icon: <Zap />,
+                              icon: <Zap className="icon-sm" />,
                               active: automationsActive,
                               shortcut: automationsShortcut,
+                              guide: "rail-automations",
                               onSelect: onOpenAutomations,
-                              disabled: !onOpenAutomations,
                             },
                           ]
                         : []),
@@ -1162,7 +1167,7 @@ export function ProjectRail({
                             {
                               id: "social",
                               label: t("Social Media"),
-                              icon: <Globe />,
+                              icon: <Globe className="icon-sm" />,
                               active: socialActive,
                               onSelect: () => {
                                 window.dispatchEvent(
@@ -1177,104 +1182,23 @@ export function ProjectRail({
                             {
                               id: "tasks",
                               label: t("Tasks"),
-                              icon: <DashboardSquare />,
+                              icon: <DashboardSquare className="icon-sm" />,
                               active: tasksActive,
                               shortcut: tasksShortcut,
+                              guide: "rail-tasks",
                               onSelect: onOpenTasks,
-                              disabled: !onOpenTasks,
                             },
                           ]
                         : []),
                       {
                         id: "assistant",
                         label: assistantLabel,
-                        icon: <Sparkles />,
+                        icon: <Sparkles className="icon-sm" />,
                         active: assistantActive,
+                        guide: "rail-assistant",
                         onSelect: () => openAssistantRoom(),
                       },
                     ]}
-                  />
-                </nav>
-                <nav
-                  aria-label={t("Workspace tools")}
-                  data-usage-guide="rail-tools"
-                  className="bycoda-rail-tools bycoda-rail-tools--compact shrink-0"
-                >
-                  <RailAction
-                    label={t("Servers")}
-                    icon={Server}
-                    onClick={onOpenServers}
-                    active={serversActive}
-                    ariaLabel={t("Servers")}
-                  />
-                  <WorkspaceFeatureGate id="inbox" active={inboxActive}>
-                    <RailAction
-                      label={t("Inbox")}
-                      icon={Inbox}
-                      onClick={onOpenInbox}
-                      onOpenContextMenu={(x, y) => {
-                        menuTrigger.current =
-                          document.activeElement instanceof HTMLElement
-                            ? document.activeElement
-                            : null;
-                        projectMenu.close();
-                        setInboxMenu({ x, y });
-                      }}
-                      active={inboxActive}
-                      dot={inboxUnseen}
-                      ariaLabel={inboxUnseen ? "Inbox, new items" : "Inbox"}
-                      guide="rail-inbox"
-                    />
-                  </WorkspaceFeatureGate>
-                  {notesEnabled ? (
-                    <RailAction
-                      label={t("Notes")}
-                      icon={StickyNote}
-                      onClick={onOpenNotes}
-                      active={notesActive}
-                      ariaLabel={t("Notes")}
-                      guide="rail-notes"
-                    />
-                  ) : null}
-                  <WorkspaceFeatureGate id="automations" active={automationsActive}>
-                    <RailAction
-                      label={t("Automations")}
-                      icon={Zap}
-                      onClick={onOpenAutomations}
-                      active={automationsActive}
-                      ariaLabel={t("Automations")}
-                      guide="rail-automations"
-                    />
-                  </WorkspaceFeatureGate>
-                  <WorkspaceFeatureGate id="social" active={socialActive}>
-                    <RailAction
-                      label={t("Social Media")}
-                      icon={Globe}
-                      onClick={() =>
-                        window.dispatchEvent(
-                          new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }),
-                        )
-                      }
-                      active={socialActive}
-                      ariaLabel={t("Social Media")}
-                    />
-                  </WorkspaceFeatureGate>
-                  <WorkspaceFeatureGate id="tasks" active={tasksActive}>
-                    <RailAction
-                      label={t("Tasks")}
-                      icon={DashboardSquare}
-                      onClick={onOpenTasks}
-                      active={tasksActive}
-                      ariaLabel={t("Tasks")}
-                      guide="rail-tasks"
-                    />
-                  </WorkspaceFeatureGate>
-                  <RailAction
-                    label={assistantLabel}
-                    icon={Sparkles}
-                    onClick={() => openAssistantRoom()}
-                    active={assistantActive}
-                    guide="rail-assistant"
                   />
                 </nav>
               </>
@@ -1449,8 +1373,9 @@ function ProjectSection({
   groupMascots: Record<string, string>;
 }) {
   useLocale();
+  const { setRef } = drag;
   return (
-    <div ref={drag.setRef} className={RAIL_SECTION_BLOCK} data-collapsed={collapsed || undefined}>
+    <div ref={setRef} className={RAIL_SECTION_BLOCK} data-collapsed={collapsed || undefined}>
       <ProjectSectionHeader
         label={label}
         onAdd={onAdd}
@@ -1718,6 +1643,7 @@ function ProjectSectionHeader({
 
 function ProjectGroupSection({
   group,
+  revealed = false,
   children,
   workspaceIds = [],
   items,
@@ -1745,6 +1671,8 @@ function ProjectGroupSection({
   groupMascots,
 }: {
   group: ProjectGroup;
+  /** Shown open because the active project is inside, whatever the saved collapsed state. */
+  revealed?: boolean;
   /** Renders one nested workspace; it reorders with the group's projects in one list. */
   children?: (id: string, sortable: SortableHandle) => ReactNode;
   workspaceIds?: string[];
@@ -1780,6 +1708,8 @@ function ProjectGroupSection({
   groupMascots: Record<string, string>;
 }) {
   const t = useT();
+  const headerBackground = useRailBackground(group.id, "header");
+  const bodyBackground = useRailBackground(group.id, "body");
   const { members, sortable } = useProjectGroupMembers(
     group,
     items.map((item) => item.path),
@@ -1790,7 +1720,7 @@ function ProjectGroupSection({
   const itemByPath = new Map(items.map((item) => [item.path, item]));
   const memberCount = items.length + workspaceIds.length;
   const countLabel = `${memberCount} ${memberCount === 1 ? "project" : "projects"}`;
-  const expanded = !group.collapsed && !locked;
+  const expanded = (!group.collapsed || revealed) && !locked;
   const collapsed = !expanded;
   // While any group is dragged, every group shows only its header.
   const folded = sortableGroups.draggingId !== null;
@@ -1859,7 +1789,7 @@ function ProjectGroupSection({
         data-group-row
         data-group-overview-open={overviewOpen || undefined}
         className={`project-reorder-item group relative flex h-(--ui-control-height-compact) items-stretch rounded-md px-2 text-content @max-[140px]/rail:px-0 ${RAIL_DRAG_HANDLE}`}
-        ground={railBackgroundColor(loadRailBackgrounds(group.id).header)}
+        ground={railBackgroundColor(headerBackground)}
         aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
         onPointerDown={(event) => {
           if (event.button !== 0) return;
@@ -2117,7 +2047,7 @@ function ProjectGroupSection({
               data-project-group-items
               // Members sit indented under the header, on a guide line below its chevron.
               className="relative flex flex-col gap-px p-1 ps-5 before:absolute before:inset-y-1 before:start-5 before:w-px before:bg-(--ui-pane-border) @max-[140px]/rail:ps-1 @max-[140px]/rail:before:hidden"
-              style={{ backgroundColor: railBackgroundColor(loadRailBackgrounds(group.id).body) }}
+              style={{ backgroundColor: railBackgroundColor(bodyBackground) }}
             >
               {members.map(({ kind, id }) => {
                 const item = itemByPath.get(id);
@@ -2208,13 +2138,14 @@ function ProjectCard({
   const key = projectKey(item.path);
   const seed = projectName(item.path);
   const name = resolveTabGroupLabel(key, groupLabels, fallbackName);
-  const logoPath = resolveTabGroupLogo(key, groupLogos);
+  const headerBackground = useRailBackground(key, "header");
+  const logoPath = useProjectLogoPath(key, groupLogos, groupMascots);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
   const diffEnabled = statsEnabled && Boolean(item.path) && item.path !== "~";
   const stats = useProjectDiffStats(item.path, diffEnabled, selected);
   // No read (or a failed one) is `null`, never "clean"; a clean tree shows nothing either.
   const change = projectGitChange(stats);
-  const remote = remoteProjectFor(item.path);
+  const remote = useRemoteProject(item.path);
   const { machines } = useRemoteMachines(!!remote);
   const machine = remote
     ? machines.find((entry) => entry.environmentId === remote.environmentId)
@@ -2234,9 +2165,9 @@ function ProjectCard({
   // The row's second label tells same-named projects apart: the machine for a remote project, the parent
   // folder for a local project whose name another rail project shares. The stored name never changes.
   const hostLabel = machine ? machineLabel(machines, machine) : "";
+  // A remote project never prints the host inline: the right-hand globe carries it in its tooltip and label.
   const context =
-    hostLabel ||
-    (!remote && isDuplicateProjectName(nameCollisions, name) ? parentFolderLabel(item.path) : "");
+    !remote && isDuplicateProjectName(nameCollisions, name) ? parentFolderLabel(item.path) : "";
   const changeSummary = change ? projectGitChangeSummary(change, t) : "";
   // The tooltip shows on hover and on keyboard focus: the name, then the path and state as muted lines.
   const rowTipDetails = [
@@ -2271,7 +2202,7 @@ function ProjectCard({
       selected={selected || multiSelected}
       hoverReveal
       data-project-path={item.path}
-      ground={railBackgroundColor(loadRailBackgrounds(key).header)}
+      ground={railBackgroundColor(headerBackground)}
       data-project-working={busy || undefined}
       data-multi-selected={multiSelected || undefined}
       data-project-row=""
@@ -2405,45 +2336,47 @@ function ProjectCard({
             {context}
           </span>
         ) : null}
-        {remote && !showReconnect ? (
-          <span
-            role="img"
-            aria-label={connection}
-            className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[140px]/rail:hidden"
-          >
-            <Internet className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
-            <StatusDot
-              label={connection}
-              aria-hidden="true"
-              tone={
-                indicator.tone === "connected"
-                  ? "success"
-                  : indicator.tone === "connecting"
-                    ? "warning"
-                    : "danger"
-              }
-              className="absolute right-0 bottom-0"
-            />
-          </span>
-        ) : null}
-        {muteStatus ? (
-          <span
-            role="img"
-            aria-label={muteStatus}
-            className="grid size-4 shrink-0 place-items-center text-warning @max-[140px]/rail:hidden"
-          >
-            <BellOff className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
-          </span>
-        ) : null}
-        {change ? (
-          <span
-            className="project-card-stats ms-auto shrink-0 @max-[140px]/rail:hidden!"
-            data-project-git=""
-            data-git-bucket={detailBucket ?? undefined}
-          >
-            <ProjectGitChangeMark change={change} />
-          </span>
-        ) : null}
+        <span className="ms-auto flex min-w-0 shrink-0 items-center gap-1 @max-[140px]/rail:hidden">
+          {remote && !showReconnect ? (
+            <span
+              role="img"
+              aria-label={connection}
+              className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[140px]/rail:hidden"
+            >
+              <Internet className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
+              <StatusDot
+                label={connection}
+                aria-hidden="true"
+                tone={
+                  indicator.tone === "connected"
+                    ? "success"
+                    : indicator.tone === "connecting"
+                      ? "warning"
+                      : "danger"
+                }
+                className="absolute right-0 bottom-0"
+              />
+            </span>
+          ) : null}
+          {muteStatus ? (
+            <span
+              role="img"
+              aria-label={muteStatus}
+              className="grid size-4 shrink-0 place-items-center text-warning @max-[140px]/rail:hidden"
+            >
+              <BellOff className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
+            </span>
+          ) : null}
+          {change ? (
+            <span
+              className="project-card-stats shrink-0 @max-[140px]/rail:hidden!"
+              data-project-git=""
+              data-git-bucket={detailBucket ?? undefined}
+            >
+              <ProjectGitChangeMark change={change} />
+            </span>
+          ) : null}
+        </span>
       </Button>
       {change ? (
         // The wrapper hides the dot outside the icon rail: StatusDot's own display beats `hidden`.

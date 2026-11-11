@@ -3,6 +3,7 @@ import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/
 import { t } from "../../../../shared/i18n";
 import { isImeComposition } from "../../../../shared/lib/keyboard";
 import { Button } from "../../../../shared/ui/Button";
+import { Heading } from "../../../../shared/ui/Heading";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { PromptField } from "../../../../shared/ui/PromptField";
 import { assistantJobProjectIds } from "../../model/assistantJobs";
@@ -167,7 +168,9 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
         </div>
       ) : view === "Jobs" ? (
         <div className={styles.empty}>
-          <h3>{t(filtered ? "No matching jobs" : "No jobs yet")}</h3>
+          <Heading size="item" level={3}>
+            {t(filtered ? "No matching jobs" : "No jobs yet")}
+          </Heading>
           {filtered ? (
             <Button
               variant="secondary"

@@ -34,6 +34,9 @@ import {
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Surface } from "../../../shared/ui/Surface";
 import { UsageBudgets } from "./UsageBudgets";
 import { UsageActiveTime } from "./UsageActiveTime";
 import { GrokLimits } from "./GrokLimits";
@@ -64,7 +67,7 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
         limits={(filters) => (
           <div className="usage-limits-content">
             <div className="usage-toolbar">
-              <h2>{t("Provider account limit")}</h2>
+              <Heading size="section">{t("Provider account limit")}</Heading>
               <UsageDisplaySettings />
               <Button
                 className="shrink-0"
@@ -76,7 +79,7 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                 <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
               </Button>
             </div>
-            <div className="usage-accounts">
+            <Surface variant="card" padding="none" className="usage-accounts">
               {accounts
                 .filter(
                   (account) =>
@@ -102,7 +105,7 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                   {t("No accounts on this machine. Add an account in Providers settings.")}
                 </p>
               ) : null}
-            </div>
+            </Surface>
             <UsageBudgets refresh={refresh} />
           </div>
         )}
@@ -149,7 +152,7 @@ function AccountLimits({
     >
       <div className="usage-account-heading">
         <div className="usage-account-identity">
-          <h3>
+          <Heading size="item" level={3}>
             <span className="usage-account-provider">
               <UsageProviderIdentity provider={provider} />
             </span>
@@ -157,7 +160,7 @@ function AccountLimits({
             {account.isDefault && label !== t("Default account") ? (
               <span className="usage-account-default">{t("Default account")}</span>
             ) : null}
-          </h3>
+          </Heading>
           <ProviderAccountSubtitle
             identity={identity}
             fallback={
@@ -231,7 +234,7 @@ function AccountLimits({
           return (
             <div key={kind} className="usage-quota">
               <div className="usage-quota-heading">
-                <h4>
+                <SectionLabel as="h4" classNames={{ label: "usage-quota-title" }}>
                   {t(
                     kind === "session" && window.windowMinutes === 300
                       ? "5 hours"
@@ -246,7 +249,7 @@ function AccountLimits({
                       ? t("Reset time unavailable")
                       : formatResetCountdown(window.resetsAt - now)}
                   </span>
-                </h4>
+                </SectionLabel>
                 <p>
                   <strong>{Math.round(shown)}%</strong>
                   <span>{showRemaining ? t("left") : t("used")}</span>

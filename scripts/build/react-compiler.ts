@@ -19,7 +19,9 @@ const reportDiagnostics: Logger["logEvent"] = (filename, event) => {
 const WORKERS = /(?:[\\/]workers?[\\/]|\.worker\.[jt]sx?$)/;
 const NODE_MODULES = /[\\/]node_modules[\\/]/;
 /** Compiled in full ("infer"): shared UI, the session surface and the shell. The guard pass
- * opts out each function that reads state the compiler cannot see. */
+ * opts out each function that reads state the compiler cannot see. Rule bycoda/compiler-owns-memo bans manual
+ * memoization in these folders: keep scripts/checks/oxlint-plugin/rules/compiler-owns-memo.mjs
+ * in step with this pattern. */
 const INFERRED =
   /[\\/]src[\\/](?:shared[\\/]ui|features[\\/]sessions[\\/]ui|app[\\/]shell)[\\/].*\.[jt]sx?$/;
 

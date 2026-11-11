@@ -5,14 +5,14 @@
       "rule": "oxlint/no-restricted-properties",
       "from": 24,
       "to": 25,
-      "reason": "K-CLOCK scope widened to Host scheduler, budget and watchdog modules."
+      "reason": "Date.now ban widened to Host scheduler, budget and watchdog modules."
     },
     {
       "baseline": "invariants-baseline.json",
       "rule": "ts-suppression-without-reason",
       "from": 0,
       "to": 49,
-      "reason": "New rule K-SUPPRESS recorded with its existing debt."
+      "reason": "New rule suppression-has-reason recorded with its existing debt."
     },
     {
       "baseline": "ui-drift-baseline.json",
@@ -36,6 +36,69 @@
       "reason": "New rule theme-palette-literal recorded with its existing debt."
     },
     {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "feature-typography",
+      "from": 0,
+      "to": 4359,
+      "reason": "New appearance ownership rule feature-typography recorded with its existing debt."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "surface-style",
+      "from": 0,
+      "to": 1452,
+      "reason": "New appearance ownership rule surface-style recorded with its existing debt."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "spacing-step",
+      "from": 0,
+      "to": 409,
+      "reason": "New appearance ownership rule spacing-step recorded with its existing debt."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "text-truncation",
+      "from": 0,
+      "to": 523,
+      "reason": "New appearance ownership rule text-truncation recorded with its existing debt."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "interaction-state",
+      "from": 0,
+      "to": 159,
+      "reason": "New appearance ownership rule interaction-state recorded with its existing debt."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "inline-style-property",
+      "from": 0,
+      "to": 98,
+      "reason": "New appearance ownership rule inline-style-property recorded with its existing debt."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "feature-motion",
+      "from": 0,
+      "to": 80,
+      "reason": "New appearance ownership rule feature-motion recorded with its existing debt."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "scrollbar-style",
+      "from": 0,
+      "to": 32,
+      "reason": "New appearance ownership rule scrollbar-style recorded with its existing debt."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "fixed-control-size",
+      "from": 0,
+      "to": 49,
+      "reason": "Widened from h-7/h-8 on Button and ActionHost to height, minimum height, square size and padding on every sized shared control and on control selectors in CSS."
+    },
+    {
       "baseline": "lint-baseline.json",
       "rule": "react-hooks(exhaustive-deps)",
       "from": 0,
@@ -50,11 +113,88 @@
       "reason": "New rule react-hooks rules-of-hooks recorded with its existing debt."
     },
     {
+      "baseline": "lint-baseline.json",
+      "rule": "eslint(no-control-regex)",
+      "from": 18,
+      "to": 19,
+      "reason": "Oxlint 1.93 (Vite+ 1.6) widened no-control-regex; the finding it adds in existing code is recorded."
+    },
+    {
       "baseline": "test-types-baseline.json",
       "rule": "type-errors",
       "from": 0,
       "to": 1506,
       "reason": "New test-file type ratchet recorded with its existing debt."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/safe-timestamp-render",
+      "from": 0,
+      "to": 11,
+      "reason": "Rule moved from ast-grep (ts-date-toisostring-unguarded) to the oxlint plugin with the same findings."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/whole-sentence-translation",
+      "from": 0,
+      "to": 4,
+      "reason": "Rule moved from ast-grep (ts-i18n-concat) to the oxlint plugin with the same findings."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/app-locale-formatting",
+      "from": 0,
+      "to": 68,
+      "reason": "Rule moved from ast-grep (ts-locale-format-outside-shared) to the oxlint plugin with the same findings."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/shared-resize-observer",
+      "from": 0,
+      "to": 87,
+      "reason": "New rule shared-resize-observer recorded with its existing debt."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/effect-names-its-sync",
+      "from": 0,
+      "to": 1706,
+      "reason": "New rule effect-names-its-sync recorded with its existing debt."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/compiler-owns-memo",
+      "from": 0,
+      "to": 405,
+      "reason": "New rule compiler-owns-memo recorded with its existing debt."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/suppression-has-reason",
+      "from": 0,
+      "to": 49,
+      "reason": "Rule moved from ast-grep (ts-suppression-without-reason) to the oxlint plugin with the same findings."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/grapheme-safe-truncate",
+      "from": 0,
+      "to": 27,
+      "reason": "Rule moved from ast-grep (ts-text-truncate-utf16) to the oxlint plugin with the same findings."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/handled-background-promise",
+      "from": 0,
+      "to": 36,
+      "reason": "Rule moved from ast-grep (ts-void-promise-without-catch) to the oxlint plugin with the same findings."
+    },
+    {
+      "baseline": "compiler-coverage-baseline.json",
+      "rule": "uncompiled-function",
+      "from": 0,
+      "to": 208,
+      "reason": "New React Compiler coverage ratchet recorded with the functions the compiler already skips."
     }
   ]
 }

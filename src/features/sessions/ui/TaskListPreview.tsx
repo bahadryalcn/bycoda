@@ -1,4 +1,5 @@
 import { StatusDot } from "../../../shared/ui/StatusDot";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface } from "../../../shared/ui/Surface";
 import { Badge, StatusBadge } from "../../../shared/ui/Badge";
 import { useT } from "../../../shared/i18n";
@@ -28,9 +29,7 @@ export function TaskListPreview({ items, explanation }: Props) {
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="font-mono text-ui-caption font-medium text-(--ui-text-secondary)">
-              {t("Tasks")}
-            </h3>
+            <SectionLabel as="h3">{t("Tasks")}</SectionLabel>
             <Badge variant="count" size="xs" className="shrink-0">
               {taskListProgressLabel(items)}
             </Badge>

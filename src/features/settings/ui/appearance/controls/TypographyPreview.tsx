@@ -1,4 +1,5 @@
 import { t, useLocale } from "../../../../../shared/i18n";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
 import { terminalFontFamily } from "../../../model/appearancePreferences";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import "./TypographySamples.css";
@@ -20,7 +21,9 @@ export function TypographyPreview({
   return (
     <aside className="typography-preview" aria-label={t("Typography preview")}>
       <section className="typography-preview-block">
-        <h4 className="typography-preview-label">{t("Interface")}</h4>
+        <SectionLabel as="h4" className="typography-preview-label">
+          {t("Interface")}
+        </SectionLabel>
         <div className="font-specimen" style={{ fontSize: sampleSize }}>
           <p className="font-specimen-headline">{t("Agents are working, you think.")}</p>
           <p className="font-specimen-body">
@@ -29,7 +32,9 @@ export function TypographyPreview({
         </div>
       </section>
       <section className="typography-preview-block">
-        <h4 className="typography-preview-label">{t("Code")}</h4>
+        <SectionLabel as="h4" className="typography-preview-label">
+          {t("Code")}
+        </SectionLabel>
         <pre className="code-sample" aria-label={t("Code font preview")}>
           <code>
             <span className="code-sample-line code-sample-comment">{"// bycoda · TypeScript"}</span>
@@ -55,7 +60,9 @@ export function TypographyPreview({
         </pre>
       </section>
       <section className="typography-preview-block">
-        <h4 className="typography-preview-label">{t("Terminal")}</h4>
+        <SectionLabel as="h4" className="typography-preview-label">
+          {t("Terminal")}
+        </SectionLabel>
         <pre
           className="terminal-sample"
           aria-label={t("Terminal font preview")}

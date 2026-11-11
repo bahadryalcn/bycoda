@@ -1,6 +1,6 @@
 import { formatNumber, getLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { Surface } from "../../../shared/ui/Surface";
 import { Progress } from "../../../shared/ui/Progress";
 import { candidateKey } from "../import/importModel";
 import type { ImportProgress, ImportSummary } from "../import/importRunner";
@@ -79,17 +79,15 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
         ) : null}
       </ul>
       {summary.failed.length > 0 ? (
-        <Disclosure
-          size="sm"
+        <Surface
           variant="card"
+          padding="sm"
           className="border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle)"
-          summary={
-            <span className="text-(--ui-tone-danger-fg)">
-              {plural(summary.failed.length, "conversation")}
-              {t(" could not be imported")}
-            </span>
-          }
         >
+          <p className="text-(--ui-tone-danger-fg)">
+            {plural(summary.failed.length, "conversation")}
+            {t(" could not be imported")}
+          </p>
           <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto">
             {summary.failed.map((failure) => (
               <li key={candidateKey(failure.candidate)} className="text-(--ui-text-secondary)">
@@ -99,7 +97,7 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
               </li>
             ))}
           </ul>
-        </Disclosure>
+        </Surface>
       ) : null}
     </div>
   );

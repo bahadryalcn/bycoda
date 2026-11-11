@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -11,7 +11,27 @@ import { createProviderRetirementLedger } from "../src/integrations/harness/core
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import { HostEngine, type ManagedTurnHistoryAdapter } from "./engine";
 import type { HostProvider } from "./providers/providers";
+import { handleSessionsRpc } from "./server/rpc-sessions";
 import { HostStore } from "./store";
+import { SessionRevisionConflictError } from "./storage/session-revision";
+
+// Settlement recovery keeps its real exponential schedule; a test may run it faster.
+const { recoveryDelays, clock } = vi.hoisted(() => ({
+  recoveryDelays: [] as number[],
+  clock: { speed: 1 },
+}));
+vi.mock("./storage/session-revision", async (original) => {
+  const actual = await original<typeof import("./storage/session-revision")>();
+  return {
+    ...actual,
+    persistenceRetryDelay: (failures: number, base?: number) => {
+      const delay = actual.persistenceRetryDelay(failures, base);
+      // The store passes its checkpoint interval; settlement recovery uses the default.
+      if (base === undefined) recoveryDelays.push(delay);
+      return delay / clock.speed;
+    },
+  };
+});
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -27,6 +47,8 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   vi.restoreAllMocks();
+  recoveryDelays.length = 0;
+  clock.speed = 1;
 });
 
 async function fixture(options: { warm?: boolean; title?: boolean } = {}) {
@@ -400,18 +422,237 @@ it("keeps a running turn writable when a store-owned session write is ordered th
   expect(errors).not.toHaveBeenCalled();
 });
 
-it("settles a turn as interrupted when its pending events were built on a superseded revision", async () => {
+type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+/** Revisions the store refused; an ordered writer never causes one. */
+const refusedRevisions = (f: Fixture) => {
+  const seen: SessionRevisionConflictError[] = [];
+  const save = f.store.save.bind(f.store);
+  vi.spyOn(f.store, "save").mockImplementation(async (value, event, options) => {
+    try {
+      return await save(value, event, options);
+    } catch (error) {
+      if (error instanceof SessionRevisionConflictError) seen.push(error);
+      throw error;
+    }
+  });
+  return seen;
+};
+
+/** Fails every save of the listed event types while `failing()` holds. */
+const failSaves = (f: Fixture, types: string[], message: string, failing: () => boolean) => {
+  const save = f.store.save.bind(f.store);
+  return vi.spyOn(f.store, "save").mockImplementation(async (value, event, options) => {
+    if (types.includes(String((event as { type?: string }).type)) && failing())
+      throw new Error(message);
+    return save(value, event, options);
+  });
+};
+
+const preservedBatches = (f: Fixture) => {
+  const directory = join(f.directory, "session-recovery", f.id);
+  return readdirSync(directory).map((file) =>
+    JSON.parse(readFileSync(join(directory, file), "utf8")),
+  );
+};
+
+const transcript = async (f: Fixture) => JSON.stringify((await f.store.session(f.id)).session);
+
+it("rebases a stale streamed delta and the next hard event onto the persisted head", async () => {
   const f = await fixture();
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const refused = refusedRevisions(f);
+  const receipt = await f.send();
+  // A direct store write leaves the live turn one revision behind the persisted head.
+  const head = await f.store.session(f.id);
+  await f.store.save(
+    { ...head, revision: head.revision + 1, pinned: true },
+    { type: "fixture.unordered" },
+  );
+  f.starts[0].input.onEvent({ type: "message.delta", text: "Streamed on a stale revision." });
+  await vi.waitFor(async () =>
+    expect(await transcript(f)).toContain("Streamed on a stale revision."),
+  );
+  f.starts[0].input.onEvent({ type: "tool.started", callId: "call-1", title: "Read notes" });
+  await vi.waitFor(async () => expect(await transcript(f)).toContain("Read notes"));
+  expect((await f.store.session(f.id)).status).toBe("running");
+  f.starts[0].finished.resolve();
+  await f.engine.waitForRun(f.id, receipt.runId);
+  const settled = await f.store.session(f.id);
+  expect(settled.status).toBe("idle");
+  // Both writers survive: the unordered change and the whole streamed turn.
+  expect(settled.pinned).toBe(true);
+  expect(await transcript(f)).toContain("Streamed on a stale revision.");
+  // The stale delta was refused once and never reached the buffered rows.
+  expect(refused).toHaveLength(1);
+  const revisions = (
+    await f.store.db
+      .prepare("SELECT revision FROM events WHERE session_id=? ORDER BY revision")
+      .all(f.id)
+  ).map((row) => Number(row.revision));
+  expect(revisions).toEqual(revisions.map((_, index) => revisions[0] + index));
+  expect(revisions.at(-1)).toBe(settled.revision);
+  expect(errors).not.toHaveBeenCalled();
+});
+
+it("preserves a batch that cannot be rebased as readable evidence and interrupts the turn on the persisted head", async () => {
+  const f = await fixture();
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const refused = refusedRevisions(f);
   const receipt = await f.send();
   const settled = deferred<{ interrupted?: boolean; reason?: string }>();
   f.engine.onSettled = (_id, outcome) => settled.resolve(outcome);
-  // A direct store write leaves the live turn one revision behind the persisted head.
-  await stamp(f);
-  f.starts[0].input.onEvent({ type: "approval.requested", requestId: 7, title: "Unwritable" });
+  // This writer changed the transcript itself: replaying events on it is not provable.
+  const head = await f.store.session(f.id);
+  await f.store.save(
+    {
+      ...head,
+      revision: head.revision + 1,
+      session: { ...head.session, title: "Changed elsewhere" },
+    },
+    { type: "fixture.unordered" },
+  );
+  const occurrenceId = randomUUID();
+  const event = {
+    type: "approval.requested" as const,
+    requestId: 7,
+    occurrenceId,
+    title: "Private approval text",
+  };
+  f.starts[0].input.onEvent(event);
   expect(await settled.promise).toMatchObject({ interrupted: true });
   await f.engine.waitForRun(f.id, receipt.runId).catch(() => {});
-  expect((await f.store.session(f.id)).status).toBe("interrupted");
+  const persisted = await f.store.session(f.id);
+  expect(persisted.status).toBe("interrupted");
+  expect(persisted.session.title).toBe("Changed elsewhere");
   expect(f.engine.hasActiveRun(f.id)).toBe(false);
   expect(f.provider.stop).toHaveBeenCalled();
+  // Refused once, preserved once, never retried.
+  expect(refused).toHaveLength(1);
+  const batches = preservedBatches(f);
+  expect(batches).toHaveLength(1);
+  expect(batches[0]).toMatchObject({
+    kind: "bycoda.session.unwritten-batch",
+    reason: "revision-conflict",
+    sessionId: f.id,
+    runId: receipt.runId,
+    liveRevision: head.revision,
+    headRevision: head.revision + 1,
+    events: [event],
+  });
+  expect(
+    batches[0].blocks.some(
+      (block: { approval?: { requestId: number } }) => block.approval?.requestId === 7,
+    ),
+  ).toBe(true);
+  const lines = errors.mock.calls.map(([line]) => String(line));
+  expect(lines.filter((line) => line.includes("Preserved at"))).toHaveLength(1);
+  expect(lines.join(" ")).toContain(f.id);
+  expect(lines.join(" ")).not.toContain("Private approval text");
+});
+
+it("orders a pin with the running turn and keeps its expected-version result", async () => {
+  const f = await fixture();
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const refused = refusedRevisions(f);
+  const receipt = await f.send();
+  const { projectId } = await f.store.session(f.id);
+  const pin = async (operationId: string, expectedVersion: number) => {
+    const request = {
+      input: { method: "sessions.pin.apply" },
+      params: { sessionId: f.id, projectId, operationId, desiredPinned: true, expectedVersion },
+      result: undefined as unknown,
+    };
+    await handleSessionsRpc({ engine: f.engine, adopt: async () => {} } as never, request as never);
+    return request.result;
+  };
+  // Streamed output not yet written is ordered before the pin, which then sees a newer version.
+  const stale = (await f.store.pinState(f.id, projectId)).version;
+  f.starts[0].input.onEvent({ type: "message.delta", text: "Streamed before the pin." });
+  expect(await pin("pin-stale", stale)).toMatchObject({ state: "superseded", pinned: false });
+  const current = (await f.store.pinState(f.id, projectId)).version;
+  expect(current).toBeGreaterThan(stale);
+  expect(await pin("pin-current", current)).toEqual({
+    state: "applied",
+    version: current + 1,
+    pinned: true,
+  });
+  f.starts[0].input.onEvent({ type: "message.delta", text: " Streamed after the pin." });
+  f.starts[0].input.onEvent({ type: "tool.started", callId: "call-1", title: "Read notes" });
+  f.starts[0].finished.resolve();
+  await f.engine.waitForRun(f.id, receipt.runId);
+  const settled = await f.store.session(f.id);
+  expect(settled).toMatchObject({ status: "idle", pinned: true });
+  expect(await transcript(f)).toContain("Streamed before the pin. Streamed after the pin.");
+  expect(await transcript(f)).toContain("Read notes");
+  expect(refused).toEqual([]);
+  expect(errors).not.toHaveBeenCalled();
+});
+
+it("backs settlement recovery off while storage keeps failing and reports it once", async () => {
+  const f = await fixture();
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  clock.speed = 200;
+  let remaining = 4;
+  failSaves(f, ["settled", "interrupted"], "transient fixture", () => remaining-- > 0);
+  const settled = vi.fn(async () => {});
+  f.engine.onSettled = settled;
+  const receipt = await f.send();
+  f.starts[0].finished.resolve();
+  await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce(), { timeout: 5_000 });
+  await vi.waitFor(async () => expect((await f.store.session(f.id)).status).toBe("interrupted"));
+  await f.engine.waitForRun(f.id, receipt.runId);
+  // One failed settlement, then three failed recoveries before the fourth succeeds.
+  expect(recoveryDelays).toEqual([1_000, 2_000, 4_000, 8_000]);
+  expect(
+    errors.mock.calls.filter(([line]) => String(line).includes("recovery failed")),
+  ).toHaveLength(1);
+});
+
+it("stops settlement recovery on a refused constraint and preserves the held batch", async () => {
+  const f = await fixture();
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  clock.speed = 200;
+  const saves = failSaves(
+    f,
+    ["events", "settled", "interrupted"],
+    "UNIQUE constraint failed: events.session_id, events.revision",
+    () => true,
+  );
+  await f.send();
+  f.starts[0].input.onEvent({ type: "approval.requested", requestId: 9, title: "Held approval" });
+  const notRetried = () =>
+    errors.mock.calls.filter(([line]) => String(line).includes("is not retried"));
+  await vi.waitFor(() => expect(notRetried()).toHaveLength(1), { timeout: 5_000 });
+  await vi.waitFor(() => expect(preservedBatches(f)).toHaveLength(1));
+  const attempts = saves.mock.calls.length;
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  // The first recovery was the last one: no timer, no further write, no further log line.
+  expect(saves).toHaveBeenCalledTimes(attempts);
+  expect(recoveryDelays).toEqual([1_000]);
+  expect(notRetried()).toHaveLength(1);
+  expect(preservedBatches(f)[0]).toMatchObject({
+    reason: "storage-constraint",
+    sessionId: f.id,
+    events: [{ type: "approval.requested", requestId: 9, title: "Held approval" }],
+  });
+  // The original turn stays held: nothing durable says it ended.
+  expect(f.engine.hasActiveRun(f.id)).toBe(true);
+  expect((await f.store.session(f.id)).status).toBe("running");
+});
+
+it("writes the batch of a turn still held by recovery when the Host shuts down", async () => {
+  const f = await fixture();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  let failing = true;
+  failSaves(f, ["events", "settled", "interrupted"], "transient fixture", () => failing);
+  await f.send();
+  f.starts[0].input.onEvent({ type: "approval.requested", requestId: 11, title: "Late write" });
+  // The turn is held with its first recovery still a second away.
+  await vi.waitFor(() => expect(recoveryDelays).toEqual([1_000]), { timeout: 5_000 });
+  failing = false;
+  await f.engine.close().catch(() => {});
+  expect(
+    (await f.store.session(f.id)).session.blocks.some((block) => block.approval?.requestId === 11),
+  ).toBe(true);
 });

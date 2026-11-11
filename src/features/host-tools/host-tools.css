@@ -192,20 +192,11 @@
   max-inline-size: 75ch;
   text-wrap: pretty;
 }
-.host-tool-card,
 .host-tool-section {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   min-inline-size: 0;
-}
-.host-tool-card {
-  padding: clamp(12px, 2cqi, 18px);
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-panel);
-}
-.host-tool-card > button {
-  justify-self: start;
 }
 .host-tool-actions {
   display: flex;
@@ -245,7 +236,7 @@
   gap: 6px;
   padding: 6px 8px;
   border-radius: var(--ui-control-radius);
-  background: var(--color-selection-subtle);
+  background: var(--ui-surface-selected);
   font-size: var(--ui-font-caption);
 }
 .host-tool-status::before {
@@ -265,8 +256,8 @@
   white-space: pre-wrap;
 }
 .host-tool-empty {
-  border: 1px dashed var(--color-stroke);
-  border-radius: var(--radius-panel);
+  border: 1px dashed var(--ui-card-border);
+  border-radius: var(--ui-radius-card);
   padding: 16px;
   color: var(--host-tool-muted);
   line-height: 1.7;
@@ -296,8 +287,8 @@
   margin-block-start: 10px;
 }
 .host-tool-preview {
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-panel);
+  border: 1px solid var(--ui-card-border);
+  border-radius: var(--ui-radius-card);
   overflow: clip;
 }
 .host-browser-frame {
@@ -379,7 +370,7 @@
   gap: 8px;
   min-inline-size: 0;
   padding: 12px;
-  border-radius: var(--radius-panel);
+  border-radius: var(--ui-radius-card);
   align-content: start;
 }
 .host-browser-empty {
@@ -433,11 +424,7 @@
   gap: 8px;
   min-inline-size: 0;
   padding: 12px;
-  border-radius: var(--radius-panel);
-}
-.host-browser-side-section h4 {
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
+  border-radius: var(--ui-radius-card);
 }
 .host-browser-side .host-browser-selection {
   grid-column: 1 / -1;

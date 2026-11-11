@@ -125,7 +125,7 @@
   line-height: var(--leading-body);
 }
 .hint {
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 .error {
   color: var(--danger);

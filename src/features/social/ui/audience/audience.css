@@ -76,51 +76,17 @@
 
 .audience-heading {
   margin: 0.5rem 0 0.25rem;
-  color: var(--color-content);
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
 }
 
 .audience-muted {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
 }
 
 .audience-warning {
   margin: 0;
   color: var(--ui-tone-warning-fg);
-  font-size: var(--ui-font-secondary);
-}
-
-.audience-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-island-surface);
-  min-width: 0;
-}
-
-.audience-card[data-selected="true"] {
-  border-color: var(--ui-text-muted);
-}
-
-.audience-check-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-}
-
-.audience-check-group legend {
-  margin-bottom: 0.25rem;
-  color: var(--ui-text-secondary);
   font-size: var(--ui-font-secondary);
 }
 
@@ -234,8 +200,6 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
   min-width: 0;
 }
 
@@ -368,8 +332,9 @@
 
 .audience-stats {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--ui-pane-border);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
+  background: var(--ui-card-surface);
 }
 
 .audience-stat-meter {

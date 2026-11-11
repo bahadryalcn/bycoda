@@ -37,7 +37,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 ## Focused checks
 
 Run `pnpm exec vitest run src/features/onboarding src/app/shell/WhatsNewDialog.test.ts`; use `node scripts/i18n/check-locales.mjs` for string changes and the applicable normal TypeScript check for code changes.
-Use `tests/browser/onboarding.spec.ts` for real targets, focus and missing-project paths. Check offer suppression, Later, pause/resume, repeated completed tours, highlight baseline/seen state and reduced motion.
+Use `tests/browser/onboarding/onboarding.spec.ts` for real targets, focus and missing-project paths. Check offer suppression, Later, pause/resume, repeated completed tours, highlight baseline/seen state and reduced motion.
 
 ## Read when needed
 

@@ -5,6 +5,7 @@ import type {
 } from "../../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { ClampText } from "../../../../shared/ui/ClampText";
 import { DescriptionItem, DescriptionList } from "../../../../shared/ui/DescriptionList";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
@@ -24,7 +25,6 @@ import { useAssistantRoom } from "./assistantRoomContext";
 import { JobDetailActivity } from "./JobDetailActivity";
 import { JobDetailNotes } from "./JobDetailNotes";
 
-const REQUEST_CLAMP_CHARS = 280;
 const PRIORITY_LABEL = { low: "Low", normal: "Normal", high: "High" } as const;
 
 /** Job details as a compact end sheet: header, request, meta, then Activity and Notes. */
@@ -120,23 +120,13 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
     projectName,
     errorFor,
   } = room;
-  const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState("activity");
-  const long = job.request.length > REQUEST_CLAMP_CHARS;
   return (
     <div className={styles.sheet}>
       <div className={styles.request}>
-        <p
-          className={long && !expanded ? styles.clamped : undefined}
-          data-expanded={expanded || undefined}
-        >
-          {job.request}
-        </p>
-        {long && (
-          <Button variant="link" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
-            {t(expanded ? "Show less" : "Show more")}
-          </Button>
-        )}
+        <ClampText key={job.id} lines={4}>
+          <p>{job.request}</p>
+        </ClampText>
         {job.summary && <p className={styles.muted}>{job.summary}</p>}
       </div>
       <DescriptionList size="sm">

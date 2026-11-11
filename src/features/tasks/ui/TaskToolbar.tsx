@@ -1,3 +1,4 @@
+import { Heading } from "../../../shared/ui/Heading";
 import { useState } from "react";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { useT } from "../../../shared/i18n";
@@ -128,7 +129,9 @@ export function TaskToolbar(props: TaskToolbarProps) {
   const { section, filters, menu, status } = props;
   return (
     <header className="task-board-toolbar">
-      <h1 className="sr-only">{t("Tasks")}</h1>
+      <Heading size="page" className="sr-only">
+        {t("Tasks")}
+      </Heading>
       <TabStrip
         label={t("Task sections")}
         value={section}

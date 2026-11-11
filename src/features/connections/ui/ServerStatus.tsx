@@ -1,4 +1,3 @@
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -74,14 +73,9 @@ export function MachineStatus({
     <div className="flex flex-col items-start gap-2">
       {badge}
       {state.error ? (
-        <Disclosure
-          size="sm"
-          className="w-full text-ui-caption text-(--ui-text-muted)"
-          defaultOpen={needsSignIn(state.status)}
-          summary={t("Connection details")}
-        >
-          <p className="break-words leading-relaxed">{state.error}</p>
-        </Disclosure>
+        <p className="w-full break-words text-ui-caption leading-relaxed text-(--ui-text-muted)">
+          {state.error}
+        </p>
       ) : null}
       {showDiagnostics ? <RemoteConnectionDetails environmentId={machine.environmentId} /> : null}
     </div>

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { withQueryClient } from "../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../tests/browser/support/queryTest";
 // Keep this as .ts because the project test glob intentionally excludes .test.tsx.
 import { focusManager } from "@tanstack/react-query";
 import { act, createElement, Profiler } from "react";

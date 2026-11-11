@@ -979,7 +979,7 @@ it("stores the owner-only permission mode, defaults old configs to ask and limit
     ),
   ).rejects.toThrow("owner");
 });
-it("keeps Host presence headless and treats unsupported, failed and malformed reads as unknown", async () => {
+it("keeps Host presence headless and treats unsupported, failed and malformed reads as a locked, unsupported desktop", async () => {
   let args: string[] = [];
   const read = await readDesktopPresence({
     platform: "win32",

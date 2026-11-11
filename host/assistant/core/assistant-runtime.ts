@@ -23,7 +23,9 @@ import {
   AssistantJobScopeError,
   assertAssistantGoalProjects,
   assistantGoalSessionIds as goalSessionIds,
+  assistantJobCurrentSessionIds,
 } from "../work/assistant-job-scope";
+import { hostWarnDeduped } from "../../diagnostics/log-dedupe";
 import { readAssistantRecovery } from "../work/assistant-worker-recovery";
 import type { HostNote } from "../../notes/host-notes";
 import type { AssistantNote } from "../../../src/shared/model/host-contracts/assistant";
@@ -150,15 +152,38 @@ export function assistantExecutionPorts(
     jobDeletion: new HostAssistantJobDeletion(store, goals, tasks),
     ...(automations ? { quickAutomations: automations } : {}),
     manualUsage: (grant) => readManualSessionUsage(store, grant),
+    // The same failure recurs on every maintenance tick until its cause is repaired.
     onError: (error) =>
-      console.warn(
-        "Assistant maintenance failed:",
-        error instanceof Error ? error.message : "Unknown error",
+      hostWarnDeduped(
+        `Assistant maintenance failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       ),
     markManagedSessions: async (job) => {
-      for (const id of job.sessionIds)
-        if (job.kind !== "quick" && !job.detachedSessionIds?.includes(id))
-          await orderSessionWrite(id, () => store.markAssistantManagedSession(id, job.id));
+      if (job.kind === "quick") return;
+      const failed: string[] = [];
+      let cause: unknown;
+      try {
+        // Ids kept only as usage provenance are not offered to the store's scope check: it
+        // rightly rejects them, and that rejection would repeat on every tick.
+        for (const id of await assistantJobCurrentSessionIds(store, job)) {
+          if (job.detachedSessionIds?.includes(id)) continue;
+          try {
+            await orderSessionWrite(id, () => store.markAssistantManagedSession(id, job.id));
+          } catch (error) {
+            // One session the store refuses must not leave the job's other sessions unmarked.
+            failed.push(id);
+            cause ??= error;
+          }
+        }
+      } catch (error) {
+        cause = error;
+      }
+      if (cause !== undefined)
+        throw new Error(
+          `job ${job.id} could not mark managed sessions${
+            failed.length ? ` ${failed.join(", ")}` : ""
+          }: ${cause instanceof Error ? cause.message : "Unknown error"}`,
+          { cause },
+        );
     },
     reply: async (input) => {
       const prompt =

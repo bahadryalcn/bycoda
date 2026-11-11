@@ -162,7 +162,7 @@ it("refuses changed Hosts, replaced approval occurrences, changed turns and chan
   goal.plan = { tasks: [{ id: "one", title: "Different plan" }] };
   await expect(verifyAssistantApproval(goalTarget, [job])).rejects.toThrow("plan changed");
 });
-it("reports stale, future, missing and unsupported activity as unknown while retaining the owner's Away and DND override", () => {
+it("reports stale, future, missing and unsupported activity as away, never unknown, while retaining the owner's Away and DND override", () => {
   const presence = { state: "present" as const, since: 0, updatedAt: 0 };
   const automaticPresence = {
     state: "present" as const,
@@ -176,13 +176,21 @@ it("reports stale, future, missing and unsupported activity as unknown while ret
   });
   for (const automatic of [
     undefined,
-    { ...automaticPresence, updatedAt: 100002 },
+    { ...automaticPresence, updatedAt: 400002 },
     { ...automaticPresence, updatedAt: 0 },
     { ...automaticPresence, supported: false },
-  ])
-    expect(
-      assistantPresenceState({ presence, automaticPresence: automatic }, 100001).effective,
-    ).toBe("unknown");
+  ]) {
+    const state = assistantPresenceState({ presence, automaticPresence: automatic }, 400001);
+    expect(state).toMatchObject({ detected: "away", effective: "away" });
+    expect(state.automaticUpdatedAt).toBeUndefined();
+  }
+  // A reading inside the freshness window is still current.
+  expect(
+    assistantPresenceState(
+      { presence, automaticPresence: { ...automaticPresence, updatedAt: 1000 } },
+      250000,
+    ).detected,
+  ).toBe("present");
   expect(assistantPresenceState({ presence: { ...presence, state: "away" } }, 1001).effective).toBe(
     "away",
   );

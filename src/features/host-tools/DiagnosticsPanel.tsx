@@ -4,6 +4,7 @@ import { Button } from "../../shared/ui/Button";
 import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { Meter } from "../../shared/ui/Meter";
 import { Surface } from "../../shared/ui/Surface";
+import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { RefreshCw } from "../../shared/ui/icons";
 import { t, useLocale, getLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState } from "react";
@@ -279,7 +280,7 @@ function ProjectDiagnosticsPanel({
         <>
           <div className="resource-cards">
             <Surface as="article" variant="outline" className="resource-card">
-              <h3>{t("bycoda host CPU")}</h3>
+              <SectionLabel as="h3">{t("bycoda host CPU")}</SectionLabel>
               <strong className="resource-value">
                 {sample?.process.cpuPercent != null
                   ? `${sample.process.cpuPercent.toFixed(1)}%`
@@ -288,7 +289,7 @@ function ProjectDiagnosticsPanel({
               <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
             </Surface>
             <Surface as="article" variant="outline" className="resource-card">
-              <h3>{t("bycoda host memory")}</h3>
+              <SectionLabel as="h3">{t("bycoda host memory")}</SectionLabel>
               <strong className="resource-value">
                 {sample ? mib(sample.process.rssBytes) : "—"}
               </strong>
@@ -297,7 +298,7 @@ function ProjectDiagnosticsPanel({
           </div>
           <Surface as="article" variant="outline" className="resource-card resource-system-memory">
             <div className="resource-memory-heading">
-              <h3>{t("Computer memory")}</h3>
+              <SectionLabel as="h3">{t("Computer memory")}</SectionLabel>
               <strong>
                 {memoryUsed !== null ? `${memoryUsed.toFixed(1)}% ${t("Used")}` : "—"}
               </strong>

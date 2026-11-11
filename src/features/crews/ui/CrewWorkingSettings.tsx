@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -57,9 +58,9 @@ function Section({
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 items-center gap-1">
-        <h3 id={headingId} className="text-ui-caption font-medium text-(--ui-text-secondary)">
+        <SectionLabel as="h3" labelId={headingId}>
           {title}
-        </h3>
+        </SectionLabel>
         {info}
         {paragraphs.length ? (
           <InfoPopover label={t("About {p0}", { p0: title })}>

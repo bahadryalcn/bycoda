@@ -92,6 +92,20 @@ describe("appearance preferences", () => {
       contrast: 75,
     });
   });
+  it("bounds surface contrast and applies it as a layer-strength multiplier", () => {
+    expect(normalizeAppearancePreferences({}).surfaceContrast).toBe(100);
+    expect(normalizeAppearancePreferences({ surfaceContrast: 10 }).surfaceContrast).toBe(50);
+    expect(normalizeAppearancePreferences({ surfaceContrast: 999 }).surfaceContrast).toBe(200);
+    expect(normalizeAppearancePreferences({ surfaceContrast: "x" as never }).surfaceContrast).toBe(
+      100,
+    );
+    const style = document.documentElement.style;
+    applyAppearancePreferences({ ...APPEARANCE_DEFAULTS, surfaceContrast: 125 });
+    expect(style.getPropertyValue("--appearance-layer-strength")).toBe("1.25");
+    applyAppearancePreferences({ ...APPEARANCE_DEFAULTS });
+    expect(style.getPropertyValue("--appearance-layer-strength")).toBe("");
+    expect(style.cssText).not.toContain("--appearance-layer-strength");
+  });
   it("persists, applies and notifies open views", () => {
     const listener = vi.fn();
     window.addEventListener(APPEARANCE_PREFERENCES_EVENT, listener);

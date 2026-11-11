@@ -1,5 +1,7 @@
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Surface } from "../../shared/ui/Surface";
+import { Heading } from "../../shared/ui/Heading";
+import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { Badge } from "../../shared/ui/Badge";
 import { BadgeList } from "../../shared/ui/BadgeList";
@@ -54,7 +56,6 @@ import type {
   DevServerStop,
   DevServerTarget,
 } from "./devServerTypes";
-import { Disclosure } from "../../shared/ui/Disclosure";
 import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
 import "./dev-servers.css";
 
@@ -559,7 +560,9 @@ function ProjectDevServersPanel({
       aria-label={t("Selected process details")}
     >
       <div className="dev-server-heading">
-        <h5>{t("Process details")}</h5>
+        <SectionLabel as="h4" className="dev-server-heading-label">
+          {t("Process details")}
+        </SectionLabel>
         <Button
           variant="ghost"
           iconOnly
@@ -717,7 +720,9 @@ function ProjectDevServersPanel({
   const renderSelection = (server: DevServer) => (
     <aside className="dev-server-selection" aria-label={server.name}>
       <div className="dev-server-heading">
-        <h4>{server.name}</h4>
+        <Heading size="item" level={4}>
+          {server.name}
+        </Heading>
         <StateBadge state={server.state} />
       </div>
       <p className="host-tool-muted">
@@ -863,14 +868,14 @@ function ProjectDevServersPanel({
         </p>
       ) : null}
       {(server.command ?? server.process?.command ?? server.cwd ?? server.process?.cwd) ? (
-        <Disclosure summary={t("Details")} size="sm" className="dev-server-context">
+        <div className="dev-server-context">
           {(server.command ?? server.process?.command) ? (
             <code className="dev-server-command">{server.command ?? server.process?.command}</code>
           ) : null}
           {(server.cwd ?? server.process?.cwd) ? (
             <p className="host-tool-location">{server.cwd ?? server.process?.cwd}</p>
           ) : null}
-        </Disclosure>
+        </div>
       ) : null}
       {server.error ? <Alert tone="danger">{server.error}</Alert> : null}
       {selectedDetails ? renderDetails(selectedDetails) : null}
@@ -883,7 +888,9 @@ function ProjectDevServersPanel({
       aria-busy={disabled || (!scan && scanning)}
     >
       <header className="dev-servers-header">
-        <h3 className="sr-only">{t("Development servers")}</h3>
+        <Heading size="item" className="sr-only">
+          {t("Development servers")}
+        </Heading>
         <div className="dev-server-search">
           <SearchInput
             standalone
@@ -988,9 +995,7 @@ function ProjectDevServersPanel({
               {t("Automatic refresh paused after repeated failures.")}
             </p>
           ) : null}
-          <Disclosure summary={t("Error details")} size="sm">
-            <p>{scanError}</p>
-          </Disclosure>
+          <p className="host-tool-muted">{scanError}</p>
         </Alert>
       ) : null}
       {error ? (

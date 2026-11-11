@@ -207,8 +207,11 @@ export function Button({
   const labelMeasure = useRef<HTMLSpanElement>(null);
   const [labelWidth, setLabelWidth] = useState(0);
   const reserveLabel = stableWidth ?? (loadingProp !== undefined || !!reservedLabels?.length);
+  const labelMeasured = typeof contentLabel === "string" || typeof contentLabel === "number";
   // The current label is always the rendered (and accessible) text. Width stays stable by
   // retaining the widest measured label, so idle/pending/retry texts never shrink the control.
+  // Keyed on whether the measured span exists, not on the label itself: the ResizeObserver
+  // reports every text change, and JSX children no longer re-create the observer each render.
   useLayoutEffect(() => {
     const node = labelMeasure.current;
     if (!reserveLabel || !node) return;
@@ -221,7 +224,7 @@ export function Button({
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [contentLabel, reserveLabel]);
+  }, [labelMeasured, reserveLabel]);
   const longPress = useRef<{
     timer: number;
     x: number;
@@ -289,14 +292,19 @@ export function Button({
   ]
     .filter(Boolean)
     .join(" ");
+  // Handlers that touch `longPress` call `swallow` inline instead of going through `guard`:
+  // the compiler treats a closure passed to a render-time call as render code, which made
+  // its ref read look like a render-phase access and left the whole Button uncompiled.
+  const swallow = (event: SyntheticEvent) => {
+    if (!blocked) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  };
   const guard =
     <E extends SyntheticEvent>(handler?: (event: E) => void) =>
     (event: E) => {
-      if (blocked) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
+      if (swallow(event)) return;
       handler?.(event);
     };
   // Tooltip: one shared hint for `title`, `tooltip`, the icon-only `label` and `shortcut`.
@@ -380,7 +388,8 @@ export function Button({
       hint.hide();
       onClick?.(event);
     }),
-    onClickCapture: guard((event: MouseEvent<HTMLButtonElement>) => {
+    onClickCapture: (event: MouseEvent<HTMLButtonElement>) => {
+      if (swallow(event)) return;
       // The press that already ran its long-press action must not also activate.
       if (longPress.current?.fired) {
         longPress.current = null;
@@ -389,7 +398,7 @@ export function Button({
         return;
       }
       onClickCapture?.(event);
-    }),
+    },
     onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => {
       props.onPointerEnter?.(event);
       if (tooltipOn !== "focus") hint.trigger.onPointerEnter(event);
@@ -398,7 +407,8 @@ export function Button({
       props.onPointerLeave?.(event);
       hint.trigger.onPointerLeave();
     },
-    onPointerDown: guard((event: PointerEvent<HTMLButtonElement>) => {
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      if (swallow(event)) return;
       clearLongPress();
       longPress.current = null;
       if (onLongPress && event.isPrimary && event.button === 0) {
@@ -416,7 +426,7 @@ export function Button({
         longPress.current = state;
       }
       onPointerDown?.(event);
-    }),
+    },
     onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
       const current = longPress.current;
       if (
@@ -466,14 +476,15 @@ export function Button({
     onKeyDownCapture: guardKey(onKeyDownCapture),
     onKeyUp: guardKey(props.onKeyUp),
     onDoubleClick: guard(props.onDoubleClick),
-    onContextMenu: guard((event: MouseEvent<HTMLButtonElement>) => {
+    onContextMenu: (event: MouseEvent<HTMLButtonElement>) => {
+      if (swallow(event)) return;
       // Touch long-press raises the context menu; the long-press action replaces it.
       if (longPress.current?.fired) {
         event.preventDefault();
         return;
       }
       props.onContextMenu?.(event);
-    }),
+    },
     onDragEnter: guard(props.onDragEnter),
     onDragLeave: props.onDragLeave,
     onDragOver: guard(props.onDragOver),
@@ -495,7 +506,7 @@ export function Button({
           {leadingIcon}
         </span>
       ) : null}
-      {typeof contentLabel === "string" || typeof contentLabel === "number" ? (
+      {labelMeasured ? (
         <span
           className={styles.label}
           data-label-reserved={reserveLabel || undefined}

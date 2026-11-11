@@ -3,6 +3,7 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FilePaneTab } from "../model/layout";
+import { t } from "../../../shared/i18n";
 import { SurfaceTabs, surfaceTabMenuItems } from "./SurfaceTabs";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 
@@ -36,7 +37,7 @@ const files: FilePaneTab[] = [
 ];
 
 it("offers remote copy and an actionable local file-manager connection", () => {
-  const items = surfaceTabMenuItems({
+  const items = surfaceTabMenuItems(t, {
     id: "remote",
     path: "remote://host/work/app/README.md",
     cwd: "remote://host/work/app",
@@ -217,12 +218,12 @@ describe("Open in New Window menu item", () => {
     items.flatMap((item) => (item.kind === "item" ? [item.id] : []));
 
   it("is offered for files only when a handler exists", () => {
-    expect(ids(surfaceTabMenuItems(files[0]))).not.toContain("new-window");
-    expect(ids(surfaceTabMenuItems(files[0], true, { dirty: false }))).toContain("new-window");
+    expect(ids(surfaceTabMenuItems(t, files[0]))).not.toContain("new-window");
+    expect(ids(surfaceTabMenuItems(t, files[0], true, { dirty: false }))).toContain("new-window");
   });
 
   it("is disabled while the file has unsaved changes", () => {
-    const item = surfaceTabMenuItems(files[0], true, { dirty: true }).find(
+    const item = surfaceTabMenuItems(t, files[0], true, { dirty: true }).find(
       (entry) => entry.kind === "item" && entry.id === "new-window",
     );
     expect(item).toMatchObject({ disabled: true });

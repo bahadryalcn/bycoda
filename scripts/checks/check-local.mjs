@@ -79,12 +79,11 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
       steps.push(node(label, build(batch)));
     }
   };
-  const tool = (name, args) => {
+  const tool = (name, args, binName = name.split("/").at(-1)) => {
     const manifest = JSON.parse(
       readFileSync(path.join(root, "node_modules", name, "package.json"), "utf8"),
     );
-    const bin =
-      typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[name.split("/").at(-1)];
+    const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[binName];
     if (!bin)
       throw new Error(
         `Installed ${name} executable is unavailable; this runner never installs dependencies`,
@@ -95,7 +94,11 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
     /\.(?:[cm]?[jt]sx?|jsonc?|ya?ml|md|css|html|toml)$/.test(file),
   );
   const code = files.filter((file) => /\.[cm]?[jt]sx?$/.test(file));
-  batched("Changed-file formatting", (batch) => tool("oxfmt", ["--check", ...batch]), supported);
+  batched(
+    "Changed-file formatting",
+    (batch) => tool("vite-plus", ["fmt", "--check", ...batch], "vp"),
+    supported,
+  );
   batched(
     "Changed-file lint ratchet",
     (batch) => [path.join(root, "scripts/checks/check-lint-baseline.mjs"), "--files", ...batch],
@@ -114,6 +117,15 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
     )
   )
     steps.push(node("UI component catalog", [path.join(root, "scripts/checks/ui-catalog.mjs")]));
+  if (
+    files.some(
+      (file) =>
+        /^(?:scripts\/checks\/(?:invariants\/rules\/|oxlint-plugin\/|check-ui-drift\.mjs|rule-index\.mjs|lint-config\.mjs)|vite\.config\.ts$)/.test(
+          file,
+        ) || file === "docs/reference/rules.md",
+    )
+  )
+    steps.push(node("Rule set", [path.join(root, "scripts/checks/rule-index.mjs")]));
   const invariants = files.filter((file) =>
     /^(?:src|host|packages|src-tauri\/src)\/.*\.(?:[cm]?[jt]sx?|rs)$/.test(file),
   );

@@ -1,8 +1,11 @@
 /**
  * Code invariants ratchet. Two engines, one baseline:
  *
- *   - ast-grep structural rules in scripts/checks/invariants/rules/*.yml (TypeScript and Rust)
- *   - oxlint restricted-API rules in .oxlint-invariants.json (TypeScript)
+ *   - oxlint (through `vp lint`): every rule the `lint` block of vite.config.ts sets to
+ *     "error", which are the repository plugin
+ *     (scripts/checks/oxlint-plugin) and the restricted-API rules (TypeScript). Rules set to
+ *     "warn" are lint debt and belong to check-lint-baseline.mjs.
+ *   - ast-grep structural rules in scripts/checks/invariants/rules/*.yml (Rust)
  *
  * Existing findings are counted per (file, rule) in scripts/checks/invariants-baseline.json.
  * Only counts above the baseline fail, so debt stays visible without blocking unrelated work.
@@ -25,10 +28,11 @@ import { checkPrivacyWriterCalls } from "./check-privacy-writers.mjs";
 const defaultRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const baselineFile = "scripts/checks/invariants-baseline.json";
 export const astGrepConfig = "scripts/checks/invariants/sgconfig.yml";
-export const oxlintConfig = ".oxlint-invariants.json";
-/** Roots the oxlint engine scans; ast-grep applies its own per-rule globs under the tree. */
+/** The module vite.config.ts takes its `lint` block from. */
+export const lintConfigModule = "scripts/checks/lint-config.mjs";
+/** Roots each engine scans; ast-grep covers Rust only and applies its per-rule globs. */
 const oxlintRoots = ["src", "host", "packages"];
-const astGrepRoots = ["src", "host", "packages", "src-tauri/src"];
+const astGrepRoots = ["packages", "src-tauri/src"];
 
 const normalize = (file) => file.replaceAll("\\", "/").replace(/^\.\//, "");
 
@@ -54,7 +58,9 @@ function astGrepBinary(root) {
 
 /** ast-grep findings as { file, rule, line, text, message }. */
 export function scanAstGrep(root, files) {
-  const targets = files ?? astGrepRoots.filter((dir) => fs.existsSync(path.join(root, dir)));
+  const targets = files
+    ? files.filter((file) => file.endsWith(".rs"))
+    : astGrepRoots.filter((dir) => fs.existsSync(path.join(root, dir)));
   if (!targets.length) return [];
   const result = run(root, astGrepBinary(root), [
     "scan",
@@ -76,23 +82,38 @@ export function scanAstGrep(root, files) {
   }));
 }
 
-/** oxlint findings from the invariants configuration, same shape. */
+/** oxlint findings of the rules set to "error", same shape. */
 export function scanOxlint(root, files) {
   const targets = files
     ? files.filter((file) => /\.[cm]?[jt]sx?$/.test(file))
     : oxlintRoots.filter((dir) => fs.existsSync(path.join(root, dir)));
   if (!targets.length) return [];
   const result = run(root, process.execPath, [
-    path.join(root, "node_modules", "oxlint", "bin", "oxlint"),
-    "--config",
-    oxlintConfig,
+    path.join(root, "node_modules", "vite-plus", "bin", "vp"),
+    "lint",
     "--format",
     "json",
     ...targets,
   ]);
   if (result.status !== 0 && result.status !== 1)
     throw new Error(`oxlint failed (${result.status}): ${result.stderr}`);
-  return parseOxlintOutput(result.stdout, result.status);
+  return withSourceLines(root, parseOxlintOutput(result.stdout, result.status));
+}
+
+/** oxlint reports the message only; show the offending source line like ast-grep does. */
+function withSourceLines(root, findings) {
+  const lines = new Map();
+  return findings.map((finding) => {
+    if (!lines.has(finding.file)) {
+      const file = path.join(root, finding.file);
+      lines.set(
+        finding.file,
+        fs.existsSync(file) ? fs.readFileSync(file, "utf8").split(/\r?\n/) : [],
+      );
+    }
+    const source = lines.get(finding.file)[finding.line - 1]?.trim();
+    return source ? { ...finding, text: source.slice(0, 160) } : finding;
+  });
 }
 
 /** Tool-level diagnostics cannot be assigned to a baseline bucket. */
@@ -107,7 +128,7 @@ export function parseOxlintOutput(stdout, status) {
     throw new Error("oxlint returned malformed output: missing diagnostics array");
   if (status !== 0 && output.diagnostics.length === 0)
     throw new Error(`oxlint failed (${status}) without diagnostics`);
-  return output.diagnostics.map((diagnostic) => {
+  const findings = output.diagnostics.map((diagnostic) => {
     if (
       !diagnostic ||
       typeof diagnostic.filename !== "string" ||
@@ -121,6 +142,7 @@ export function parseOxlintOutput(stdout, status) {
       throw new Error(`oxlint reported a tool diagnostic: ${detail}`);
     }
     return {
+      severity: diagnostic.severity,
       file: normalize(diagnostic.filename),
       rule: diagnostic.code
         .replace(/^eslint\(/, "oxlint(")
@@ -130,6 +152,9 @@ export function parseOxlintOutput(stdout, status) {
       message: diagnostic.help ?? diagnostic.message,
     };
   });
+  return findings
+    .filter((finding) => finding.severity === "error")
+    .map(({ severity: _severity, ...finding }) => finding);
 }
 
 export function scanAll(root, files) {
@@ -196,7 +221,7 @@ export function formatRegressions(regressions) {
     if (bucket.items.length > 12) out.push(`    … ${bucket.items.length - 12} more`);
   }
   out.push(
-    "\nFix the new finding, or suppress one line with a reason: `// ast-grep-ignore: <rule> -- <why>` or `// oxlint-disable-next-line <rule> -- <why>`. See docs/reference/code-invariants.md.",
+    "\nFix the new finding, or suppress one line with a reason: `// oxlint-disable-next-line <rule> -- <why>` (TypeScript) or `// ast-grep-ignore: <rule> -- <why>` (Rust). See docs/reference/code-invariants.md.",
   );
   return out.join("\n");
 }

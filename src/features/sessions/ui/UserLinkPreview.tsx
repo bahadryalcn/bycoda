@@ -1,3 +1,4 @@
+import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Link } from "../../../shared/ui/Link";
@@ -273,9 +274,9 @@ function GithubWorkItemCard({
 
       {item ? (
         <>
-          <h3 className="mt-2 line-clamp-2 text-ui-secondary font-medium leading-[1.35] text-(--ui-tone-neutral-fg)">
+          <Heading size="item" className="mt-2 line-clamp-2">
             {item.title}
-          </h3>
+          </Heading>
           {summary ? (
             <p className="mt-1.5 line-clamp-3 text-ui-micro leading-[1.45] text-(--ui-text-secondary)">
               {summary}
@@ -286,9 +287,9 @@ function GithubWorkItemCard({
         <GithubWorkItemCardSkeleton />
       ) : (
         <div className="mt-2">
-          <h3 className="text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+          <Heading size="item">
             {parsed.kind === "pr" ? t("Pull request") : t("Issue")} #{parsed.number}
-          </h3>
+          </Heading>
           {summary ? (
             <p className="mt-1.5 line-clamp-3 text-ui-micro leading-[1.45] text-(--ui-text-secondary)">
               {summary}

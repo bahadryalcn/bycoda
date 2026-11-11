@@ -1,3 +1,4 @@
+import { Heading } from "../../../shared/ui/Heading";
 import { useT } from "../../../shared/i18n";
 import { type ReactNode, useSyncExternalStore } from "react";
 import { basename } from "../../../platform/tauri/fs";
@@ -55,9 +56,9 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
               <img className="bycoda-brand-lettering" src={PRODUCT_IDENTITY.wordmarkSrc} alt="" />
             </div>
             <div className="bycoda-task-brief pointer-events-auto">
-              <h1 className="text-(--ui-tone-neutral-fg)" title={project ? cwd : undefined}>
+              <Heading size="page" title={project ? cwd : undefined}>
                 {title}
-              </h1>
+              </Heading>
               {project ? null : (
                 <div className="bycoda-entry-actions bycoda-arc">
                   <Button

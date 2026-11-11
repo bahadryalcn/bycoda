@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { AssistantQuickAutomationAction } from "../../../shared/model/assistantQuickAutomation";
 import { t } from "../../../shared/i18n";
 import { formatDate } from "../../../shared/i18n/core";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -31,153 +32,153 @@ export function AssistantQuickAutomationFields({
     if (!disabled) onChange({ ...value, ...patch });
   };
   return (
-    <fieldset disabled={disabled} className={styles.quickNoteFields}>
-      <SearchableSelect
-        label={t("Project")}
-        value={projects.some((project) => project.id === value.projectId) ? value.projectId : ""}
-        disabled={disabled}
-        options={projects.map((project) => ({
-          value: project.id,
-          label: project.name,
-          description: project.path,
-        }))}
-        onChange={(projectId) => update({ projectId })}
-      />
-      <TextField
-        label={t("Automation name")}
-        value={value.name}
-        maxLength={200}
-        onChange={(event) => update({ name: event.currentTarget.value })}
-      />
-      <TextareaField
-        label={t("Automation prompt")}
-        value={value.prompt}
-        maxLength={16000}
-        minRows={3}
-        maxRows={10}
-        onChange={(event) => update({ prompt: event.currentTarget.value })}
-      />
-      <div className={styles.fieldRow}>
-        <fieldset className={styles.modelField}>
-          <legend>{t("Execution model")}</legend>
-          <ModelPicker
-            harness={value.harness}
-            model={value.model}
-            values={value.modelSettings}
-            allowedHarnesses={REMOTE_PROVIDERS}
-            presentation="field"
-            showExtras
-            inheritChoice={{
-              label: t("Choose a provider and model"),
-              selected: !value.model,
-              onSelect: () => update({ model: "", modelSettings: {} }),
-            }}
-            onChange={(harness, model) => {
-              if (isRemoteProvider(harness))
-                update({
-                  harness,
-                  model,
-                  modelSettings: defaultModelSettings(resolveModel(harness, model)),
-                });
-            }}
-            onSettingsChange={(modelSettings) => {
-              if (value.model) update({ modelSettings });
-            }}
-          />
-        </fieldset>
-        <Select
-          label={t("Execution permissions")}
-          value={value.runtimeMode}
+    <div className={styles.quickNoteFields}>
+      <FieldGroup variant="bare" disabled={disabled}>
+        <SearchableSelect
+          label={t("Project")}
+          value={projects.some((project) => project.id === value.projectId) ? value.projectId : ""}
           disabled={disabled}
-          options={RUNTIME_MODES.map((mode) => ({
-            value: mode,
-            label: t(RUNTIME_MODE_LABEL[mode]),
+          options={projects.map((project) => ({
+            value: project.id,
+            label: project.name,
+            description: project.path,
           }))}
-          onValueChange={(runtimeMode) =>
-            update({ runtimeMode: runtimeMode as AssistantQuickAutomationAction["runtimeMode"] })
-          }
+          onChange={(projectId) => update({ projectId })}
         />
-      </div>
-      <fieldset className={styles.scheduleField}>
-        <legend>{t("Automation schedule")}</legend>
-        {value.scheduleKind === "once" && value.runAt !== undefined ? (
-          <p className={styles.muted}>
-            {t("Runs once on {p0}, then turns itself off.", {
-              p0: formatDate(value.runAt, { dateStyle: "full", timeStyle: "short" }),
-            })}
-          </p>
-        ) : (
-          <div className={styles.scheduleRow}>
-            <div className={styles.scheduleKind}>
-              <Select
-                hideLabel
-                label={t("Automation schedule")}
-                value={value.scheduleKind}
-                disabled={disabled}
-                options={[
-                  ["hourly", "Hourly"],
-                  ["daily", "Daily"],
-                  ["weekdays", "Weekdays"],
-                  ["weekly", "Weekly"],
-                ].map(([id, label]) => ({ value: id, label: t(label) }))}
-                onValueChange={(scheduleKind) =>
+        <TextField
+          label={t("Automation name")}
+          value={value.name}
+          maxLength={200}
+          onChange={(event) => update({ name: event.currentTarget.value })}
+        />
+        <TextareaField
+          label={t("Automation prompt")}
+          value={value.prompt}
+          maxLength={16000}
+          minRows={3}
+          maxRows={10}
+          onChange={(event) => update({ prompt: event.currentTarget.value })}
+        />
+        <div className={styles.fieldRow}>
+          <FieldGroup legend={t("Execution model")} className={styles.modelField}>
+            <ModelPicker
+              harness={value.harness}
+              model={value.model}
+              values={value.modelSettings}
+              allowedHarnesses={REMOTE_PROVIDERS}
+              presentation="field"
+              showExtras
+              inheritChoice={{
+                label: t("Choose a provider and model"),
+                selected: !value.model,
+                onSelect: () => update({ model: "", modelSettings: {} }),
+              }}
+              onChange={(harness, model) => {
+                if (isRemoteProvider(harness))
                   update({
-                    scheduleKind: scheduleKind as AssistantQuickAutomationAction["scheduleKind"],
-                  })
-                }
-              />
-            </div>
-            <div className={styles.scheduleSentence}>
-              <TimeTriggerSentence
-                trigger={
-                  value as AssistantQuickAutomationAction & {
-                    scheduleKind: Exclude<AssistantQuickAutomationAction["scheduleKind"], "once">;
+                    harness,
+                    model,
+                    modelSettings: defaultModelSettings(resolveModel(harness, model)),
+                  });
+              }}
+              onSettingsChange={(modelSettings) => {
+                if (value.model) update({ modelSettings });
+              }}
+            />
+          </FieldGroup>
+          <Select
+            label={t("Execution permissions")}
+            value={value.runtimeMode}
+            disabled={disabled}
+            options={RUNTIME_MODES.map((mode) => ({
+              value: mode,
+              label: t(RUNTIME_MODE_LABEL[mode]),
+            }))}
+            onValueChange={(runtimeMode) =>
+              update({ runtimeMode: runtimeMode as AssistantQuickAutomationAction["runtimeMode"] })
+            }
+          />
+        </div>
+        <FieldGroup legend={t("Automation schedule")} className={styles.scheduleField}>
+          {value.scheduleKind === "once" && value.runAt !== undefined ? (
+            <p className={styles.muted}>
+              {t("Runs once on {p0}, then turns itself off.", {
+                p0: formatDate(value.runAt, { dateStyle: "full", timeStyle: "short" }),
+              })}
+            </p>
+          ) : (
+            <div className={styles.scheduleRow}>
+              <div className={styles.scheduleKind}>
+                <Select
+                  hideLabel
+                  label={t("Automation schedule")}
+                  value={value.scheduleKind}
+                  disabled={disabled}
+                  options={[
+                    ["hourly", "Hourly"],
+                    ["daily", "Daily"],
+                    ["weekdays", "Weekdays"],
+                    ["weekly", "Weekly"],
+                  ].map(([id, label]) => ({ value: id, label: t(label) }))}
+                  onValueChange={(scheduleKind) =>
+                    update({
+                      scheduleKind: scheduleKind as AssistantQuickAutomationAction["scheduleKind"],
+                    })
                   }
-                }
-                nextAt={0}
-                executionTimeZone={null}
-                onChange={(next) => {
-                  if (!disabled) onChange(next);
-                }}
-              />
+                />
+              </div>
+              <div className={styles.scheduleSentence}>
+                <TimeTriggerSentence
+                  trigger={
+                    value as AssistantQuickAutomationAction & {
+                      scheduleKind: Exclude<AssistantQuickAutomationAction["scheduleKind"], "once">;
+                    }
+                  }
+                  nextAt={0}
+                  executionTimeZone={null}
+                  onChange={(next) => {
+                    if (!disabled) onChange(next);
+                  }}
+                />
+              </div>
             </div>
-          </div>
-        )}
-      </fieldset>
-      <div className={styles.fieldRow}>
-        <Numeric
-          label={t("Run time limit (minutes)")}
-          value={value.maxRunMinutes}
-          max={10080}
-          onChange={(maxRunMinutes) => update({ maxRunMinutes })}
-        />
-        <Numeric
-          label={t("Runs per day")}
-          value={value.maxRunsPerDay}
-          max={1000}
-          onChange={(maxRunsPerDay) => update({ maxRunsPerDay })}
-        />
-      </div>
-      <p className={styles.muted}>
-        {t(
-          "Zero means no limit. These run limits and the automation lifecycle are managed in Automations, independently of the assistant token budget.",
-        )}
-      </p>
-      <div className={styles.fieldRow}>
-        <Switch
-          label={t("Isolate each run in a worktree")}
-          checked={value.isolate}
-          disabled={disabled}
-          onCheckedChange={(isolate) => update({ isolate })}
-        />
-        <Switch
-          label={t("Enable this automation")}
-          checked={value.enabled}
-          disabled={disabled}
-          onCheckedChange={(enabled) => update({ enabled })}
-        />
-      </div>
-    </fieldset>
+          )}
+        </FieldGroup>
+        <div className={styles.fieldRow}>
+          <Numeric
+            label={t("Run time limit (minutes)")}
+            value={value.maxRunMinutes}
+            max={10080}
+            onChange={(maxRunMinutes) => update({ maxRunMinutes })}
+          />
+          <Numeric
+            label={t("Runs per day")}
+            value={value.maxRunsPerDay}
+            max={1000}
+            onChange={(maxRunsPerDay) => update({ maxRunsPerDay })}
+          />
+        </div>
+        <p className={styles.muted}>
+          {t(
+            "Zero means no limit. These run limits and the automation lifecycle are managed in Automations, independently of the assistant token budget.",
+          )}
+        </p>
+        <div className={styles.fieldRow}>
+          <Switch
+            label={t("Isolate each run in a worktree")}
+            checked={value.isolate}
+            disabled={disabled}
+            onCheckedChange={(isolate) => update({ isolate })}
+          />
+          <Switch
+            label={t("Enable this automation")}
+            checked={value.enabled}
+            disabled={disabled}
+            onCheckedChange={(enabled) => update({ enabled })}
+          />
+        </div>
+      </FieldGroup>
+    </div>
   );
 }
 function Numeric({

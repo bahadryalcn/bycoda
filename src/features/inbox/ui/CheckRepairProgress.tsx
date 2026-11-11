@@ -1,14 +1,14 @@
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
-import { useId, useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { getCiRepairs, subscribeCiRepairs, type TrackedCiRepair } from "../model/ciRepairTracking";
 import { sameProjectPath } from "../../projects/model/recents";
 import {
   CheckCircle,
-  ChevronRight,
   CircleDashed,
   CircleX,
   MessageSquare,
@@ -298,7 +298,6 @@ function RepairCard({
 }) {
   useLocale();
   const [expanded, setExpanded] = useState(false);
-  const detailsId = useId();
   const counts = new Map<RepairState, number>();
   for (const item of group.items) counts.set(item.state, (counts.get(item.state) ?? 0) + 1);
   const priority: RepairState[] = [
@@ -327,74 +326,68 @@ function RepairCard({
     ).length === 1;
   return (
     <Surface variant="outline" padding="none" className="overflow-hidden">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-2 py-2">
-        <Button
-          variant="ghost"
-          type="button"
-          aria-label={t("Repair details for {p0}", { p0: label })}
-          aria-expanded={expanded}
-          aria-controls={detailsId}
-          onClick={() => setExpanded(!expanded)}
-          align="start"
-          className="min-w-0 flex-1"
-        >
-          <StatusIcon state={lead} />
-          <span className="min-w-0 flex-1">
-            <span
-              role="status"
-              className="flex flex-wrap gap-x-3 gap-y-0.5 text-ui-caption font-medium"
-            >
-              {[...counts].map(([state, count]) => (
-                <Badge key={state} tone={states[state].color} size="xs" appearance="subtle">
-                  {["pass", "fail", "pending", "cancel", "skipping", "unknown"].includes(state)
-                    ? single
-                      ? states[state].label
-                      : `${count} ${t(states[state].summary)}`
-                    : counts.size === 1
-                      ? t(states[state].summary)
-                      : `${count} ${states[state].label.toLowerCase()}`}
-                </Badge>
-              ))}
-            </span>
-            <span
-              title={single ? `${single.check.workflow}: ${single.check.name}` : undefined}
-              className="mt-0.5 block break-words text-ui-caption text-(--ui-text-secondary)"
-            >
-              {single ? single.check.name : t("CI repair for {p0}", { p0: label })}
+      <Disclosure
+        variant="row"
+        chevron="end"
+        open={expanded}
+        onOpenChange={setExpanded}
+        className="min-w-0"
+        summary={
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <StatusIcon state={lead} />
+            <span className="min-w-0 flex-1">
+              <span
+                role="status"
+                className="flex flex-wrap gap-x-3 gap-y-0.5 text-ui-caption font-medium"
+              >
+                {[...counts].map(([state, count]) => (
+                  <Badge key={state} tone={states[state].color} size="xs" appearance="subtle">
+                    {["pass", "fail", "pending", "cancel", "skipping", "unknown"].includes(state)
+                      ? single
+                        ? states[state].label
+                        : `${count} ${t(states[state].summary)}`
+                      : counts.size === 1
+                        ? t(states[state].summary)
+                        : `${count} ${states[state].label.toLowerCase()}`}
+                  </Badge>
+                ))}
+              </span>
+              <span
+                title={single ? `${single.check.workflow}: ${single.check.name}` : undefined}
+                className="mt-0.5 block break-words text-ui-caption text-(--ui-text-secondary)"
+              >
+                {single ? single.check.name : t("CI repair for {p0}", { p0: label })}
+              </span>
             </span>
           </span>
-          <ChevronRight
-            aria-hidden="true"
-            className={`icon-xs shrink-0 text-(--ui-text-secondary) transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
-          />
-        </Button>
-        {canShowCheck ? (
-          <Button
-            variant="ghost"
-            type="button"
-            onClick={() => onShowCheck?.(single.check)}
-            className="shrink-0"
-          >
-            {t("Show check")}
-          </Button>
-        ) : null}
-        {repair.onOpenSession ? (
-          <Button
-            variant="ghost"
-            type="button"
-            onClick={() => void repair.onOpenSession?.(group.sessionId)}
-            className="shrink-0"
-          >
-            <MessageSquare aria-hidden="true" className="icon-sm" />
-            {t("Open conversation")}
-          </Button>
-        ) : null}
-      </div>
-      {expanded ? (
-        <div
-          id={detailsId}
-          className="space-y-2 border-t border-(--ui-tone-neutral-border) px-3 py-2.5 text-ui-micro text-(--ui-text-secondary)"
-        >
+        }
+        summaryActions={
+          <>
+            {canShowCheck ? (
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={() => onShowCheck?.(single.check)}
+                className="shrink-0"
+              >
+                {t("Show check")}
+              </Button>
+            ) : null}
+            {repair.onOpenSession ? (
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={() => void repair.onOpenSession?.(group.sessionId)}
+                className="shrink-0"
+              >
+                <MessageSquare aria-hidden="true" className="icon-sm" />
+                {t("Open conversation")}
+              </Button>
+            ) : null}
+          </>
+        }
+      >
+        <div className="space-y-2 border-t border-(--ui-tone-neutral-border) py-2.5 text-ui-micro text-(--ui-text-secondary)">
           <p>{t("Included checks")}</p>
           <ul className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
             {group.items.map(({ check }) => (
@@ -415,7 +408,7 @@ function RepairCard({
             {t(". Results appear in the checks below.")}
           </p>
         </div>
-      ) : null}
+      </Disclosure>
     </Surface>
   );
 }

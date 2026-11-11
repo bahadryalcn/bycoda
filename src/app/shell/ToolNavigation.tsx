@@ -26,6 +26,7 @@ import { useT } from "../../shared/i18n";
 import { TOOL_IDS, type WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
 import { Button } from "../../shared/ui/Button";
+import { ErrorDetails, fitsOneLine } from "../../shared/ui/ErrorDetails";
 import { Tab, TabList, Tabs } from "../../shared/ui/Tabs";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { useSshRunbookQueue } from "../../features/connections/model/sshRunbookQueue";
@@ -280,9 +281,16 @@ export function ToolNavigation() {
       )}
       {error ? (
         <Alert tone="danger" data-tauri-drag-region="false">
-          <span>
-            {t("Could not open window")}: {error}
-          </span>
+          {fitsOneLine(error) ? (
+            <span>
+              {t("Could not open window")}: {error}
+            </span>
+          ) : (
+            <>
+              <span>{t("Could not open window")}</span>
+              <ErrorDetails title={t("Could not open window")} detail={error} />
+            </>
+          )}
           <Button variant="ghost" motion="none" onClick={() => setError("")}>
             {t("Dismiss")}
           </Button>

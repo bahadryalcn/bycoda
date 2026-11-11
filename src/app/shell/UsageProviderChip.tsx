@@ -41,6 +41,8 @@ import { Popover } from "../../shared/ui/Popover";
 import { Badge } from "../../shared/ui/Badge";
 import { InlineError } from "../../shared/ui/InlineError";
 import { Spinner } from "../../shared/ui/Spinner";
+import { Heading } from "../../shared/ui/Heading";
+import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { Surface } from "../../shared/ui/Surface";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Button } from "../../shared/ui/Button";
@@ -402,10 +404,10 @@ function UsageProviderDetails({
               <HarnessIcon harness={iconHarness} className="size-4" />
             </span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-ui-secondary font-medium leading-4">
+              <Heading size="item" level={2}>
                 {providerLabel}
                 {t(" usage")}
-              </h2>
+              </Heading>
               <p className="mt-0.5 text-ui-caption leading-4 text-(--ui-text-secondary)">
                 {updatedLabel(detailLimits, now)}
               </p>
@@ -479,7 +481,7 @@ function UsageProviderDetails({
             />
           ) : null}
 
-          {limits.provider === "codex" ? (
+          {limits.provider === "codex" || limits.provider === "claude" ? (
             <BankedResets
               limits={detailLimits}
               now={now}
@@ -498,7 +500,10 @@ function UsageProviderDetails({
                 setResetAction("idle");
               }}
               onUse={useReset}
-              canUse={!viewingOtherAccount && Boolean(onConsumeReset)}
+              // Claude resets are spent with /limit-reset in Claude Code, not from here.
+              canUse={
+                limits.provider === "codex" && !viewingOtherAccount && Boolean(onConsumeReset)
+              }
             />
           ) : null}
         </>
@@ -576,10 +581,10 @@ function ProviderAccountPicker({
         >
           <ArrowLeft className="icon-sm" aria-hidden />
         </Button>
-        <h2 className="text-ui-secondary font-medium">
+        <Heading size="item" level={2}>
           {providerLabel}
           {t(" accounts")}
-        </h2>
+        </Heading>
       </div>
       <p className="mt-1 px-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
         {t("Applies to this conversation only; new ones use the default account.")}
@@ -700,7 +705,7 @@ function SwitchSuggestion({
 }) {
   const t = useT();
   return (
-    <section className="mt-2 flex items-center gap-2.5 rounded-lg px-3 py-2.5 ring-1 ring-inset ring-(--color-stroke)">
+    <Surface variant="outline" padding="md" as="section" className="mt-2 flex items-center gap-2.5">
       <div className="min-w-0 flex-1">
         <p className="text-ui-caption leading-4 text-(--ui-text-secondary)">
           {exhausted ? t("Out of usage") : t("Running low")}
@@ -715,7 +720,7 @@ function SwitchSuggestion({
       <Button variant="ghost" motion="none" type="button" className="shrink-0" onClick={onSwitch}>
         {t("Switch account")}
       </Button>
-    </section>
+    </Surface>
   );
 }
 
@@ -765,11 +770,11 @@ function AddProviderAccount({
         >
           <ArrowLeft className="icon-sm" aria-hidden />
         </Button>
-        <h2 className="text-ui-secondary font-medium">
+        <Heading size="item" level={2}>
           {t("Add ")}
           {providerLabel}
           {t(" account")}
-        </h2>
+        </Heading>
       </div>
       <p className="mt-1 px-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
         {t("Give this account a local name, then finish sign-in in your browser.")}
@@ -838,7 +843,9 @@ function UsageWindowCard({
   return (
     <section className="px-1">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-ui-micro font-medium text-(--ui-text-secondary)">{t(title)}</h3>
+        <SectionLabel as="h3" size="micro">
+          {t(title)}
+        </SectionLabel>
       </div>
       <Progress
         showValue
@@ -918,7 +925,9 @@ function BankedResets({
     <section className="mbs-2 border-t border-(--color-stroke) pbs-1.5">
       <div className="flex items-center justify-between gap-2 px-1">
         <div className="flex min-w-0 items-center gap-1.5">
-          <h3 className="text-ui-micro font-medium">{t("Banked resets")}</h3>
+          <SectionLabel as="h3" size="micro">
+            {t("Banked resets")}
+          </SectionLabel>
           <Badge
             variant="count"
             size="xs"
@@ -1022,11 +1031,7 @@ function BankedResetRow({
   const retryable = action === "error";
   return (
     <article role="listitem" className="px-1 py-0.5">
-      {showTitle && credit?.title ? (
-        <h4 className="text-ui-caption font-medium leading-4 text-(--ui-text-secondary)">
-          {credit.title}
-        </h4>
-      ) : null}
+      {showTitle && credit?.title ? <SectionLabel as="h4">{credit.title}</SectionLabel> : null}
       <div className="flex min-h-6 items-center justify-between gap-2">
         <Tooltip
           label={

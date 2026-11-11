@@ -9,7 +9,9 @@ import {
 import {
   isRemoteProjectPath,
   normalizeProjectPath,
+  sameProjectPath,
 } from "../../../features/projects/model/recents";
+import { workspaceTabCwd } from "../../../features/workspace/model/workspaceTabGroups";
 import { reportBootProjectState } from "../../model/bootDiagnostics";
 import { newTerminalCwd } from "../../../features/terminal/model/terminalTab";
 import { remoteTabCwd } from "../../../features/connections/model/connections";
@@ -50,7 +52,15 @@ export function useActiveWorkspaceContext(
   deps: ActiveWorkspaceContextDeps,
 ): ActiveWorkspaceContext {
   const { tabs, activeTabId, sessions, projectCwd, historyErrorCwd, loadedProjects } = deps;
-  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+  // A stale id falls back to a tab of the project on screen before any other
+  // project's tab, so losing the active tab never switches projects.
+  const activeTab =
+    tabs.find((t) => t.id === activeTabId) ??
+    tabs.find((t) => {
+      const cwd = workspaceTabCwd(t, sessions);
+      return cwd !== null && sameProjectPath(cwd, projectCwd);
+    }) ??
+    tabs[0];
   const active =
     sessions.find((session) => session.id === activeTab?.focusedId) ??
     sessions.find((session) => activeTab && leafIds(activeTab.layout).includes(session.id));

@@ -11,10 +11,11 @@ Read only the section affected by the change. UI owners are in [source owners](s
 - Explicit Disconnect cancels pending retries and cannot be undone by an old
   timer, provider callback, unlock or pointer movement.
 
-- Presence reads can fail. Unknown is never evidence of active presence.
+- Presence reads can fail. A failed read keeps the last good reading for five minutes; after
+  that the computer counts as away, never as present.
 
-- Presence uses shared labeled success/warning/danger/neutral roles; pending or
-  failed reads/writes never show stale success.
+- Presence uses shared labeled success/warning/danger/neutral roles; a failed read
+  keeps the last confirmed state and a missing Host status shows offline.
 
 ## Room identity and drafts
 

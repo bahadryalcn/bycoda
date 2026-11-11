@@ -110,7 +110,7 @@ export function BackgroundSessionDialog({
                 {t(" · on this computer’s host")}
               </p>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-pane-border) p-3 text-ui-caption leading-relaxed text-(--ui-text-secondary)">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-card-border) p-3 text-ui-caption leading-relaxed text-(--ui-text-secondary)">
               {summary.reply || <EmptyState size="inline" description={t("No reply yet.")} />}
             </div>
             {summary.note ? (

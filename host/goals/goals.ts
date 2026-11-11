@@ -8,6 +8,7 @@ import {
   GOAL_CANCELLED,
   goalStateFromTasks,
   goalPlanNeedsApproval,
+  goalPlanReviews,
   parseGoalPlan,
   parseHostGoal,
   type GoalPlan,
@@ -1022,6 +1023,7 @@ export class HostGoals {
     const planned: HostGoal = {
       ...goal,
       plan: {
+        ...plan,
         tasks: plan.tasks.map((task) => ({
           ...task,
           projectId: paths.get(task.project),
@@ -1043,7 +1045,8 @@ export class HostGoals {
       return await this.blockPlanning(goal, errorMessage(error), now);
     }
     const ids = new Map(planned.map((task) => [task.key, randomUUID()]));
-    const { verifyCommand, review } = goal.verifyDefaults;
+    const { verifyCommand } = goal.verifyDefaults;
+    const review = goalPlanReviews(goal).task;
     // No queued task may escape without its owning goal's complete task list.
     return await this.tasks.transaction(async () => {
       for (const task of planned) {
@@ -1107,7 +1110,7 @@ export class HostGoals {
         (await this.attachFinalReceipt(goal, now))
       )
         continue;
-      if (goal.finalReview && state.status === "done") {
+      if (goalPlanReviews(goal).final && state.status === "done") {
         const fingerprint = finalTaskFingerprint(goal, tasks);
         const final = goal.finalAcceptance;
         if (final?.taskFingerprint === fingerprint && final.status === "passed") {

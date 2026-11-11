@@ -144,7 +144,7 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .list :global(.settings-row):hover {
-    background: var(--ui-surface-hover);
+    background: var(--ui-settings-row-hover);
   }
 }
 

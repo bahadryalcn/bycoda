@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Globe, X } from "../../../shared/ui/icons";
 import { forgetBrowserUrl, readBrowserRecents } from "../model/browserRecents";
 
@@ -22,7 +23,9 @@ export function BrowserStartPage({
         <p className="host-browser-start-text">{description}</p>
         {recents.length ? (
           <section className="host-browser-recents" aria-label={t("Recent")}>
-            <h4 className="host-browser-recents-title">{t("Recent")}</h4>
+            <SectionLabel as="h4" className="host-browser-recents-title">
+              {t("Recent")}
+            </SectionLabel>
             <ul>
               {recents.map((url) => (
                 <li key={url}>

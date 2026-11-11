@@ -14,8 +14,10 @@ import {
 } from "../../../features/workspace/model/layout";
 import {
   planWorkspaceTabClose,
+  workspaceTabCwd,
   type WorkspaceTabCloseScope,
 } from "../../../features/workspace/model/workspaceTabGroups";
+import { sameProjectPath } from "../../../features/projects/model/recents";
 import { type Session } from "../../../features/sessions/model/session";
 import { confirmWorkspaceClose } from "../../model/closeConfirmation";
 import { confirmDiscardUnsaved } from "../helpers/appHelpers";
@@ -62,8 +64,8 @@ export function useCloseTabActions({
 }: CloseTabActionDeps) {
   type CloseCommit = { closing: WorkspaceTab[]; next: WorkspaceTab[]; nextActiveTabId?: string };
   const pending = useRef<{ checked: boolean; commit?: CloseCommit }[]>([]);
-  const closePolicy = useRef({ tabCloseScope, tabWorktreeOf });
-  closePolicy.current = { tabCloseScope, tabWorktreeOf };
+  const closePolicy = useRef({ tabCloseScope, tabWorktreeOf, sidebarCwd });
+  closePolicy.current = { tabCloseScope, tabWorktreeOf, sidebarCwd };
 
   // React can defer or replay functional updaters. External effects belong to
   // the committed removal, never to the stale pre-confirmation snapshot.
@@ -96,7 +98,12 @@ export function useCloseTabActions({
       });
       if (closingIds.has(activeTabIdRef.current)) {
         const fallback =
-          tabsRef.current.find((tab) => tab.id === commit.nextActiveTabId) ?? tabsRef.current[0];
+          tabsRef.current.find((tab) => tab.id === commit.nextActiveTabId) ??
+          tabsRef.current.find((tab) => {
+            const cwd = workspaceTabCwd(tab, sessionsRef.current);
+            return cwd !== null && sameProjectPath(cwd, sidebarCwd);
+          }) ??
+          tabsRef.current[0];
         if (fallback) activateTab(fallback.id);
       }
       void refreshHistory(sidebarCwd);
@@ -130,6 +137,7 @@ export function useCloseTabActions({
           closingTabId: id,
           scope: closePolicy.current.tabCloseScope,
           worktreeOf: closePolicy.current.tabWorktreeOf,
+          activeCwd: closePolicy.current.sidebarCwd,
         });
         if (plan.action === "keep") return;
         const files = [

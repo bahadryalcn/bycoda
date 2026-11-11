@@ -1,3 +1,4 @@
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useId, useState } from "react";
 import { SshCertificateInspection } from "./SshCertificateInspection";
@@ -197,8 +198,7 @@ export function SshServerEditor({
           }
         }}
       >
-        <fieldset className="flex min-w-0 flex-col gap-3">
-          <legend className="mbe-3 text-ui-body font-medium">{t("Connection")}</legend>
+        <FieldGroup legend={t("Connection")}>
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
             <TextField
               label={t("Host")}
@@ -219,18 +219,19 @@ export function SshServerEditor({
               disabled={saving}
             />
           </div>
-        </fieldset>
-        <fieldset className="flex min-w-0 flex-col gap-3 border-t border-stroke pbs-3">
-          <legend className="text-ui-body font-medium">{t("Credentials")}</legend>
-          <TextField
-            label={t("SSH user")}
-            value={user}
-            maxLength={128}
-            onChange={(event) => setUser(event.target.value)}
-            disabled={saving}
-          />
-          <SshIdentityField value={identityFile} onChange={setIdentityFile} disabled={saving} />
-        </fieldset>
+        </FieldGroup>
+        <div className="min-w-0 border-t border-stroke pbs-3">
+          <FieldGroup legend={t("Credentials")}>
+            <TextField
+              label={t("SSH user")}
+              value={user}
+              maxLength={128}
+              onChange={(event) => setUser(event.target.value)}
+              disabled={saving}
+            />
+            <SshIdentityField value={identityFile} onChange={setIdentityFile} disabled={saving} />
+          </FieldGroup>
+        </div>
         <TextField
           label={t("Name")}
           value={name}
@@ -239,18 +240,14 @@ export function SshServerEditor({
           onChange={(event) => setName(event.target.value)}
           disabled={saving}
         />
-        <Disclosure
-          size="sm"
-          className="text-ui-caption text-(--ui-text-muted)"
-          summary={t("Connection help")}
-        >
+        <div className="text-ui-caption text-(--ui-text-muted)">
           <p>
             {t(
               "Enter the server address and SSH user. Connect opens a terminal; Save adds it to your servers.",
             )}
           </p>
           <p className="mbs-2">{t("Leave empty to use your SSH agent and default identities.")}</p>
-        </Disclosure>
+        </div>
         {!onConnect && valid && endpoint.httpProxy ? (
           <p className="break-all text-ui-caption text-(--ui-text-muted)">
             {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
@@ -312,7 +309,7 @@ export function SshServerEditor({
             />
             {proxyEnabled ? (
               <>
-                <fieldset disabled={saving} className="border-0 p-0">
+                <FieldGroup variant="bare" disabled={saving}>
                   <SegmentedControl
                     label={t("Proxy transport")}
                     value={proxyScheme}
@@ -322,7 +319,7 @@ export function SshServerEditor({
                       { value: "https", label: "HTTPS" },
                     ]}
                   />
-                </fieldset>
+                </FieldGroup>
                 <TextField
                   label={t("Proxy host")}
                   value={proxyHost}

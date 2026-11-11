@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n";
+import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import type { CrewManagedSession } from "../model/crewManagedSessions";
 import { openCrewsPageAt } from "../model/crewsPage";
@@ -25,9 +26,11 @@ export function CrewManagedBar({
     ? `${managed.memberName} · ${roleLabel(managed.role)}`
     : roleLabel(managed.role);
   return (
-    <div
+    <Surface
       data-crew-managed-bar=""
-      className={`flex min-w-0 items-center gap-2 rounded-lg border border-(--ui-pane-border) bg-(--ui-surface-raised) px-3 py-2 ${className ?? ""}`}
+      variant="card"
+      padding="none"
+      className={`flex min-w-0 items-center gap-2 px-3 py-2 ${className ?? ""}`}
     >
       <CrewRoleIcon role={managed.role} className="icon-sm shrink-0 text-(--ui-text-secondary)" />
       <span className="flex min-w-0 flex-1 flex-col">
@@ -44,6 +47,6 @@ export function CrewManagedBar({
       >
         {t("Open in Crews")}
       </Button>
-    </div>
+    </Surface>
   );
 }

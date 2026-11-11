@@ -51,7 +51,7 @@ All source paths below are repository-root relative.
   `FileEditorSave.test.ts`, `src/shared/lib/format.test.ts` and the changed
   Host/native delivery suites. Include sequential saves, failed saves, late
   results, retained legacy requests, disconnect/restart and bounded exhaustion.
-- `tests/browser/file-save.tsx` and its spec exercise the actual editor with
+- `tests/browser/files/file-save.tsx` and its spec exercise the actual editor with
   fixture filesystem/formatter responses; label that evidence as fixtures.
 - See [file content guide](../../../docs/guides/explorer-and-file-content.md)
   and [delivery architecture](../../../docs/reference/host-runtime.md).

@@ -71,14 +71,9 @@ it.each<[AiAction["status"], string]>([
   expect(rows()[0]?.textContent).toContain(word);
 });
 
-it("keeps a failure reason behind Details and the raw id behind Technical details", () => {
+it("shows a failure reason and the raw id directly", () => {
   render([action({ id: "act-77", status: "failed", reason: "Rate limited by the platform." })]);
-  expect(element.textContent).not.toContain("Rate limited by the platform.");
-  expect(element.textContent).not.toContain("act-77");
-  act(() => buttonWithText(element, "Details")?.click());
   expect(element.textContent).toContain("Rate limited by the platform.");
-  expect(element.textContent).not.toContain("act-77");
-  act(() => buttonWithText(element, "Technical details")?.click());
   expect(element.querySelector("code")?.textContent).toBe("act-77");
 });
 
@@ -90,11 +85,9 @@ it("undoes the chosen row by its id", () => {
   expect(onUndo).toHaveBeenCalledExactlyOnceWith("second");
 });
 
-it("shows no Undo button when the Host recorded no inverse, and says why under Details", () => {
+it("shows no Undo button when the Host recorded no inverse, and says why directly", () => {
   const onUndo = render([action({ undo: undefined })]);
   expect(buttonWithText(element, "Undo")).toBeUndefined();
-  expect(element.textContent).not.toContain("This action cannot be undone.");
-  act(() => buttonWithText(element, "Details")?.click());
   expect(element.textContent).toContain("This action cannot be undone.");
   expect(onUndo).not.toHaveBeenCalled();
 });
@@ -102,7 +95,6 @@ it("shows no Undo button when the Host recorded no inverse, and says why under D
 it("does not offer a second undo for an action that was already undone", () => {
   const onUndo = render([action({ status: "undone" })]);
   expect(buttonWithText(element, "Undo")).toBeUndefined();
-  act(() => buttonWithText(element, "Details")?.click());
   expect(element.textContent).toContain("Already undone.");
   expect(onUndo).not.toHaveBeenCalled();
 });

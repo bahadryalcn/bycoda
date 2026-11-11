@@ -184,9 +184,9 @@ describe("files that cannot be attached", () => {
     choose(png("b.png"));
     // The control stops reporting the error as soon as the next attempt starts.
     expect(fileInput().getAttribute("aria-invalid")).not.toBe("true");
-    // The message row leaves with an exit animation, so its text is checked once that has finished.
     await vi.waitFor(() => expect(text()).not.toContain("Upload failed."), { timeout: 2000 });
-    expect(onChange).toHaveBeenCalledTimes(1);
+    // The retry is still uploading when the message leaves; wait for it to attach.
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledTimes(1), { timeout: 2000 });
   });
 
   it("refuses a mixed pick before uploading any of its files", async () => {

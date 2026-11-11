@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { withQueryClient } from "../../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../../tests/browser/support/queryTest";
 import type { SocialClient } from "../../model/socialClient";
 import type { SocialScreenProps } from "../shell/screens";
 import { InboxScreen } from "./InboxScreen";

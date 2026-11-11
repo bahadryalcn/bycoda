@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -105,9 +106,13 @@ export function CrewWorkDetail({
   return (
     <section data-crew-run={run.id} aria-label={title} className="min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-        <h3 className="min-w-0 flex-1 basis-56 break-words text-ui-title font-medium text-content [overflow-wrap:anywhere]">
+        <Heading
+          size="section"
+          level={3}
+          className="min-w-0 flex-1 basis-56 break-words [overflow-wrap:anywhere]"
+        >
           {title}
-        </h3>
+        </Heading>
         {run.status !== "finished" ? (
           <div className="flex shrink-0 flex-wrap items-center gap-1">
             {pendingText ? (

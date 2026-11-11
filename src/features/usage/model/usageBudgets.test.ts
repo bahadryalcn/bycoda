@@ -4,6 +4,8 @@ import { idleRateLimits } from "../../providers/model/rateLimits";
 import {
   accountBudgetReading,
   budgetMatches,
+  budgetWeightedTokens,
+  CACHE_READ_TOKEN_WEIGHT,
   budgetReading,
   budgetSince,
   normalizeBudget,
@@ -99,6 +101,26 @@ describe("usage budget semantics", () => {
     );
     expect(accountBudgetReading({ ...b, period: "weekly" }, limits, now).state).toBe("unknown");
   });
+  it("weights cached reads at one tenth for both provider conventions", () => {
+    expect(CACHE_READ_TOKEN_WEIGHT).toBe(0.1);
+    expect(
+      budgetWeightedTokens({
+        input: 1_000_000,
+        output: 20_000,
+        cacheRead: 950_000,
+        inputIncludesCacheRead: true,
+      }),
+    ).toBe(165_000);
+    expect(
+      budgetWeightedTokens({ input: 50_000, output: 20_000, cacheRead: 950_000, cacheWrite: 5 }),
+    ).toBe(165_005);
+    expect(
+      budgetWeightedTokens({ input: 10, output: 1, cacheRead: 500, inputIncludesCacheRead: true }),
+    ).toBe(51);
+    const odd = budgetWeightedTokens({ input: 0, output: 0, cacheRead: 7 });
+    expect(Number.isSafeInteger(odd)).toBe(true);
+    expect(odd).toBe(1);
+  });
   it("counts Codex cached input once and Claude cached input separately", () => {
     const blocks = [
       {
@@ -114,8 +136,8 @@ describe("usage budget semantics", () => {
         },
       },
     ] as Session["blocks"];
-    expect(sessionBudgetTokens(session({ blocks }), "weekly", now)).toBe(130);
-    expect(sessionBudgetTokens(session({ harness: "claude", blocks }), "weekly", now)).toBe(190);
+    expect(sessionBudgetTokens(session({ blocks }), "weekly", now)).toBe(76);
+    expect(sessionBudgetTokens(session({ harness: "claude", blocks }), "weekly", now)).toBe(136);
     expect(sessionBudgetTokens(session({ blocks, historyPartial: true }), "all", now)).toBeNull();
     expect(
       sessionBudgetTokens(

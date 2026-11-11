@@ -1,11 +1,6 @@
-# ast-grep configuration for the code invariants check.
-# Run through `node scripts/checks/check-invariants.mjs`, which applies the
-# per-file ratchet baseline; `pnpm exec ast-grep scan -c scripts/checks/invariants/sgconfig.yml`
-# prints every finding without the baseline.
+# ast-grep configuration for the Rust code invariants. TypeScript rules live in the oxlint
+# plugin (scripts/checks/oxlint-plugin). Run through `node scripts/checks/check-invariants.mjs`,
+# which applies the per-file ratchet baseline; `pnpm exec ast-grep scan -c
+# scripts/checks/invariants/sgconfig.yml` prints every finding without the baseline.
 ruleDirs:
   - rules
-# One grammar for .ts and .tsx: the tsx grammar parses plain TypeScript, so every
-# `language: tsx` rule covers both without duplicate rule files.
-languageGlobs:
-  tsx:
-    - "*.ts"

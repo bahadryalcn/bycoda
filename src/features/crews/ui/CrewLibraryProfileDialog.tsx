@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -76,25 +77,27 @@ export function CrewLibraryProfileDialog({
         </>
       }
     >
-      <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3 border-0">
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        <CrewMemberForm
-          cwd={cwd}
-          catalog={data.catalog}
-          agent={agent}
-          identity={data.identitySupported}
-          tools={data.toolsSupported}
-          handleError={/handle/i.test(error) ? error : undefined}
-          onChange={(patch) => setAgent((current) => ({ ...current, ...patch }))}
-          groups={data.groupsSupported}
-          groupSuggestions={groupNames}
-          nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
-          machineId={data.machine.id}
-          projectId={data.project.id}
-          modelPoolsSupported={data.modelPoolsSupported}
-          modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}
-        />
-      </fieldset>
+      <FieldGroup variant="bare" disabled={pending}>
+        <div className="flex min-w-0 flex-col gap-3">
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+          <CrewMemberForm
+            cwd={cwd}
+            catalog={data.catalog}
+            agent={agent}
+            identity={data.identitySupported}
+            tools={data.toolsSupported}
+            handleError={/handle/i.test(error) ? error : undefined}
+            onChange={(patch) => setAgent((current) => ({ ...current, ...patch }))}
+            groups={data.groupsSupported}
+            groupSuggestions={groupNames}
+            nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
+            machineId={data.machine.id}
+            projectId={data.project.id}
+            modelPoolsSupported={data.modelPoolsSupported}
+            modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}
+          />
+        </div>
+      </FieldGroup>
     </Modal>
   );
 }

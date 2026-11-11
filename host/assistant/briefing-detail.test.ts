@@ -239,7 +239,7 @@ async function fixture() {
   };
 }
 
-it("delivers urgent real pending approvals and budget while away, retaining ordinary summaries and all quiet/DND/unknown gates", async () => {
+it("delivers urgent real pending approvals and budget while away, retaining ordinary summaries and all quiet/DND gates", async () => {
   const f = await fixture();
   await f.notify("approval", "job.waiting", f.job.id);
   await f.notify("budget", "budget.exhausted");
@@ -278,11 +278,15 @@ it("delivers urgent real pending approvals and budget while away, retaining ordi
   });
   f.time(10);
   await f.owner({ op: "presence.set", state: "present" });
-  expect(
-    (await f.snapshot()).notifications?.every(
-      (item) => !item.eligible && item.deferredReason === "unknown",
-    ),
-  ).toBe(true);
+  // Without a readable desktop the owner is away, never unknown: urgent items stay eligible.
+  snapshot = await f.snapshot();
+  expect(snapshot.effectivePresence).toBe("away");
+  expect(snapshot.notifications?.find((item) => item.id === "approval")?.eligible).toBe(true);
+  expect(snapshot.notifications?.find((item) => item.id === "ordinary")).toMatchObject({
+    eligible: false,
+    deferredReason: "away",
+  });
+  expect(snapshot.notifications?.some((item) => item.deferredReason === "unknown")).toBe(false);
   expect(f.provider.approve).not.toHaveBeenCalled();
   expect(f.provider.send).not.toHaveBeenCalled();
 });

@@ -6,12 +6,12 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   clearScreen: false,
-  optimizeDeps: { entries: ["tests/browser/transcript.html"] },
+  optimizeDeps: { entries: ["tests/browser/chat/transcript.html"] },
   server: {
     host: "127.0.0.1",
     port: 1435,
     strictPort: true,
-    warmup: { clientFiles: ["tests/browser/transcript.tsx"] },
+    warmup: { clientFiles: ["tests/browser/chat/transcript.tsx"] },
     watch: { ignored: ["**/src-tauri/**", "**/temp/**", "**/test-results/**"] },
   },
 });

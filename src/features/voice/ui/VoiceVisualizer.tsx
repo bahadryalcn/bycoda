@@ -20,11 +20,13 @@ export type VoiceVisualizerProps = {
 };
 
 const STATIC_STATES = new Set<VoiceVisualState>(["off", "muted", "error"]);
-/** Decorative frames are painted at most this often: the bars and arc change visibly at
+/** Decorative frames are painted at most this often: the bars and sweep change visibly at
  * ~30 Hz, while a per-vsync paint on a 240 Hz display mutated the SVG 60+ times a second. */
 const PAINT_INTERVAL_MS = 33;
 /** Connecting is status feedback, not decoration: with motion off it still steps. */
 const PROGRESS_STEP_MS = 400;
+/** Stepped wave sweep positions (-1 left, 1 right) while connecting without decorative motion. */
+const SWEEP_STEPS = [-1, -0.5, 0, 0.5, 1, 0.5, 0, -0.5];
 const rhythm = (time: number, index: number) =>
   Math.abs(Math.sin(time / (110 + index * 37) + index * 1.7));
 
@@ -50,7 +52,7 @@ export function VoiceVisualizer({
     const waves = [...element.querySelectorAll<SVGPathElement>("[data-wave]")];
     const core = element.querySelector<SVGCircleElement>("[data-core]");
     const ring = element.querySelector<SVGCircleElement>("[data-ring]");
-    const arc = element.querySelector<SVGGElement>("[data-arc]");
+    const sweep = element.querySelector<SVGPathElement>("[data-sweep]");
     let visible = true;
     let lastPaint = -Infinity;
     let frame: number | undefined;
@@ -72,7 +74,7 @@ export function VoiceVisualizer({
       const amplitude = pose === "user" && !preview ? input : still ? 0.62 : rhythm(time, 0);
       const active = pose === "user" || pose === "assistant";
       const pulse = still ? 0.6 : (1 + Math.sin(time / 520)) / 2;
-      const turn = still ? 45 : (time / (pose === "connecting" ? 8 : 4)) % 360;
+      const turn = still ? 0 : (time / 4) % 360;
       const sequence = step ?? (still ? -1 : Math.floor(time / 220));
       petals?.setAttribute("transform", `rotate(${pose === "thinking" ? turn : 0} 40 40)`);
       drops.forEach((drop, index) => {
@@ -114,7 +116,9 @@ export function VoiceVisualizer({
                 ? -1.5
                 : 1.5
               : Math.sin(time / 420 - index * 0.8) * 2
-            : 0;
+            : pose === "thinking" && visual === "dots" && !still
+              ? -Math.max(0, Math.sin(time / 180 - index * 0.9)) * 6
+              : 0;
         bar.setAttribute("height", String(height));
         bar.setAttribute("y", String(40 - height / 2 + lift));
         bar.style.opacity =
@@ -129,8 +133,19 @@ export function VoiceVisualizer({
               : "1";
       });
       waves.forEach((wave, layer) => {
-        const amp = pose === "listening" ? (preview ? 3 : 0) : active ? 5 + amplitude * 20 : 0;
-        const phase = still ? 1.3 : time / (pose === "listening" ? 700 : 170);
+        const amp =
+          pose === "listening"
+            ? preview
+              ? 3
+              : 0
+            : pose === "thinking"
+              ? 4
+              : active
+                ? 5 + amplitude * 20
+                : 0;
+        const phase = still
+          ? 1.3
+          : time / (pose === "listening" || pose === "thinking" ? 700 : 170);
         const points: string[] = [];
         for (let x = 8; x <= 152; x += 2) {
           const u = (x - 8) / 144;
@@ -146,18 +161,30 @@ export function VoiceVisualizer({
         }
         wave.setAttribute("d", points.join(" "));
       });
+      // Connecting orb breathes; stepped without decorative motion.
+      const breath = step !== undefined ? step % 2 : still ? 0.5 : (1 + Math.sin(time / 450)) / 2;
       core?.setAttribute(
         "r",
         String(
-          pose === "thinking"
-            ? 22
-            : active
-              ? 25 + amplitude * 4
-              : 25 + (pose === "listening" && preview ? pulse : 0),
+          pose === "connecting"
+            ? 18 + breath * 6
+            : pose === "thinking"
+              ? 22
+              : active
+                ? 25 + amplitude * 4
+                : 25 + (pose === "listening" && preview ? pulse : 0),
         ),
       );
+      if (core) core.style.opacity = pose === "connecting" ? String(0.45 + breath * 0.55) : "";
       ring?.setAttribute("r", String(pose === "user" ? 32 + amplitude * 4 : 32));
-      arc?.setAttribute("transform", `rotate(${turn} 40 40)`);
+      // Connecting wave: a sweep travels along the dashed line.
+      const travel =
+        step !== undefined
+          ? SWEEP_STEPS[step % SWEEP_STEPS.length]
+          : still
+            ? 0
+            : Math.sin(time / 380);
+      sweep?.setAttribute("transform", `translate(${(travel * 40).toFixed(2)} 0)`);
     }
 
     function tick(time: number) {
@@ -267,7 +294,7 @@ export function VoiceVisualizer({
                 strokeWidth={index ? 1.5 : 2.5}
               />
             ))}
-            <path className={styles.sweep} d="M65 40H95" strokeWidth="4" />
+            <path data-sweep className={styles.sweep} d="M65 40H95" strokeWidth="4" />
           </g>
         )}
         {visual === "dots" && (
@@ -316,9 +343,6 @@ export function VoiceVisualizer({
             </g>
           </g>
         )}
-        <g data-arc className={styles.arc} strokeWidth="3" transform="rotate(45 40 40)">
-          <path d={visual === "wave" ? "M26 20A28 28 0 0 1 54 60" : "M40 5A35 35 0 0 1 75 40"} />
-        </g>
         <g
           className={styles.off}
           strokeWidth="3"

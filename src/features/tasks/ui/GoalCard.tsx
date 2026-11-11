@@ -1,3 +1,4 @@
+import { Heading } from "../../../shared/ui/Heading";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { InlineAction, InlineMoreAction, ActionHost } from "../../../shared/ui/ActionHost";
@@ -72,9 +73,9 @@ export function GoalCard({
         </span>
         <div className="goal-card-main">
           <div className="goal-card-title-row">
-            <h3 title={goal.prompt} className="goal-card-title">
+            <Heading size="item" title={goal.prompt} className="goal-card-title">
               {goal.title}
-            </h3>
+            </Heading>
             <GoalStatusBadge status={goal.status} />
           </div>
           <div className="goal-card-meta">

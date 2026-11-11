@@ -37,7 +37,7 @@ export type ProviderRateLimits = {
   session: RateLimitWindow | null;
   weekly: RateLimitWindow | null;
   monthly: RateLimitWindow | null;
-  /** Codex-only banked rate-limit reset rewards, when supplied by app-server. */
+  /** Banked rate-limit resets (Codex app-server, Claude OAuth usage). */
   resetCredits: RateLimitResetCredits | null;
   updatedAt: number;
   error: string | null;
@@ -260,11 +260,34 @@ export function parseClaudeOAuthUsage(body: string): ProviderRateLimits {
     session: mapUsageWindow(rec.five_hour, SESSION_WINDOW_MINUTES),
     weekly: mapUsageWindow(rec.seven_day, WEEKLY_WINDOW_MINUTES),
     monthly: null,
-    resetCredits: null,
+    resetCredits: parseClaudeResetGrants(rec.cedar_ember),
     updatedAt: Date.now(),
     error: null,
     status: "ok",
   };
+}
+
+/** Claude's banked limit resets: one row per reset still left in each grant. */
+function parseClaudeResetGrants(raw: unknown): RateLimitResetCredits | null {
+  const grants = asRecord(raw)?.grants;
+  if (!Array.isArray(grants)) return null;
+  const credits: RateLimitResetCredit[] = [];
+  for (const grant of grants.map(asRecord)) {
+    if (!grant || typeof grant.id !== "string" || grant.id.trim() === "") continue;
+    const left = Math.min(Math.max(0, Math.floor(numberField(grant, "resets_left") ?? 0)), 20);
+    for (let index = 0; index < left; index++) {
+      credits.push({
+        id: `${grant.id}:${index}`,
+        resetType: "unknown",
+        status: grant.usable_now === true ? "available" : "unknown",
+        grantedAt: parseResetTimestamp(grant.starts_at),
+        expiresAt: parseResetTimestamp(grant.ends_at),
+        title: stringField(grant, "label"),
+        description: null,
+      });
+    }
+  }
+  return credits.length > 0 ? { availableCount: credits.length, credits } : null;
 }
 
 type CodexWindowSnapshot = {

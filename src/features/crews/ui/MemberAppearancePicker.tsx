@@ -1,4 +1,5 @@
 import { t, useLocale } from "../../../shared/i18n";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Button } from "../../../shared/ui/Button";
 import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
@@ -83,76 +84,74 @@ export function MemberAppearancePicker({
   useLocale();
   const set = (patch: Partial<MemberAvatarTraits>) => onChange({ ...traits, ...patch });
   return (
-    <fieldset
-      disabled={disabled}
-      className="flex min-w-0 flex-col gap-2 border-0 p-0"
-      aria-label={t("Appearance")}
-    >
-      <div className="flex gap-1">
-        <Button size="sm" variant="secondary" onClick={() => onChange(shuffledAvatar())}>
-          {t("Shuffle")}
-        </Button>
-        <Button size="sm" variant="ghost" disabled={!chosen} onClick={() => onChange(undefined)}>
-          {t("Reset")}
-        </Button>
-      </div>
-      <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-3 gap-y-2">
-        <Select
-          label={t("Headwear")}
-          fieldVariant="compact"
-          value={traits.headwear}
-          options={AVATAR_HEADWEAR.map((value) => ({ value, label: headwearLabel(value) }))}
-          onValueChange={(value) => set({ headwear: value as MemberAvatarTraits["headwear"] })}
-        />
-        <Select
-          label={t("Face")}
-          fieldVariant="compact"
-          value={traits.face}
-          options={AVATAR_FACE.map((value) => ({ value, label: faceLabel(value) }))}
-          onValueChange={(value) => set({ face: value as MemberAvatarTraits["face"] })}
-        />
-        <Select
-          label={t("Outfit")}
-          fieldVariant="compact"
-          value={traits.outfit}
-          options={AVATAR_OUTFIT.map((value) => ({ value, label: outfitLabel(value) }))}
-          onValueChange={(value) => set({ outfit: value as MemberAvatarTraits["outfit"] })}
-        />
-        <Select
-          label={t("Accessory")}
-          fieldVariant="compact"
-          value={traits.accessory}
-          options={AVATAR_ACCESSORY.map((value) => ({ value, label: accessoryLabel(value) }))}
-          onValueChange={(value) => set({ accessory: value as MemberAvatarTraits["accessory"] })}
-        />
-        <Switch
-          label={t("Glasses")}
-          labelPosition="start"
-          checked={traits.glasses}
-          onCheckedChange={(on) => set({ glasses: on })}
-          className="justify-between self-end"
-        />
-        <div
-          role="group"
-          aria-label={t("Colors")}
-          className="col-span-full flex flex-wrap items-center gap-1"
-        >
-          <span className="me-1 text-ui-body">{t("Colors")}</span>
-          {Array.from({ length: AVATAR_PALETTE_COUNT }, (_, palette) => (
-            <Button
-              key={palette}
-              iconOnly
-              size="sm"
-              variant="ghost"
-              label={t("Color set {p0}", { p0: palette + 1 })}
-              pressed={traits.palette === palette}
-              onClick={() => set({ palette })}
-            >
-              <MemberAvatar traits={{ ...traits, palette }} size={20} />
-            </Button>
-          ))}
+    <FieldGroup variant="bare" aria-label={t("Appearance")} disabled={disabled}>
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex gap-1">
+          <Button size="sm" variant="secondary" onClick={() => onChange(shuffledAvatar())}>
+            {t("Shuffle")}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={!chosen} onClick={() => onChange(undefined)}>
+            {t("Reset")}
+          </Button>
+        </div>
+        <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-3 gap-y-2">
+          <Select
+            label={t("Headwear")}
+            fieldVariant="compact"
+            value={traits.headwear}
+            options={AVATAR_HEADWEAR.map((value) => ({ value, label: headwearLabel(value) }))}
+            onValueChange={(value) => set({ headwear: value as MemberAvatarTraits["headwear"] })}
+          />
+          <Select
+            label={t("Face")}
+            fieldVariant="compact"
+            value={traits.face}
+            options={AVATAR_FACE.map((value) => ({ value, label: faceLabel(value) }))}
+            onValueChange={(value) => set({ face: value as MemberAvatarTraits["face"] })}
+          />
+          <Select
+            label={t("Outfit")}
+            fieldVariant="compact"
+            value={traits.outfit}
+            options={AVATAR_OUTFIT.map((value) => ({ value, label: outfitLabel(value) }))}
+            onValueChange={(value) => set({ outfit: value as MemberAvatarTraits["outfit"] })}
+          />
+          <Select
+            label={t("Accessory")}
+            fieldVariant="compact"
+            value={traits.accessory}
+            options={AVATAR_ACCESSORY.map((value) => ({ value, label: accessoryLabel(value) }))}
+            onValueChange={(value) => set({ accessory: value as MemberAvatarTraits["accessory"] })}
+          />
+          <Switch
+            label={t("Glasses")}
+            labelPosition="start"
+            checked={traits.glasses}
+            onCheckedChange={(on) => set({ glasses: on })}
+            className="justify-between self-end"
+          />
+          <div
+            role="group"
+            aria-label={t("Colors")}
+            className="col-span-full flex flex-wrap items-center gap-1"
+          >
+            <span className="me-1 text-ui-body">{t("Colors")}</span>
+            {Array.from({ length: AVATAR_PALETTE_COUNT }, (_, palette) => (
+              <Button
+                key={palette}
+                iconOnly
+                size="sm"
+                variant="ghost"
+                label={t("Color set {p0}", { p0: palette + 1 })}
+                pressed={traits.palette === palette}
+                onClick={() => set({ palette })}
+              >
+                <MemberAvatar traits={{ ...traits, palette }} size={20} />
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
-    </fieldset>
+    </FieldGroup>
   );
 }

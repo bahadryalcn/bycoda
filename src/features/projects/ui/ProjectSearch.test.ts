@@ -221,3 +221,13 @@ it("resets advanced filters without clearing the retained query", async () => {
     }),
   );
 });
+it("labels a result's line number as a line gutter", async () => {
+  search.mockResolvedValueOnce({
+    matches: [{ path: "/repo/a.ts", relative: "a.ts", line: 64, column: 1, preview: "needle" }],
+    truncated: false,
+  });
+  render();
+  type("Search", "needle");
+  await act(async () => vi.advanceTimersByTime(210));
+  expect(host.querySelector('[aria-label="Line 64"]')?.textContent).toBe("64");
+});

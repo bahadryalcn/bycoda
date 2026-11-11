@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
+import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Switch } from "../../../../shared/ui/Switch";
 import type { HostProject } from "../../../connections/public/protocol";
@@ -122,7 +123,7 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
   return (
     <section className="social-card" aria-label={t("Reply rules")}>
       <div className="social-card-head">
-        <h3 className="social-card-title">{t("Reply rules")}</h3>
+        <Heading size="item">{t("Reply rules")}</Heading>
         <DisabledReason
           variant="secondary"
           size="sm"

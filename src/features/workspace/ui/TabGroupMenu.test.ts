@@ -226,3 +226,23 @@ it("keeps the submenu while the pointer is in it and closes only it after leavin
   expect(main.isConnected).toBe(true);
   expect(button("Mute notifications").getAttribute("aria-expanded")).toBe("false");
 });
+
+it("names the field after its target and badges an item's icon with a status", () => {
+  renderMenu(vi.fn(), {
+    nameLabel: "Project name",
+    extraItems: [
+      {
+        id: "machine",
+        label: "Machine",
+        description: "Studio Mac · Not connected",
+        icon: BellOff,
+        badge: { tone: "danger", label: "Not connected" },
+      },
+    ],
+  });
+  expect(document.querySelector('input[aria-label="Project name"]')).not.toBeNull();
+  expect(document.querySelector('input[aria-label="Group name"]')).toBeNull();
+  const item = button("Machine");
+  expect(item.textContent).toContain("Studio Mac · Not connected");
+  expect(item.querySelector('[role="img"][aria-label="Not connected"]')).not.toBeNull();
+});

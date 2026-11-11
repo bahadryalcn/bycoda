@@ -5,6 +5,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import type { CapabilityReadiness } from "../../../shared/ui/CapabilityStatus";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { ArrowDownCircle, RefreshCw } from "../../../shared/ui/icons";
 import { hasProbedHarnessAvailability } from "../../../integrations/harness/core/availability";
 import { modelsFor } from "../../sessions/model/models";
@@ -60,7 +61,9 @@ export function ProviderDetailHeader({
   return (
     <header className="provider-detail-header">
       <HarnessIcon harness={harness} className="icon-lg shrink-0" />
-      <h3 className="provider-detail-title">{HARNESS_TITLE[harness]}</h3>
+      <Heading size="page" level={3} className="provider-detail-title">
+        {HARNESS_TITLE[harness]}
+      </Heading>
       <span className="provider-detail-meta">
         {available
           ? `${t("CLI detected")} · ${models.length} ${models.length === 1 ? t("model") : t("models")}`

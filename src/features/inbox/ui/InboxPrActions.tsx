@@ -3,6 +3,7 @@ import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   GitMerge,
@@ -351,9 +352,9 @@ export function GithubPrActions({
           className="p-3"
         >
           <div className="flex flex-col gap-1">
-            <h2 className="text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+            <Heading size="item" level={2}>
               {confirmCopy.title}
-            </h2>
+            </Heading>
             <p className="text-ui-caption text-(--ui-text-secondary)">
               {confirmCopy.detail}
               {confirmation.expectedHeadOid

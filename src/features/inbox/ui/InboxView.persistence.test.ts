@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { setLanguagePreference } from "../../../shared/i18n";
 import { InboxView as RawInboxView } from "./InboxView";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import type { InboxItem } from "../model/githubTasks";
 import type { LinkedWorkItem } from "../../sessions/model/session";
 

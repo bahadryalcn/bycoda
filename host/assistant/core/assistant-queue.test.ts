@@ -118,14 +118,14 @@ it("reads native presence before joining the request queue", async () => {
 it("classifies presence observations and never treats an unreadable desktop as present", () => {
   const policy = { idleMinutes: 5, awayMinutes: 30 };
   expect(assistantPresenceState({ supported: false, locked: true }, policy)).toEqual({
-    state: "unknown",
+    state: "away",
   });
   expect(assistantPresenceState({ supported: true, locked: true, idleMs: 0 }, policy)).toEqual({
     state: "locked",
     idleMs: 0,
   });
   expect(assistantPresenceState({ supported: true, locked: false, idleMs: -1 }, policy)).toEqual({
-    state: "unknown",
+    state: "away",
   });
   expect(
     assistantPresenceState({ supported: true, locked: false, idleMs: 300000 }, policy).state,

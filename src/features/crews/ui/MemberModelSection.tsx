@@ -1,4 +1,5 @@
 import { t, useLocale } from "../../../shared/i18n";
+import { Heading } from "../../../shared/ui/Heading";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -49,7 +50,9 @@ export function MemberModelSection({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-ui-title font-medium">{t("Model")}</h3>
+        <Heading size="section" level={3}>
+          {t("Model")}
+        </Heading>
         <SegmentedControl
           label={t("Model choice")}
           value={agent.selection}

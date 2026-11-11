@@ -75,7 +75,7 @@ it("shares native scans, filters projects and sums cache tokens across accounts"
     read(rule),
     read({ ...rule, scope: "workspace", target: "g" }),
   ]);
-  expect(p.used).toBe(48);
+  expect(p.used).toBe(44);
   expect(g.state).toBe("unknown"); // malformed input must not become a valid meter
   expect(mocks.report).toHaveBeenCalledTimes(2);
 });

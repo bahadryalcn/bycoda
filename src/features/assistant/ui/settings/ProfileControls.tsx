@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Select } from "../../../../shared/ui/Select";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
@@ -67,12 +68,7 @@ export function ProfileSegmented({
     />
   );
   if (useProfileRows()) return <ProfileRow label={t(label)}>{() => segmented}</ProfileRow>;
-  return (
-    <fieldset className={styles.plainFieldset}>
-      <legend>{t(label)}</legend>
-      {segmented}
-    </fieldset>
-  );
+  return <FieldGroup legend={t(label)}>{segmented}</FieldGroup>;
 }
 
 /** Integer draft that keeps invalid text visible until the owner corrects it. */

@@ -5,11 +5,14 @@ import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Badge } from "../../../shared/ui/Badge";
 import { CollectionFooter, ContinuousList } from "../../../shared/ui/ContinuousList";
 import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { ChevronDown, ChevronRight, GripVertical } from "../../../shared/ui/icons";
+import { GripVertical } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
+import { Heading } from "../../../shared/ui/Heading";
 import { Surface } from "../../../shared/ui/Surface";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -686,7 +689,7 @@ export function JiraBoardView({
     return (
       <article
         key={issue.identifier}
-        className="jira-board-card rounded-(--ui-radius-card) border border-(--ui-editor-border) p-2"
+        className="jira-board-card rounded-(--ui-radius-card) border border-(--ui-card-border) p-2"
         data-dragging={dragKey === issue.identifier || undefined}
         data-jira-drop={id}
         data-jira-group={group.id}
@@ -921,7 +924,12 @@ export function JiraBoardView({
             }}
           />
         </div>
-        <fieldset disabled={locked} className="jira-board-mode">
+        <FieldGroup
+          legend={t("Board view")}
+          hideLegend
+          disabled={locked}
+          className="jira-board-mode"
+        >
           <SegmentedControl
             selectionRole="pressed"
             label={t("Board view")}
@@ -935,7 +943,7 @@ export function JiraBoardView({
               { value: "planning", label: t("Backlog & sprints") },
             ]}
           />
-        </fieldset>
+        </FieldGroup>
         {mode === "kanban" ? (
           <div className="min-w-0">
             <SearchableSelect
@@ -1022,7 +1030,9 @@ export function JiraBoardView({
         </Alert>
       ) : null}
       {pick ? (
-        <div
+        <Surface
+          variant="outline"
+          padding="sm"
           className="jira-board-transition"
           role="group"
           aria-label={t("Choose Jira transition")}
@@ -1062,7 +1072,7 @@ export function JiraBoardView({
           <Button variant="ghost" type="button" onClick={() => setPick(null)}>
             {t("Cancel")}
           </Button>
-        </div>
+        </Surface>
       ) : null}
       {!loading && !boards.length && !error ? (
         <EmptyState
@@ -1097,9 +1107,9 @@ export function JiraBoardView({
                 data-jira-column={index}
               >
                 <header className="sticky top-0 z-1 mb-2 flex min-w-0 items-center gap-2 bg-(--color-background-base) px-1 py-2">
-                  <h2 className="min-w-0 flex-1 break-words text-ui-secondary font-medium [overflow-wrap:anywhere]">
+                  <Heading size="item" level={2} className="min-w-0 flex-1 break-words">
                     {column.name}
-                  </h2>
+                  </Heading>
                   <Badge variant="count" size="xs">
                     {group.loaded
                       ? t("{p0} loaded", { p0: visible(issues).length })
@@ -1142,7 +1152,9 @@ export function JiraBoardView({
               aria-label={t("Unmapped statuses")}
             >
               <header className="sticky top-0 z-1 mb-2 bg-(--color-background-base) px-1 py-2">
-                <h2 className="text-ui-secondary font-medium">{t("Unmapped statuses")}</h2>
+                <Heading size="item" level={2}>
+                  {t("Unmapped statuses")}
+                </Heading>
               </header>
               {issueList(
                 groups[0],
@@ -1170,65 +1182,61 @@ export function JiraBoardView({
                 data-jira-group={group.id}
                 data-jira-expanded={open || undefined}
               >
-                <header className="flex min-w-0 items-center gap-2">
-                  <Button
-                    variant="item"
-                    align="start"
-                    className="min-w-0 flex-1"
-                    aria-expanded={open}
-                    aria-controls={contentId}
-                    onClick={() => {
-                      const current = expanded ?? (groups[0] ? [groups[0].id] : []);
-                      setExpanded(
-                        open ? current.filter((id) => id !== group.id) : [...current, group.id],
-                      );
-                      if (!open && (!group.loaded || group.stale)) void loadMore(group, true);
-                    }}
-                  >
-                    {open ? (
-                      <ChevronDown className="icon-sm shrink-0" aria-hidden="true" />
-                    ) : (
-                      <ChevronRight className="icon-sm shrink-0" aria-hidden="true" />
-                    )}
-                    <span className="min-w-0 whitespace-normal break-words text-ui-secondary font-medium [overflow-wrap:anywhere]">
-                      {group.name}
+                <Disclosure
+                  variant="row"
+                  open={open}
+                  onOpenChange={(next) => {
+                    const current = expanded ?? (groups[0] ? [groups[0].id] : []);
+                    setExpanded(
+                      next ? [...current, group.id] : current.filter((id) => id !== group.id),
+                    );
+                    if (next && (!group.loaded || group.stale)) void loadMore(group, true);
+                  }}
+                  summary={
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="min-w-0 flex-1 whitespace-normal break-words text-ui-secondary font-medium [overflow-wrap:anywhere]">
+                        {group.name}
+                      </span>
+                      {group.state ? (
+                        <span className="text-ui-caption text-(--ui-text-secondary)">
+                          {group.state === "active" ? t("Active sprint") : t("Future sprint")}
+                        </span>
+                      ) : null}
+                      <Badge variant="count" size="xs">
+                        {group.loaded
+                          ? t("{p0} loaded", { p0: visible(group.issues).length }) +
+                            (group.token ? "+" : "")
+                          : t("Not loaded")}
+                      </Badge>
                     </span>
-                  </Button>
-                  {group.state ? (
-                    <span className="text-ui-caption text-(--ui-text-secondary)">
-                      {group.state === "active" ? t("Active sprint") : t("Future sprint")}
-                    </span>
+                  }
+                >
+                  {open ? (
+                    <div id={contentId}>
+                      {group.goal ? (
+                        <p className="px-1 pb-2 text-ui-caption text-(--ui-text-secondary) [overflow-wrap:anywhere]">
+                          {group.goal}
+                        </p>
+                      ) : null}
+                      {issueList(group, group.issues)}
+                      {group.loaded && !visible(group.issues).length ? (
+                        <EmptyState
+                          size="inline"
+                          kind={search.trim() || group.token ? "filtered" : "empty"}
+                          description={
+                            search.trim() || group.token
+                              ? t("No matching loaded issues")
+                              : t("Drop issues here")
+                          }
+                          className="px-1"
+                        />
+                      ) : null}
+                    </div>
                   ) : null}
-                  <Badge variant="count" size="xs">
-                    {group.loaded
-                      ? t("{p0} loaded", { p0: visible(group.issues).length }) +
-                        (group.token ? "+" : "")
-                      : t("Not loaded")}
-                  </Badge>
-                </header>
-                {open ? (
-                  <div id={contentId}>
-                    {group.goal ? (
-                      <p className="px-1 pb-2 text-ui-caption text-(--ui-text-secondary) [overflow-wrap:anywhere]">
-                        {group.goal}
-                      </p>
-                    ) : null}
-                    {issueList(group, group.issues)}
-                    {group.loaded && !visible(group.issues).length ? (
-                      <EmptyState
-                        size="inline"
-                        kind={search.trim() || group.token ? "filtered" : "empty"}
-                        description={
-                          search.trim() || group.token
-                            ? t("No matching loaded issues")
-                            : t("Drop issues here")
-                        }
-                        className="px-1"
-                      />
-                    ) : null}
-                    {groupRecovery(group)}
-                  </div>
-                ) : null}
+                </Disclosure>
+                {group.error || group.token || !group.loaded || group.stale
+                  ? groupRecovery(group)
+                  : null}
               </Surface>
             );
           })}

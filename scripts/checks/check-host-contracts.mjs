@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 import { build } from "esbuild";
 import { format } from "oxfmt";
+import { fmt } from "./lint-config.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const target = resolve(root, "src/shared/model/host-contracts/generated/manifest.json");
@@ -34,9 +35,7 @@ try {
   process.exit(1);
 }
 const schemaHash = createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
-const { printWidth, tabWidth, endOfLine } = JSON.parse(
-  await readFile(resolve(root, ".oxfmtrc.json"), "utf8"),
-);
+const { printWidth, tabWidth, endOfLine } = fmt;
 const formatted = await format(target, JSON.stringify({ ...manifest, schemaHash }), {
   printWidth,
   tabWidth,

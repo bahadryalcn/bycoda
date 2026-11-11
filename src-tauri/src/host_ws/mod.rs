@@ -9,6 +9,8 @@ mod bulk;
 mod commit;
 mod connection;
 mod demand;
+pub(crate) mod diagnostics;
+pub(crate) mod local_endpoints;
 pub(crate) mod native_profile;
 mod native_status;
 mod permits;
@@ -563,6 +565,7 @@ struct Shared {
     control_bytes: Arc<AtomicUsize>,
     next_generation: Arc<AtomicU64>,
     last_state: Mutex<Option<NativeEvent>>,
+    logged: Mutex<diagnostics::Logged>,
     permits: Arc<permits::Permits>,
     resume: Mutex<HashMap<demand::MemberId, ResumeProof>>,
     resume_cuts: Mutex<HashMap<String, Vec<(demand::MemberId, ResumeProof)>>>,
@@ -808,6 +811,19 @@ impl Shared {
         }
     }
     fn state(&self, generation: u64, phase: &str, category: Option<&str>) {
+        self.report(generation, phase, category, None);
+    }
+    /// `retry-wait`, with the delay before the next attempt for the log.
+    fn retry_wait(&self, generation: u64, category: &str, delay: Duration) {
+        self.report(generation, "retry-wait", Some(category), Some(delay));
+    }
+    fn report(
+        &self,
+        generation: u64,
+        phase: &str,
+        category: Option<&str>,
+        retry_delay: Option<Duration>,
+    ) {
         self.permits.phase(generation, phase == "ready");
         let event = NativeEvent::State {
             environment_id: self.route.environment_id.clone(),
@@ -819,8 +835,27 @@ impl Shared {
             .last_state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Recorded under the state ordering lock: log lines keep the order sinks observe.
+        let line = self
+            .logged
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .transition(&self.route, generation, phase, category, retry_delay);
+        if let Some(line) = line {
+            log::info!("{line}");
+        }
         *state = Some(event.clone());
         self.emit(event, None);
+    }
+    fn timed_out(&self, generation: u64, what: &str, elapsed: Duration) {
+        let line = self
+            .logged
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .timed_out(&self.route, generation, what, elapsed);
+        if let Some(line) = line {
+            log::warn!("{line}");
+        }
     }
 }
 
@@ -987,6 +1022,7 @@ impl HostWsBroker {
             control_bytes: Arc::new(AtomicUsize::new(0)),
             next_generation: self.next_generation.clone(),
             last_state: Mutex::new(None),
+            logged: Mutex::default(),
             permits: Arc::new(permits::Permits::new(&route.environment_id)),
             changed: Notify::new(),
         });

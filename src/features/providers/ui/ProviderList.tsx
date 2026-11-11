@@ -1,8 +1,9 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Button } from "../../../shared/ui/Button";
-import { ArrowDownCircle, ChevronRight } from "../../../shared/ui/icons";
+import { ArrowDownCircle } from "../../../shared/ui/icons";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { Toggle } from "../../settings/ui/settingsControls";
@@ -145,7 +146,6 @@ export function ProviderList({
   onSetup: (harness: HarnessId) => void;
 }) {
   useLocale();
-  const groupId = useId();
   const [expanded, setExpanded] = useState(false);
   const generic = entries.find((entry) => entry.harness === "acp");
   const listed = entries.filter((entry) => entry.harness !== "acp");
@@ -170,31 +170,17 @@ export function ProviderList({
     <nav className="provider-cli-selector" aria-label={t("Providers")}>
       {installed.map(item)}
       {missing.length > 0 ? (
-        <>
-          <Button
-            variant="ghost"
-            size="sm"
-            align="start"
-            fullWidth
-            motion="none"
-            className="provider-cli-more"
-            aria-expanded={open}
-            aria-controls={groupId}
-            onClick={() => setExpanded((value) => !value)}
-          >
-            <ChevronRight
-              aria-hidden
-              className="icon-xs"
-              strokeWidth={1.75}
-              data-open={open || undefined}
-            />
-            {t("Available to install")}
-            <span className="provider-cli-more-count">{missing.length}</span>
-          </Button>
-          <div id={groupId} className="provider-cli-missing" hidden={!open}>
-            {missing.map(item)}
-          </div>
-        </>
+        <Disclosure
+          variant="row"
+          size="sm"
+          className="provider-cli-more"
+          summary={t("Available to install")}
+          count={missing.length}
+          open={open}
+          onOpenChange={setExpanded}
+        >
+          <div className="provider-cli-missing">{missing.map(item)}</div>
+        </Disclosure>
       ) : null}
       {generic ? <div className="provider-cli-add">{item(generic)}</div> : null}
     </nav>

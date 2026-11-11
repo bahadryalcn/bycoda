@@ -21,7 +21,7 @@ test("docs are inert; shared application/native/fixture inputs keep their real d
   }
   assert.equal(classifyChanges(["src-tauri/src/remote.rs"]).gates.native, true);
   assert.equal(classifyChanges(["src-tauri/src/remote.rs"]).gates.scripts, true);
-  assert.equal(classifyChanges(["tests/browser/notes.spec.ts"]).gates.browser, true);
+  assert.equal(classifyChanges(["tests/browser/notes/notes.spec.ts"]).gates.browser, true);
   assert.equal(classifyChanges(["scripts/local-update/local_update.py"]).gates.python, true);
   assert(gates.every((gate) => classifyChanges(["pnpm-lock.yaml"]).gates[gate]));
   assert(gates.every((gate) => classifyChanges([".github/workflows/ci.yml"]).gates[gate]));
@@ -135,8 +135,7 @@ test("bounded local plans share classification but never promise full acceptance
     "scripts/release/candidate.test.mjs": "fixture test",
     "scripts/release/candidate.failure.test.mjs": "fixture test",
     ".github/scripts/issue.test.cjs": "fixture test",
-    "node_modules/oxlint/package.json": JSON.stringify({ bin: { oxlint: "bin/oxlint" } }),
-    "node_modules/oxfmt/package.json": JSON.stringify({ bin: { oxfmt: "bin/oxfmt" } }),
+    "node_modules/vite-plus/package.json": JSON.stringify({ bin: { vp: "bin/vp" } }),
   })) {
     mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
     writeFileSync(path.join(root, file), content);
@@ -174,12 +173,11 @@ test("changed Rust, application and browser files select the matching cheap CI g
   const changed = [
     "src-tauri/src/lib.rs",
     "src/features/voice/model/parser.ts",
-    "tests/browser/notes.spec.ts",
+    "tests/browser/notes/notes.spec.ts",
   ];
   for (const [file, content] of Object.entries({
     ...Object.fromEntries(changed.map((file) => [file, "// fixture"])),
-    "node_modules/oxlint/package.json": JSON.stringify({ bin: { oxlint: "bin/oxlint" } }),
-    "node_modules/oxfmt/package.json": JSON.stringify({ bin: { oxfmt: "bin/oxfmt" } }),
+    "node_modules/vite-plus/package.json": JSON.stringify({ bin: { vp: "bin/vp" } }),
     "node_modules/tsc-rs/package.json": JSON.stringify({ bin: { "tsc-rs": "./bin/tsc-rs" } }),
     "node_modules/vitest/package.json": JSON.stringify({ bin: { vitest: "./vitest.mjs" } }),
   })) {

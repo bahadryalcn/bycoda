@@ -1,5 +1,6 @@
 import { SettingsFeedback } from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useRef, useState, useSyncExternalStore } from "react";
@@ -52,7 +53,9 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
   }
 
   const instructions = (
-    <div className="space-y-3 px-4 py-4 text-ui-caption text-(--ui-text-secondary)">
+    <div
+      className={`space-y-3 text-ui-caption text-(--ui-text-secondary) ${embedded ? "" : "px-4 py-4"}`}
+    >
       <p>
         {available
           ? t("Antigravity is installed.")
@@ -111,44 +114,31 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
   );
   if (embedded)
     return (
-      <div
+      <Disclosure
         id="setting-antigravity-account"
         data-setting-id="antigravity-account"
+        variant="card"
         className="provider-antigravity-box"
-      >
-        <div className="flex flex-wrap items-center gap-4 px-4 py-3.5">
-          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        open={expanded}
+        onOpenChange={setExpanded}
+        summary={
+          <span className="flex min-w-0 items-center gap-2.5 py-3">
             <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-stroke">
               <HarnessIcon harness="antigravity" className="icon-md" />
             </span>
-            <div className="min-w-0">
-              <p className="text-ui-caption font-medium text-content">
+            <span className="min-w-0">
+              <span className="block text-ui-caption font-medium text-content">
                 {t("Antigravity CLI account")}
-              </p>
-              <p className="text-ui-micro text-(--ui-text-muted)">
+              </span>
+              <span className="block text-ui-micro text-(--ui-text-muted)">
                 {t("This machine · shared CLI account · separate profiles unavailable")}
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            aria-expanded={expanded}
-            aria-controls="antigravity-account-setup"
-            onClick={() => setExpanded((value) => !value)}
-          >
-            {expanded ? t("Hide account setup") : t("Set up account")}
-          </Button>
-        </div>
-        <div
-          id="antigravity-account-setup"
-          hidden={!expanded}
-          className="border-t border-(--ui-settings-hairline)"
-        >
-          {instructions}
-        </div>
-      </div>
+              </span>
+            </span>
+          </span>
+        }
+      >
+        {instructions}
+      </Disclosure>
     );
   return (
     <Group

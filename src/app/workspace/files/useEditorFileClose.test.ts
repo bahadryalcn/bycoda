@@ -203,3 +203,65 @@ it.each([false, true])(
     }
   },
 );
+
+it.each([
+  {
+    name: "a nested sub-repo",
+    file: newFileTab(
+      "/work/app/core-pack/a.ts",
+      "/work/app/core-pack",
+      false,
+      undefined,
+      "/work/app",
+    ),
+    cwd: "/work/app",
+  },
+  {
+    name: "a file without projectCwd",
+    file: newFileTab("/work/app/core-pack/a.ts", "/work/app/core-pack"),
+    cwd: "/work/app/core-pack",
+  },
+])(
+  "creates the replacement session in the owning project when closing the last file of a kept tab ($name)",
+  async ({ file, cwd }) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    confirms.run.mockResolvedValue(true);
+    const tab = newEditorWorkspaceTab(file);
+    const paneId = tab.editorPanes[0].id;
+    const tabsRef = { current: [tab] };
+    const setSessions = vi.fn();
+    const deps: EditorFileCloseDeps = {
+      activeTabId: tab.id,
+      projectCwd: "/work/app",
+      tabCloseScope: "project",
+      tabWorktreeOf: () => null,
+      tabsRef,
+      sessionsRef: { current: [] },
+      dirtyFilesRef: { current: new Set() },
+      isMovingPane: () => false,
+      onCloseTab: vi.fn(),
+      setDirtyFiles: vi.fn(),
+      setSessions,
+      setTabs: (update) => {
+        tabsRef.current = typeof update === "function" ? update(tabsRef.current) : update;
+      },
+      setComposerFocused: vi.fn(),
+    };
+    let actions!: EditorFileClose;
+    function Harness() {
+      actions = useEditorFileClose(deps);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => root.render(createElement(Harness)));
+      await act(async () => actions.onCloseFile(paneId, file.id));
+      expect(deps.onCloseTab).not.toHaveBeenCalled();
+      expect(setSessions).toHaveBeenCalledOnce();
+      const [created] = setSessions.mock.calls[0][0]([]) as { cwd: string }[];
+      expect(created.cwd).toBe(cwd);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  },
+);

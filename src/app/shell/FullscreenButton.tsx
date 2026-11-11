@@ -10,6 +10,7 @@ import {
 import { useT } from "../../shared/i18n";
 import { Maximize2, Minimize2 } from "../../shared/ui/icons";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
+import { ErrorDetails, errorHeadline, fitsOneLine } from "../../shared/ui/ErrorDetails";
 
 const shortcutLabel = () => keybindingShortcutLabel("App: Toggle Full Screen", FULLSCREEN_SHORTCUT);
 
@@ -42,7 +43,8 @@ export function FullscreenButton() {
         <TransientNotice
           tone="danger"
           durationMs={null}
-          message={error}
+          message={errorHeadline(error)}
+          actions={fitsOneLine(error) ? undefined : <ErrorDetails detail={error} />}
           onDismiss={() => setError(null)}
         />
       ) : null}

@@ -1,4 +1,5 @@
 import { Button } from "../../../../shared/ui/Button";
+import { Surface } from "../../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import type { Capability, SocialAccount } from "../../model/social";
@@ -34,7 +35,13 @@ export function AccountRow({
 }: AccountRowProps) {
   const summary = capabilitySummary(capabilities);
   return (
-    <li className="social-account-item" data-selected={selected || undefined}>
+    <Surface
+      as="li"
+      variant="card"
+      padding="md"
+      className="social-account-item"
+      data-selected={selected || undefined}
+    >
       <Button
         variant="item"
         className="social-account-row"
@@ -57,6 +64,6 @@ export function AccountRow({
         </span>
         {summary ? <span className="social-account-row-caps">{summary}</span> : null}
       </Button>
-    </li>
+    </Surface>
   );
 }

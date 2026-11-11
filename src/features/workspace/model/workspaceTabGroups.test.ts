@@ -466,6 +466,45 @@ describe("planWorkspaceTabClose", () => {
       }),
     ).toEqual({ action: "keep" });
   });
+
+  it("scopes a projectless closing tab to the project on screen", () => {
+    const blankSessions = [...sessions, session("blank", "~")];
+    const scoped = [tab("tm1", "m1"), tab("tr1", "r1"), tab("blank", "blank")];
+    expect(
+      planWorkspaceTabClose({
+        tabs: scoped,
+        sessions: blankSessions,
+        closingTabId: "blank",
+        scope: "project",
+        activeCwd: "/projects/bycoda",
+      }),
+    ).toEqual({ action: "close", nextActiveTabId: "tm1" });
+  });
+
+  it("closes a projectless tab to the neighbor when the project on screen has no other tab", () => {
+    const blankSessions = [...sessions, session("blank", "~")];
+    expect(
+      planWorkspaceTabClose({
+        tabs: [tab("tr1", "r1"), tab("blank", "blank")],
+        sessions: blankSessions,
+        closingTabId: "blank",
+        scope: "project",
+        activeCwd: "/projects/bycoda",
+      }),
+    ).toEqual({ action: "close", nextActiveTabId: "tr1" });
+  });
+
+  it("keeps the global neighbor for a projectless tab without an active project", () => {
+    const blankSessions = [...sessions, session("blank", "~")];
+    expect(
+      planWorkspaceTabClose({
+        tabs: [tab("tm1", "m1"), tab("tr1", "r1"), tab("blank", "blank")],
+        sessions: blankSessions,
+        closingTabId: "blank",
+        scope: "project",
+      }),
+    ).toEqual({ action: "close", nextActiveTabId: "tr1" });
+  });
 });
 
 describe("applyPlaceSessionOnPane", () => {

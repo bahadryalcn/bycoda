@@ -8,7 +8,7 @@ export const AssistantPresenceViewSchema = z.strictObject({
   sourceToken: z.string().nullable(),
   status: z
     .strictObject({
-      state: z.enum(["present", "idle", "away", "dnd", "unknown"]),
+      state: z.enum(["present", "idle", "away", "dnd"]),
       setupComplete: z.boolean(),
       assistantName: z.string().max(80).optional(),
     })

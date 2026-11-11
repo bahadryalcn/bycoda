@@ -81,7 +81,11 @@ async function click(text: string) {
   // Menu choices (rendered in a popup layer) win over board buttons with the same name.
   const button =
     [...document.body.querySelectorAll<HTMLElement>("[role^='menuitem']")].find(named) ??
-    [...container.querySelectorAll<HTMLElement>("button")].find(named);
+    [...container.querySelectorAll<HTMLElement>("button")].find(named) ??
+    // Sprint groups are Disclosures: the summary row starts with the group name.
+    [...container.querySelectorAll<HTMLElement>("summary")].find((s) =>
+      s.textContent?.startsWith(text),
+    );
   expect(button).toBeDefined();
   await act(async () => button!.click());
 }

@@ -6,7 +6,8 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from "react";
-import { suppressTextSelection } from "../lib/drag";
+import { blockTextSelection } from "../lib/drag";
+import { beginResizeGesture } from "../lib/resizeGesture";
 import styles from "./Sash.module.css";
 
 export type SashEndInfo = {
@@ -58,6 +59,16 @@ type Drag = {
   frame: number | null;
   finish: (cancelled: boolean) => void;
 };
+
+/** Outside the component: React Compiler does not compile `try`/`finally`. A throwing caller
+ *  callback must still end the gesture, or deferred work would wait forever. */
+function reportThenEnd(report: () => void, end: () => void) {
+  try {
+    report();
+  } finally {
+    end();
+  }
+}
 
 /**
  * Resize handle for every pane splitter: hairline at rest, 2px line on hover/drag/focus, 3px hit area.
@@ -117,9 +128,10 @@ export function Sash({
     drag.current?.finish(true);
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
-    const restoreSelection = suppressTextSelection();
-    const previousCursor = document.body.style.cursor;
-    document.body.style.cursor = vertical ? "col-resize" : "row-resize";
+    const restoreSelection = blockTextSelection();
+    // Marks the live resize for size-driven work elsewhere and shows the drag cursor on
+    // one shield element; neither restyles the document the way an <html> class would.
+    const endGesture = beginResizeGesture(vertical ? "col-resize" : "row-resize");
     const keydown = (key: globalThis.KeyboardEvent) => {
       if (key.key !== "Escape") return;
       key.preventDefault();
@@ -142,10 +154,13 @@ export function Sash({
         if (handle.hasPointerCapture(state.pointerId))
           handle.releasePointerCapture(state.pointerId);
         restoreSelection();
-        document.body.style.cursor = previousCursor;
         setDragging(false);
-        if (!cancelled && state.moved) onResize?.(state.delta);
-        onResizeEnd?.(state.delta, { cancelled, moved: state.moved, keyboard: false });
+        // The gesture ends after the final size is applied, so deferred work measures the
+        // settled layout.
+        reportThenEnd(() => {
+          if (!cancelled && state.moved) onResize?.(state.delta);
+          onResizeEnd?.(state.delta, { cancelled, moved: state.moved, keyboard: false });
+        }, endGesture);
       },
     };
     drag.current = state;

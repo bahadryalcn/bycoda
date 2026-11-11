@@ -13,3 +13,7 @@ Owner decision, 2026-11-10 (translated): workers must use only the selected mode
 ## Assistant folders
 
 Owner decision, 2026-11-11 (translated): "This setting should not even be needed; I already gave every permission." A whole drive and the home folder may be Assistant folders. System folders and credential folders stay refused, both as a chosen folder and for every path the folder tools touch inside one.
+
+## Availability states
+
+Owner decision, 2026-11-11 (translated): "Availability somehow becomes unknown, but that cannot happen: I am either at the PC, busy, away or offline. There is no other possibility." Availability has no unknown state. A computer that cannot be read counts as away, a failed read keeps the last good reading for five minutes, and the desktop shows offline only when it has no status from the Host.

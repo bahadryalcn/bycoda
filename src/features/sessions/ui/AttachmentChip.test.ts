@@ -6,7 +6,8 @@ import type { Attachment, GeneratedImageMeta } from "../model/session";
 import * as fs from "../../../platform/tauri/fs";
 import { GeneratedImage } from "./GeneratedImage";
 
-vi.mock("../../../platform/tauri/fs", () => ({
+vi.mock("../../../platform/tauri/fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../platform/tauri/fs")>()),
   readBinaryFile: vi.fn(),
 }));
 import { AttachmentChip } from "./AttachmentChip";
@@ -597,6 +598,40 @@ describe("AttachmentChip image preview", () => {
     expect(container.textContent).toBe("");
     expect(container.querySelector('[aria-label^="Insert "]')).toBeNull();
     expect(container.querySelector('[aria-label="Open diagram.png full screen"]')).not.toBeNull();
+  });
+
+  it("labels a csv file card by its extension and leaves no native title", () => {
+    const csv: Attachment = {
+      id: "csv-1",
+      name: "data.csv",
+      mimeType: "text/csv",
+      kind: "file",
+      size: 32 * 1024,
+      path: "/saved/data.csv",
+    };
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: csv,
+          token: "[file1]",
+          onInsertToken: vi.fn(),
+          onRemove: vi.fn(),
+        }),
+      ),
+    );
+    const card = container.querySelector<HTMLElement>("[data-attachment-chip]")!;
+    expect(card.dataset.attachmentKind).toBe("spreadsheet");
+    expect(card.textContent).toContain("CSV · 32 KB");
+    expect(card.textContent).not.toContain("Text");
+    expect(card.hasAttribute("title")).toBe(false);
+    expect(container.querySelector("[title]")).toBeNull();
+    // Insert sits bottom-left like an image card; remove stays top-right.
+    expect(
+      container.querySelector('[aria-label="Insert [file1] into the message"]')!.className,
+    ).toContain("bottom-1 left-1");
+    expect(container.querySelector('[aria-label="Remove data.csv"]')!.className).toContain(
+      "right-1 top-1",
+    );
   });
 
   it("falls back to an image identity when thumbnail decoding fails", () => {

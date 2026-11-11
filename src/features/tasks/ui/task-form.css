@@ -46,6 +46,9 @@
   flex-direction: row-reverse;
   cursor: pointer;
 }
+.task-form-check:hover {
+  background: var(--ui-surface-hover);
+}
 .task-form-row-text {
   display: grid;
   min-inline-size: 0;

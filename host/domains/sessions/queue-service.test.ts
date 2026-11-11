@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../../store";
+import { sessionNotFound } from "../../sessions/session-authority";
 import { SessionQueues, QUEUE_RENEW_AFTER_MS } from "../../sessions/session-queue";
 import {
   createSessionQueueService,
@@ -97,6 +98,22 @@ it("retains legacy invalid-client and finish-acknowledgement errors", async () =
   ).rejects.toThrow("Invalid queue acknowledgement");
   expect(f.ports.queues.serve).not.toHaveBeenCalled();
 });
+
+it.each(["get", "lease"] as const)(
+  "refuses %s for a session nobody stores before any queue effect, as not sent",
+  async (action) => {
+    const f = mockFixture();
+    f.ports.sessionStatus.mockRejectedValue(sessionNotFound());
+    await expect(f.service[action](base, f.context)).rejects.toMatchObject({
+      name: "HostDomainRefusalError",
+      message: "Session not found on this machine",
+      delivery: "not-sent",
+    });
+    expect(f.ports.transaction).not.toHaveBeenCalled();
+    expect(f.ports.queues.serve).not.toHaveBeenCalled();
+    expect(f.context.exposeAttachments).not.toHaveBeenCalled();
+  },
+);
 
 it("does no exposure/session IO for an unauthorized request and rechecks after preparation", async () => {
   const f = mockFixture();

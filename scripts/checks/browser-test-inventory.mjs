@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { browserCiVariants, expectedCiSelection } from "./browser-ci.mjs";
@@ -7,6 +7,7 @@ import {
   manifest,
   repositoryRoot,
   browserDirectory,
+  listBrowserDirectory,
   validateManifest,
   runPlaywright,
   listedCases,
@@ -67,10 +68,10 @@ export function checkInventory() {
   for (const suite of manifest.suites)
     if (!existsSync(join(repositoryRoot, suite.fixture.config)))
       result.errors.push(`Missing Vite fixture: ${suite.fixture.config}`);
-  for (const file of readdirSync(browserDirectory)) {
+  for (const file of listBrowserDirectory()) {
     if (
       (file.includes("playwright") && file.endsWith(".config.ts")) ||
-      file === "session-deletion.config.ts"
+      file.endsWith("/session-deletion.config.ts")
     ) {
       if (["runner.playwright.config.ts"].includes(file)) continue;
       if (!configurations.has(`tests/browser/${file}`))

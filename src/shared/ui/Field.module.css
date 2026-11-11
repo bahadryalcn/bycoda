@@ -26,7 +26,7 @@
   overflow-wrap: anywhere;
 }
 .description {
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 .error {
   color: var(--danger);

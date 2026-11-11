@@ -698,7 +698,7 @@ it("searches worktrees by branch and folder, and clears an empty result without 
   expect(onRemove).not.toHaveBeenCalled();
 });
 
-it("keeps full worktree identity available in details without revealing or deleting the folder", async () => {
+it("keeps full worktree identity visible without revealing or deleting the folder", async () => {
   const path = "/repo-worktrees/a-very-long-worktree-folder-name";
   const branch = "feature/a-long-branch-name-for-the-worktree";
   vi.mocked(listWorktrees).mockResolvedValue({
@@ -711,14 +711,9 @@ it("keeps full worktree identity available in details without revealing or delet
   );
   const row = container.querySelector('[role="listitem"]')!;
   expect(row.textContent).toContain("a-very-long-worktree-folder-name");
-  const toggle = row.querySelector<HTMLButtonElement>('[aria-label="Details"]')!;
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  expect(row.querySelector("dl")).toBeNull();
-  await act(async () => toggle.click());
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  const details = row.querySelector("dl")!;
-  expect(details.textContent).toContain(branch);
-  expect(details.textContent).toContain(path);
+  const lines = [...row.querySelectorAll("span")].map((node) => node.textContent ?? "");
+  expect(lines.some((line) => line.includes(branch))).toBe(true);
+  expect(lines.some((line) => line.includes(path))).toBe(true);
   expect(worktreeDelete(row, `[aria-label="Delete ${branch}"]`)).not.toBeNull();
   expect(onRemove).not.toHaveBeenCalled();
 });

@@ -349,11 +349,11 @@ it("keeps mid-turn question answers/steers on the original usage key without pre
   Object.assign(f.store, { session: vi.fn(async () => record) });
   const ports = assistantExecutionPorts(f.store, f.goals, f.tasks);
   const active = await ports.goalStatus!(goal.id);
-  expect(active.tokens).toBe(30);
+  expect(active.tokens).toBe(28);
   expect(active.usageTurns).toEqual([
     {
       key: "worker:root",
-      tokens: 30,
+      tokens: 28,
       at: 1000,
       cacheMetrics: { cacheReadTokens: 2, cacheHitPercent: 20 },
       settled: false,

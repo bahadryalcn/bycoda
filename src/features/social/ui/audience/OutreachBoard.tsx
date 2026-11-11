@@ -5,6 +5,7 @@ import { DescriptionItem, DescriptionList } from "../../../../shared/ui/Descript
 import { Meter } from "../../../../shared/ui/Meter";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { Surface } from "../../../../shared/ui/Surface";
 import type { SocialList } from "../../model/audience";
 import type { Sequence } from "../../model/outreach";
 import type { SequenceStats } from "../../model/socialActions";
@@ -123,7 +124,7 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
       ) : null}
 
       {sequences?.length ? (
-        <ul className="audience-frame">
+        <Surface as="ul" variant="card" padding="none" className="audience-frame">
           {sequences.map((sequence) => (
             <OutreachSequenceCard
               key={sequence.id}
@@ -136,7 +137,7 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
               onEdit={() => setEditing(sequence)}
             />
           ))}
-        </ul>
+        </Surface>
       ) : null}
 
       {editing ? (

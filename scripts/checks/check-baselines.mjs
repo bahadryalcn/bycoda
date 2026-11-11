@@ -67,6 +67,7 @@ export const baselines = [
   { file: "invariants-baseline.json", totals: nestedTotals },
   { file: "code-structure-baseline.json", totals: nestedTotals },
   { file: "ui-drift-baseline.json", totals: nestedTotals },
+  { file: "compiler-coverage-baseline.json", totals: nestedTotals },
   { file: "lint-baseline.json", totals: lintTotals },
   { file: "test-types-baseline.json", totals: testTypeTotals },
 ];

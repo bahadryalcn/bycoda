@@ -29,7 +29,8 @@ it("emphasizes recognized skills alongside attachments without changing copied t
     expect(
       Array.from(container.querySelectorAll("[data-skill-token]"), (node) => node.textContent),
     ).toEqual(["/stitch-design-taste", "$design-taste-frontend"]);
-    expect(container.querySelector("[title='brief.txt']")).not.toBeNull();
+    expect(container.querySelector("[data-attachment-kind='text']")).not.toBeNull();
+    expect(container.querySelector("[title]")).toBeNull();
 
     act(() =>
       root.render(

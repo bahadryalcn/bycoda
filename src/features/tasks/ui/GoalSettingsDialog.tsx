@@ -2,6 +2,7 @@ import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Modal } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
 import type { BoardGoal } from "../model/goalClient";
@@ -59,59 +60,61 @@ function GoalSettingsForm({
             "Applies to existing unfinished tasks. Delivery requires approval of the reviewed source and target.",
           )}
         </p>
-        <fieldset disabled={saving} className="goal-form-sections mt-3 min-w-0 border-0 p-0">
-          <GoalSection title={t("How it runs")}>
-            <GoalCheckOption
-              title={t("Continue until complete")}
-              description={t(
-                "Keeps correcting while progress is made; asks for input when needed.",
-              )}
-              checked={settings.continueUntilDone}
-              onChange={(checked) => update("continueUntilDone", checked)}
-            />
-            <GoalConcurrencyOption
-              value={settings.maxRunningTasks}
-              onChange={(value) => update("maxRunningTasks", value)}
-            />
-          </GoalSection>
-          <GoalSection title={t("Review and delivery")} framed={false}>
-            <AutoMergeField
-              checked={settings.autoMerge}
-              disabled={goal.isolate === false}
-              onChange={(value) => update("autoMerge", value)}
-            />
-          </GoalSection>
-          <GoalSection title={t("Limits")} framed={false}>
-            <TaskBudgetControls
-              budget={settings.budget}
-              onChange={(budget) => update("budget", budget ?? {})}
-            />
-            <GoalOption
-              title={t("Run limit (minutes)")}
-              description={t(
-                "Zero disables the run limit. Limits apply to waiting tasks; active tasks keep their current limit. Blocked tasks still require restart.",
-              )}
-              reason={t("Wait for planning to finish before changing the run limit.")}
-              disabled={planning}
-            >
-              <NumberField
-                hideLabel
-                label={t("Run limit (minutes)")}
-                disabled={planning}
-                min={0}
-                max={10_080}
-                step={1}
-                value={Number.isNaN(settings.maxRunMinutes) ? "" : settings.maxRunMinutes}
-                onChange={(event) =>
-                  update(
-                    "maxRunMinutes",
-                    event.target.value === "" ? NaN : Number(event.target.value),
-                  )
-                }
+        <FieldGroup variant="bare" disabled={saving}>
+          <div className="goal-form-sections mt-3 min-w-0">
+            <GoalSection title={t("How it runs")}>
+              <GoalCheckOption
+                title={t("Continue until complete")}
+                description={t(
+                  "Keeps correcting while progress is made; asks for input when needed.",
+                )}
+                checked={settings.continueUntilDone}
+                onChange={(checked) => update("continueUntilDone", checked)}
               />
-            </GoalOption>
-          </GoalSection>
-        </fieldset>
+              <GoalConcurrencyOption
+                value={settings.maxRunningTasks}
+                onChange={(value) => update("maxRunningTasks", value)}
+              />
+            </GoalSection>
+            <GoalSection title={t("Review and delivery")} framed={false}>
+              <AutoMergeField
+                checked={settings.autoMerge}
+                disabled={goal.isolate === false}
+                onChange={(value) => update("autoMerge", value)}
+              />
+            </GoalSection>
+            <GoalSection title={t("Limits")} framed={false}>
+              <TaskBudgetControls
+                budget={settings.budget}
+                onChange={(budget) => update("budget", budget ?? {})}
+              />
+              <GoalOption
+                title={t("Run limit (minutes)")}
+                description={t(
+                  "Zero disables the run limit. Limits apply to waiting tasks; active tasks keep their current limit. Blocked tasks still require restart.",
+                )}
+                reason={t("Wait for planning to finish before changing the run limit.")}
+                disabled={planning}
+              >
+                <NumberField
+                  hideLabel
+                  label={t("Run limit (minutes)")}
+                  disabled={planning}
+                  min={0}
+                  max={10_080}
+                  step={1}
+                  value={Number.isNaN(settings.maxRunMinutes) ? "" : settings.maxRunMinutes}
+                  onChange={(event) =>
+                    update(
+                      "maxRunMinutes",
+                      event.target.value === "" ? NaN : Number(event.target.value),
+                    )
+                  }
+                />
+              </GoalOption>
+            </GoalSection>
+          </div>
+        </FieldGroup>
         {error ? (
           <Alert tone="danger" className="mt-3">
             {t(error)}

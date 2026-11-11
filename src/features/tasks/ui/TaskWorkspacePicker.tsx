@@ -2,6 +2,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -189,14 +190,13 @@ export function TaskWorkspacePicker({
   };
 
   return (
-    <fieldset
+    <FieldGroup
+      legend={t("Working branch and worktree")}
+      hideLegend={headingHidden}
       aria-busy={busy || fetching}
       data-embedded={headingHidden || undefined}
       className="task-workspace-fields"
     >
-      <legend className={headingHidden ? "sr-only" : undefined}>
-        {t("Working branch and worktree")}
-      </legend>
       {supported === false ? (
         <p>{t("Update the selected host to choose a branch or worktree.")}</p>
       ) : null}
@@ -309,6 +309,6 @@ export function TaskWorkspacePicker({
       ) : supported && !error ? (
         <LoadingText />
       ) : null}
-    </fieldset>
+    </FieldGroup>
   );
 }

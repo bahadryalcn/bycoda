@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, type RefObject } from "react";
+import { deferDuringResize } from "../../../shared/lib/resizeGesture";
 import { scrollTopToCenter, type RulerMark } from "../../files/public/overviewRuler";
 
 import { OverviewRuler, scrollbarGutter } from "../../files/public/overviewRulerView";
@@ -98,12 +99,18 @@ export function DiffOverviewRuler({
         interactive: true,
         band: false,
         beforeDraw: () => {
+          // Reads first, and a write only when the value changed: a style write
+          // followed by the marks' rect reads forces a synchronous layout.
+          const right = `${scrollbarGutter(scroller)}px`;
+          const top = `${scroller.offsetTop}px`;
+          const height = `${scroller.offsetHeight}px`;
+          const style = ruler.dom.style;
           // Left of the native scrollbar, never over it.
-          ruler.dom.style.right = `${scrollbarGutter(scroller)}px`;
+          if (style.right !== right) style.right = right;
           // The toolbar above the scroller is not part of the track.
-          ruler.dom.style.top = `${scroller.offsetTop}px`;
-          ruler.dom.style.height = `${scroller.offsetHeight}px`;
-          ruler.dom.style.bottom = "auto";
+          if (style.top !== top) style.top = top;
+          if (style.height !== height) style.height = height;
+          if (style.bottom !== "auto") style.bottom = "auto";
         },
       },
     );
@@ -116,11 +123,16 @@ export function DiffOverviewRuler({
     const onScroll = () => ruler.schedule();
     scroller.addEventListener("scroll", onScroll, { passive: true });
     // Files above growing, collapsing or loading move everything below them.
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(invalidate);
+    // The recompute reads a rect per file anchor; during a divider drag the pane resizes every
+    // frame, so a ruler that is stale until the drag ends is the cheaper trade.
+    const invalidateSettled = deferDuringResize(invalidate);
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(invalidateSettled);
     observer?.observe(scroller);
     if (scroller.lastElementChild) observer?.observe(scroller.lastElementChild);
     invalidate();
     return () => {
+      invalidateSettled.cancel();
       unsubscribe();
       observer?.disconnect();
       scroller.removeEventListener("scroll", onScroll);

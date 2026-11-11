@@ -1,4 +1,5 @@
 import { Timestamp } from "../../../shared/ui/Timestamp";
+import { Surface } from "../../../shared/ui/Surface";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { useT } from "../../../shared/i18n";
@@ -40,9 +41,12 @@ export function RewoundHistoryDisclosure({
                   (Boolean(block.text) || Boolean(block.attachments?.length)),
               )
               .map((block, index) => (
-                <article
+                <Surface
+                  as="article"
+                  variant="outline"
+                  padding="sm"
                   key={`${block.id}:${index}`}
-                  className="min-w-0 rounded-md border border-(--ui-pane-border) px-2.5 py-2"
+                  className="min-w-0"
                 >
                   {block.text ? (
                     <pre className="select-text whitespace-pre-wrap break-words font-sans text-(--ui-tone-neutral-fg)">
@@ -63,7 +67,7 @@ export function RewoundHistoryDisclosure({
                       />
                     </div>
                   ) : null}
-                </article>
+                </Surface>
               ))}
           </section>
         ))}

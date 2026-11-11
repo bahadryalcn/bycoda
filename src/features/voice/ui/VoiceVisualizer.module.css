@@ -77,10 +77,9 @@
 .visualizer[data-state="assistant"] .orbBars {
   display: block;
 }
-.visualizer[data-state="user"] .orbBars {
+.visualizer:is([data-state="user"], [data-state="thinking"]) .orbBars {
   display: block;
 }
-.arc,
 .off,
 .badge,
 .muted,
@@ -88,10 +87,7 @@
 .sweep {
   display: none;
 }
-.visualizer:is([data-state="thinking"], [data-state="connecting"]) .arc {
-  display: block;
-}
-.visualizer[data-state="connecting"] .art {
+.visualizer[data-state="connecting"] .wave {
   stroke-dasharray: 3 5;
 }
 .visualizer[data-state="off"] .off {
@@ -120,11 +116,10 @@
 .badgeSurface {
   fill: var(--ui-surface);
 }
-.visualizer[data-state="thinking"][data-visual="wave"] .arc {
-  display: none;
-}
-.visualizer[data-state="thinking"][data-visual="wave"] .sweep {
+/* Connecting wave: the sweep travels along the dashed line (VoiceVisualizer paints it). */
+.visualizer[data-state="connecting"][data-visual="wave"] .sweep {
   display: block;
+  stroke-dasharray: none;
 }
 .working {
   position: absolute;

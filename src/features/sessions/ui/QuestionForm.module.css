@@ -1,7 +1,7 @@
 .form {
   min-inline-size: 0;
-  border: 1px solid var(--ui-editor-border);
-  border-radius: var(--radius-panel, var(--ui-radius-popup));
+  border: 1px solid var(--ui-card-border);
+  border-radius: var(--ui-radius-card);
   background: transparent;
   overflow: hidden;
   color: var(--ui-tone-neutral-fg);
@@ -51,11 +51,9 @@
 }
 .body {
   min-inline-size: 0;
-  margin: 0;
-  border: 0;
   padding: var(--space-4);
 }
-.context + .body {
+.context + * > .body {
   padding-block-start: var(--space-2);
 }
 .attachments {
@@ -112,13 +110,9 @@
   min-block-size: 3.5rem;
   max-block-size: 14rem;
 }
-.fields {
-  min-inline-size: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
+.fields > legend {
+  margin-block-end: var(--space-1);
 }
-.fields > legend,
 .fields .radio > legend {
   padding: 0;
   margin-block-end: var(--space-1);

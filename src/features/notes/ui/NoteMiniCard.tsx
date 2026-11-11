@@ -2,6 +2,7 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { File, X } from "../../../shared/ui/icons";
 import { useState } from "react";
+import { Surface } from "../../../shared/ui/Surface";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
@@ -37,9 +38,11 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
 
   // Same identity as the session notes panel: file mark, title, project.
   const inner = (
-    <div
+    <Surface
       data-note-card
-      className="note-mini-card flex items-start gap-2 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-transparent px-2.5 py-2"
+      variant="outline"
+      padding="sm"
+      className="note-mini-card flex items-start gap-2"
     >
       <File className="icon-sm mt-0.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
       <div className="flex min-w-0 flex-1 flex-col text-left">
@@ -85,7 +88,7 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
           <X className="icon-sm" strokeWidth={2} />
         </Button>
       ) : null}
-    </div>
+    </Surface>
   );
 
   if (embedded) return inner;

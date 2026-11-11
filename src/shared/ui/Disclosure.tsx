@@ -45,7 +45,7 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
  * @group layout
  * @use Show or hide supporting detail inside a page or dialog.
  * @avoid Switching views: Tabs. Group heading over a list: SectionLabel collapsible. One hint: Popover or InfoPopover.
- * @replaces details
+ * @replaces details summary
  *
  * @example
  * <Disclosure summary={t("Details")} count={items.length}>{body}</Disclosure>

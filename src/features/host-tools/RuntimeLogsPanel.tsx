@@ -55,7 +55,7 @@ import {
   type ToolsDraftScope,
 } from "./toolsDraftTransfer";
 import { runtimeLogDisplayLevel, type RuntimeLogDisplayLevel } from "./runtimeLogPresentation";
-import { Disclosure } from "../../shared/ui/Disclosure";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import "./runtime-logs.css";
 
 type Props = {
@@ -939,15 +939,20 @@ function ScopedRuntimeLogsPanel({
         </Popover>
       ) : null}
       {error ? (
-        <Alert tone="danger">
+        <Alert
+          tone="danger"
+          action={
+            <ErrorDetails
+              title={t("Could not read logs. Check the host connection and retry.")}
+              detail={error}
+            />
+          }
+        >
           <p>{t("Could not read logs. Check the host connection and retry.")}</p>
-          <Disclosure summary={t("Technical details")} size="sm">
-            <pre>{error}</pre>
-          </Disclosure>
         </Alert>
       ) : null}
       {actionError ? (
-        <Alert tone="danger">
+        <Alert tone="danger" action={<ErrorDetails detail={actionError} />}>
           <p>
             {t(
               actionError.includes("ERR_CONNECTION_REFUSED")
@@ -955,9 +960,6 @@ function ScopedRuntimeLogsPanel({
                 : "The action failed. Check the details and retry.",
             )}
           </p>
-          <Disclosure summary={t("Technical details")} size="sm">
-            <pre>{actionError}</pre>
-          </Disclosure>
         </Alert>
       ) : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}

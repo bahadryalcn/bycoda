@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
-import { TextField } from "../../../../shared/ui/TextField";
+import { FileField } from "../../../../shared/ui/FileField";
 import type { SocialClient } from "../../model/socialClient";
 import { uploadForSocialEditor, type SocialMediaEditor } from "../../model/socialMediaEditor";
 import type { ContentMedia } from "./contentDraft";
@@ -63,24 +63,18 @@ export function ContentMediaField({
     if (item.mediaId) void editor.releaseCurrent(item.mediaId).catch(() => {});
   };
   return (
-    <fieldset className="content-media">
-      <legend>{t("Media")}</legend>
-      <TextField
+    <div className="content-media">
+      <FileField
         label={t("Images or one video")}
-        type="file"
         multiple
         accept="image/jpeg,image/png,video/mp4"
         disabled={disabled || busy}
-        description={
-          disabledReason ?? (busy ? t("Uploading…") : t("JPEG or PNG images, or one MP4 video."))
-        }
+        description={disabledReason ?? (busy ? t("Uploading…") : undefined)}
+        hint={t("JPEG or PNG images, or one MP4 video.")}
         error={error}
-        onChange={(event) => {
-          const files = Array.from(event.target.files ?? []);
-          event.target.value = "";
-          if (files.length)
-            void add(files).catch(() => setError(t("The file could not be attached.")));
-        }}
+        onFiles={(files) =>
+          void add(files).catch(() => setError(t("The file could not be attached.")))
+        }
       />
       {media.length ? (
         <ul className="content-media-list">
@@ -99,6 +93,6 @@ export function ContentMediaField({
           ))}
         </ul>
       ) : null}
-    </fieldset>
+    </div>
   );
 }

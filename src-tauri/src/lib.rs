@@ -883,6 +883,7 @@ pub fn run() {
             fs::git_rebase,
             fs::git_fetch,
             fs::git_trust_repository,
+            fs::git_init,
             fs::git_undo_last_commit,
             fs::git_stash_clear,
             fs::git_create_branch_from,

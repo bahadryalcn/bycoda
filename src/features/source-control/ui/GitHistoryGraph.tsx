@@ -3,6 +3,8 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Sash } from "../../../shared/ui/Sash";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import type { SectionRepositoryChoice } from "../model/panelSections";
 import graphLayout from "./GitGraphLayout.module.css";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -49,6 +51,8 @@ type Props = {
   enabled: boolean;
   expanded: boolean;
   selectedSha?: string;
+  /** In a multi-repository overview, lets the full graph switch repository in place. */
+  repositories?: SectionRepositoryChoice;
   onToggleExpanded: () => void;
   onOpenCommit: (commit: GitHistoryCommit, pin?: boolean) => void;
 };
@@ -62,6 +66,7 @@ export function GitHistoryGraph({
   enabled,
   expanded,
   selectedSha,
+  repositories,
   onToggleExpanded,
   onOpenCommit,
 }: Props) {
@@ -122,6 +127,17 @@ export function GitHistoryGraph({
   } | null>(null);
   const [namingBusy, setNamingBusy] = useState(false);
   const [namingError, setNamingError] = useState<string | null>(null);
+  // The shared sections switch repository while this stays mounted (the full graph
+  // stays open): what was picked in the previous repository does not carry over.
+  const [shownCwd, setShownCwd] = useState(cwd);
+  if (shownCwd !== cwd) {
+    setShownCwd(cwd);
+    setFullCommit(null);
+    setCommitMode("changes");
+    setResolutionDirty(false);
+    setMenu(null);
+    setNaming(null);
+  }
 
   const run = async (action: () => Promise<unknown>) => {
     if (!actions || busy || !(await discardResolution())) return;
@@ -263,6 +279,10 @@ export function GitHistoryGraph({
     if (!(await discardResolution())) return;
     setFullOpen(false);
     if (!searchOpen) setQuery("");
+  };
+
+  const switchRepository = async (value: string) => {
+    if (await discardResolution()) repositories?.onChange(value);
   };
 
   const selectFullCommit = async (commit: GitHistoryCommit | null) => {
@@ -477,6 +497,18 @@ export function GitHistoryGraph({
               >
                 <RefreshCw className="icon-sm" />
               </Button>
+              {repositories ? (
+                <div className={graphLayout.repository}>
+                  <SearchableSelect
+                    hideLabel
+                    label={t("Repository")}
+                    value={repositories.value}
+                    onChange={(value) => void switchRepository(value)}
+                    variant="row"
+                    options={repositories.options}
+                  />
+                </div>
+              ) : null}
               <div className={graphLayout.search}>
                 <GraphSearchInput value={query} onChange={setQuery} />
               </div>

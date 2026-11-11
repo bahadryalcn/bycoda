@@ -731,6 +731,11 @@ export function gitFetch(cwd: string, prune = false): Promise<void> {
   return invoke<void>("git_fetch", { cwd, ...(prune ? { prune } : {}) });
 }
 
+/** Start a repository in a folder that is not inside one. */
+export function gitInit(cwd: string): Promise<void> {
+  return invoke<void>("git_init", { cwd });
+}
+
 /** Called only after the native owner confirmation for this exact checkout. */
 export function gitTrustRepository(cwd: string): Promise<void> {
   return invoke<void>("git_trust_repository", { cwd, confirmed: true });

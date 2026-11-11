@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { goalProgress, goalStateFromTasks, parseGoalPlan, parseHostGoal } from "./hostGoals";
+import {
+  goalPlanReviews,
+  goalProgress,
+  goalStateFromTasks,
+  parseGoalPlan,
+  parseHostGoal,
+} from "./hostGoals";
 import { parseHostTask, unfinishedDependencies, type TaskStatus } from "./hostTasks";
 
 const PROJECTS = ["/work/app", "/work/api", "C:\\work\\site"];
@@ -423,5 +429,56 @@ describe("task dependencies", () => {
       "Invalid task dependencies",
     );
     expect(() => parseHostTask({ ...base, goalId: "bad id" })).toThrow("Invalid task goal");
+  });
+});
+
+describe("goalPlanReviews", () => {
+  const task = (key: string) => ({
+    key,
+    project: PROJECTS[0],
+    title: key,
+    prompt: "do",
+    dependsOn: [],
+  });
+  const goal = (keys: string[], simple?: true) => ({
+    finalReview: true,
+    verifyDefaults: { review: true },
+    plan: { tasks: keys.map(task), ...(simple ? { simple } : {}) },
+  });
+
+  it("keeps the task review but skips the final review for one task", () => {
+    expect(goalPlanReviews(goal(["a"]))).toEqual({ task: true, final: false });
+  });
+
+  it("runs both reviews for a larger plan", () => {
+    expect(goalPlanReviews(goal(["a", "b"]))).toEqual({ task: true, final: true });
+  });
+
+  it("runs no reviewer for a simple plan", () => {
+    expect(goalPlanReviews(goal(["a", "b"], true))).toEqual({ task: false, final: false });
+  });
+
+  it("never adds a review the owner turned off", () => {
+    expect(
+      goalPlanReviews({
+        ...goal(["a", "b"]),
+        finalReview: false,
+        verifyDefaults: { review: false },
+      }),
+    ).toEqual({ task: false, final: false });
+  });
+
+  it("accepts the simple mark only on a small plan", () => {
+    const plan = (count: number) => ({
+      simple: true,
+      tasks: Array.from({ length: count }, (_, index) => ({
+        key: `t${index}`,
+        project: PROJECTS[0],
+        title: "t",
+        prompt: "do",
+      })),
+    });
+    expect(parse(plan(2)).simple).toBe(true);
+    expect(parse(plan(3)).simple).toBeUndefined();
   });
 });

@@ -1,7 +1,8 @@
 import type { HostGoal } from "../../tasks/model/hostGoals";
-import type {
-  AssistantJob,
-  AssistantSnapshot,
+import {
+  ASSISTANT_PRESENCE_FRESH_MS,
+  type AssistantJob,
+  type AssistantSnapshot,
 } from "../../../shared/model/host-contracts/assistant";
 import { readAssistantSession } from "./assistantSessions";
 import { assistantJobProjectIds } from "./assistantJobs";
@@ -191,13 +192,15 @@ export function assistantPresenceState(
   now: number,
 ) {
   const automatic = snapshot.automaticPresence;
-  const fresh = !!automatic && automatic.updatedAt <= now && now - automatic.updatedAt <= 90000;
-  const detected = !fresh || !automatic?.supported ? "unknown" : automatic.state;
+  const fresh =
+    !!automatic?.supported &&
+    automatic.updatedAt <= now &&
+    now - automatic.updatedAt <= ASSISTANT_PRESENCE_FRESH_MS;
+  // A computer without a current reading is away: availability is never unknown.
+  const detected = fresh ? automatic.state : "away";
   const effective =
     snapshot.presence.state !== "present"
       ? snapshot.presence.state
-      : detected === "unknown"
-        ? "unknown"
-        : (snapshot.effectivePresence ?? (detected === "locked" ? "away" : detected));
+      : (snapshot.effectivePresence ?? (detected === "locked" ? "away" : detected));
   return { detected, effective, automaticUpdatedAt: fresh ? automatic?.updatedAt : undefined };
 }

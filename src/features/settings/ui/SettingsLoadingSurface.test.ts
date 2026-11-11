@@ -25,24 +25,25 @@ it("keeps the known section title visible and announces one loading status", asy
     root.render(createElement(SettingsLoadingSurface, { section: "appearance" })),
   );
   expect(node.querySelector("h1")?.textContent).toBe("Appearance");
+  await act(async () => vi.advanceTimersByTime(500));
   const statuses = node.querySelectorAll('[role="status"]');
   expect(statuses).toHaveLength(1);
-  expect(statuses[0]!.getAttribute("aria-label")).toBe("Loading Settings…");
-  // Decorative rail shapes are hidden from assistive technology.
-  expect(node.querySelector(".settings-loading-rail")!.getAttribute("aria-hidden")).toBe("true");
+  expect(statuses[0]!.textContent).toBe("Loading Settings…");
 });
 
-it("shows no percentage or invented values", async () => {
+it("shows settings rows inside the one centred card and no invented values", async () => {
   await act(async () => root.render(createElement(SettingsLoadingSurface, { section: "general" })));
+  const card = node.querySelector("[data-loading-card]")!;
+  expect(card.querySelectorAll(".settings-skeleton-row")).toHaveLength(4);
   expect(node.querySelector('[role="progressbar"]')).toBeNull();
   expect(node.textContent).not.toMatch(/\d+\s?%/);
 });
 
-it("says so after a long wait and stops its timer when the dialog closes", async () => {
+it("explains a slow load inside the card and stops its timers when the dialog closes", async () => {
   await act(async () => root.render(createElement(SettingsLoadingSurface, { section: "general" })));
   expect(node.textContent).not.toContain("taking longer");
-  await act(async () => vi.advanceTimersByTime(10_000));
-  expect(node.textContent).toContain(
+  await act(async () => vi.advanceTimersByTime(3_000));
+  expect(node.querySelector("[data-loading-card]")?.textContent).toContain(
     "Settings is taking longer to load. You can return to the workspace.",
   );
   await act(async () => root.render(createElement("div")));

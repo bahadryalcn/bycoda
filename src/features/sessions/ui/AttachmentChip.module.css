@@ -8,9 +8,8 @@
   flex-shrink: 0;
   padding: 6px;
   --chip-ink: var(--ui-attachment-ink, var(--ui-tone-accent-fg));
-  border: 1px solid color-mix(in srgb, var(--chip-ink) 40%, var(--color-stroke));
   border-radius: var(--ui-radius-card);
-  background: color-mix(in srgb, var(--chip-ink) 8%, var(--ui-surface));
+  background: color-mix(in srgb, var(--chip-ink) 14%, transparent);
   color: var(--chip-ink);
 }
 /* Thumbnail only: the message text carries the reference and size. */

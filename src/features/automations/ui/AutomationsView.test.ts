@@ -15,7 +15,7 @@ import * as hostAutomationClient from "../model/hostAutomationClient";
 import { AutomationsView as RawAutomationsView } from "./AutomationsView";
 import { EventTriggerSentence } from "./TriggerEditor";
 import { TRIGGER_EVENTS } from "../model/automationTriggerCatalog";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { focusManager } from "@tanstack/react-query";
 const AutomationsView = withQueryClient(RawAutomationsView);

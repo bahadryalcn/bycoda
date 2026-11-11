@@ -20,4 +20,4 @@ Paths are repository-root relative. Basenames in a named directory are relative 
 
 ## Focused verification
 
-Adjacent model suites include `crew.test.ts`, `crewClient.test.ts`, `crewRoster.test.ts`, `crewPresentation.test.ts`; Host suites include `host/crews/crews.test.ts`, `host/crews/crew-lifecycle.test.ts`, `host/crews/crew-defaults.test.ts`, `host/crews/crew-native-session.test.ts`. Browser entry points include `tests/browser/crews.spec.ts`, `playwright.crews.config.ts` and the separate crew scene family. Select the appropriate family; a scene render does not prove orchestration.
+Adjacent model suites include `crew.test.ts`, `crewClient.test.ts`, `crewRoster.test.ts`, `crewPresentation.test.ts`; Host suites include `host/crews/crews.test.ts`, `host/crews/crew-lifecycle.test.ts`, `host/crews/crew-defaults.test.ts`, `host/crews/crew-native-session.test.ts`. Browser entry points include `tests/browser/crews/crews.spec.ts`, `playwright.crews.config.ts` and the separate crew scene family. Select the appropriate family; a scene render does not prove orchestration.

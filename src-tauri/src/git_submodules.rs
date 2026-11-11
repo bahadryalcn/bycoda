@@ -74,7 +74,7 @@ fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, S
         let parent = queue[index].clone();
         index += 1;
         let mut parser = IndexRecords::default();
-        git_stream_output(
+        let scanned = git_stream_output(
             &parent,
             &["ls-files", "--stage", "-z", "--", "."],
             deadline,
@@ -132,7 +132,14 @@ fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, S
                     Ok(())
                 })
             },
-        )?;
+        );
+        if let Err(error) = scanned {
+            // A plain folder has no gitlinks, but may still hold source repositories.
+            if parent == root && not_a_repository(&root) {
+                continue;
+            }
+            return Err(error);
+        }
         parser.finish()?;
     }
     if include_repositories {
@@ -140,6 +147,14 @@ fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, S
     }
     paths.sort();
     Ok(paths)
+}
+
+/// The index stream discards stderr, so a failed root scan asks Git why.
+fn not_a_repository(root: &Path) -> bool {
+    matches!(
+        crate::fs::git_checked(root, &["rev-parse", "--is-inside-work-tree"]),
+        Err(error) if error.to_lowercase().contains("not a git repository")
+    )
 }
 
 const SKIP_DIRECTORIES: &[&str] = &[
@@ -367,6 +382,20 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
+
+    #[test]
+    fn plain_folder_is_empty_and_still_discovers_repositories() {
+        let fixture = Fixture::new();
+        let plain = fixture.0.join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        // A parent repository above the temporary folder would make this a work tree.
+        if !not_a_repository(&plain) {
+            return;
+        }
+        assert_eq!(list(&plain).unwrap(), Vec::<String>::new());
+        fixture.repo("plain/app");
+        assert_eq!(list_options(&plain, true).unwrap(), vec!["app"]);
     }
 
     #[test]

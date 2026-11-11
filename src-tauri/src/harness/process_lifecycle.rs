@@ -330,6 +330,8 @@ impl ProcessOwner {
                     state.finalizing = true;
                     #[cfg(windows)]
                     let job = state.child.job.clone();
+                    #[cfg(windows)]
+                    let pid = state.child.id();
                     let signal_error = state.signal_error.clone();
                     drop(state);
                     // A failed tree drain does not change the direct child wait result,
@@ -351,6 +353,12 @@ impl ProcessOwner {
                     };
                     #[cfg(not(windows))]
                     let retirement = Ok(());
+                    // The only report of a failed drain: every later reader of
+                    // this retained result stays silent.
+                    #[cfg(windows)]
+                    if let Err(error) = &retirement {
+                        log::warn!("process {pid} retirement unverified: {}", error.message);
+                    }
                     #[cfg(windows)]
                     if let Some(error) = &signal_error {
                         log::warn!("ignored process signal error: {}", error.message);

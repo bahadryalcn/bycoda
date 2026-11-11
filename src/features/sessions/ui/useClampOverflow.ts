@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState, type RefObject } from "react";
+import { observeResize } from "../../../shared/lib/observeResize";
 
 /**
  * Whether a line-clamped element has more text than it shows, so a "Show more"
@@ -26,9 +27,7 @@ export function useClampOverflow(
       if (!expanded) setOverflows(el.scrollHeight > el.clientHeight + 1);
     };
     measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
+    return observeResize(el, measure);
   }, [ref, enabled, expanded, content, layoutKey]);
   return enabled && overflows;
 }

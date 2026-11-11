@@ -111,6 +111,7 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
               closingTabId: tab.id,
               scope: tabCloseScope,
               worktreeOf: tabWorktreeOf,
+              activeCwd: projectCwd,
             });
             if (closePlan.action === "close") {
               onCloseTab(tab.id, file.terminal ? { confirmedTerminalIds: [fileId] } : undefined);
@@ -119,7 +120,7 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
             const seed = sessionsRef.current[0];
             const session = newSession(
               seed?.harness ?? "claude",
-              file.cwd || projectCwd,
+              file.projectCwd || file.cwd || projectCwd,
               seed?.model,
               seed?.runtimeMode,
               seed?.modelSettings,

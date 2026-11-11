@@ -1,0 +1,64 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* Root placement stays caller-adjustable (F3 style-ownership contract). */
+@layer components {
+  .group {
+    min-inline-size: 0;
+  }
+}
+
+/* Native fieldset chrome is removed; the legend is an ordinary block above the controls. */
+.group {
+  display: grid;
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+/* Same role as the Field label, so a group title and a field label always match. */
+.legend {
+  float: none;
+  padding: 0;
+  margin-block-end: var(--space-2);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.body {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+.group[data-gap="sm"] .body {
+  gap: var(--space-2);
+}
+.group[data-layout="row"] .body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.group[data-variant="card"] .body {
+  padding: 0.75rem;
+  border: 1px solid var(--ui-card-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-card-surface);
+}
+.description {
+  display: block;
+  padding-block-start: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.group:disabled .legend,
+.group:disabled .description {
+  opacity: var(--ui-disabled-opacity, 0.5);
+}
+/* Bare: a grouping element only; its children lay out as if it were not there. */
+.group[data-variant="bare"] {
+  display: contents;
+}

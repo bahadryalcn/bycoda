@@ -21,15 +21,23 @@ Read for the affected authority, persistence or delivery boundary;
 
 - Missing/corrupt lifecycle metadata or an unreachable endpoint never proves a Host stopped. Probe the kernel lease; live legacy owners without verified identity remain unknown. Keep corrupt policy, tunnel and credential state until explicitly repaired.
 
+- The Host takes the kernel owner lease before opening its database. A held lease that does not answer is a starting Host inside its boot grace, never a stopped one; it is neither repaired nor replaced, and a second starter loses before touching the database.
+
 - Workspace saves retain expected-content checks, permission checks at publication, rooted target identity and original file permissions. Preserve uncertain replacement candidates; private-state atomic helpers do not preserve arbitrary workspace ACLs.
 
 - Persist remote commands before dispatch; retain exact ID, payload and unknown outcomes. IndexedDB settlements and quarantine preserve reviewed raw evidence; legacy localStorage bytes remain until a qualified writer-cohort retirement proves safe. Storage failures hold dispatch and attachment cleanup.
+
+- A session write extends the persisted-or-pending head by exactly one revision; the store refuses anything else before buffering. Store-owned session writes run through the engine's ordered session write. A refused live batch is rebased only when provably equal, otherwise preserved under `session-recovery/` while the turn settles interrupted. Refused constraints are never retried; transient failures back off.
 
 - Keep drafts, queues, approvals, attachments, exact source bytes and recovery copies. Detach does not Stop; new migration/default authority requires its complete admission contract.
 
 ## Delivery and retirement
 
 - Uncertain sends retain the original command ID and are never replayed because a socket closed. Pending/unknown ownership records cannot be evicted to admit fresh work.
+
+- An existence or precondition failure raised before any effect is a typed refusal (`not-sent`); an unknown outcome is reserved for failures after admission. Refusal codes are a closed set for connected clients, so a new code needs client compatibility first.
+
+- Only a refused connection to the Host on this computer is waited out, inside the request's original deadline; a request that may have been delivered is never sent again.
 
 - Authentication/heartbeat admission stays separate from ordinary controls. Queue waits share the original monotonic deadline; cancelled observers do not release physical work. Reconnect retains only never-sent requests, never dispatched mutations.
 

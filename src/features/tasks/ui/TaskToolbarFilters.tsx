@@ -4,6 +4,7 @@ import { LAYER } from "../../../shared/lib/layers";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
+import { Heading } from "../../../shared/ui/Heading";
 import { Popover } from "../../../shared/ui/Popover";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { goalKey } from "../model/goalClient";
@@ -92,14 +93,14 @@ export function TaskToolbarFilters({
         >
           <div className="task-filter-popover">
             <div className="task-filter-header">
-              <span className="task-filter-title">
+              <Heading size="item" level={4} className="task-filter-title">
                 {t("Filters")}
                 {activeCount > 0 ? (
                   <Badge size="xs" variant="count">
                     {activeCount}
                   </Badge>
                 ) : null}
-              </span>
+              </Heading>
               <Button variant="ghost" disabled={activeCount === 0} onClick={onReset}>
                 {t("Reset")}
               </Button>

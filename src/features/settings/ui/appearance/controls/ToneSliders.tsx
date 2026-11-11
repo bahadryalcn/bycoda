@@ -9,6 +9,7 @@ import {
   THEME_SATURATION_MAX,
   THEME_SATURATION_MIN,
 } from "../../../model/appearance";
+import { APPEARANCE_RANGES } from "../../../model/themeRanges";
 import { Row, Slider } from "../../settingsControls";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import "./ThemeControls.css";
@@ -26,6 +27,7 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
   useLocale();
   const light = useColorScheme() === "light";
   const { themeHue: hue, themeSaturation: saturation, themeDarkLightness: depth } = appearance;
+  const { surfaceContrast } = appearance.preferences;
   return (
     <div className="theme-detail-split">
       <div className="theme-detail-controls">
@@ -66,6 +68,23 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
             max={THEME_DARK_LIGHTNESS_MAX}
             disabled={light}
             onChange={appearance.onDarkLightness}
+          />
+        </Row>
+        <Row
+          id="surface-contrast"
+          label={t("Surface contrast")}
+          description={t("How strongly cards, fields and dialogs lift off the canvas.")}
+        >
+          <Slider
+            label={t("Surface contrast")}
+            value={surfaceContrast}
+            display={`${surfaceContrast}%`}
+            min={APPEARANCE_RANGES.surfaceContrast.min}
+            max={APPEARANCE_RANGES.surfaceContrast.max}
+            step={5}
+            onChange={(next) =>
+              appearance.onPreferences({ ...appearance.preferences, surfaceContrast: next })
+            }
           />
         </Row>
       </div>

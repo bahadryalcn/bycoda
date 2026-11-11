@@ -3,6 +3,7 @@ import { PooledTranscript, TranscriptPool, TranscriptPoolOutlet } from "./Transc
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { beginResizeGesture } from "../../../shared/lib/resizeGesture";
 import { TranscriptVirtualRows, type TranscriptVirtualRow } from "./TranscriptVirtualRows";
 import {
   TranscriptVirtualization,
@@ -11,6 +12,28 @@ import {
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
 import { AgentTranscript } from "./AgentTranscript";
 import type { Block } from "../model/session";
+
+// Counts `measure()` (which drops every measured row size) without changing it.
+const measureCalls = vi.hoisted(() => ({ count: 0 }));
+vi.mock("@tanstack/react-virtual", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-virtual")>();
+  const wrapped = new WeakSet<object>();
+  return {
+    ...actual,
+    useVirtualizer: ((options: Parameters<typeof actual.useVirtualizer>[0]) => {
+      const virtualizer = actual.useVirtualizer(options);
+      if (!wrapped.has(virtualizer)) {
+        wrapped.add(virtualizer);
+        const measure = virtualizer.measure.bind(virtualizer);
+        virtualizer.measure = () => {
+          measureCalls.count++;
+          measure();
+        };
+      }
+      return virtualizer;
+    }) as typeof actual.useVirtualizer,
+  };
+});
 
 let host: HTMLDivElement;
 let root: Root;
@@ -505,4 +528,53 @@ it("registers selectionchange tracking only for virtualized lists, keeping copy 
   root = createRoot(host);
   mount(rows(1000));
   expect(add.mock.calls.map(([type]) => type)).toContain("selectionchange");
+});
+
+function resizeHarness() {
+  const callbacks: ResizeObserverCallback[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(callback: ResizeObserverCallback) {
+        callbacks.push(callback);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  let width = 500;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return new DOMRect(0, top(this), width, height(this));
+  });
+  return (next: number) => {
+    width = next;
+    act(() => {
+      for (const callback of callbacks) callback([], {} as ResizeObserver);
+    });
+  };
+}
+
+it("re-measures rows once per width change outside a live resize", () => {
+  const setWidth = resizeHarness();
+  mount(rows(1000));
+  measureCalls.count = 0;
+  setWidth(450);
+  setWidth(400);
+  expect(measureCalls.count).toBe(2);
+});
+
+it("keeps measured row sizes through a live resize and re-measures once at its end", () => {
+  const setWidth = resizeHarness();
+  mount(rows(1000));
+  measureCalls.count = 0;
+  const end = beginResizeGesture();
+  setWidth(450);
+  setWidth(400);
+  setWidth(350);
+  expect(measureCalls.count).toBe(0);
+  act(() => end());
+  expect(measureCalls.count).toBe(1);
 });

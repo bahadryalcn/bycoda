@@ -51,8 +51,7 @@
   gap: 8px;
 }
 
-/* Row grammar matches WorkspaceManagedRow: [status dot] [identity] [actions], with details on
-   their own line. The doubled class beats SettingsCollection.css whatever the stylesheet order. */
+/* Row grammar matches WorkspaceManagedRow: [status dot] [identity] [actions]. The doubled class beats SettingsCollection.css whatever the stylesheet order. */
 .row.row {
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr) auto;
@@ -112,14 +111,8 @@
 }
 
 .row:hover .rowActions,
-.row:focus-within .rowActions,
-.row[data-open] .rowActions {
+.row:focus-within .rowActions {
   opacity: 1;
-}
-
-.details {
-  grid-column: 2 / -1;
-  min-inline-size: 0;
 }
 
 @media (hover: none) {

@@ -71,8 +71,8 @@
   font-size: var(--ui-font-micro);
   max-inline-size: min(100%, 520px);
   padding: 8px;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-panel);
+  border: 1px solid var(--ui-card-border);
+  border-radius: var(--ui-radius-card);
 }
 .browser-annotation-details .host-tool-muted {
   color: var(--ui-text-secondary);

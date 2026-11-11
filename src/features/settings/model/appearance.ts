@@ -350,11 +350,7 @@ function themeCanvases(): AccentCanvas {
   const saturation = appliedTint.saturation ?? loadThemeSaturation();
   // Mirrors --ui-layer-base in src/styles/index.css: derived layers never mix from below 4%.
   const darkBase = hex(
-    hslToRgb(
-      hue,
-      saturation,
-      Math.max(4, appliedTint.darkLightness ?? loadThemeDarkLightness()),
-    ),
+    hslToRgb(hue, saturation, Math.max(4, appliedTint.darkLightness ?? loadThemeDarkLightness())),
   );
   const darkContent = hex(hslToRgb(hue, saturation, 92));
   const lightBase = hex(hslToRgb(hue, saturation * 0.2, 98.6));

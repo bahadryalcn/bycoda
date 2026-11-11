@@ -31,24 +31,7 @@ export function TaskRunInsights({ task, onSaveEvaluation }: Props) {
   const usage = task.budgetUsage;
   const completeHistory = usage?.historyComplete !== false;
   return (
-    <Disclosure className="min-w-0" variant="row" size="sm" summary={t("Run quality and usage")}>
-      <DescriptionList columns="auto" size="sm">
-        <Stat
-          label={t("Total agent minutes")}
-          value={number(completeHistory ? (usage?.agentMinutes ?? null) : null)}
-        />
-        <Stat
-          label={t("Agent runs")}
-          value={number(completeHistory ? (usage?.attempts ?? null) : null, 0)}
-        />
-        <Stat label={t("Reported tokens")} value={number(usage?.tokens ?? null, 0)} />
-        <Stat label={t("Reported cost (USD)")} value={number(usage?.reportedCostUsd ?? null, 4)} />
-      </DescriptionList>
-      <p className="text-ui-micro text-(--ui-text-secondary)">
-        {t(
-          "Includes recorded workers, reviewers and retries. Missing provider readings remain unknown; no billing estimate is inferred.",
-        )}
-      </p>
+    <>
       {!completeHistory ? (
         <p className="text-ui-micro text-(--ui-tone-warning-fg)">
           {t(
@@ -56,14 +39,36 @@ export function TaskRunInsights({ task, onSaveEvaluation }: Props) {
           )}
         </p>
       ) : null}
-      {task.status === "done" || task.status === "review" ? (
-        <EvaluationEditor
-          key={`${task.id}:${task.runId ?? task.sessionId ?? "manual"}:${task.completedAt ?? task.startedAt ?? "unfinished"}`}
-          task={task}
-          onSaveEvaluation={onSaveEvaluation}
-        />
-      ) : null}
-    </Disclosure>
+      <Disclosure className="min-w-0" variant="row" size="sm" summary={t("Run quality and usage")}>
+        <DescriptionList columns="auto" size="sm">
+          <Stat
+            label={t("Total agent minutes")}
+            value={number(completeHistory ? (usage?.agentMinutes ?? null) : null)}
+          />
+          <Stat
+            label={t("Agent runs")}
+            value={number(completeHistory ? (usage?.attempts ?? null) : null, 0)}
+          />
+          <Stat label={t("Reported tokens")} value={number(usage?.tokens ?? null, 0)} />
+          <Stat
+            label={t("Reported cost (USD)")}
+            value={number(usage?.reportedCostUsd ?? null, 4)}
+          />
+        </DescriptionList>
+        <p className="text-ui-micro text-(--ui-text-secondary)">
+          {t(
+            "Includes recorded workers, reviewers and retries. Missing provider readings remain unknown; no billing estimate is inferred.",
+          )}
+        </p>
+        {task.status === "done" || task.status === "review" ? (
+          <EvaluationEditor
+            key={`${task.id}:${task.runId ?? task.sessionId ?? "manual"}:${task.completedAt ?? task.startedAt ?? "unfinished"}`}
+            task={task}
+            onSaveEvaluation={onSaveEvaluation}
+          />
+        ) : null}
+      </Disclosure>
+    </>
   );
 }
 

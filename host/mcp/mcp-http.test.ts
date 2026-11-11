@@ -239,14 +239,21 @@ it("returns the same verified Host references through scoped RPC and external MC
     model: "fixture",
     runtimeMode: "supervised",
   });
-  const snapshot = await s.store.session(created.sessionId);
-  snapshot.revision += 1;
-  snapshot.session.title = "Title [escaped]";
-  snapshot.session.blocks = [
-    { id: "turn-one", role: "user", text: "U".repeat(7000) },
-    { id: "private", role: "reasoning", text: "private evidence" },
-    { id: "answer", role: "assistant", text: "A".repeat(7000) },
-  ];
+  // A copy: the store hands out its cached head, and a write must extend that head.
+  const head = await s.store.session(created.sessionId);
+  const snapshot = {
+    ...head,
+    revision: head.revision + 1,
+    session: {
+      ...head.session,
+      title: "Title [escaped]",
+      blocks: [
+        { id: "turn-one", role: "user" as const, text: "U".repeat(7000) },
+        { id: "private", role: "reasoning" as const, text: "private evidence" },
+        { id: "answer", role: "assistant" as const, text: "A".repeat(7000) },
+      ],
+    },
+  };
   await s.store.save(snapshot, { type: "test" });
   const scoped = (await s.server.conversationAccess.issueSessionGrant(created.sessionId)).token;
   const external = (await s.grant({ conversation: ["read"] })).token;

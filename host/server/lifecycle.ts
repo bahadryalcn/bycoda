@@ -5,6 +5,16 @@ import { guardUnhandledRejections } from "./support";
 /** Total time a stopping Host may spend draining before it force-exits. */
 export const HOST_SHUTDOWN_DEADLINE_MS = 45_000;
 
+/**
+ * Exit status of a shutdown that ran to its end. Service supervisors restart a Host that
+ * exits non-zero, so a stop requested through the lifecycle endpoint exits zero even when a
+ * drain failed (the failure is logged): a restart would undo the request and race the
+ * requester's next step. Other reasons keep the failure status.
+ */
+export function shutdownExitCode(reason: string, failed: boolean): number {
+  return failed && reason !== "lifecycle" ? 1 : 0;
+}
+
 type ClosePromise = Promise<void> & { pendingDrains(): string[] };
 
 /**

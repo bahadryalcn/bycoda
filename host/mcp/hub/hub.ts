@@ -283,7 +283,7 @@ export class McpHub {
     const known = this.publications.get(key);
     if (known) {
       if (this.now() - known.at > PUBLICATION_REFRESH_MS)
-        // ast-grep-ignore: ts-void-promise-without-catch -- refreshPublication swallows its own failures
+        // oxlint-disable-next-line bycoda/handled-background-promise -- refreshPublication swallows its own failures
         void this.refreshPublication(key, match[1], cwd);
       return known.value ? { externalMcp: known.value } : undefined;
     }

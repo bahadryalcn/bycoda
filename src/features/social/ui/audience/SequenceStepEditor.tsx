@@ -1,5 +1,6 @@
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Switch } from "../../../../shared/ui/Switch";
 import { TextField } from "../../../../shared/ui/TextField";
@@ -61,8 +62,7 @@ export function SequenceStepEditor({
   const isEmail = step.channel === "email";
   const selectedEmail = emailAccounts.find((account) => account.id === step.accountId);
   return (
-    <fieldset className="audience-card">
-      <legend>{t("Step {p0}", { p0: index + 1 })}</legend>
+    <FieldGroup legend={t("Step {p0}", { p0: index + 1 })} variant="card">
       <div className="audience-stack">
         <LabeledSelect
           label={t("Channel")}
@@ -172,6 +172,6 @@ export function SequenceStepEditor({
           </Button>
         </div>
       </div>
-    </fieldset>
+    </FieldGroup>
   );
 }

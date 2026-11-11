@@ -97,6 +97,8 @@ export function subscribeSessionOrganization(
       });
   };
   if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+    // Hydrate now; the refresh after registration catches a change made meanwhile.
+    refresh();
     void listenWindowAsync<{ scope: string; revision: number }>(
       "canonical-store-changed",
       (event) => {

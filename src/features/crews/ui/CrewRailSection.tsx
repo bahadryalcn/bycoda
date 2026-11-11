@@ -5,7 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
 import type { PopoverAnchor } from "../../../shared/ui/Popover";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { Play, Plus } from "../../../shared/ui/icons";
@@ -294,7 +294,7 @@ export function CrewRailSection({
             </ActionHost>
           );
         })}
-        {error ? <InlineError className="px-2">{error}</InlineError> : null}
+        {error ? <DetailedInlineError className="px-2" error={error} /> : null}
       </div>
       {menu?.kind === "crew" && menuCrew ? (
         <DropdownMenu

@@ -132,13 +132,17 @@
 }
 
 .app-search-project-heading {
+  min-block-size: 0;
+  padding: 8px 10px 0;
+}
+
+.app-search-project-label {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .app-search-project-path {

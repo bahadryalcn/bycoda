@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { recordedSessionRows } from "../model/recordedSessionRows";
 import type { sessionUsage } from "../model/usageAnalytics";
@@ -35,7 +36,9 @@ export function UsageRecordedSessions({
     <section className="usage-sessions">
       <div className="usage-section-heading">
         <div className="flex items-center gap-2">
-          <h3>{t("Recorded sessions")}</h3>
+          <Heading size="item" level={3}>
+            {t("Recorded sessions")}
+          </Heading>
           <InfoPopover label={t("Recorded sessions")}>
             {t(
               "Session tokens come from recorded turn metrics. Only whole turns inside the interval are included; these values are not added to provider-log totals.",

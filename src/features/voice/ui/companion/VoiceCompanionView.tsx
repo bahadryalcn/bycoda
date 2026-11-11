@@ -1,6 +1,7 @@
 import type { HTMLAttributes, ReactNode, RefObject } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import { LiveText } from "../../../../shared/ui/LiveText";
+import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { OverflowTooltip, Tooltip } from "../../../../shared/ui/Tooltip";
 import { Maximize2, Mic, MicOff, Minimize2, Square, X } from "../../../../shared/ui/icons";
 import { t } from "../../../../shared/i18n";
@@ -14,7 +15,7 @@ import { VoiceChatTranscript } from "./VoiceChatTranscript";
 import { VoiceCompanionControls } from "./VoiceCompanionControls";
 import { VoiceCompanionMoreMenu } from "./VoiceCompanionMoreMenu";
 import { VoiceCompanionStatus } from "./VoiceCompanionStatus";
-import { VoiceErrorNotice, voiceErrorTitle } from "./VoiceErrorNotice";
+import { VoiceErrorMark, VoiceErrorNotice, voiceErrorTitle } from "./VoiceErrorNotice";
 import { VoiceSidePanel } from "./VoiceSidePanel";
 import type { VoiceChatTurn, VoiceCompanionStatus as Status } from "./voiceCompanionTypes";
 import parts from "./VoiceCompanionParts.module.css";
@@ -97,7 +98,9 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
     <>
       <header className={styles.header} {...p.headerDrag}>
         {p.handle}
-        {p.error ? <VoiceErrorNotice error={p.error} onDismiss={p.onDismissError} /> : null}
+        {p.error ? (
+          <VoiceErrorMark error={p.error} onShow={p.compact ? p.onToggleCompact : undefined} />
+        ) : null}
         {p.compact ? (
           <div className={styles.heading}>
             <Tooltip
@@ -105,9 +108,9 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               label={p.targetTitle}
               when={p.targetTitle && p.targetTitle !== p.scopeTitle ? "always" : "overflow"}
             >
-              <h2 className={styles.title}>
+              <SectionLabel as="h2" className={styles.title}>
                 {p.title} · {p.scopeTitle}
-              </h2>
+              </SectionLabel>
             </Tooltip>
             <OverflowTooltip label={p.summary}>
               <span className={styles.summary} aria-hidden="true">
@@ -116,7 +119,9 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
             </OverflowTooltip>
           </div>
         ) : (
-          <h2 className={styles.title}>{p.title}</h2>
+          <SectionLabel as="h2" className={styles.title}>
+            {p.title}
+          </SectionLabel>
         )}
         {p.compact ? (
           <>
@@ -197,7 +202,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
             />
             {p.sessionPicker}
             <VoiceChatTranscript turns={p.chatTurns} />
-            {/* The error itself lives in the header mark; this only announces it. */}
+            {p.error ? <VoiceErrorNotice error={p.error} onDismiss={p.onDismissError} /> : null}
             <LiveText
               mode="assertive"
               className={styles.srOnly}

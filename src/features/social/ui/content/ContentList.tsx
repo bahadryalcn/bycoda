@@ -2,6 +2,7 @@ import { formatDate, t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { ActionHost } from "../../../../shared/ui/ActionHost";
 import { Button } from "../../../../shared/ui/Button";
+import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { NativeSelect } from "../../../../shared/ui/Select";
 import type { SocialAccount, SocialCampaign, SocialJob } from "../../model/social";
 import type { SocialProgram } from "../../model/socialProgram";
@@ -160,7 +161,9 @@ export function ContentList({
       )}
       {programs.length ? (
         <section className="content-programs" aria-label={t("Repeating programs")}>
-          <h3>{t("Repeating programs")}</h3>
+          <SectionLabel as="h3" className="content-programs-title">
+            {t("Repeating programs")}
+          </SectionLabel>
           <ul className="content-rows">
             {programs.map((program) => (
               <li key={program.id} className="content-row-static">

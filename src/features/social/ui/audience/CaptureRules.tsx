@@ -4,6 +4,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
+import { Surface } from "../../../../shared/ui/Surface";
 import { Switch } from "../../../../shared/ui/Switch";
 import type { CaptureRule, SocialList } from "../../model/audience";
 import type { SocialAccount } from "../../model/social";
@@ -92,7 +93,7 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
     <div className="audience-stack">
       <section className="audience-section" aria-labelledby="ready-rule-heading">
         <SectionLabel labelId="ready-rule-heading">{t("Ready-made rule")}</SectionLabel>
-        <div className="audience-frame">
+        <Surface variant="card" padding="none" className="audience-frame">
           <div className="audience-rule">
             <div className="audience-rule-text">
               <span>{t("Add the people who comment on my posts to the Commenters list.")}</span>
@@ -115,7 +116,7 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
               />
             ) : null}
           </div>
-        </div>
+        </Surface>
       </section>
 
       <div className="audience-row audience-between">
@@ -133,7 +134,7 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
         <EmptyHint message={t("No rules yet. A rule adds people to a list as they interact.")} />
       ) : null}
       {others.length ? (
-        <ul className="audience-frame">
+        <Surface as="ul" variant="card" padding="none" className="audience-frame">
           {others.map((rule) => {
             const platform = accounts.find(
               (account) => account.id === rule.source.accountId,
@@ -170,7 +171,7 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
               </li>
             );
           })}
-        </ul>
+        </Surface>
       ) : null}
 
       {creating ? (

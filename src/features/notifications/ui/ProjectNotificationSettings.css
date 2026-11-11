@@ -12,10 +12,12 @@
 
 .project-notification-item {
   min-inline-size: 0;
-  border: 0;
-  margin: 0;
-  padding: 0;
   border-radius: var(--ui-control-radius);
+}
+
+/* The group body stacks the item rows without its default gap, as the bare fieldset did. */
+.project-notification-item > div {
+  gap: 0;
 }
 
 .project-notification-item + .project-notification-item {

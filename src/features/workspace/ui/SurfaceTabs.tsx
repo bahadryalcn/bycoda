@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT, type t } from "../../../shared/i18n";
 import { CircleAlert, GitCompare, GripVertical, Terminal, X } from "../../../shared/ui/icons";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
@@ -93,6 +93,7 @@ const REVEAL_LABEL = IS_MAC
     : "Open Containing Folder";
 
 export function surfaceTabMenuItems(
+  translate: typeof t,
   file: FilePaneTab,
   canCloseOthers = true,
   newWindow?: { dirty: boolean },
@@ -106,7 +107,7 @@ export function surfaceTabMenuItems(
           kind: "item",
           id: "move-left",
           get label() {
-            return t("Move Left");
+            return translate("Move Left");
           },
           disabled: !sides.left,
         },
@@ -114,7 +115,7 @@ export function surfaceTabMenuItems(
           kind: "item",
           id: "move-right",
           get label() {
-            return t("Move Right");
+            return translate("Move Right");
           },
           disabled: !sides.right,
         },
@@ -125,14 +126,14 @@ export function surfaceTabMenuItems(
     kind: "item",
     id: "close",
     get label() {
-      return t("Close");
+      return translate("Close");
     },
   };
   const closeOthers: ExplorerMenuItem = {
     kind: "item",
     id: "close-others",
     get label() {
-      return t("Close Others");
+      return translate("Close Others");
     },
     disabled: !canCloseOthers,
   };
@@ -143,7 +144,7 @@ export function surfaceTabMenuItems(
       kind: "item",
       id: "close-right",
       get label() {
-        return t("Close Tabs to the Right");
+        return translate("Close Tabs to the Right");
       },
       disabled: !sides.right,
     },
@@ -151,7 +152,7 @@ export function surfaceTabMenuItems(
       kind: "item",
       id: "close-left",
       get label() {
-        return t("Close Tabs to the Left");
+        return translate("Close Tabs to the Left");
       },
       disabled: !sides.left,
     },
@@ -167,7 +168,7 @@ export function surfaceTabMenuItems(
             kind: "item" as const,
             id: "new-window",
             get label() {
-              return t("Open in New Window");
+              return translate("Open in New Window");
             },
             disabled: newWindow.dirty,
             description: newWindow.dirty ? "Save the file first" : undefined,
@@ -181,13 +182,13 @@ export function surfaceTabMenuItems(
             kind: "item" as const,
             id: "open-default",
             get label() {
-              return t("Open in Default App");
+              return translate("Open in Default App");
             },
           },
         ]
       : []),
     ...(isRemoteProjectPath(file.path)
-      ? [{ kind: "item" as const, id: "open-copy", label: t("Open local copy") }]
+      ? [{ kind: "item" as const, id: "open-copy", label: translate("Open local copy") }]
       : []),
     { kind: "item" as const, id: "reveal", label: REVEAL_LABEL },
     { kind: "sep" as const },
@@ -195,21 +196,21 @@ export function surfaceTabMenuItems(
       kind: "item",
       id: "copy-path",
       get label() {
-        return t("Copy Path");
+        return translate("Copy Path");
       },
     },
     {
       kind: "item",
       id: "copy-relative-path",
       get label() {
-        return t("Copy Relative Path");
+        return translate("Copy Relative Path");
       },
     },
     {
       kind: "item",
       id: "copy-name",
       get label() {
-        return t("Copy File Name");
+        return translate("Copy File Name");
       },
     },
     { kind: "sep" },
@@ -218,7 +219,10 @@ export function surfaceTabMenuItems(
   ];
 }
 
-export function surfaceTabPresentation(file: FilePaneTab): SurfaceTabPresentation {
+export function surfaceTabPresentation(
+  translate: typeof t,
+  file: FilePaneTab,
+): SurfaceTabPresentation {
   if (isReleaseNotesTab(file)) {
     const title = releaseNotesTitle(file.releaseNotes.version);
     return {
@@ -243,11 +247,11 @@ export function surfaceTabPresentation(file: FilePaneTab): SurfaceTabPresentatio
     return {
       name: "Session Changes",
       get label() {
-        return t("Session Changes");
+        return translate("Session Changes");
       },
       iconName: "CHANGES",
       get tooltip() {
-        return t("Changes captured for this session only");
+        return translate("Changes captured for this session only");
       },
     };
   }
@@ -259,7 +263,7 @@ export function surfaceTabPresentation(file: FilePaneTab): SurfaceTabPresentatio
       label: name,
       iconName: "AGENT",
       get tooltip() {
-        return t("{p0} — orchestration agent", { p0: name });
+        return translate("{p0} — orchestration agent", { p0: name });
       },
     };
   }
@@ -301,6 +305,27 @@ export function appendProblems(title: string, errors: number): string {
   return `${title} — ${errors} ${errors === 1 ? "problem" : "problems"}`;
 }
 
+function fileTarget(event: PointerEvent) {
+  const element = document.elementFromPoint(event.clientX, event.clientY);
+  const strip = element?.closest<HTMLElement>("[data-surface-pane-id]");
+  const targetPaneId = strip?.dataset.surfacePaneId;
+  const target: ReturnType<typeof paneDropFromPoint> = targetPaneId
+    ? { id: targetPaneId, edge: "center" as const, invalid: Boolean(strip?.closest("[inert]")) }
+    : paneDropFromPoint(event.clientX, event.clientY);
+  if (!target) return null;
+  const targetTab = targetPaneId ? element?.closest<HTMLElement>("[data-surface-tab-id]") : null;
+  const rect = targetTab?.getBoundingClientRect();
+  return {
+    ...target,
+    targetFileId: targetTab?.dataset.surfaceTabId,
+    position: rect
+      ? event.clientX < rect.left + rect.width / 2
+        ? ("before" as const)
+        : ("after" as const)
+      : target.tabPosition,
+  };
+}
+
 export function SurfaceTabs({
   files,
   activeFileId,
@@ -318,7 +343,8 @@ export function SurfaceTabs({
   label = "Open files",
   trailing,
 }: Props) {
-  useLocale();
+  "use memo";
+  const t = useT();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const activeTabRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -353,116 +379,113 @@ export function SurfaceTabs({
     },
     [],
   );
-  const fileTarget = (event: PointerEvent) => {
-    const element = document.elementFromPoint(event.clientX, event.clientY);
-    const strip = element?.closest<HTMLElement>("[data-surface-pane-id]");
-    const targetPaneId = strip?.dataset.surfacePaneId;
-    const target: ReturnType<typeof paneDropFromPoint> = targetPaneId
-      ? { id: targetPaneId, edge: "center" as const, invalid: Boolean(strip?.closest("[inert]")) }
-      : paneDropFromPoint(event.clientX, event.clientY);
-    if (!target) return null;
-    const targetTab = targetPaneId ? element?.closest<HTMLElement>("[data-surface-tab-id]") : null;
-    const rect = targetTab?.getBoundingClientRect();
-    return {
-      ...target,
-      targetFileId: targetTab?.dataset.surfaceTabId,
-      position: rect
-        ? event.clientX < rect.left + rect.width / 2
-          ? ("before" as const)
-          : ("after" as const)
-        : target.tabPosition,
-    };
-  };
+  // The release notes title reads the product name, a value set once at startup, and the
+  // menu reads the platform; the guard cannot see that, so both go through callback hooks.
+  const menuItemsFor = useCallback(
+    (
+      ...args: Parameters<typeof surfaceTabMenuItems> extends [unknown, ...infer Rest]
+        ? Rest
+        : never
+    ) => surfaceTabMenuItems(t, ...args),
+    [t],
+  );
+  const presentationOf = useCallback((file: FilePaneTab) => surfaceTabPresentation(t, file), [t]);
+  // Callback hooks keep the window-drag and shared drop-state reads of a file drag out of render
+  // (the React Compiler guard opts out any function that reaches them during render).
+  const moveNativeFileDrag = useCallback((fileId: string, event: PointerEvent) => {
+    const drag = nativeFileDrag.current ?? beginWindowTabDrag(`file:${fileId}`, [fileId]);
+    nativeFileDrag.current = drag;
+    drag.move(event);
+  }, []);
+  const moveFile = useCallback(
+    (fileId: string, event: PointerEvent) => {
+      const file = files.find((entry) => entry.id === fileId);
+      if (
+        onOpenInNewWindow &&
+        file &&
+        isFilesystemTab(file) &&
+        !file.terminal &&
+        !dirtyFileIds.has(fileId)
+      ) {
+        moveNativeFileDrag(fileId, event);
+      }
+      const target = fileTarget(event);
+      if (target && target.id === paneId && target.edge === "center") {
+        setExternalPaneDrop(null);
+        clearDropFeedback();
+        return false;
+      }
+      const outside = isPointerOutsideWindow(
+        event.clientX,
+        event.clientY,
+        window.innerWidth,
+        window.innerHeight,
+      );
+      const invalid =
+        !file ||
+        file.terminal ||
+        target?.invalid ||
+        dirtyFileIds.has(fileId) ||
+        (!target && (!outside || !onOpenInNewWindow || !isFilesystemTab(file)));
+      setExternalPaneDrop(
+        target
+          ? {
+              fromId: `file:${fileId}`,
+              overId: target.id,
+              edge: target.edge,
+              targetFileId: target.targetFileId,
+              tabPosition: target.position,
+              invalid,
+            }
+          : null,
+      );
+      setDropFeedback(
+        invalid ? "blocked" : outside ? "window" : "move",
+        event,
+        dirtyFileIds.has(fileId)
+          ? "Save the file first"
+          : target?.edge === "center"
+            ? "Move to pane"
+            : undefined,
+      );
+      return true;
+    },
+    [files, onOpenInNewWindow, dirtyFileIds, paneId, moveNativeFileDrag],
+  );
+  const dropFile = useCallback(
+    (fileId: string, event: PointerEvent) => {
+      const target = fileTarget(event);
+      if (target && target.id === paneId && target.edge === "center") return false;
+      const file = files.find((entry) => entry.id === fileId);
+      if (!file || file.terminal || target?.invalid || dirtyFileIds.has(fileId)) return true;
+      if (target)
+        onMoveFile?.(fileId, target.id, target.edge, target.targetFileId, target.position);
+      else if (
+        onOpenInNewWindow &&
+        isFilesystemTab(file) &&
+        isPointerOutsideWindow(event.clientX, event.clientY, window.innerWidth, window.innerHeight)
+      )
+        onOpenInNewWindow(fileId, pointerWindowMovePosition(event));
+      return true;
+    },
+    [files, onOpenInNewWindow, dirtyFileIds, paneId, onMoveFile],
+  );
+  const endFileDrag = useCallback(() => {
+    nativeFileDrag.current?.finish();
+    nativeFileDrag.current = null;
+    setExternalPaneDrop(null);
+    clearDropFeedback();
+  }, []);
   const sortable = useAnimatedReorder(
     fileIds,
     onReorder,
     "x",
-    onMoveFile
-      ? {
-          onMove(fileId, event) {
-            const file = files.find((entry) => entry.id === fileId);
-            if (
-              onOpenInNewWindow &&
-              file &&
-              isFilesystemTab(file) &&
-              !file.terminal &&
-              !dirtyFileIds.has(fileId)
-            ) {
-              nativeFileDrag.current ??= beginWindowTabDrag(`file:${fileId}`, [fileId]);
-              nativeFileDrag.current.move(event);
-            }
-            const target = fileTarget(event);
-            if (target && target.id === paneId && target.edge === "center") {
-              setExternalPaneDrop(null);
-              clearDropFeedback();
-              return false;
-            }
-            const outside = isPointerOutsideWindow(
-              event.clientX,
-              event.clientY,
-              window.innerWidth,
-              window.innerHeight,
-            );
-            const invalid =
-              !file ||
-              file.terminal ||
-              target?.invalid ||
-              dirtyFileIds.has(fileId) ||
-              (!target && (!outside || !onOpenInNewWindow || !isFilesystemTab(file)));
-            setExternalPaneDrop(
-              target
-                ? {
-                    fromId: `file:${fileId}`,
-                    overId: target.id,
-                    edge: target.edge,
-                    targetFileId: target.targetFileId,
-                    tabPosition: target.position,
-                    invalid,
-                  }
-                : null,
-            );
-            setDropFeedback(
-              invalid ? "blocked" : outside ? "window" : "move",
-              event,
-              dirtyFileIds.has(fileId)
-                ? "Save the file first"
-                : target?.edge === "center"
-                  ? "Move to pane"
-                  : undefined,
-            );
-            return true;
-          },
-          onDrop(fileId, event) {
-            const target = fileTarget(event);
-            if (target && target.id === paneId && target.edge === "center") return false;
-            const file = files.find((entry) => entry.id === fileId);
-            if (!file || file.terminal || target?.invalid || dirtyFileIds.has(fileId)) return true;
-            if (target)
-              onMoveFile(fileId, target.id, target.edge, target.targetFileId, target.position);
-            else if (
-              onOpenInNewWindow &&
-              isFilesystemTab(file) &&
-              isPointerOutsideWindow(
-                event.clientX,
-                event.clientY,
-                window.innerWidth,
-                window.innerHeight,
-              )
-            )
-              onOpenInNewWindow(fileId, pointerWindowMovePosition(event));
-            return true;
-          },
-          onEnd() {
-            nativeFileDrag.current?.finish();
-            nativeFileDrag.current = null;
-            setExternalPaneDrop(null);
-            clearDropFeedback();
-          },
-        }
-      : undefined,
+    onMoveFile ? { onMove: moveFile, onDrop: dropFile, onEnd: endFileDrag } : undefined,
   );
   const activeFileIdRef = useRef(activeFileId);
-  activeFileIdRef.current = activeFileId;
+  useLayoutEffect(() => {
+    activeFileIdRef.current = activeFileId;
+  });
   const setSortableItemRef = sortable.setItemRef;
   const setFileTabNode = useCallback(
     (id: string, node: HTMLElement | null) => {
@@ -584,7 +607,7 @@ export function SurfaceTabs({
             const review = isReviewTab(file) && !changes;
             const terminal = isTerminalTab(file);
             const agent = isAgentTab(file) ? file.agent : null;
-            const { label, iconName, tooltip } = surfaceTabPresentation(file);
+            const { label, iconName, tooltip } = presentationOf(file);
             const tab = (
               <ActionHost
                 selected={active}
@@ -787,7 +810,7 @@ export function SurfaceTabs({
         <ExplorerMenu
           x={menu.x}
           y={menu.y}
-          items={surfaceTabMenuItems(
+          items={menuItemsFor(
             menuFile,
             files.length > 1,
             onOpenInNewWindow ? { dirty: dirtyFileIds.has(menuFile.id) } : undefined,

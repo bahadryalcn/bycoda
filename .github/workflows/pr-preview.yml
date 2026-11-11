@@ -28,7 +28,7 @@ jobs:
           persist-credentials: false
       - uses: ./temp/release-tools/.github/actions/setup-deps
         with:
-          node-version: "22"
+          node-version: "24"
           cache-prefix: unsigned-pr-preview-v1
       - name: Build unsigned web output without signing or production credentials
         run: pnpm run build

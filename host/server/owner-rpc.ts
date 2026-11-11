@@ -32,10 +32,79 @@ import { handleVoiceRpc } from "./rpc-voice";
 import { handlePushRpc } from "./rpc-push";
 import { handleWorkspacesRpc } from "./rpc-workspaces";
 import { handleDiagnosticsLogsRpc } from "./rpc-diagnostics";
+import { createHash } from "node:crypto";
+import type { DiagnosticLogFields } from "@bycoda/account-contracts";
 import { createLogger } from "../diagnostics/logger";
+import {
+  HostDomainAuthorizationError,
+  HostDomainOutcomeError,
+  HostDomainRefusalError,
+} from "../domains/context";
+import { SessionReadError } from "../domains/sessions/read-errors";
 
 const rpcLog = createLogger("host.rpc");
 const SLOW_RPC_MS = 2_000;
+/** `RemoteChanges.read` and `RevisionWaits.wait` end a poll after this long, whatever wait was asked. */
+const HELD_POLL_CAP_MS = 10_000;
+const heldPollMs = (params: Record<string, unknown>): number => {
+  const wait = Number(params.waitMs);
+  return wait > 0 ? Math.min(HELD_POLL_CAP_MS, wait) : 0;
+};
+/**
+ * Time a method may take on top of SLOW_RPC_MS before it counts as slow. A held poll is
+ * entitled to the wait its caller asked for. A method that runs an owner command or an
+ * assistant turn lasts as long as that work, which has its own deadline, so it is never
+ * reported. Every other method, including the `sessions.desktopLive` heartbeat, gets none.
+ */
+const RPC_HOLD_MS: Record<string, (params: Record<string, unknown>) => number> = {
+  "machine.changes": heldPollMs,
+  "sessions.sync": heldPollMs,
+  "workspace.run": () => Infinity,
+  "assistant.request": () => Infinity,
+};
+export function slowRpcThresholdMs(method: string, params: Record<string, unknown>): number {
+  return SLOW_RPC_MS + (Object.hasOwn(RPC_HOLD_MS, method) ? RPC_HOLD_MS[method]!(params) : 0);
+}
+
+/** Client-supplied identifiers reach the log only when they look like identifiers. */
+const correlationId = (value: unknown): string | number | undefined =>
+  (typeof value === "string" && /^[\w.:-]{1,128}$/.test(value)) || Number.isSafeInteger(value)
+    ? (value as string | number)
+    : undefined;
+/** Classes whose message is fixed program text or a domain outcome already safe for clients. */
+const SAFE_MESSAGE_ERRORS = [
+  HostDomainAuthorizationError,
+  HostDomainOutcomeError,
+  SessionReadError,
+];
+/**
+ * What a failed call may log. Params, results and arbitrary error messages can hold prompts,
+ * paths or credentials, so an unlisted error contributes only a fingerprint of its message:
+ * identical failures share it and can be correlated without the text.
+ */
+export function rpcFailureFields(
+  error: unknown,
+  request: Pick<OwnerRpcRequest, "input" | "params">,
+): DiagnosticLogFields {
+  const detail = (error ?? {}) as { code?: unknown; category?: unknown; kind?: unknown };
+  const text = error instanceof Error ? error.message : undefined;
+  const safe = SAFE_MESSAGE_ERRORS.some((type) => error instanceof type);
+  return {
+    method: String(request.input.method),
+    id: correlationId(request.input.id),
+    commandId: correlationId(request.params.commandId),
+    error: error instanceof Error ? error.name : "UnknownError",
+    code:
+      typeof detail.code === "string" || typeof detail.code === "number" ? detail.code : undefined,
+    category: typeof detail.category === "string" ? detail.category : undefined,
+    kind: error instanceof SessionReadError ? error.kind : undefined,
+    message: safe ? text : undefined,
+    fingerprint:
+      safe || text === undefined
+        ? undefined
+        : createHash("sha256").update(text).digest("hex").slice(0, 12),
+  };
+}
 import { handleWorktreesRpc } from "./rpc-worktrees";
 type Dependencies = Pick<
   ServerBindings,
@@ -623,16 +692,16 @@ export async function dispatchOwnerRpc(
   try {
     await handler(dependencies, request);
   } catch (error) {
-    // Method and error identity only; params and results can hold prompts or credentials.
-    const code = (error as { code?: unknown } | null)?.code;
-    rpcLog.warn("handler failed", {
-      method: String(method),
-      error: error instanceof Error ? error.name : "UnknownError",
-      code: typeof code === "string" || typeof code === "number" ? code : undefined,
+    const fields = {
+      ...rpcFailureFields(error, request),
       ms: Math.round(performance.now() - startedAt),
-    });
+    };
+    // A refusal made before execution is a normal answer to the caller, not a Host failure.
+    if (error instanceof HostDomainRefusalError) rpcLog.debug("refused", fields);
+    else rpcLog.warn("handler failed", fields);
     throw error;
   }
   const ms = Math.round(performance.now() - startedAt);
-  if (ms >= SLOW_RPC_MS) rpcLog.warn("slow call", { method: String(method), ms });
+  if (ms >= slowRpcThresholdMs(String(method), request.params))
+    rpcLog.warn("slow call", { method: String(method), ms });
 }

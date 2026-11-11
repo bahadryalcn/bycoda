@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { acquireHostOwner } from "./owner";
 
 const exec = promisify(execFile);
 
@@ -83,7 +84,14 @@ it(
       writeFileSync(join(directory, "owner.lock"), String(departedPid));
       expect((await run("start")).stdout).toContain("Host started");
       expect((await run("status")).stdout).toContain("Host is running");
-      await expect(run("serve")).rejects.toThrow("A host already owns");
+      const refused = await run("serve").then(
+        () => undefined,
+        (error: { message: string; code?: number; killed?: boolean }) => error,
+      );
+      expect(refused?.message).toContain("A host already owns");
+      // The fixture leaks a handle. A refused starter must still exit by itself, or its
+      // service supervisor would never restart it.
+      expect(refused).toMatchObject({ code: 1, killed: false });
       const before = JSON.parse((await run("connection-info")).stdout);
       const runningPath = join(directory, "running.json");
       // Check the modes the Host wrote before the fixture below replaces running.json.
@@ -173,7 +181,51 @@ it(
       rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   },
-  // A refused `serve` keeps the fixture's leaked handle until exec's 10s deadline, and
-  // the unreachable-owner probe waits 5s, so POSIX runs take about 20s before CI load.
+  // Each unreachable-owner probe waits 5s, so POSIX runs take over 10s before CI load.
   process.platform === "win32" ? 60_000 : 45_000,
+);
+
+it(
+  "refuses a second starter before it opens the database",
+  async () => {
+    const directory = mkdtempSync(join(tmpdir(), "bycoda-cli-owner-"));
+    const sourceBundle = resolve(process.env.BYCODA_HOST_TEST_CLI ?? "build/host/bycoda-host.mjs");
+    const cli = join(directory, "host.mjs");
+    copyFileSync(sourceBundle, cli);
+    for (const sidecar of ["store-worker.mjs", "host-notes-worker.mjs"])
+      copyFileSync(join(dirname(sourceBundle), sidecar), join(directory, sidecar));
+    for (const folder of ["Roaming", "Local"])
+      mkdirSync(join(directory, "home", "AppData", folder), { recursive: true });
+    // This process stands in for a Host that is still starting: it holds the lease and
+    // has written no lifecycle state yet.
+    const release = await acquireHostOwner(directory);
+    try {
+      const refused = await exec(
+        process.execPath,
+        [cli, "serve", "--data-dir", directory, "--port", "1"],
+        {
+          timeout: process.platform === "win32" ? 25_000 : 10_000,
+          windowsHide: true,
+          env: {
+            ...process.env,
+            HOME: join(directory, "home"),
+            USERPROFILE: join(directory, "home"),
+            APPDATA: join(directory, "home", "AppData", "Roaming"),
+            LOCALAPPDATA: join(directory, "home", "AppData", "Local"),
+          },
+        },
+      ).then(
+        () => undefined,
+        (error: { message: string; code?: number; killed?: boolean }) => error,
+      );
+      expect(refused?.message).toContain("A host already owns");
+      expect(refused).toMatchObject({ code: 1, killed: false });
+      expect(existsSync(join(directory, "host.db"))).toBe(false);
+      expect(existsSync(join(directory, "running.json"))).toBe(false);
+    } finally {
+      release();
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  },
+  process.platform === "win32" ? 40_000 : 20_000,
 );

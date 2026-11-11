@@ -1,4 +1,6 @@
 import { useId, useRef, useState } from "react";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -31,11 +33,9 @@ export function ServerOrganization({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
-  const Container = expanded ? "section" : "details";
-  const Heading = expanded ? "h3" : "summary";
-  return (
-    <Container className="mbs-4 border-t border-stroke pbs-4 text-ui-caption">
-      <Heading className="font-medium">{t("Organization")}</Heading>
+  const title = <>{t("Organization")}</>;
+  const content = (
+    <>
       <form
         className="mbs-3 flex flex-col gap-3"
         onSubmit={async (event) => {
@@ -117,6 +117,20 @@ export function ServerOrganization({
           </Button>
         </div>
       </form>
-    </Container>
+    </>
+  );
+  return expanded ? (
+    <section className="mbs-4 border-t border-stroke pbs-4 text-ui-caption">
+      <SectionLabel as="h3">{title}</SectionLabel>
+      {content}
+    </section>
+  ) : (
+    <Disclosure
+      size="sm"
+      className="mbs-4 border-t border-stroke pbs-4 text-ui-caption"
+      summary={title}
+    >
+      {content}
+    </Disclosure>
   );
 }

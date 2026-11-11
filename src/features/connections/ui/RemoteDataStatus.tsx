@@ -1,5 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { useDelayedVisible } from "../../../shared/hooks/useDelayedVisible";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -130,7 +131,13 @@ export function RemoteDataStatus({
             </Tooltip>
           ) : null}
           {state.error ? (
-            <p className="mt-1 break-words text-(--ui-text-muted)">{state.error}</p>
+            fitsOneLine(state.error) ? (
+              <p className="mt-1 break-words text-(--ui-text-muted)">{state.error}</p>
+            ) : (
+              <p className="mt-1">
+                <ErrorDetails title={message} detail={state.error} />
+              </p>
+            )
           ) : null}
         </div>
         {onRefresh ? (

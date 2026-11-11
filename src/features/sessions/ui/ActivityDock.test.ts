@@ -198,6 +198,10 @@ describe("ActivityDock", () => {
         ?.querySelector('[data-pacing-track="reserved"]')
         ?.closest("[data-activity-status-row]"),
     ).toBe(dock()?.querySelector("[data-activity-status-row]"));
+    // A narrow dock gives the summary its own row; the walker stays on it, not below.
+    expect(
+      dock()?.querySelector('[data-pacing-track="reserved"]')?.closest(".activity-dock-summary"),
+    ).not.toBeNull();
     expect(
       dock()?.querySelector('[data-pacing-track="reserved"]')?.classList.contains("absolute"),
     ).toBe(false);

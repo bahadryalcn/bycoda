@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -110,7 +111,9 @@ export function CrewMemberForm({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <section aria-label={t("Identity")} className="flex min-w-0 flex-col gap-2">
-        <h3 className="text-ui-title font-medium">{t("Identity")}</h3>
+        <Heading size="section" level={3}>
+          {t("Identity")}
+        </Heading>
         <div className="flex min-w-0 flex-wrap items-start gap-3">
           {identity ? (
             <div className="flex shrink-0 flex-col items-center gap-1">
@@ -170,7 +173,9 @@ export function CrewMemberForm({
         ) : null}
       </section>
       <section aria-label={t("Work")} className="flex min-w-0 flex-col gap-3">
-        <h3 className="text-ui-title font-medium">{t("Work")}</h3>
+        <Heading size="section" level={3}>
+          {t("Work")}
+        </Heading>
         {compact ? null : (
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <span className="text-ui-body font-medium">{t("Responsibility in the crew")}</span>

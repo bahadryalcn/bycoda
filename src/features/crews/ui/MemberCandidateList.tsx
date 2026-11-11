@@ -1,4 +1,5 @@
 import { t, useLocale } from "../../../shared/i18n";
+import { Surface } from "../../../shared/ui/Surface";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
 import { Toggle } from "../../settings/public/settingsControls";
@@ -65,9 +66,12 @@ export function MemberCandidateList({
         }
       />
       {candidates.length ? (
-        <ul
+        <Surface
+          as="ul"
+          variant="outline"
+          padding="sm"
           aria-label={t("Model ratings")}
-          className="flex flex-col gap-1 rounded-(--ui-radius-card) border border-(--ui-pane-border) p-1"
+          className="flex flex-col gap-1"
         >
           {candidates.map((c) => {
             const model = catalogModels(catalog).find(
@@ -145,7 +149,7 @@ export function MemberCandidateList({
               </li>
             );
           })}
-        </ul>
+        </Surface>
       ) : null}
     </>
   );

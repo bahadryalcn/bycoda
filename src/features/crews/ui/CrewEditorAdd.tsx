@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n";
+import { Heading } from "../../../shared/ui/Heading";
 import { Button } from "../../../shared/ui/Button";
 import { ChevronLeft } from "../../../shared/ui/icons";
 import type { CrewRole } from "../model/crew";
@@ -37,9 +38,9 @@ export function CrewEditorAddPage({
         <Button variant="ghost" startIcon={<ChevronLeft />} onClick={onBack}>
           {t("Back to team")}
         </Button>
-        <h3 tabIndex={-1} data-page-heading className="text-ui-title font-medium">
+        <Heading size="section" level={3} tabIndex={-1} data-page-heading>
           {t("Add members")}
-        </h3>
+        </Heading>
       </div>
       <CrewMemberPicker
         cwd={cwd}

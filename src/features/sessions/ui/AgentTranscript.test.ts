@@ -250,7 +250,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(compound).toContain("Allow");
   });
 
-  it("keeps a failed Bycoda call compact until its error is opened", () => {
+  it("shows a failed Bycoda call's error line while its output stays closed", () => {
     const markup = render([
       { id: "user", role: "user", text: "/bycoda list notes" },
       {
@@ -264,7 +264,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain("Ran");
     expect(markup).toContain("bycoda app notes.list");
     expect(markup).toContain("Show error details for bycoda: List notes");
-    expect(markup).not.toContain("Connection refused");
+    expect(markup).toContain("Connection refused");
   });
 
   it("offers the saved CI context in a collapsed disclosure beside the short request", () => {

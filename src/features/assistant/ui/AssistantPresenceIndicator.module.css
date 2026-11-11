@@ -31,7 +31,7 @@
   background: var(--presence-fill);
 }
 
-.indicator[data-presence-state="unknown"] .mark {
+.indicator[data-presence-state="offline"] .mark {
   background: none;
   border: 1.5px solid currentColor;
 }

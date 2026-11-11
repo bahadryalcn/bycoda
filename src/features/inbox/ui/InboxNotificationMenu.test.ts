@@ -130,7 +130,7 @@ it("uses already loaded Inbox activity immediately even when the provider stops 
   vi.mocked(listInboxItems)
     .mockClear()
     .mockImplementation(() => new Promise(() => {}));
-  const inbox = container.querySelector<HTMLElement>('button[aria-label="Inbox, new items"]')!;
+  const inbox = container.querySelector<HTMLElement>('button[aria-label="Inbox, New items"]')!;
   await act(async () =>
     inbox.dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true })),
   );

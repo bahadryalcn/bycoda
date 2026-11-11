@@ -36,6 +36,10 @@ spacing, focus, states and accessibility.
 - Tooltips never repeat a visible label; omit redundant content at its source. They add a
   shortcut, detail or reason. Shared Tooltip renders explicit content unchanged; use
   OverflowTooltip only to recover clipped or responsively hidden text.
+- Feature code places things and never chooses how they look: no type, surface, state, control
+  size, truncation, motion or scrollbar styling in `src/features` or `src/app`, and an inline
+  style carries custom properties only. Layout stays free. Read
+  [appearance ownership](references/appearance-ownership.md) before writing feature CSS or classes.
 - Bespoke product surfaces (chat composer editor, transcript, terminal, code editor, appearance
   scene previews) may keep a custom element when no shared component can carry the behavior.
   Mark that one line with `// ui-drift-ignore: <rule> -- <why>` on the line above (in JSX
@@ -44,12 +48,14 @@ spacing, focus, states and accessibility.
 ## Checks
 
 - `pnpm check:ui-catalog`: every shared component has metadata and the generated catalog is current.
-- `pnpm check:ui-drift`: raw tags, deprecated imports, double Modal padding and token drift (ratchet).
+- `pnpm check:ui-drift`: raw tags, deprecated imports, double Modal padding, token drift and
+  appearance ownership (ratchet).
 - Focused tests for the changed component plus representative consumers; light and dark
   screenshots of affected surfaces when the UI visibly changes.
 
 ## Read when needed
 
+- [Appearance ownership](references/appearance-ownership.md): what feature code may not style, the rule for each, and the review item for empty, loading and failure states.
 - [Decision provenance](references/decisions.md): owner decisions behind the shared UI rules.
 - [Product design language](../../../docs/reference/DESIGN.md) for new patterns and T2 work.
 - [UI contracts](../../../docs/reference/ui-design-system.md) for tokens, feedback and field contracts.

@@ -98,3 +98,48 @@ it("takes one fresh repository snapshot for an eligible FAIL and reuses it for c
   expect(a.workspace).toHaveBeenCalledTimes(1);
   expect(a.acceptance).toHaveBeenCalledWith(crew, "fresh-workspace");
 });
+
+it("reviews again, at most twice, when the working copy changes during an acceptance review", async () => {
+  const a = fixture();
+  f.acceptance = true;
+  const write = vi.fn(async (task: HostTask) => task);
+  const block = vi.fn(async (task: HostTask, _reason: string) => task);
+  const task = {
+    ...a.task,
+    updatedAt: 1,
+    reviewer: { ...a.task.reviewer!, workspaceFingerprint: "reviewed-contents" },
+  } as HostTask;
+  const context = { ...a.context, find: async () => task, write, block } as unknown as TaskContext;
+  await settleVerification(context, task, 2);
+  expect(block).not.toHaveBeenCalled();
+  const again = write.mock.calls[0][0];
+  expect(again.status).toBe("verifying");
+  expect(again.reviewer).toBeUndefined();
+  expect(again.ownerNotices).toHaveLength(1);
+
+  const spent = { ...task, ownerNotices: [again.ownerNotices![0], again.ownerNotices![0]] };
+  const exhausted = { ...context, find: async () => spent } as unknown as TaskContext;
+  await settleVerification(exhausted, spent, 3);
+  expect(write).toHaveBeenCalledTimes(1);
+  expect(block.mock.calls[0][1]).toContain("working copy changed during acceptance review");
+});
+
+it("holds an acceptance review while another worker writes in the same shared checkout", async () => {
+  const { sharedCheckoutWriterActive } = await import("./verification");
+  const reviewed = { id: "task", projectId: "project", status: "verifying" } as HostTask;
+  const sibling = { id: "sibling", projectId: "project", status: "running" } as HostTask;
+  const busy = (task: HostTask, others: HostTask[]) =>
+    sharedCheckoutWriterActive(
+      { list: async () => [task, ...others] } as unknown as TaskContext,
+      task,
+    );
+  f.acceptance = true;
+  expect(await busy(reviewed, [sibling])).toBe(true);
+  // Finished siblings, separate checkouts and the task itself never hold a review.
+  expect(await busy(reviewed, [{ ...sibling, status: "verifying" }])).toBe(false);
+  expect(await busy(reviewed, [{ ...sibling, worktreeCwd: "/elsewhere" }])).toBe(false);
+  expect(await busy({ ...reviewed, worktreeCwd: "/own" } as HostTask, [sibling])).toBe(false);
+  // Without acceptance criteria no snapshot is bound, so nothing needs to wait.
+  f.acceptance = false;
+  expect(await busy(reviewed, [sibling])).toBe(false);
+});

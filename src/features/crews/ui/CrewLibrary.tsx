@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -406,52 +407,54 @@ function LibraryMemberDialog({
         </>
       }
     >
-      <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3 border-0">
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        <CrewMemberForm
-          cwd={cwd}
-          catalog={data.catalog}
-          agent={agent}
-          identity={data.identitySupported}
-          tools={data.toolsSupported}
-          machineId={data.machine.id}
-          projectId={data.project.id}
-          modelPoolsSupported={data.modelPoolsSupported}
-          handleError={/handle/i.test(error) ? error : undefined}
-          onChange={(patch) => setAgent((current) => ({ ...current, ...patch }))}
-          groups={data.groupsSupported}
-          groupSuggestions={groupNames}
-          nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
-          modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}
-          autoFocus={!saved}
-        />
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <span className="flex items-center gap-1 text-ui-body font-medium">
-            {t("Available in")}
-            <InfoPopover>
-              {t(
-                "Crews that use this profile unchanged follow it; customized members keep their own edits.",
-              )}
-            </InfoPopover>
-          </span>
-          {saved ? (
-            <Badge size="md">
-              {saved.projectId ? t("This project") : t("All projects on this host")}
-            </Badge>
-          ) : (
-            <SegmentedControl
-              label={t("Available in")}
-              value={scope}
-              options={[
-                { value: "project", label: t("This project") },
-                { value: "global", label: t("All projects") },
-              ]}
-              onValueChange={(value) => setScope(value === "global" ? "global" : "project")}
-            />
-          )}
+      <FieldGroup variant="bare" disabled={pending}>
+        <div className="flex min-w-0 flex-col gap-3">
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+          <CrewMemberForm
+            cwd={cwd}
+            catalog={data.catalog}
+            agent={agent}
+            identity={data.identitySupported}
+            tools={data.toolsSupported}
+            machineId={data.machine.id}
+            projectId={data.project.id}
+            modelPoolsSupported={data.modelPoolsSupported}
+            handleError={/handle/i.test(error) ? error : undefined}
+            onChange={(patch) => setAgent((current) => ({ ...current, ...patch }))}
+            groups={data.groupsSupported}
+            groupSuggestions={groupNames}
+            nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
+            modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}
+            autoFocus={!saved}
+          />
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-1 text-ui-body font-medium">
+              {t("Available in")}
+              <InfoPopover>
+                {t(
+                  "Crews that use this profile unchanged follow it; customized members keep their own edits.",
+                )}
+              </InfoPopover>
+            </span>
+            {saved ? (
+              <Badge size="md">
+                {saved.projectId ? t("This project") : t("All projects on this host")}
+              </Badge>
+            ) : (
+              <SegmentedControl
+                label={t("Available in")}
+                value={scope}
+                options={[
+                  { value: "project", label: t("This project") },
+                  { value: "global", label: t("All projects") },
+                ]}
+                onValueChange={(value) => setScope(value === "global" ? "global" : "project")}
+              />
+            )}
+          </div>
+          {confirmDialog}
         </div>
-        {confirmDialog}
-      </fieldset>
+      </FieldGroup>
     </Modal>
   );
 }

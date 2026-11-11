@@ -10,6 +10,10 @@ vi.mock("../../../features/settings/model/settings", () => ({
   loadNotesEnabled: () => notesEnabled,
 }));
 let notesEnabled = true;
+vi.mock("../../../shared/ui/overlay", () => ({
+  hasActiveModalOverlay: () => modalOpen,
+}));
+let modalOpen = false;
 const initial = {
   activeTabId: "a",
   projectCwd: "/a",
@@ -29,6 +33,7 @@ const disposals: (() => void)[] = [];
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   notesEnabled = true;
+  modalOpen = false;
 });
 afterEach(() => {
   disposals.splice(0).forEach((dispose) => dispose());
@@ -277,4 +282,43 @@ it("leaves a tools window on its tool when asked for the workspace", () => {
   const w = mount(true);
   w.showWorkspace();
   expect(w.state.notesViewOpen).toBe(true);
+});
+
+it("treats closing a tool page as a Back step, so Back does not reopen it", () => {
+  const view = mount();
+  view.go({ activeTabId: "b", projectCwd: "/b" });
+  view.go({ settingsOpen: true });
+  // Closed with its button, Escape or a click outside: no navigation call.
+  view.go({ settingsOpen: false });
+  expect(view.nav).toEqual({ canBack: true, canForward: true });
+  view.back();
+  expect(view.state).toMatchObject({ activeTabId: "a", projectCwd: "/a", settingsOpen: false });
+  view.forward();
+  view.forward();
+  expect(view.state).toMatchObject({ activeTabId: "b", settingsOpen: true });
+});
+
+it("keeps a tool page opened from another tool page as its own visit", () => {
+  const view = mount();
+  view.go({ searchViewOpen: true });
+  view.go({ searchViewOpen: false, inboxViewOpen: true });
+  view.back();
+  expect(view.state).toMatchObject({ searchViewOpen: true, inboxViewOpen: false });
+});
+
+it("dismisses an open modal on mouse Back instead of navigating underneath it", () => {
+  const view = mount(false, true);
+  view.go({ activeTabId: "b", projectCwd: "/b" });
+  modalOpen = true;
+  const escapes: string[] = [];
+  const onKey = (event: KeyboardEvent) => escapes.push(event.key);
+  window.addEventListener("keydown", onKey, true);
+  view.mouse(3);
+  view.mouse(4);
+  window.removeEventListener("keydown", onKey, true);
+  expect(escapes).toEqual(["Escape"]);
+  expect(view.state.activeTabId).toBe("b");
+  modalOpen = false;
+  view.mouse(3);
+  expect(view.state.activeTabId).toBe("a");
 });

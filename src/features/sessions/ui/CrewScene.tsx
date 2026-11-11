@@ -178,7 +178,8 @@ function CrewStage({
   const standing = useRef<number[]>(Array(6).fill(0));
   const arrivals = useRef<number[]>(Array(6).fill(1));
   const displayedCount = useRef(6);
-  const [viewportWidth, setViewportWidth] = useState(1280);
+  // Read by the painter loop only; the layouts ignore it today, so a resize must not rebuild the painter.
+  const viewportWidth = useRef(1280);
   const [labels, setLabels] = useState<SeatLabel[]>([]);
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -205,7 +206,7 @@ function CrewStage({
         bounds.bottom > 0 &&
         bounds.top < window.innerHeight);
     const update = () => {
-      setViewportWidth(element.clientWidth || 1280);
+      viewportWidth.current = element.clientWidth || 1280;
       setRunning(
         shouldRunLoop({
           enabled,
@@ -313,7 +314,10 @@ function CrewStage({
       )
         displayedCount.current--;
       activity.length = displayedCount.current;
-      const layout = (rigged ? starWarsLayout : crewLayout)(displayedCount.current, viewportWidth);
+      const layout = (rigged ? starWarsLayout : crewLayout)(
+        displayedCount.current,
+        viewportWidth.current,
+      );
       if (live)
         converseWithNeighbours(
           activity,
@@ -364,7 +368,7 @@ function CrewStage({
       const signature = valueHash([actions, activity, steamTime]);
       if (signature === previous) return settled;
       previous = signature;
-      draw(actions, activity, viewportWidth, steamTime);
+      draw(actions, activity, viewportWidth.current, steamTime);
       return settled;
     };
     if (!running) {
@@ -392,7 +396,7 @@ function CrewStage({
       if (timer !== undefined) clearTimeout(timer);
       draw.dispose?.();
     };
-  }, [running, crewKey, viewportWidth, frame, artStatus, rigged, growthEnabled, variant, paused]);
+  }, [running, crewKey, frame, artStatus, rigged, growthEnabled, variant, paused]);
   return (
     <div
       ref={container}

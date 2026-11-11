@@ -3,6 +3,7 @@ import { memo, useRef, useState } from "react";
 import { t, getLocale } from "../../../shared/i18n/technical";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -122,13 +123,13 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
             ) : null}
             {entry.details !== undefined ? (
               <div className="runtime-log-object">
-                <h4>{t("Objects")}</h4>
+                <SectionLabel as="h4">{t("Objects")}</SectionLabel>
                 <ObjectInspector value={entry.details} />
               </div>
             ) : null}
             {entry.stack ? (
               <div>
-                <h4>{t("Stack trace")}</h4>
+                <SectionLabel as="h4">{t("Stack trace")}</SectionLabel>
                 <pre>{entry.stack}</pre>
               </div>
             ) : null}

@@ -211,3 +211,46 @@ describe("disabled updater", () => {
     expect(mocks.relaunch).not.toHaveBeenCalled();
   });
 });
+
+describe("background probe back-off", () => {
+  const MINUTE = 60 * 1000;
+
+  async function failingFeed() {
+    mocks.updaterEnabled = true;
+    mocks.check.mockRejectedValue(
+      new Error("update endpoint did not respond with a successful status code"),
+    );
+    const updater = await import("./updater");
+    const backoff = await import("./updateProbeBackoff");
+    return { updater, backoff };
+  }
+
+  it("lengthens the background wait while the feed fails and restores it on success", async () => {
+    const { updater, backoff } = await failingFeed();
+    await expect(updater.probeForUpdate()).rejects.toThrow();
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(60 * MINUTE);
+    await expect(updater.probeForUpdate()).rejects.toThrow();
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(120 * MINUTE);
+
+    mocks.check.mockResolvedValue(null);
+    await expect(updater.probeForUpdate()).resolves.toBeNull();
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(30 * MINUTE);
+  });
+
+  it("always reaches the feed for an explicit check, which starts the wait again", async () => {
+    const { updater, backoff } = await failingFeed();
+    for (let streak = 0; streak < 5; streak++)
+      await expect(updater.probeForUpdate()).rejects.toThrow();
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(480 * MINUTE);
+
+    mocks.check.mockClear();
+    expect((await updater.runUpdateFlow(true)).phase).toBe("error");
+    expect(mocks.check).toHaveBeenCalledOnce();
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(30 * MINUTE);
+
+    await expect(updater.probeForUpdate()).rejects.toThrow();
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(60 * MINUTE);
+    await expect(updater.probeForUpdate(true)).rejects.toThrow();
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(30 * MINUTE);
+  });
+});

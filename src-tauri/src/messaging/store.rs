@@ -79,7 +79,7 @@ pub(crate) fn valid_id(id: &str) -> Result<(), String> {
     }
 }
 
-/// Temp file, fsync, then rename (K-ATOMIC). Secret files are owner-only on Unix.
+/// Temp file, fsync, then rename (rule rust-rename-without-fsync). Secret files are owner-only on Unix.
 fn write_atomic(path: &Path, bytes: &[u8], secret: bool) -> Result<(), String> {
     let parent = path.parent().ok_or("Invalid storage path.")?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;

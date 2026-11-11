@@ -19,6 +19,12 @@ const RELEASE_IDENTIFIER: &str = "com.bycoda.desktop";
 /// A deferred upgrade is retried while the app stays open.
 const RETRY_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const MAX_RETRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
+/// How long a Host may hold the owner lease without answering its lifecycle
+/// endpoint and still count as starting. The Host takes the lease before it
+/// opens and migrates its database, which dominates start-up, so this stays
+/// well above a slow database open.
+pub(crate) const HOST_BOOT_GRACE: Duration = Duration::from_secs(120);
+const HOST_STARTING: &str = "The host is starting.";
 
 #[derive(Default, Deserialize, Serialize)]
 struct RetryState {
@@ -45,6 +51,13 @@ fn unix_now() -> u64 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn unix_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or_default()
 }
 
 impl RetryState {
@@ -102,15 +115,21 @@ enum Plan {
 
 /// What to do with this computer's host. Never downgrades, and never
 /// interrupts running work: a failed activity read means wait, not idle.
+/// `starting` is a live owner inside its boot grace that does not answer yet:
+/// it is neither unhealthy nor replaceable, whoever asks.
 fn plan(
     installed: Option<&str>,
     bundled: &str,
     busy: Result<bool, ()>,
     job_pending: bool,
     healthy: bool,
+    starting: bool,
 ) -> Plan {
     if job_pending {
         return Plan::Deferred("Another host update is being installed.");
+    }
+    if starting {
+        return Plan::Deferred(HOST_STARTING);
     }
     let Some(installed) = installed else {
         // Missing or damaged version metadata does not prove that no host is
@@ -170,33 +189,87 @@ fn read_lifecycle_response(
     serde_json::from_slice(&bytes).map_err(|_| LifecycleProbeError::Unconfirmed)
 }
 
-/// The Node owner keeps this SQLite transaction open for its entire lifetime.
-/// A legacy PID, corrupt record, or unavailable witness cannot prove a stop.
-fn owner_verified_stopped(base: &Path) -> bool {
+/// What the kernel owner lease proves about the Host of a data directory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OwnerState {
+    /// The lease was free and the sentinel cannot name a live legacy owner.
+    Stopped,
+    /// Another process holds the lease. `started_at` is the boot time in Unix
+    /// milliseconds that its sentinel records, when it records one.
+    Live { started_at: Option<u64> },
+    /// Neither a stop nor a live owner could be proven.
+    Unknown,
+}
+
+impl OwnerState {
+    /// Whether a live owner is still inside its boot grace at `now_ms`. A boot
+    /// time ahead of the clock is a clock change, never a fresh start.
+    fn starting_at(self, now_ms: u64) -> bool {
+        let grace = u64::try_from(HOST_BOOT_GRACE.as_millis()).unwrap_or(u64::MAX);
+        matches!(
+            self,
+            OwnerState::Live { started_at: Some(started) }
+                if started <= now_ms && now_ms - started < grace
+        )
+    }
+
+    /// Callers ask only after the lifecycle endpoint failed to answer.
+    pub(crate) fn starting(self) -> bool {
+        self.starting_at(unix_now_ms())
+    }
+}
+
+/// The boot time recorded by the lease holder that wrote the sentinel.
+fn sentinel_started_at(base: &Path) -> Option<u64> {
+    let text = std::fs::read_to_string(base.join("owner.lock")).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    if value.get("version")?.as_u64()? != 2 {
+        return None;
+    }
+    value.get("startedAt")?.as_u64()
+}
+
+/// The Node owner keeps this SQLite transaction open for its entire lifetime,
+/// from before its database open. A legacy PID, corrupt record, or unavailable
+/// witness cannot prove a stop.
+pub(crate) fn owner_state(base: &Path) -> OwnerState {
     let database = base.join("owner.db");
     let has_database = match std::fs::metadata(&database) {
         Ok(info) if info.is_file() => true,
-        Ok(_) => return false,
+        Ok(_) => return OwnerState::Unknown,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-        Err(_) => return false,
+        Err(_) => return OwnerState::Unknown,
     };
     let connection = if has_database {
         let Ok(connection) = rusqlite::Connection::open_with_flags(
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         ) else {
-            return false;
+            return OwnerState::Unknown;
         };
-        if connection.busy_timeout(Duration::ZERO).is_err()
-            || connection.execute_batch("BEGIN EXCLUSIVE").is_err()
-        {
-            return false;
+        if connection.busy_timeout(Duration::ZERO).is_err() {
+            return OwnerState::Unknown;
+        }
+        match connection.execute_batch("BEGIN EXCLUSIVE") {
+            Ok(()) => {}
+            // Only lock contention proves a holder; any other failure proves nothing.
+            Err(rusqlite::Error::SqliteFailure(error, _))
+                if matches!(
+                    error.code,
+                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                ) =>
+            {
+                return OwnerState::Live {
+                    started_at: sentinel_started_at(base),
+                };
+            }
+            Err(_) => return OwnerState::Unknown,
         }
         Some(connection)
     } else {
         None
     };
-    let result = match std::fs::read_to_string(base.join("owner.lock")) {
+    let stopped = match std::fs::read_to_string(base.join("owner.lock")) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
         Err(_) => false,
         Ok(text) => serde_json::from_str::<serde_json::Value>(&text)
@@ -211,7 +284,15 @@ fn owner_verified_stopped(base: &Path) -> bool {
             }),
     };
     drop(connection);
-    result
+    if stopped {
+        OwnerState::Stopped
+    } else {
+        OwnerState::Unknown
+    }
+}
+
+fn owner_verified_stopped(base: &Path) -> bool {
+    owner_state(base) == OwnerState::Stopped
 }
 
 pub(crate) fn probe_lifecycle_status(
@@ -690,6 +771,35 @@ fn run_with_timeout(
     }
 }
 
+/// The last maintenance decision written to the log. A decision repeats every
+/// retry interval while nothing changes, so only a change is logged again.
+static LAST_DECISION: Mutex<Option<String>> = Mutex::new(None);
+
+/// The boot time changes with every start, so the log names only the state.
+fn owner_label(owner: OwnerState, starting: bool) -> &'static str {
+    match owner {
+        OwnerState::Stopped => "stopped",
+        OwnerState::Unknown => "unknown",
+        OwnerState::Live { .. } if starting => "starting",
+        OwnerState::Live { .. } => "live",
+    }
+}
+
+fn log_decision(line: &str) {
+    let Ok(mut last) = LAST_DECISION.lock() else {
+        return;
+    };
+    if line.starts_with("decision=Current ") {
+        // A healthy, current host is the quiet state; the next change is logged.
+        *last = None;
+        return;
+    }
+    if last.as_deref() != Some(line) {
+        log::info!("bundled host: {line}");
+        *last = Some(line.to_string());
+    }
+}
+
 fn record(status: BundledHostStatus) {
     if let Ok(mut slot) = STATUS.lock() {
         *slot = Some(status);
@@ -734,13 +844,23 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
     };
     let lock = std::sync::Arc::new(lock);
     let installed = installed_version(&base);
+    let healthy = host_healthy(&base);
+    let owner = owner_state(&base);
+    let starting = !healthy && owner.starting();
+    let activity = admitted_activity(&base, owner_approved);
+    let job = job_pending(&base);
     let decision = plan(
         installed.as_deref(),
         &bundled,
-        admitted_activity(&base, owner_approved),
-        job_pending(&base),
-        host_healthy(&base),
+        activity,
+        job,
+        healthy,
+        starting,
     );
+    log_decision(&format!(
+        "decision={decision:?} installed={installed:?} bundled={bundled} healthy={healthy} owner={} activity={activity:?} job_pending={job} owner_approved={owner_approved}",
+        owner_label(owner, starting),
+    ));
     let status = |state: &str, message: Option<String>| BundledHostStatus {
         state: state.into(),
         message,
@@ -757,7 +877,12 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
         }
         Plan::Deferred(reason) => {
             record(status("deferred", Some(reason.into())));
-            Some(RETRY_INTERVAL)
+            // A starting host is either ready or overdue once its boot grace has passed.
+            Some(if reason == HOST_STARTING {
+                HOST_BOOT_GRACE
+            } else {
+                RETRY_INTERVAL
+            })
         }
         Plan::Install | Plan::Upgrade | Plan::Repair => {
             let retry_path = base.join("bundled-host-retry.json");
@@ -790,6 +915,9 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
             // downgrading a newer installed release. Bootstrap reuses intact
             // extracted bytes on later attempts.
             let replace = upgrade || (repair && installed.as_deref() == Some(bundled.as_str()));
+            log::info!(
+                "bundled host: installer start action={decision:?} replace={replace} repair={repair} installed={installed:?} bundled={bundled}"
+            );
             let result = run_installer(&base, &archive, replace, repair, lock.clone()).and_then(|()| {
                 if installation_confirmed(
                     installed_version(&base).as_deref(),
@@ -801,6 +929,16 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
                     Err("The host installer finished, but the expected host runtime is not running. Installation will retry.".into())
                 }
             });
+            match &result {
+                Ok(()) => log::info!(
+                    "bundled host: installer result=ok action={decision:?} installed={:?}",
+                    installed_version(&base)
+                ),
+                Err(error) => log::warn!(
+                    "bundled host: installer result=failed action={decision:?} failures={} error={error}",
+                    retry.failures.saturating_add(1)
+                ),
+            }
             match result {
                 Ok(()) => {
                     let _ = std::fs::remove_file(&retry_path);
@@ -877,11 +1015,11 @@ mod tests {
     #[test]
     fn missing_version_metadata_does_not_bypass_the_activity_gate() {
         assert_eq!(
-            plan(None, "0.6.75", Ok(true), false, false),
+            plan(None, "0.6.75", Ok(true), false, false, false),
             Plan::Deferred("The host update waits until running sessions finish.")
         );
         assert_eq!(
-            plan(None, "0.6.75", Err(()), false, false),
+            plan(None, "0.6.75", Err(()), false, false, false),
             Plan::Deferred("Could not check whether the host is busy.")
         );
     }
@@ -1035,13 +1173,27 @@ mod tests {
         let base = scratch("automatic-authority");
         assert_eq!(automatic_activity(&base), Ok(false));
         assert_eq!(
-            plan(None, "0.6.75", automatic_activity(&base), false, false),
+            plan(
+                None,
+                "0.6.75",
+                automatic_activity(&base),
+                false,
+                false,
+                false
+            ),
             Plan::Install
         );
         std::fs::write(base.join("runtime-path"), "stopped-runtime").unwrap();
         for installed in [None, Some("0.6.74"), Some("0.6.75")] {
             assert!(matches!(
-                plan(installed, "0.6.75", automatic_activity(&base), false, false),
+                plan(
+                    installed,
+                    "0.6.75",
+                    automatic_activity(&base),
+                    false,
+                    false,
+                    false
+                ),
                 Plan::Deferred(_)
             ));
         }
@@ -1056,6 +1208,7 @@ mod tests {
                     "0.6.75",
                     admitted_activity(&base, true),
                     false,
+                    false,
                     false
                 ),
                 expected
@@ -1064,11 +1217,11 @@ mod tests {
         assert_eq!(admitted_activity(&base, false), automatic_activity(&base));
         // Owner-directed repair/upgrade retains the existing verified-idle plan.
         assert_eq!(
-            plan(Some("0.6.75"), "0.6.75", Ok(false), false, false),
+            plan(Some("0.6.75"), "0.6.75", Ok(false), false, false, false),
             Plan::Repair
         );
         assert_eq!(
-            plan(Some("0.6.74"), "0.6.75", Ok(false), false, false),
+            plan(Some("0.6.74"), "0.6.75", Ok(false), false, false, false),
             Plan::Upgrade
         );
         std::fs::remove_dir_all(base).unwrap();
@@ -1154,13 +1307,16 @@ mod tests {
 
     #[test]
     fn installs_a_missing_host_and_upgrades_only_an_idle_older_one() {
-        assert_eq!(plan(None, "0.5.54", Ok(false), false, false), Plan::Install);
         assert_eq!(
-            plan(Some("0.5.53"), "0.5.54", Ok(false), false, true),
+            plan(None, "0.5.54", Ok(false), false, false, false),
+            Plan::Install
+        );
+        assert_eq!(
+            plan(Some("0.5.53"), "0.5.54", Ok(false), false, true, false),
             Plan::Upgrade
         );
         assert!(matches!(
-            plan(Some("0.5.53"), "0.5.54", Ok(true), false, true),
+            plan(Some("0.5.53"), "0.5.54", Ok(true), false, true, false),
             Plan::Deferred(_)
         ));
     }
@@ -1168,15 +1324,15 @@ mod tests {
     #[test]
     fn never_downgrades_or_reinstalls_the_same_version() {
         assert_eq!(
-            plan(Some("0.5.54"), "0.5.54", Ok(false), false, true),
+            plan(Some("0.5.54"), "0.5.54", Ok(false), false, true, false),
             Plan::Current
         );
         assert_eq!(
-            plan(Some("0.6.0"), "0.5.54", Ok(false), false, true),
+            plan(Some("0.6.0"), "0.5.54", Ok(false), false, true, false),
             Plan::Current
         );
         assert_eq!(
-            plan(Some("0.5.100"), "0.5.54", Ok(false), false, true),
+            plan(Some("0.5.100"), "0.5.54", Ok(false), false, true, false),
             Plan::Current
         );
     }
@@ -1184,16 +1340,16 @@ mod tests {
     #[test]
     fn waits_when_activity_is_unreadable_or_another_update_runs() {
         assert!(matches!(
-            plan(Some("0.5.53"), "0.5.54", Err(()), false, false),
+            plan(Some("0.5.53"), "0.5.54", Err(()), false, false, false),
             Plan::Deferred(_)
         ));
         assert!(matches!(
-            plan(None, "0.5.54", Ok(false), true, false),
+            plan(None, "0.5.54", Ok(false), true, false, false),
             Plan::Deferred(_)
         ));
         // Same version stays current even when the database cannot be read.
         assert_eq!(
-            plan(Some("0.5.54"), "0.5.54", Err(()), false, true),
+            plan(Some("0.5.54"), "0.5.54", Err(()), false, true, false),
             Plan::Current
         );
     }
@@ -1201,23 +1357,23 @@ mod tests {
     #[test]
     fn repairs_an_unhealthy_current_host_only_after_activity_is_known_idle() {
         assert_eq!(
-            plan(Some("0.5.54"), "0.5.54", Ok(false), false, false),
+            plan(Some("0.5.54"), "0.5.54", Ok(false), false, false, false),
             Plan::Repair
         );
         assert_eq!(
-            plan(Some("0.6.0"), "0.5.54", Ok(false), false, false),
+            plan(Some("0.6.0"), "0.5.54", Ok(false), false, false, false),
             Plan::Repair
         );
         assert!(matches!(
-            plan(Some("0.5.54"), "0.5.54", Err(()), false, false),
+            plan(Some("0.5.54"), "0.5.54", Err(()), false, false, false),
             Plan::Deferred(_)
         ));
         assert!(matches!(
-            plan(Some("0.5.54"), "0.5.54", Ok(true), false, false),
+            plan(Some("0.5.54"), "0.5.54", Ok(true), false, false, false),
             Plan::Deferred(_)
         ));
         assert!(matches!(
-            plan(Some("0.5.54"), "0.5.54", Ok(false), true, false),
+            plan(Some("0.5.54"), "0.5.54", Ok(false), true, false, false),
             Plan::Deferred(_)
         ));
     }
@@ -1237,6 +1393,137 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// An installed, idle profile whose Host is not answering.
+    fn installed_idle_profile(label: &str) -> PathBuf {
+        let base = scratch(label);
+        std::fs::write(base.join("runtime-path"), "installed-runtime").unwrap();
+        rusqlite::Connection::open(base.join("host.db"))
+            .unwrap()
+            .execute_batch("create table sessions (status text, shell_running integer);")
+            .unwrap();
+        base
+    }
+
+    fn write_sentinel(base: &Path, started_at: u64) {
+        std::fs::write(
+            base.join("owner.lock"),
+            format!(r#"{{"version":2,"pid":123,"nonce":"n","startedAt":{started_at}}}"#),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_booting_host_is_starting_and_is_never_repaired() {
+        let base = installed_idle_profile("booting");
+        // A booting Host holds the lease and has written no lifecycle state yet.
+        let lease = rusqlite::Connection::open(base.join("owner.db")).unwrap();
+        lease.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        let now = unix_now_ms();
+        write_sentinel(&base, now);
+        let owner = owner_state(&base);
+        assert_eq!(
+            owner,
+            OwnerState::Live {
+                started_at: Some(now)
+            }
+        );
+        assert!(owner.starting());
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        assert!(!host_healthy(&base));
+        for installed in ["0.6.74", "0.6.75"] {
+            // Neither automatic maintenance nor the owner's approval replaces it.
+            for activity in [automatic_activity(&base), admitted_activity(&base, true)] {
+                assert_eq!(
+                    plan(
+                        Some(installed),
+                        "0.6.75",
+                        activity,
+                        false,
+                        false,
+                        owner.starting()
+                    ),
+                    Plan::Deferred(HOST_STARTING)
+                );
+            }
+        }
+
+        // Past the grace it is unhealthy, but a live owner still cannot be read as idle.
+        let grace = u64::try_from(HOST_BOOT_GRACE.as_millis()).unwrap();
+        write_sentinel(&base, now - grace - 1_000);
+        let overdue = owner_state(&base);
+        assert!(matches!(overdue, OwnerState::Live { .. }));
+        assert!(!overdue.starting());
+        assert_eq!(automatic_activity(&base), Err(()));
+        assert_eq!(
+            plan(
+                Some("0.6.75"),
+                "0.6.75",
+                automatic_activity(&base),
+                false,
+                false,
+                overdue.starting()
+            ),
+            Plan::Deferred("Could not check whether the host is busy.")
+        );
+
+        // Only a released lease makes the same silent profile repairable.
+        drop(lease);
+        let stopped = owner_state(&base);
+        assert_eq!(stopped, OwnerState::Stopped);
+        assert_eq!(
+            plan(
+                Some("0.6.75"),
+                "0.6.75",
+                automatic_activity(&base),
+                false,
+                false,
+                stopped.starting()
+            ),
+            Plan::Repair
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn boot_grace_is_measured_from_the_recorded_boot_time() {
+        let grace = u64::try_from(HOST_BOOT_GRACE.as_millis()).unwrap();
+        let started = 1_000_000;
+        let live = OwnerState::Live {
+            started_at: Some(started),
+        };
+        assert!(live.starting_at(started));
+        assert!(live.starting_at(started + grace - 1));
+        assert!(!live.starting_at(started + grace));
+        // A boot time ahead of the clock cannot extend the grace.
+        assert!(!live.starting_at(started - 1));
+        for other in [
+            OwnerState::Live { started_at: None },
+            OwnerState::Stopped,
+            OwnerState::Unknown,
+        ] {
+            assert!(!other.starting_at(started));
+        }
+    }
+
+    #[test]
+    fn a_live_owner_without_a_boot_time_is_never_starting() {
+        let base = scratch("owner-no-boot-time");
+        let lease = rusqlite::Connection::open(base.join("owner.db")).unwrap();
+        lease.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        for sentinel in [r#"{"version":2,"pid":123}"#, "123", "not valid"] {
+            std::fs::write(base.join("owner.lock"), sentinel).unwrap();
+            assert_eq!(owner_state(&base), OwnerState::Live { started_at: None });
+        }
+        std::fs::remove_file(base.join("owner.lock")).unwrap();
+        assert_eq!(owner_state(&base), OwnerState::Live { started_at: None });
+        drop(lease);
+        assert_eq!(owner_state(&base), OwnerState::Stopped);
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

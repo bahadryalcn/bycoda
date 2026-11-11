@@ -47,16 +47,16 @@ it("adds the relative cleanup time to the caption when cleanup is scheduled", ()
   expect(render({ cleanupDueAt: Date.now() + 3 * 24 * 60 * 60 * 1000 })).toMatch(/Cleanup [^<]+/);
 });
 
-it("keeps details collapsed until the chevron opens them", () => {
+it("keeps details collapsed until the summary opens them", () => {
   const html = render();
-  expect(html).toContain('aria-expanded="false"');
-  expect(html).not.toContain("<dl");
+  expect(html).toContain("<details");
+  expect(html).not.toMatch(/<details[^>]*\sopen/);
 });
 
 it("puts every row action inline instead of behind a menu", () => {
   const html = render({ remove: { label: "Remove record", onRemove: () => undefined } });
   expect(html).not.toContain('aria-haspopup="menu"');
-  for (const label of ["Reveal folder", "Pin workspace", "Remove record", "Details"])
+  for (const label of ["Reveal folder", "Pin workspace", "Remove record"])
     expect(html).toContain(`aria-label="${label}"`);
   expect(render({ workspace: { ...workspace, pinned: true } })).toContain(
     'aria-label="Unpin workspace"',

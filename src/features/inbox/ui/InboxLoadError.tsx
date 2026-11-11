@@ -1,7 +1,7 @@
-import { useId, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 
 export function InboxLoadError({
   error,
@@ -15,32 +15,22 @@ export function InboxLoadError({
   onRetry: () => void;
 }) {
   const t = useT();
-  const [expanded, setExpanded] = useState(false);
-  const id = useId();
+  const title = t("Could not load.");
+  const short = fitsOneLine(error);
   return (
     <Alert
       tone="danger"
-      title={t("Could not load.")}
+      title={title}
       action={
-        <Button loading={retrying} disabled={disabled} onClick={onRetry}>
-          {t("Retry")}
-        </Button>
+        <>
+          {short ? null : <ErrorDetails title={title} detail={error} />}
+          <Button loading={retrying} disabled={disabled} onClick={onRetry}>
+            {t("Retry")}
+          </Button>
+        </>
       }
     >
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-expanded={expanded}
-        aria-controls={id}
-        onClick={() => setExpanded(!expanded)}
-      >
-        {expanded ? t("Hide details") : t("Show details")}
-      </Button>
-      {expanded ? (
-        <div id={id} className="max-h-40 overflow-y-auto whitespace-pre-wrap wrap-anywhere">
-          {error}
-        </div>
-      ) : null}
+      {short ? <div className="wrap-anywhere">{error}</div> : null}
     </Alert>
   );
 }

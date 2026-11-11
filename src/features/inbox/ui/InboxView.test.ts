@@ -7,7 +7,7 @@ import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { clearInboxCache, githubWorkItemDetails, type InboxItem } from "../model/githubTasks";
 import type { LinkedWorkItem } from "../../sessions/model/session";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import {
   InboxDetail as RawInboxDetail,
   inboxStatusMark,
@@ -261,7 +261,7 @@ describe("InboxDetail layout", () => {
     expect(fixedHeader).not.toContain("px-5");
     expect(fixedHeader).toContain("border-b");
     expect(fixedHeader).not.toContain("A long inbox issue");
-    expect(markup).toContain("text-ui-heading");
+    expect(markup).toContain('data-size="page"');
     expect(markup).not.toContain("Related thread");
     expect(fixedHeader).not.toContain("Review Bycoda Pull Request");
     // The PR watch panel may offer linked threads as repair targets inside the scroller.

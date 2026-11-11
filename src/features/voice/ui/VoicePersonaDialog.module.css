@@ -11,19 +11,7 @@
   min-width: 0;
 }
 .duties {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  border: 0;
   min-width: 0;
-}
-.legend {
-  margin-block-end: 4px;
-  padding: 0;
-  color: var(--color-content);
-  font-size: var(--text-ui-body);
-  font-weight: 500;
 }
 .choices {
   display: grid;

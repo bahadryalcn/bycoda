@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -54,7 +53,10 @@ export function SprintHostBar({
                     ...new Map(
                       board.machines.map((machine) => [machine.environmentId, machine]),
                     ).values(),
-                  ].map((machine) => ({ value: machine.environmentId, label: machine.name })),
+                  ].map((machine) => ({
+                    value: machine.environmentId,
+                    label: machine.name,
+                  })),
                 ]}
                 onChange={board.setCoordinatorEnvironmentId}
                 disabled={busy}
@@ -80,13 +82,16 @@ export function SprintHostBar({
         </div>
       ) : null}
       {board.syncErrors.length ? (
-        <Disclosure summary={t("Some machines need synchronization")} variant="row">
+        <div>
+          <InlineError className="sprint-host-error">
+            {t("Some machines need synchronization")}
+          </InlineError>
           <ul className="sprint-errors">
             {board.syncErrors.map((entry) => (
               <li key={entry}>{entry}</li>
             ))}
           </ul>
-        </Disclosure>
+        </div>
       ) : null}
     </>
   );

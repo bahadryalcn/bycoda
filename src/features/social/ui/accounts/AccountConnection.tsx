@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { TextField } from "../../../../shared/ui/TextField";
 import { openExternal } from "../../../../platform/tauri/openExternal";
@@ -102,7 +103,7 @@ export function AccountConnection({
 
   return (
     <section className="social-card" aria-label={t("Connection")}>
-      <h3 className="social-card-title">{t("Connection")}</h3>
+      <Heading size="item">{t("Connection")}</Heading>
       <p className="social-muted">
         {onThisComputer
           ? t("This account is connected on the selected computer.")

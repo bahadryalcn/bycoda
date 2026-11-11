@@ -121,10 +121,37 @@ export function accountBudgetReading(
   return budgetReading(b, valid ? window.usedPercent : null, window?.resetsAt);
 }
 
+/** Cached reads cost about a tenth of a normal input token, so budgets count them at this weight. */
+export const CACHE_READ_TOKEN_WEIGHT = 0.1;
+
+/**
+ * Budget-weighted tokens of one turn or row: new input, output and cache writes at full
+ * weight, cached reads at CACHE_READ_TOKEN_WEIGHT. With `inputIncludesCacheRead` (Codex) the
+ * cached reads are first taken out of `input`, never below zero. Always a safe integer.
+ */
+export function budgetWeightedTokens(parts: {
+  input: number;
+  output: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  inputIncludesCacheRead?: boolean;
+}): number {
+  const cacheRead = parts.cacheRead ?? 0;
+  const input = parts.inputIncludesCacheRead ? Math.max(0, parts.input - cacheRead) : parts.input;
+  return Math.round(
+    input + parts.output + (parts.cacheWrite ?? 0) + cacheRead * CACHE_READ_TOKEN_WEIGHT,
+  );
+}
+
 export function rowTokens(row: UsageRow): number {
   const values = [row.input, row.output, row.cacheRead, row.cacheWrite5m, row.cacheWrite1h];
   return values.every((n) => Number.isFinite(n) && n >= 0)
-    ? values.reduce((sum, n) => sum + n, 0)
+    ? budgetWeightedTokens({
+        input: row.input,
+        output: row.output,
+        cacheRead: row.cacheRead,
+        cacheWrite: row.cacheWrite5m + row.cacheWrite1h,
+      })
     : NaN;
 }
 
@@ -148,11 +175,13 @@ export function sessionBudgetTokens(
     if (!["codex", "claude"].includes(provider)) return null;
     const values = [m.inputTokens, m.outputTokens, m.cacheReadTokens ?? 0, m.cacheWriteTokens ?? 0];
     if (values.some((n) => !Number.isFinite(n) || n < 0)) return null;
-    total +=
-      m.inputTokens +
-      m.outputTokens +
-      (provider === "codex" ? 0 : (m.cacheReadTokens ?? 0)) +
-      (m.cacheWriteTokens ?? 0);
+    total += budgetWeightedTokens({
+      input: m.inputTokens,
+      output: m.outputTokens,
+      cacheRead: m.cacheReadTokens,
+      cacheWrite: m.cacheWriteTokens,
+      inputIncludesCacheRead: provider === "codex",
+    });
   }
   return total;
 }

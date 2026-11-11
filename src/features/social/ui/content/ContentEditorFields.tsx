@@ -2,6 +2,7 @@ import { t } from "../../../../shared/i18n";
 import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { DateTimeField } from "../../../../shared/ui/DateTimePicker";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../shared/ui/TextField";
@@ -100,8 +101,13 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
           }
         />
       </div>
-      <fieldset className="content-accounts" disabled={disabled}>
-        <legend>{t("Accounts")}</legend>
+      <FieldGroup
+        legend={t("Accounts")}
+        layout="row"
+        gap="sm"
+        className="content-accounts"
+        disabled={disabled}
+      >
         {accounts.length === 0 ? (
           <EmptyHint
             message={t("No accounts yet. Connect one in Accounts & Settings.")}
@@ -147,11 +153,9 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
               className="content-check content-account"
             />
           ))}
-      </fieldset>
-      <fieldset className="content-when" disabled={disabled}>
-        <legend>{t("When")}</legend>
+      </FieldGroup>
+      <FieldGroup legend={t("When")} gap="sm" className="content-when" disabled={disabled}>
         <SegmentedControl
-          label={t("When")}
           selectionRole="radio"
           value={draft.when}
           options={[
@@ -172,7 +176,7 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
             onChange={(value) => onDraft({ ...draft, scheduledAt: value })}
           />
         ) : null}
-      </fieldset>
+      </FieldGroup>
       <ContentMediaField
         client={client}
         editor={editor}

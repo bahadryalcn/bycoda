@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Heading } from "../../../shared/ui/Heading";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -66,7 +67,9 @@ function ServerSnippetsForm({
       aria-label={t("Saved SSH commands")}
       className={`@container/snippets flex min-w-0 flex-col gap-3 ${embedded ? "" : "p-4"}`}
     >
-      <h3 className="text-ui-body font-medium">{t("Saved commands")}</h3>
+      <Heading size="section" level={3}>
+        {t("Saved commands")}
+      </Heading>
       <p className="break-words text-ui-caption text-(--ui-text-muted)">
         {t("Target")}: {serverName ?? serverId}
       </p>

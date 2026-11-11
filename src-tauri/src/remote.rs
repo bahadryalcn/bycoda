@@ -409,13 +409,22 @@ pub(crate) fn read_store_values(path: &Path) -> Result<Vec<Value>, String> {
 }
 
 fn read_uncached(path: &Path) -> Result<Vec<StoredMachine>, String> {
-    read_store_values(path)?
+    let machines: Vec<StoredMachine> = read_store_values(path)?
         .into_iter()
         .filter(|record| record.get("kind").and_then(Value::as_str) != Some("ssh"))
         .map(|record| {
             serde_json::from_value(record).map_err(|_| "Remote connection store is invalid".into())
         })
-        .collect()
+        .collect::<Result<_, String>>()?;
+    // A direct loopback machine is the Host on this computer. An SSH machine's
+    // forward listens on loopback too and is never one.
+    crate::host_ws::local_endpoints::replace(
+        machines
+            .iter()
+            .filter(|machine| machine.ssh.is_none())
+            .map(|machine| machine.endpoint.as_str()),
+    );
+    Ok(machines)
 }
 
 fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
@@ -689,20 +698,20 @@ fn rpc_timed(
     timeout: std::time::Duration,
 ) -> Result<Value, String> {
     let agent = rpc_agent();
-    let payload = json!({ "version": 1, "environmentId": environment_id, "method": method, "params": params });
-    let response = agent
-        .post(&format!("{endpoint}/rpc"))
-        .timeout(timeout)
-        .set("Authorization", &format!("Bearer {token}"))
-        .set("Content-Type", "application/json")
-        .send_string(&payload.to_string());
+    let payload = json!({ "version": 1, "environmentId": environment_id, "method": method, "params": params }).to_string();
+    let exchange = transport_health::Exchange::new(endpoint, environment_id, method, timeout);
+    let response = exchange.send(|timeout| {
+        agent
+            .post(&format!("{endpoint}/rpc"))
+            .timeout(timeout)
+            .set("Authorization", &format!("Bearer {token}"))
+            .set("Content-Type", "application/json")
+            .send_string(&payload)
+    });
     let response = match response {
         Ok(response) => response,
-        Err(ureq::Error::Status(_, response)) => response,
-        Err(ureq::Error::Transport(error)) if connection_refused(&error) => {
-            return Err(CONNECTION_REFUSED.into())
-        }
-        Err(ureq::Error::Transport(error)) => {
+        Err(error) if connection_refused(&error) => return Err(exchange.refused_message().into()),
+        Err(error) => {
             return Err(rpc_transport_failure(
                 &error,
                 &rpc_operation(method, &params),
@@ -723,12 +732,13 @@ fn rpc_timed(
         .take(MAX_RESPONSE_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| {
+            let ureq::Error::Transport(error) = ureq::Error::from(error) else {
+                unreachable!("An I/O error becomes a transport error")
+            };
+            exchange.failed(&error);
             if device_effect {
                 device_http_unknown(method)
             } else {
-                let ureq::Error::Transport(error) = ureq::Error::from(error) else {
-                    unreachable!("An I/O error becomes a transport error")
-                };
                 rpc_transport_failure(&error, &rpc_operation(method, &params))
             }
         })?;
@@ -856,6 +866,7 @@ fn rpc_operation(method: &str, params: &Value) -> String {
                     | "git_file_history"
                     | "git_head_message"
                     | "git_history"
+                    | "git_init"
                     | "git_merge"
                     | "git_operation_abort"
                     | "git_operation_continue"
@@ -3011,6 +3022,9 @@ use method_catalog::{decision_model_key_allowed, supported_remote_method};
 #[path = "remote/social_endpoint.rs"]
 mod social_endpoint;
 use social_endpoint::social_peer_endpoint;
+#[path = "remote/transport_health.rs"]
+mod transport_health;
+pub(crate) use transport_health::local_host_refusing;
 
 /// A machine set up again: it keeps its id, so its projects and sessions stay
 /// linked. Added anew from another address (its Tailscale one, say), it keeps

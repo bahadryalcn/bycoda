@@ -201,30 +201,95 @@ export function taskContract(task: HostTask): string {
   );
 }
 
+/** Prompt-sized contract for a worker: what to do, where the check is, and the
+ * integration state. Earlier-attempt state (findings, check output, acceptance
+ * rows) travels once in the feedback block, never again here. The stored,
+ * fuller `taskContract` stays for other consumers. */
+export function workerContract(task: HostTask): string {
+  return JSON.stringify(
+    {
+      schema: "bycoda.task-contract.v1",
+      task: {
+        id: task.id,
+        title: task.title,
+        instructions: readTaskInstructions(task.prompt) ?? { objective: task.prompt },
+      },
+      verification: task.verifyCommand ? { command: task.verifyCommand } : undefined,
+      execution: task.continueUntilDone ? { continueUntilDone: true } : undefined,
+    },
+    null,
+    2,
+  );
+}
+
+/** What a reviewer needs: the brief, the diff base and the check with its result. */
+export function reviewerContract(
+  task: HostTask,
+  options: { omitAcceptance?: boolean } = {},
+): string {
+  const instructions = readTaskInstructions(task.prompt);
+  const command = task.verification?.command;
+  return JSON.stringify(
+    {
+      schema: "bycoda.task-contract.v1",
+      task: {
+        id: task.id,
+        title: task.title,
+        instructions: instructions
+          ? options.omitAcceptance
+            ? { ...instructions, acceptance: undefined }
+            : instructions
+          : { objective: task.prompt },
+      },
+      workspace: task.baseCommit ? { baseCommit: task.baseCommit } : undefined,
+      verification: task.verifyCommand
+        ? {
+            command: task.verifyCommand,
+            result: !command
+              ? "not recorded"
+              : command.timedOut || command.exitCode !== 0
+                ? {
+                    exitCode: command.exitCode,
+                    timedOut: command.timedOut,
+                    output: command.output.slice(-1500),
+                  }
+                : "passed",
+          }
+        : undefined,
+    },
+    null,
+    2,
+  );
+}
+
+/** The latest worker claim only; older attempts add nothing a retained checkout does not show. */
+export function latestAttemptSummary(task: HostTask): string {
+  const summary = task.attemptHistory?.at(-1)?.workerSummary.trim();
+  return summary ? `Previous worker summary (an unverified claim):\n${summary.slice(-1500)}` : "";
+}
+
 export function blockedHandoff(task: HostTask): string {
+  const openFindings = (task.reviewNotes ?? []).some(
+    (note) => note.kind === "finding" && !note.resolvedAt,
+  );
+  const latest = (task.attemptHistory ?? []).slice(-1);
   return [
-    "You are the independent recovery agent taking over a BLOCKED task. Inspect the retained work and diagnose why earlier attempts failed before editing. Complete the original task using a different, evidence-backed approach; do not repeat unsuccessful attempts. Work alone in the assigned checkout, preserve completed work, and do not spawn another recovery agent.",
-    "Investigate whether a claimed external blocker has a valid local solution or available alternative. Never weaken acceptance criteria, invent evidence, bypass checks, obtain credentials, or claim unavailable device tests passed. If genuinely impossible with current access, stop and ask one specific question naming the missing resource and the exact next action. Do not ask the owner to restate the task or monitor progress.",
-    "The original checks and an independent review still decide completion. Return a concise handoff: root cause, changes, evidence, remaining blockers and (only if necessary) one concrete owner request.",
+    "You are the independent recovery agent taking over a BLOCKED task. Diagnose why earlier attempts failed before editing, then complete the original task with a different, evidence-backed approach. Work alone; do not spawn another recovery agent.",
+    "Check whether a claimed external blocker has a valid local solution. Never weaken acceptance criteria, invent evidence, bypass checks, obtain credentials, or claim unavailable device tests passed. If genuinely impossible with current access, stop and ask one specific question naming the missing resource and the exact next action. The original checks and an independent review still decide completion.",
     JSON.stringify(
       {
         schema: "bycoda.blocked-handoff.v1",
         blocker: task.blockedTakeover?.blocker,
         previousSessionId: task.blockedTakeover?.previousSessionId,
-        attempts: (task.attemptHistory ?? []).slice(-3).map((entry) => ({
+        attempts: latest.map((entry) => ({
           verdict: entry.verdict,
           note: entry.note,
-          workerSummary: entry.workerSummary.slice(-2000),
-          findings: entry.findings.slice(0, 12).map((finding) => finding.slice(0, 1200)),
+          workerSummary: entry.workerSummary.slice(-1500),
+          // Open structured findings arrive once, in the review notes.
+          findings: openFindings
+            ? undefined
+            : entry.findings.slice(0, 12).map((finding) => finding.slice(0, 1200)),
         })),
-        openFindings: (task.reviewNotes ?? [])
-          .filter((note) => note.kind === "finding" && !note.resolvedAt)
-          .slice(0, 20)
-          .map((note) => ({
-            finding: note.finding.slice(0, 1200),
-            suggestion: note.suggestion?.slice(0, 1200),
-            category: note.category,
-          })),
       },
       null,
       2,

@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Select } from "../../../../shared/ui/Select";
+import { Surface } from "../../../../shared/ui/Surface";
 import { Switch } from "../../../../shared/ui/Switch";
 import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import { StatusText } from "../common/StatusText";
@@ -67,7 +69,7 @@ export function BrowserSettings({
   if (!saved || !draft) {
     return (
       <section className="social-card" aria-label={t("Browser")}>
-        <h3 className="social-card-title">{t("Browser")}</h3>
+        <Heading size="item">{t("Browser")}</Heading>
         {loadError ? (
           <InlineMessage tone="danger">{loadError}</InlineMessage>
         ) : (
@@ -98,7 +100,7 @@ export function BrowserSettings({
 
   return (
     <section className="social-card" aria-label={t("Browser")}>
-      <h3 className="social-card-title">{t("Browser")}</h3>
+      <Heading size="item">{t("Browser")}</Heading>
       {needsHuman ? (
         <p className="social-field-row">
           <StatusText status="needs_human" />
@@ -169,9 +171,14 @@ export function BrowserSettings({
       </div>
       {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
       {live ? (
-        <div className="social-live-view" aria-label={t("Live view of {p1}", { p1: accountName })}>
+        <Surface
+          variant="card"
+          padding="none"
+          className="social-live-view"
+          aria-label={t("Live view of {p1}", { p1: accountName })}
+        >
           <LiveBrowserPanel client={client} accountId={accountId} onClose={() => setLive(false)} />
-        </div>
+        </Surface>
       ) : null}
     </section>
   );

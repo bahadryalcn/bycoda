@@ -35,3 +35,12 @@ it("bounds the number of remembered messages", () => {
   warn("one");
   expect(lines).toEqual(["one", "two", "three", "one"]);
 });
+
+it("prints a detail with the line without making it part of the identity", () => {
+  const lines: string[] = [];
+  const warn = createDedupedWarn({ now: () => 0, write: (l) => lines.push(l) });
+  warn("read failed", "request=1");
+  warn("read failed", "request=2");
+  warn("read failed");
+  expect(lines).toEqual(["read failed request=1"]);
+});

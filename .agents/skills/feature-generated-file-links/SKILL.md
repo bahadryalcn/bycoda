@@ -46,6 +46,6 @@ missing files, native read failures and remote ownership.
 
 Run focused Vitest checks for `messagePathContext.test.ts`,
 `AgentMarkdownFileLinks.test.ts` and affected viewer/path tests. The standalone
-`tests/browser/generated-file-links.playwright.config.ts` fixture exercises real
+`tests/browser/chat/generated-file-links.playwright.config.ts` fixture exercises real
 Markdown rendering with mocked filesystem metadata. Fixture clicks prove dispatch,
 not an installed native app's ability to read or render the owner's documents.

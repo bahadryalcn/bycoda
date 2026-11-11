@@ -6,6 +6,7 @@ import { HostStore } from "../../store";
 import { HostTasks } from "../../tasks/tasks";
 import { HostGoals } from "../../goals/goals";
 import { HostAssistant, type AssistantPorts } from "../service";
+import { ASSISTANT_PRESENCE_FRESH_MS } from "../../../src/shared/model/host-contracts/assistant";
 import { assistantExecutionPorts } from "./assistant-runtime";
 import { createAssistantChiefContext } from "../chief/assistant-chief-context";
 import type { HostEngine } from "../../engine";
@@ -74,13 +75,15 @@ async function fixture(extra: AssistantPorts = {}) {
         ...patch,
       },
     });
+  let seeded = 0;
   async function seed(status: HostGoal["status"] = "running") {
     await configure("report");
     const job = (
       await request({
         op: "jobs.create",
         title: "Fixture job",
-        request: "Read fixture state",
+        // Distinct text: an active job with the same request and project is reused.
+        request: `Read fixture state ${++seeded}`,
         projectId: project.id,
         idempotencyKey: `job-${Math.random()}`,
       })
@@ -598,14 +601,56 @@ it("keeps manual away and DND sticky while automatic idle, lock and failed reads
   fails = true;
   f.clock.now += 61000;
   await f.service.tick();
-  expect((await f.snapshot()).effectivePresence).toBe("unknown");
+  // One failed read keeps the previous good (away) reading instead of replacing it.
+  let kept = await f.snapshot();
+  expect(kept.effectivePresence).toBe("away");
+  expect(kept.automaticPresence!.state).toBe("away");
   fails = false;
   observation.idleMs = 0;
   f.clock.now += 61000;
   await f.service.tick();
   expect((await f.snapshot()).effectivePresence).toBe("present");
-  f.clock.now += 91000;
-  expect((await f.snapshot()).effectivePresence).toBe("unknown");
+  f.clock.now += ASSISTANT_PRESENCE_FRESH_MS + 1000;
+  expect((await f.snapshot()).effectivePresence).toBe("away");
+});
+
+it("keeps the last good presence through one failed read, then reports away and never unknown", async () => {
+  const observation = { supported: true, locked: false, idleMs: 0 };
+  let fails = false;
+  const f = await fixture({
+    readPresence: async () => {
+      if (fails) throw new Error("Fixture presence unavailable");
+      return observation;
+    },
+  });
+  await f.configure();
+  await f.service.tick();
+  const good = (await f.snapshot()).automaticPresence!;
+  expect((await f.snapshot()).effectivePresence).toBe("present");
+  fails = true;
+  f.clock.now += 61000;
+  await f.service.tick();
+  let snapshot = await f.snapshot();
+  expect(snapshot.effectivePresence).toBe("present");
+  expect(snapshot.automaticPresence).toMatchObject({ state: "present", updatedAt: good.updatedAt });
+  for (let i = 0; i < 6; i += 1) {
+    f.clock.now += 61000;
+    await f.service.tick();
+  }
+  expect(f.clock.now - good.updatedAt).toBeGreaterThan(ASSISTANT_PRESENCE_FRESH_MS);
+  snapshot = await f.snapshot();
+  expect(snapshot.effectivePresence).toBe("away");
+  expect(snapshot.automaticPresence).toBeUndefined();
+});
+
+it("reports away when the desktop presence has never been read", async () => {
+  const f = await fixture({ readPresence: async () => ({ supported: false, locked: true }) });
+  await f.configure();
+  await f.service.tick();
+  const snapshot = await f.snapshot();
+  expect(snapshot.effectivePresence).toBe("away");
+  expect(snapshot.automaticPresence).toBeUndefined();
+  expect(await f.service.nativePresenceStatus()).toMatchObject({ state: "away" });
 });
 
 it("persists one return briefing and deferred notifications through restart, quiet hours and owner acknowledgement", async () => {

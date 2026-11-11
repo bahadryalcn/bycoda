@@ -1,5 +1,6 @@
 import { t } from "../../../../shared/i18n";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { TagInput } from "../../../../shared/ui/TagInput";
 import { TextField } from "../../../../shared/ui/TextField";
@@ -51,8 +52,7 @@ function CheckGroup<T extends string>({
   onToggle: (value: T) => void;
 }) {
   return (
-    <fieldset className="audience-check-group">
-      <legend>{legend}</legend>
+    <FieldGroup legend={legend} gap="sm">
       {options.map((option) => (
         <Checkbox
           checked={selected?.includes(option.value) ?? false}
@@ -62,7 +62,7 @@ function CheckGroup<T extends string>({
           className="audience-check"
         />
       ))}
-    </fieldset>
+    </FieldGroup>
   );
 }
 

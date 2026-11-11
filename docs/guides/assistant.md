@@ -439,9 +439,11 @@ unavailable.
 ## Presence and cost
 
 The availability control in the Room and title bar shows green for here, amber
-for away or idle, red for do not disturb, and a neutral ring when the
-current reading is unknown. Its text and icon identify the state without color.
-Pending changes and failed reads do not show a confirmed green state.
+for away or idle, red for do not disturb, and a neutral ring for offline, when
+the app cannot reach the Host. Its text and icon identify the state without
+color. Availability is always one of these states. A computer whose activity
+cannot be read counts as away, and one slow or failed reading keeps the last
+state for up to five minutes instead of changing it.
 
 Set **Away** or **Do not disturb** when appropriate. Updates remain in History
 and notes; a return briefing can describe completed work and items needing
@@ -473,7 +475,12 @@ the display lit or change the power plan. Unsupported or failed requests are
 shown explicitly.
 
 The token budget controls local scheduling. At 80% the supervisor switches to
-reporting; exhaustion holds new child work. Provider charges may exceed a local
+reporting and no new job starts, while children already dispatched keep working;
+exhaustion holds new child work. A repeated request for work that is already
+active in the same project returns that job instead of starting it twice.
+Budgets count cached reads at one tenth of a token, because they re-read earlier
+context at a fraction of the cost; sums stored before this rule keep their old value.
+Provider charges may exceed a local
 reservation when output limits or usage metrics are unavailable. Usage is shown
 as estimated or incomplete when appropriate, rather than as a confirmed zero.
 

@@ -79,7 +79,7 @@ describe("applyThemeSuggestion", () => {
           terminalWeight: 500,
           terminalLineHeight: 1.15,
         },
-        interface: { contrast: 120, accentReadability: "strong" },
+        interface: { contrast: 120, surfaceContrast: 130, accentReadability: "strong" },
       }),
     );
     expect(fns.onPreferences).toHaveBeenCalledOnce();
@@ -93,6 +93,7 @@ describe("applyThemeSuggestion", () => {
       terminalWeight: 500,
       terminalLineHeight: 1.15,
       contrast: 120,
+      surfaceContrast: 130,
       accentReadability: "strong",
     });
   });

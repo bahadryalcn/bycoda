@@ -37,7 +37,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 ## Focused checks
 
 For tree/action changes, run `pnpm exec vitest run src/features/files/ui/FileTree.test.ts src/features/files/ui/FileTree.create.test.ts` plus the affected model/platform tests.
-For layout or event changes, exercise root keyboard/context/drop targets, long names, excluded selections and large folders; use the current `tests/browser/file-tree.spec.ts` fixture where applicable. Follow the project tier for visual evidence.
+For layout or event changes, exercise root keyboard/context/drop targets, long names, excluded selections and large folders; use the current `tests/browser/files/file-tree.spec.ts` fixture where applicable. Follow the project tier for visual evidence.
 
 ## Read when needed
 

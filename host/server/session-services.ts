@@ -6,6 +6,7 @@ import {
 } from "../../src/features/connections/model/protocol";
 import { parseRemoteAttachments, resolveAttachments } from "../attachments/attachments";
 import { browseHostDirectories, createHostDirectory } from "../browser/browse";
+import { initializeEmptyProjectRepository } from "../git/git-init";
 import { DesktopCommandDelivery } from "../desktop/desktop-command-delivery";
 import { createProjectsService } from "../domains/projects/service";
 import {
@@ -56,10 +57,14 @@ export function createSessionServicesRuntime(
         ),
       browse: browseHostDirectories,
       createDirectory: createHostDirectory,
-      open: (cwd, authorized) =>
-        dependencies.engine.store.db.withAuthorization(authorized, () =>
+      open: async (cwd, authorized) => {
+        const project = await dependencies.engine.store.db.withAuthorization(authorized, () =>
           dependencies.engine.openProject(cwd),
-        ),
+        );
+        // Assistant, crew and remote clients all create a project as a new folder.
+        await initializeEmptyProjectRepository(project.cwd);
+        return project;
+      },
     },
   });
   const sessionService = createSessionReadService<

@@ -8,9 +8,12 @@ import {
   attachmentUploadStatus,
   readAttachmentChunk,
   attachmentPath,
+  ATTACHMENT_MISSING_MESSAGE,
   MAX_REMOTE_ATTACHMENT_BYTES,
   collectAttachmentGarbage,
 } from "./attachments";
+import { HostDomainRefusalError } from "../domains/context";
+import { attachmentMissingOnHost } from "../../src/features/connections/model/remoteAttachmentPreviews";
 import { createHash } from "node:crypto";
 const cleanups: Array<() => void | Promise<void>> = [];
 it.skipIf(process.platform !== "win32")(
@@ -142,6 +145,39 @@ it("preserves generated-image ownership and metadata size bounds", async () => {
   await expect(
     readAttachmentChunk(store, { sessionId: "owner", id: "generated", offset: 0 }),
   ).rejects.toThrow("size");
+});
+it("refuses to read a session attachment whose file is absent instead of surfacing ENOENT", async () => {
+  const { store, id } = fixture();
+  const file = { id, name: "shot.png", kind: "image", mimeType: "image/png", size: 4 };
+  vi.spyOn(store, "session").mockReturnValue({
+    session: { blocks: [{ attachments: [file] }] },
+  } as unknown as ReturnType<HostStore["session"]>);
+  const read = () =>
+    readAttachmentChunk(store, { sessionId: "owner", id, offset: 0 }).catch(
+      (error: unknown) => error,
+    );
+  const missing = await read();
+  expect(missing).toBeInstanceOf(HostDomainRefusalError);
+  expect(missing).toMatchObject({
+    category: "validation",
+    retryable: false,
+    delivery: "not-sent",
+    message: ATTACHMENT_MISSING_MESSAGE,
+  });
+  expect((missing as { code: string }).code).not.toBe("ENOENT");
+  // The desktop recognises the refusal by this wording.
+  expect(attachmentMissingOnHost(missing)).toBe(true);
+  expect(attachmentMissingOnHost(String((missing as Error).message))).toBe(true);
+  // A file that exists with the wrong size is a different, possibly transient, failure.
+  await writeAttachmentChunk(store, {
+    id,
+    size: 2,
+    offset: 0,
+    data: Buffer.from("ab").toString("base64"),
+  });
+  const incomplete = await read();
+  expect(incomplete).not.toBeInstanceOf(HostDomainRefusalError);
+  expect(attachmentMissingOnHost(incomplete)).toBe(false);
 });
 it("accepts ordered chunks and an identical retry while rejecting changes", async () => {
   const directory = mkdtempSync(join(tmpdir(), "remote-upload-test-"));

@@ -1,5 +1,6 @@
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Fragment, useState } from "react";
 import { splitAttachmentTokens } from "../model/attachmentTokens";
@@ -44,11 +45,7 @@ function TokenPill({ token, label, attachment }: PillProps) {
   } = useAttachmentPreview(attachment);
   const size = formatAttachmentSize(attachment.size);
   const body = (
-    <span
-      className={styles.token}
-      title={attachment.name}
-      data-attachment-kind={attachmentPresentation(attachment).kind}
-    >
+    <span className={styles.token} data-attachment-kind={attachmentPresentation(attachment).kind}>
       <span className={styles.icon} aria-hidden="true">
         <AttachmentIdentity attachment={attachment} size="pill" />
       </span>
@@ -62,7 +59,7 @@ function TokenPill({ token, label, attachment }: PillProps) {
     </span>
   );
   if (!canOpen && !canOpenFile) {
-    return <span title={attachment.path ?? attachment.name}>{body}</span>;
+    return <Tooltip label={attachment.path ?? attachment.name}>{body}</Tooltip>;
   }
   return (
     <>

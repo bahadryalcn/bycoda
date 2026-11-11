@@ -1,3 +1,4 @@
+import { Heading } from "../../../shared/ui/Heading";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge } from "../../../shared/ui/Badge";
@@ -149,13 +150,13 @@ function TaskCardBody({
           <span className="min-w-0 truncate">{goal}</span>
         </p>
       ) : null}
-      <h3 title={description} className="task-card-title">
+      <Heading size="item" title={description} className="task-card-title">
         {actions.pending ? (
           <Spinner size="xs" label={t("Loading…")} className="mr-1 inline-block" />
         ) : null}
         {task.title}
         <GripVertical aria-hidden="true" className="task-drag-grip icon-xs" strokeWidth={1.75} />
-      </h3>
+      </Heading>
       {planning ? <p className="task-planning-caption">{planning}</p> : null}
       <AssistantTaskBadge task={task} />
       {statusBadges ? <div className="task-card-chips">{statusBadges}</div> : null}
@@ -267,7 +268,7 @@ function TaskCardBody({
         <div onClick={(event) => event.stopPropagation()}>
           <Modal title={t("Task details")} onClose={() => setFailureOpen(false)}>
             <div className="task-status-details">
-              <h3>{task.title}</h3>
+              <Heading size="item">{task.title}</Heading>
               <TaskStatusText status={{ ...status, detail: undefined }} />
               {task.budgetStop ? <p>{task.budgetStop}</p> : null}
               {task.repairStop?.message ? <p>{task.repairStop.message}</p> : null}

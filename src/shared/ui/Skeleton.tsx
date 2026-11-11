@@ -81,3 +81,46 @@ export function Skeleton({
     </ArcSkeleton>
   );
 }
+
+export type SkeletonBarProps = {
+  /** Any CSS length. Default `100%`. */
+  width?: string;
+  /** Any CSS length. Default `0.75rem` (one caption line). */
+  height?: string;
+  /** `bar` (default) for text and controls, `square` for icons and avatars, `pill` for chips. */
+  shape?: "bar" | "square" | "pill";
+  /** Position in the layout; each shape pulses a beat after the one before it. */
+  index?: number;
+  className?: string;
+};
+
+/**
+ * One decorative placeholder shape for a skeleton composed to mirror a specific layout (a settings
+ * rail, a framed row). Hidden from assistive technology: the composing surface owns the one busy
+ * status and the loading delay. Same tone and finite pulse as Skeleton.
+ * @group feedback
+ * @use Building blocks of a layout-shaped first-load placeholder.
+ * @avoid A generic block of lines: Skeleton. Inside running text: Skeleton `inline`.
+ */
+export function SkeletonBar({
+  width,
+  height,
+  shape = "bar",
+  index = 0,
+  className,
+}: SkeletonBarProps) {
+  return (
+    <span
+      aria-hidden="true"
+      data-shape={shape}
+      className={[styles.bar, className].filter(Boolean).join(" ")}
+      style={
+        {
+          "--skeleton-bar-width": width,
+          "--skeleton-bar-height": height,
+          "--index": index,
+        } as CSSProperties
+      }
+    />
+  );
+}

@@ -214,6 +214,7 @@ export function planWorkspaceTabClose({
   closingTabId,
   scope,
   worktreeOf,
+  activeCwd,
 }: {
   tabs: WorkspaceTab[];
   sessions: Session[];
@@ -222,6 +223,8 @@ export function planWorkspaceTabClose({
   /** When given, the next tab also has to share the closing tab's worktree,
    * so closing a tab never leaves the worktree on screen. */
   worktreeOf?: (tab: WorkspaceTab) => string | null;
+  /** Project on screen; scopes the close when the closing tab has no project of its own. */
+  activeCwd?: string | null;
 }): WorkspaceTabClosePlan {
   const closingIndex = tabs.findIndex((tab) => tab.id === closingTabId);
   if (closingIndex < 0) return { action: "keep" };
@@ -234,7 +237,8 @@ export function planWorkspaceTabClose({
     return { action: "close", nextActiveTabId: globalTarget?.id };
   }
 
-  const closingCwd = workspaceTabCwd(tabs[closingIndex], sessions);
+  const ownCwd = workspaceTabCwd(tabs[closingIndex], sessions);
+  const closingCwd = ownCwd ?? activeCwd ?? null;
   if (!closingCwd) {
     return { action: "close", nextActiveTabId: globalTarget?.id };
   }
@@ -260,7 +264,8 @@ export function planWorkspaceTabClose({
 
   // Deck mode is one project (and worktree) at a time. Closing the last tab
   // there must not jump to another one's tab; the caller keeps this one.
-  return { action: "keep" };
+  // A tab without a project of its own has nothing to keep, so it still closes.
+  return ownCwd ? { action: "keep" } : { action: "close", nextActiveTabId: globalTarget?.id };
 }
 
 /**

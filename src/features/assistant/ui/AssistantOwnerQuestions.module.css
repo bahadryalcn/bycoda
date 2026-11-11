@@ -10,8 +10,8 @@
 }
 .card {
   padding: 16px;
-  background: transparent;
-  border: 1px solid var(--ui-pane-border);
+  background: var(--ui-card-surface);
+  border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
   line-height: 1.55;
 }
@@ -37,8 +37,6 @@
 }
 .title {
   margin: 0;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
   overflow-wrap: anywhere;
 }
 

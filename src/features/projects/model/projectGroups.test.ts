@@ -11,6 +11,7 @@ import {
   moveProjectGroup,
   projectGroupWorkspaceRoot,
   projectGroupParentId,
+  projectGroupIdsToExpand,
   nextProjectGroupName,
   orderProjectGroupMembers,
   saveProjectGroupMemberOrder,
@@ -159,6 +160,38 @@ describe("project groups", () => {
     expect(loadProjectGroups().map((group) => group.id)).toEqual(["a", "b", "c"]);
     expect(loadProjectGroups().some((group) => "pinned" in group)).toBe(false);
     expect(loadProjectGroups()[1]).toMatchObject({ name: "B", collapsed: true, colorIndex: 3 });
+  });
+});
+
+describe("projectGroupIdsToExpand", () => {
+  it("returns the group of a path and its ancestors, nearest first, without cycles", () => {
+    const groups = [
+      { id: "team", name: "Team", collapsed: true },
+      {
+        id: "wallet",
+        name: "Wallet",
+        collapsed: true,
+        workspaceFile: "G:/wallet/wallet.code-workspace",
+      },
+      { id: "loop", name: "Loop", collapsed: true, workspaceFile: "G:/loop/loop.code-workspace" },
+    ];
+    const assignments = { "g:/wallet": "team", "g:/loop": "loop", "g:/app": "wallet" };
+    expect(projectGroupIdsToExpand("G:/app", groups, assignments)).toEqual(["wallet", "team"]);
+    expect(projectGroupIdsToExpand("G:/loop", groups, assignments)).toEqual(["loop"]);
+    expect(projectGroupIdsToExpand("G:/other", groups, assignments)).toEqual([]);
+  });
+  it("opens only the parents of a linked workspace root, which is its own header", () => {
+    const groups = [
+      { id: "team", name: "Team", collapsed: true },
+      {
+        id: "wallet",
+        name: "Wallet",
+        collapsed: true,
+        workspaceFile: "G:/wallet/wallet.code-workspace",
+        workspaceFolders: ["G:/wallet"],
+      },
+    ];
+    expect(projectGroupIdsToExpand("G:/wallet", groups, { "g:/wallet": "team" })).toEqual(["team"]);
   });
 });
 

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useRemoteMachines } from "../../connections/model/connections";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Surface } from "../../../shared/ui/Surface";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
@@ -254,7 +255,7 @@ export function AssistantRemoteAccess({
               )}
             </p>
             {request && (
-              <div className={styles.request}>
+              <Surface variant="card" padding="md" className={styles.request}>
                 <p>
                   {t("Inspect the original request before starting another connection.")}{" "}
                   <code>{request.requestId}</code>
@@ -283,7 +284,7 @@ export function AssistantRemoteAccess({
                     </Button>
                   )}
                 </div>
-              </div>
+              </Surface>
             )}
             {result && <p className={styles.result}>{result}</p>}
             <div className={styles.actions}>
@@ -302,7 +303,7 @@ export function AssistantRemoteAccess({
             </div>
             {error && <InlineError>{error}</InlineError>}
             {identity && (
-              <div className={styles.identity}>
+              <Surface variant="card" padding="md" className={styles.identity}>
                 <p>
                   {t("Installation ID")}: <code>{identity.installationId}</code>
                 </p>
@@ -310,7 +311,7 @@ export function AssistantRemoteAccess({
                   {t("Fingerprint")}: <code>{identity.fingerprint}</code>
                 </p>
                 <pre>{identity.publicKey}</pre>
-              </div>
+              </Surface>
             )}
           </div>
         </Modal>

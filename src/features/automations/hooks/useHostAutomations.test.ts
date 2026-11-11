@@ -2,7 +2,7 @@
 import { act, createElement, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import type { Automation } from "../model/automations";
 import type { MachineResult } from "../model/machineResults";

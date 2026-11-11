@@ -1,7 +1,9 @@
 import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
+import { Heading } from "../../shared/ui/Heading";
 import { Progress } from "../../shared/ui/Progress";
 import { InlineError } from "../../shared/ui/InlineError";
+import { DetailedInlineError } from "../../shared/ui/ErrorDetails";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -811,10 +813,10 @@ function ProjectBrowserPanel({
         }
       }}
     >
-      <h3 className="sr-only">
+      <Heading size="item" className="sr-only">
         {t("Shared host browser")}
         {hostLabel ? ` · ${hostLabel}` : ""}
-      </h3>
+      </Heading>
       <div className="host-browser-bar">
         <form
           className="host-browser-toolbar"
@@ -1592,7 +1594,7 @@ function ProjectBrowserPanel({
                 </Button>
               ) : null}
             </div>
-            {error ? <InlineError className="host-browser-target">{error}</InlineError> : null}
+            {error ? <DetailedInlineError className="host-browser-target" error={error} /> : null}
             {uncertainDelivery ? (
               <Button variant="ghost" onClick={() => setUncertainDelivery(false)}>
                 {t("I checked the target composer")}

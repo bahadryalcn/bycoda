@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
+import { Heading } from "../../../../shared/ui/Heading";
+import { Surface } from "../../../../shared/ui/Surface";
 
 export type WaitingForYouProps = {
   approvalCount: number;
@@ -14,9 +16,15 @@ export type WaitingForYouProps = {
 export function WaitingForYou({ approvalCount, humanCount = 0, children }: WaitingForYouProps) {
   const total = approvalCount + humanCount;
   return (
-    <section className="command-frame" aria-label={t("Waiting for you")}>
+    <Surface
+      as="section"
+      variant="card"
+      padding="none"
+      className="command-frame"
+      aria-label={t("Waiting for you")}
+    >
       <header className="command-frame-header">
-        <h3 className="command-section-title">{t("Waiting for you")}</h3>
+        <Heading size="section">{t("Waiting for you")}</Heading>
         {total > 0 ? (
           <Badge tone="warning" size="sm" aria-label={t("{p0} waiting for you", { p0: total })}>
             {total}
@@ -31,6 +39,6 @@ export function WaitingForYou({ approvalCount, humanCount = 0, children }: Waiti
         </p>
       ) : null}
       <div className="command-frame-body">{children}</div>
-    </section>
+    </Surface>
   );
 }

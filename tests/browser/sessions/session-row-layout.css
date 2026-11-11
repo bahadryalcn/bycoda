@@ -1,0 +1,4 @@
+@import "../../../src/styles/index.css";
+/* Keep product utilities available when this fixture uses a bounded Vite root. */
+@source "../../src";
+@source "./session-row-layout.tsx";

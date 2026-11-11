@@ -6,6 +6,9 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
+import { Heading } from "../../../shared/ui/Heading";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -222,8 +225,7 @@ function CreateToken({
             onChange={setProjectId}
             disabled={busy}
           />
-          <fieldset disabled={busy} className={styles.stack}>
-            <legend>{t("Tool groups and scopes")}</legend>
+          <FieldGroup legend={t("Tool groups and scopes")} disabled={busy}>
             {groups.map((group) => (
               <div key={group} className={styles.scope}>
                 <span>{group}</span>
@@ -249,7 +251,7 @@ function CreateToken({
                 ) : null}
               </div>
             ))}
-          </fieldset>
+          </FieldGroup>
           <NumberField
             label={t("Duration (days)")}
 
@@ -387,7 +389,9 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       tabIndex={-1}
     >
       <div className={styles.header}>
-        <h2 id="external-mcp-heading">{t("External MCP access")}</h2>
+        <Heading size="item" level={2} id="external-mcp-heading">
+          {t("External MCP access")}
+        </Heading>
         <div className={styles.actions}>
           <Button
             ref={info}
@@ -539,7 +543,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                 {t("Expires")}: {new Date(grant.expiresAt).toLocaleString()}
               </span>
               <section>
-                <h3>{t("Scopes")}</h3>
+                <SectionLabel as="h3">{t("Scopes")}</SectionLabel>
                 {/* The grant list is a grid of auto tracks; a zero base width keeps the list's own
                     full-row measuring copy from widening the track. */}
                 <div className={`${styles.metadata} w-0 min-w-full`}>

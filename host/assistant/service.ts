@@ -56,6 +56,7 @@ import {
   type AssistantQuickAutomationJob,
   type AssistantQuickJob,
   ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
+  ASSISTANT_PRESENCE_FRESH_MS,
 } from "../../src/shared/model/host-contracts/assistant";
 import { AssistantRepository, type AssistantTable, type RecordValue } from "./repository";
 import { tokenBudgetMode } from "./cost";
@@ -729,7 +730,6 @@ export class HostAssistant {
         (intent.kind === "task.done"
           ? !policy.observationTaskDone
           : !policy.observationTaskNeedsInput) ||
-        presence === "unknown" ||
         presence === "dnd" ||
         quiet ||
         !(choice === "all" || (choice === "urgent" && urgent))
@@ -1058,14 +1058,23 @@ export class HostAssistant {
       "automaticPresence",
       null,
     );
-    if (!automatic || this.now() - automatic.updatedAt > 90000 || automatic.state === "unknown")
-      return "unknown";
+    // No current reading of this computer cannot certify the owner present, so it is away.
+    if (!automatic?.supported || this.now() - automatic.updatedAt > ASSISTANT_PRESENCE_FRESH_MS)
+      return "away";
     return automatic.state === "locked" ? "away" : automatic.state;
   }
   private async syncPresence(observed?: AssistantPresenceObservation) {
     const old = await this.runtime<AssistantAutomaticPresence | null>("automaticPresence", null);
     if (old && this.now() - old.updatedAt < 15000 && this.now() >= old.updatedAt) return;
     const observation = observed ?? (await readAssistantPresence(this.ports.readPresence));
+    // One slow or failed probe keeps the last good reading until it goes stale.
+    if (
+      !observation.supported &&
+      old?.supported &&
+      this.now() >= old.updatedAt &&
+      this.now() - old.updatedAt <= ASSISTANT_PRESENCE_FRESH_MS
+    )
+      return;
     const read = assistantPresenceState(observation, assistantPolicy(await this.profile()));
     const automatic: AssistantAutomaticPresence = {
       ...read,
@@ -1077,9 +1086,7 @@ export class HostAssistant {
       await this.setRuntime("automaticPresence", automatic);
       const effective = await this.effectivePresence(),
         absence = await this.runtime<number | null>("presenceAbsenceSince", null);
-      if (effective === "unknown") {
-        if (absence !== null) await this.setRuntime("presenceAbsenceSince", null);
-      } else if (effective !== "present") {
+      if (effective !== "present") {
         if (absence === null) await this.setRuntime("presenceAbsenceSince", this.now());
       } else if (absence !== null) {
         await this.setRuntime("presenceAbsenceSince", null);
@@ -1190,7 +1197,7 @@ export class HostAssistant {
         const policy = assistantPolicy(profile),
           choice = presence === "present" ? policy.notificationPresent : policy.notificationAway;
         const reason: AssistantNotification["deferredReason"] =
-          !profile.enabled || !profile.setupComplete || presence === "unknown"
+          !profile.enabled || !profile.setupComplete
             ? "unknown"
             : presence === "dnd"
               ? "dnd"
@@ -1456,7 +1463,7 @@ export class HostAssistant {
         repository: this.repository,
         profile: () => this.profile(),
         now: () => this.now(),
-        usageRuns: async (profile) => (await this.usage(profile)).mode === "run",
+        budgetExhausted: async (profile) => (await this.usage(profile)).mode === "paused",
         paused: () => this.runtime("paused", false),
         stopping: (jobId) => this.closing || this.emergencyStop || this.pendingJobStops.has(jobId),
       },
@@ -6651,7 +6658,7 @@ export class HostAssistant {
         since: this.now(),
         updatedAt: this.now(),
       }),
-      ...(automatic ? { automaticPresence: automatic } : {}),
+      ...(automatic?.supported ? { automaticPresence: automatic } : {}),
       ...(chiefReview ? { chiefReview } : {}),
       effectivePresence: await this.effectivePresence(),
       notifications: await this.notifications(profile),

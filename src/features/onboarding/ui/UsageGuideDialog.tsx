@@ -3,6 +3,7 @@ import { ACTIONS, EVENTS, Joyride, STATUS, type EventData, type Step } from "rea
 import { t, useLocale } from "../../../shared/i18n";
 import { useOverlay } from "../../../shared/ui/overlay";
 import { Button } from "../../../shared/ui/Button";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { MessageSquare, Check } from "../../../shared/ui/icons";
 import { UsageGuideTooltip } from "./UsageGuideTooltip";
 import { GuideShortcuts } from "./GuideShortcuts";
@@ -147,7 +148,9 @@ export default function UsageGuideDialog({
           ) : null}
           {current.shortcuts.length > 0 ? (
             <div className="usage-guide-shortcut-section">
-              <h3>{t("Shortcuts")}</h3>
+              <SectionLabel as="h3" className="usage-guide-shortcut-title">
+                {t("Shortcuts")}
+              </SectionLabel>
               <GuideShortcuts items={current.shortcuts} />
             </div>
           ) : null}

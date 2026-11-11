@@ -45,6 +45,28 @@ it("probes the kernel lease even when the PID sentinel is missing or corrupt", a
   }
 });
 
+it("records the boot time a prober measures the start-up grace from", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-owner-boot-"));
+  let release: (() => void) | undefined;
+  try {
+    const before = Date.now();
+    release = await acquireHostOwner(directory);
+    const sentinel = JSON.parse(readFileSync(join(directory, "owner.lock"), "utf8"));
+    expect(sentinel).toMatchObject({ version: 2, pid: process.pid });
+    expect(sentinel.startedAt).toBeGreaterThanOrEqual(before);
+    expect(sentinel.startedAt).toBeLessThanOrEqual(Date.now());
+    // The extra field does not change how the sentinel is read back.
+    expect(await probeHostOwner(directory)).toBe("active");
+    release();
+    release = undefined;
+    writeFileSync(join(directory, "owner.lock"), JSON.stringify(sentinel));
+    expect(await probeHostOwner(directory)).toBe("stopped");
+  } finally {
+    release?.();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 it("makes release idempotent without removing the following owner's sentinel", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-owner-release-"));
   let second: (() => void) | undefined;

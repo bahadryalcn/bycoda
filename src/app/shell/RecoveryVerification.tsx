@@ -1,6 +1,5 @@
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
-import { Disclosure } from "../../shared/ui/Disclosure";
 
 export function RecoveryVerification({
   verification,
@@ -19,9 +18,7 @@ export function RecoveryVerification({
       <span>{verification}</span>
       {readError ? (
         <>
-          <Disclosure summary={t("Details")} size="sm">
-            <p className="select-text [overflow-wrap:anywhere]">{readError}</p>
-          </Disclosure>
+          <p className="select-text [overflow-wrap:anywhere]">{readError}</p>
           <Button variant="ghost" size="sm" disabled={pending} onClick={onRetry}>
             {t("Retry verification")}
           </Button>

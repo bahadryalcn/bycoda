@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { InboxView as RawInboxView } from "./InboxView";
-import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 const InboxView = withQueryClient(RawInboxView);
 import { clearInboxCache, inboxItemKey, type InboxItem } from "../model/githubTasks";
 import { isInboxEntryUnseen, seedInboxSeenIfNeeded } from "../model/inboxSeen";
@@ -183,11 +183,14 @@ it("keeps cached rows visible with a provider failure and clears the warning aft
   expect(container.textContent).toContain("Retained issue");
   const alert = container.querySelector('[role="alert"]')!;
   expect(alert.textContent).toContain("Could not load.");
+  expect(alert.querySelector("details")).toBeNull();
   expect(alert.textContent).not.toContain("GitHub unavailable");
-  await act(async () =>
-    alert.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click(),
-  );
-  expect(alert.textContent).toContain("GitHub unavailable");
+  const detailsButton = [...alert.querySelectorAll("button")].find((button) =>
+    button.textContent?.startsWith("Details"),
+  )!;
+  await act(async () => detailsButton.click());
+  expect(document.querySelector("pre")?.textContent).toContain("GitHub unavailable");
+  await act(async () => detailsButton.click());
   failed = false;
   await act(async () => refresh().click());
   expect(

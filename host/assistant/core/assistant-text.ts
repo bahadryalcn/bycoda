@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { budgetWeightedTokens } from "../../../src/features/usage/model/usageBudgets";
 import { registerBuiltinHarnesses } from "../../../src/integrations/harness/core/register";
 import { runHarnessTextPrompt } from "../../../src/integrations/harness/core/registry";
 import { nativeModelId } from "../../../src/features/sessions/model/models";
@@ -104,7 +105,20 @@ export function assistantText(
           event.inputTokens! >= 0 &&
           event.outputTokens! >= 0
         )
-          tokens = Math.max(tokens ?? 0, event.inputTokens! + event.outputTokens!);
+          tokens = Math.max(
+            tokens ?? 0,
+            budgetWeightedTokens({
+              input: event.inputTokens!,
+              output: event.outputTokens!,
+              ...(event.cacheReadTokens !== undefined && event.cacheReadTokens >= 0
+                ? { cacheRead: event.cacheReadTokens }
+                : {}),
+              ...(event.cacheWriteTokens !== undefined && event.cacheWriteTokens >= 0
+                ? { cacheWrite: event.cacheWriteTokens }
+                : {}),
+              inputIncludesCacheRead: execution.harness === "codex",
+            }),
+          );
       },
     });
     signal?.throwIfAborted();

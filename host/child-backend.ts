@@ -828,7 +828,12 @@ export class HostChildBackend implements ChildBackend {
           )
         )
           delete env[key];
-      for (const group of ["social", "conversation", "runtime-logs"] as const) {
+      // A management or utility child has no stored conversation to grant against:
+      // it gets the same stripped environment and no issuance.
+      const sessionless = args.purpose === "management" || args.purpose === "utility";
+      for (const group of sessionless
+        ? []
+        : (["social", "conversation", "runtime-logs"] as const)) {
         const tool = await this.prepareTool(id, tools, group, check);
         check();
         if (beforeSpawn || runPreparation) await restrict();

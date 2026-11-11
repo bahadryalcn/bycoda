@@ -24,7 +24,7 @@ it.each([
   ["idle", "Idle", "warning"],
   ["dnd", "Do not disturb", "danger"],
   ["locked", "Locked", "danger"],
-  ["unknown", "Unknown", "neutral"],
+  ["offline", "Offline", "neutral"],
 ] as const)(
   "keeps a visible %s label beside its color, without controls or effects",
   async (state, label, tone) => {

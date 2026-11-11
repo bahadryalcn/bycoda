@@ -59,11 +59,13 @@ features own their mutations, retained data, drafts and uncertain outcomes.
 - Retain loaded content and drafts. Never-loaded content is waiting/unknown,
   not verified empty. Missing log/build evidence is unknown, not healthy.
 - Use existing Alert, Button and LoadingText controls and semantic theme roles.
+- The compact notice stays one row: title, Reconnect and `ErrorDetails`. Raw transport
+  text and the secondary actions (edit address, connection settings) live in that popover.
 
 ## Checks and references
 
 Use adjacent feedback/status tests, connection health/reconnect suites, and the
-isolated `tests/browser/remote-connection-feedback.html` fixture. Apply current
+isolated `tests/browser/app-shell/remote-connection-feedback.html` fixture. Apply current
 tier theme/width/keyboard checks; fixture evidence is not installed acceptance.
 See [Host runtime](../feature-host-runtime/SKILL.md),
 [workbench design](../feature-workbench-design/SKILL.md), and

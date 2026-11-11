@@ -1,6 +1,7 @@
 import type { AssistantNote } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Heading } from "../../../../shared/ui/Heading";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { Trash2 } from "../../../../shared/ui/icons";
 import { AgentMarkdown } from "../../../sessions/public/AgentMarkdown";
@@ -24,7 +25,9 @@ export function NotesReader({
     <article className={styles.reader} aria-label={note.title}>
       <header className={styles.readerHeader}>
         <div className={styles.readerTitle}>
-          <h3>{note.title}</h3>
+          <Heading size="section" level={3}>
+            {note.title}
+          </Heading>
           <Timestamp className={styles.readerMeta} value={note.updatedAt} prefix={t("Updated")} />
         </div>
         <div className={styles.readerActions}>

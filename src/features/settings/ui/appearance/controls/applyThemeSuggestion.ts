@@ -45,6 +45,7 @@ function preferenceChanges(
   if (type?.terminalWeight !== undefined) changes.terminalWeight = type.terminalWeight;
   if (type?.terminalLineHeight !== undefined) changes.terminalLineHeight = type.terminalLineHeight;
   if (ui?.contrast !== undefined) changes.contrast = ui.contrast;
+  if (ui?.surfaceContrast !== undefined) changes.surfaceContrast = ui.surfaceContrast;
   if (ui?.accentReadability) changes.accentReadability = ui.accentReadability;
   return changes;
 }

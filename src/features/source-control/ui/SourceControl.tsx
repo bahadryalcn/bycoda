@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { HarnessId } from "../../sessions";
 import type { GitFileDiffKind, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { GitChangesPanel } from "./GitChangesPanel";
@@ -10,6 +9,7 @@ import { pathKey } from "../../../shared/lib/paths";
 import { checkoutOptionLabel, sessionCheckout } from "../model/checkoutSelection";
 import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 
 type Props = {
   repositoryPaths?: readonly string[];
@@ -41,43 +41,32 @@ export function SourceControl({
   onOpenCommit,
 }: Props) {
   useLocale();
-  const [discoveryDetails, setDiscoveryDetails] = useState(false);
   const { data, error, loading, refresh } = useProjectWorktrees(
     cwd,
     enabled && !repositoryPaths?.length && !!onOpenRepository,
   );
-  const discoveryNotice = error ? (
-    <div className="flex shrink-0 flex-wrap items-center gap-x-2 border-b border-stroke px-2 py-0.5 text-ui-caption">
-      <p role="status" className="min-w-0 text-(--ui-text-secondary)" title={error}>
-        {data
-          ? t("Could not refresh worktrees. Showing the last available list.")
-          : `${t("Worktrees")} · ${t("Unavailable")}`}
-      </p>
-      <Button
-        variant="link"
-        size="sm"
-        aria-expanded={discoveryDetails}
-        onClick={() => setDiscoveryDetails((open) => !open)}
-      >
-        {t("Details")}
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="ms-auto"
-        loading={loading}
-        disabled={!enabled}
-        onClick={() => void refresh()}
-      >
-        {t("Retry")}
-      </Button>
-      {discoveryDetails ? (
-        <p className="max-h-32 basis-full overflow-y-auto break-all text-(--ui-text-secondary)">
-          {error}
+  // A plain folder has no worktrees to list; the panel below says so once.
+  const discoveryNotice =
+    error && !/not a git repository/i.test(error) ? (
+      <div className="flex shrink-0 flex-wrap items-center gap-x-2 border-b border-stroke px-2 py-0.5 text-ui-caption">
+        <p role="status" className="min-w-0 text-(--ui-text-secondary)">
+          {data
+            ? t("Could not refresh worktrees. Showing the last available list.")
+            : `${t("Worktrees")} · ${t("Unavailable")}`}
         </p>
-      ) : null}
-    </div>
-  ) : null;
+        <ErrorDetails detail={error} />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ms-auto"
+          loading={loading}
+          disabled={!enabled}
+          onClick={() => void refresh()}
+        >
+          {t("Retry")}
+        </Button>
+      </div>
+    ) : null;
   const checkouts = (() => {
     const paths: string[] = [];
     const labels: Record<string, string> = {};

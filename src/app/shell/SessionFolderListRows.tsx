@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { SessionListEntry } from "../../features/sessions/model/sessionFolders";
 import styles from "./Sidebar.module.css";
-import { t } from "../../shared/i18n";
+import { t, useT } from "../../shared/i18n";
 import { confirmInApp } from "../../shared/model/appConfirm";
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { CheckCheck, Clock, Pin } from "../../shared/ui/icons";
@@ -135,6 +135,7 @@ export function SessionGroupListRow({
   /** Settled shelf only: deletes the listed sessions after its own confirmation. */
   onDeleteAll?: (sessionIds: readonly string[]) => void;
 }) {
+  const t = useT();
   const [menu, setMenu] = useState<{ x: number; y: number } | HTMLElement | null>(null);
   const reminders = entry.kind === "reminders";
   const name = reminders ? "Reminders" : entry.kind === "settled" ? t("Settled") : t("Pinned");

@@ -921,10 +921,9 @@ impl NativeOutputChild {
         let result = self.owner.wait();
         if result.is_err() {
             // An actual wait failure invalidates output before terminal publication.
-            // Unverified job retirement is best-effort and does not.
+            // Unverified job retirement is best-effort and does not; the process
+            // owner reports it where the drain ran.
             output.invalidate(UnavailableReason::TerminalError);
-        } else if let Err(error) = self.retirement().require_verified() {
-            log::warn!("provider retirement unverified: {error}");
         }
         output.terminal_complete(result.is_ok(), cancelled);
         result

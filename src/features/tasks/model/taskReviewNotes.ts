@@ -249,16 +249,19 @@ export function unreadReviewNotes(notes: readonly TaskReviewNote[] = []): number
 }
 
 /** Only open findings are requirements; suggestions remain optional. */
-export function openReviewNotesPrompt(notes: readonly TaskReviewNote[] = []): string {
+export function openReviewNotesPrompt(
+  notes: readonly TaskReviewNote[] = [],
+  limit = 12_000,
+): string {
   const open = notes.filter((note) => note.resolvedAt === undefined);
   if (!open.length) return "";
   return [
-    "Open review notes for this task. Fix findings against the original spec; suggestions are optional. A note's status does not replace the task's checks or review.",
+    "Open review notes: fix the findings against the original spec; suggestions are optional.",
     ...open.map(
       (note) =>
         `[${note.kind}${note.category === "external" ? ": external verification" : ""}] ${note.finding}\nNote id: ${note.id}${note.suggestion ? `\nSuggested correction: ${note.suggestion}` : ""}${note.details ? `\nReview details: ${note.details}` : ""}`,
     ),
   ]
     .join("\n\n")
-    .slice(0, 12_000);
+    .slice(0, Math.max(0, limit));
 }

@@ -1,7 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { DeliveryReviewChoice, type DeliveryReviewOutcome } from "./DeliveryReviewChoice";
 import { useT } from "../../../shared/i18n";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Check, CircleDashed } from "../../../shared/ui/icons";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -205,14 +204,12 @@ export function DeliveryProgressNotice({
         />
       </div>
       {expandedDetail ? (
-        <Disclosure
-          size="sm"
-          summary={t("Details")}
-          className="mt-1 min-w-0 text-(--ui-text-muted)"
+        <p
+          className="mt-1 max-h-32 min-w-0 overflow-y-auto whitespace-pre-wrap text-(--ui-text-muted) [overflow-wrap:anywhere]"
           data-delivery-details=""
         >
-          <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{t(progress!.detail!)}</p>
-        </Disclosure>
+          {t(progress!.detail!)}
+        </p>
       ) : null}
       {unknownRow && !clientState.queue.claim ? (
         <DeliveryReviewChoice

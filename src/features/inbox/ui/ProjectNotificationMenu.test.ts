@@ -163,7 +163,7 @@ it("shows persisted mute status on the project and in its reopened menu", async 
   expect(resume.nextElementSibling?.getAttribute("role")).toBe("separator");
   // The shared TextField wraps the name input; the field follows the separator.
   expect(
-    resume.nextElementSibling?.nextElementSibling?.querySelector('[aria-label="Group name"]'),
+    resume.nextElementSibling?.nextElementSibling?.querySelector('[aria-label="Project name"]'),
   ).not.toBeNull();
   expect(menu.querySelectorAll('[aria-label="Resume notifications"]')).toHaveLength(1);
   expect(button("Mute notifications").textContent).not.toContain("Muted until resumed");
@@ -201,7 +201,7 @@ it("shows persisted mute status on the project and in its reopened menu", async 
   expect(
     document
       .querySelector('[role="menu"]')
-      ?.firstElementChild?.querySelector('[aria-label="Group name"]'),
+      ?.firstElementChild?.querySelector('[aria-label="Project name"]'),
   ).not.toBeNull();
 });
 

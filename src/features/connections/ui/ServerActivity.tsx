@@ -1,5 +1,6 @@
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useState } from "react";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -22,13 +23,13 @@ export function ServerActivity({
   const activity = server.metadata.activity ?? [];
   const [bookmarkedOnly, setBookmarkedOnly] = useState(false);
   const visibleActivity = activity.filter((event) => !bookmarkedOnly || event.bookmarked);
-  const Container = expanded ? "section" : "details";
-  const Heading = expanded ? "h3" : "summary";
-  return (
-    <Container className="text-ui-caption">
-      <Heading className="py-1 font-medium">
-        {t("Connection activity")} ({activity.length})
-      </Heading>
+  const title = (
+    <>
+      {t("Connection activity")} ({activity.length})
+    </>
+  );
+  const content = (
+    <>
       <div className="my-3">
         <Switch
           label={t("Bookmarked only")}
@@ -36,9 +37,9 @@ export function ServerActivity({
           onCheckedChange={setBookmarkedOnly}
         />
       </div>
-      <Disclosure className="mbs-2 text-(--ui-text-muted)" summary={t("About connection activity")}>
-        <p>{t("Launch metadata only. Terminal contents are not recorded.")}</p>
-      </Disclosure>
+      <p className="mbs-2 text-(--ui-text-muted)">
+        {t("Launch metadata only. Terminal contents are not recorded.")}
+      </p>
       {error ? <InlineError className="mbs-2">{error}</InlineError> : null}
       {!visibleActivity.length ? (
         <EmptyState
@@ -84,6 +85,16 @@ export function ServerActivity({
           ))}
         </ul>
       )}
-    </Container>
+    </>
+  );
+  return expanded ? (
+    <section className="text-ui-caption">
+      <SectionLabel as="h3">{title}</SectionLabel>
+      {content}
+    </section>
+  ) : (
+    <Disclosure size="sm" className="text-ui-caption" summary={title}>
+      {content}
+    </Disclosure>
   );
 }

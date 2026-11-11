@@ -13,6 +13,7 @@ import {
 import { assistantJobTasksGoal } from "../../../features/assistant/model/assistantJobTasksReveal";
 import type { RemoteMachine, HostSession } from "../../../features/connections/model/protocol";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
+import { useHeldValue } from "../helpers/stableProps";
 import { WindowControls } from "../../shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
@@ -633,5 +634,21 @@ const MemoWorkspaceToolPanels = memo(WorkspaceToolPanelsComponent);
 
 /** Workspace recreates most handlers per render; stable proxies let the memo hold. */
 export function WorkspaceToolPanels(props: WorkspaceToolPanelsProps) {
-  return <MemoWorkspaceToolPanels {...useStableHandlers(props)} />;
+  // Rail layout only matters while a panel is shown; holding it while all are hidden
+  // keeps a rail toggle from re-rendering every mounted panel.
+  const crewsOpen = useCrewsPageOpen();
+  const shown =
+    crewsOpen ||
+    props.inboxViewOpen ||
+    props.notesViewOpen ||
+    props.serversViewOpen ||
+    props.automationsViewOpen;
+  const projectRailOpen = useHeldValue(props.projectRailOpen, shown);
+  const compactProjectRail = useHeldValue(props.compactProjectRail, shown);
+  const compactRailActive = useHeldValue(props.compactRailActive, shown);
+  return (
+    <MemoWorkspaceToolPanels
+      {...useStableHandlers({ ...props, projectRailOpen, compactProjectRail, compactRailActive })}
+    />
+  );
 }

@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 it.each(["mac", "win", "linux", "browser"] as const)(
-  "keeps blocked microphone recovery and dismissal in the %s error popover",
+  "shows blocked microphone recovery and dismissal directly in the %s error notice",
   async (target) => {
     platform.mac = target === "mac" || target === "browser";
     platform.win = target === "win";
@@ -46,9 +46,7 @@ it.each(["mac", "win", "linux", "browser"] as const)(
     const onDismiss = vi.fn();
     const error = microphoneBlockedMessage();
     await act(async () => root!.render(createElement(VoiceErrorNotice, { error, onDismiss })));
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    await act(async () => element!.querySelector<HTMLButtonElement>("[data-voice-error]")!.click());
-    const dialog = document.querySelector('[role="dialog"]')!;
+    const dialog = element;
     expect(dialog.textContent).toContain(error);
     const recovery = [...dialog.querySelectorAll("button")].find(
       (button) => button.textContent === "Open Privacy Settings",

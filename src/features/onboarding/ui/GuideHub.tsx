@@ -3,6 +3,8 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { Heading } from "../../../shared/ui/Heading";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   ArrowLeft,
@@ -200,7 +202,9 @@ export default function GuideHub({
         <nav className="guide-hub-nav" aria-label={t("Guide topics")}>
           {groups.map((group) => (
             <div key={group.name} className="guide-hub-group">
-              <h3>{group.name}</h3>
+              <SectionLabel as="h3" className="guide-hub-group-title">
+                {group.name}
+              </SectionLabel>
               {group.items.map((item) => {
                 const Icon = ICONS[item.id];
                 const complete = item.steps.every(stepDone);
@@ -227,7 +231,9 @@ export default function GuideHub({
         </nav>
         <article key={topic.id} className="guide-hub-content" aria-labelledby="guide-hub-title">
           <header className="guide-hub-heading">
-            <h2 id="guide-hub-title">{topic.title}</h2>
+            <Heading size="page" level={2} id="guide-hub-title">
+              {topic.title}
+            </Heading>
             <span className="guide-hub-count">
               {t("{p0} of {p1} done", { p0: topicFinished, p1: topic.steps.length })}
             </span>
@@ -261,7 +267,9 @@ export default function GuideHub({
             </p>
           ) : null}
           <section className="guide-hub-section">
-            <h3>{t("Steps")}</h3>
+            <SectionLabel as="h3" className="guide-hub-section-title">
+              {t("Steps")}
+            </SectionLabel>
             <ol className="guide-hub-steps">
               {topic.steps.map((step, position) => {
                 const done = stepDone(step);
@@ -318,7 +326,9 @@ export default function GuideHub({
           ) : null}
           {topic.shortcuts.length > 0 ? (
             <section className="guide-hub-section">
-              <h3>{t("Shortcuts")}</h3>
+              <SectionLabel as="h3" className="guide-hub-section-title">
+                {t("Shortcuts")}
+              </SectionLabel>
               <GuideShortcuts items={topic.shortcuts} />
             </section>
           ) : null}

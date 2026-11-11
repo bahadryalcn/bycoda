@@ -78,7 +78,7 @@
   line-height: var(--leading-body);
 }
 .description {
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 .error {
   color: var(--danger);

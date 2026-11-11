@@ -56,6 +56,12 @@ describe("sanitizeThemeGroup", () => {
       contrast: 100,
       uiScale: 150,
     });
+    expect(sanitizeThemeGroup("interface", { surfaceContrast: 250 })).toEqual({
+      surfaceContrast: 200,
+    });
+    expect(sanitizeThemeGroup("interface", { surfaceContrast: 20 })).toEqual({
+      surfaceContrast: 50,
+    });
     expect(sanitizeThemeGroup("background", { sidebarOpacity: 15, mainOpacity: 30 })).toEqual({
       sidebarOpacity: 70,
       mainOpacity: 70,

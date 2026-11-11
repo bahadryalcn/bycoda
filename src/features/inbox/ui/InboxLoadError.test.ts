@@ -19,12 +19,14 @@ it("keeps long errors collapsed, exposes all details and retains retry state", a
         createElement(InboxLoadError, { error, retrying: false, disabled: false, onRetry }),
       ),
     );
-    expect(host.textContent).not.toContain("G:/repo-0");
-    const toggle = host.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!;
-    await act(async () => toggle.click());
-    const details = host.querySelector(`#${CSS.escape(toggle.getAttribute("aria-controls")!)}`)!;
-    expect(details.textContent).toBe(error);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(host.querySelector("details")).toBeNull();
+    expect(host.textContent).not.toContain(error);
+    const details = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.startsWith("Details"),
+    )!;
+    await act(async () => details.click());
+    expect(document.querySelector("pre")?.textContent).toBe(error);
+    await act(async () => details.click());
     const retry = [...host.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Retry"),
     )!;

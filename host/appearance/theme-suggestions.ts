@@ -46,6 +46,7 @@ export function themeSuggestionPrompt(request: string): string {
     "Do not increase terminal size, interface scale, density or motion merely to express a colour mood.",
     "Keep text readable and preserve visible boundaries between canvas, controls, cards and selected rows.",
     "Use interface.contrast 100-130 for clear structural borders and a neutral or theme tint for distinct interaction states.",
+    "For a pure black or very dark canvas prefer interface.surfaceContrast 110-150 so cards and fields stay visible; otherwise omit it.",
     "Pure canvas intentionally shares one ground: use borders and interaction states for hierarchy, not identical selected/rest colours.",
     '"scheme": "light" | "dark"; "darkLightness": integer 0-30 (dark canvas lightness);',
     '"canvas": "pure" (true black/white) | "tinted";',

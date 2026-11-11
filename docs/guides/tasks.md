@@ -18,6 +18,10 @@ Local project options can appear while other sources are still loading. Sprint d
 
 Automatic correction is bounded. Repeating an unchanged failed check stops another identical repair cycle. A reviewer that omitted its final result may receive bounded follow-up requests in the same review session; the worker is not restarted just to obtain a verdict. External checks and exhausted correction retain their findings and owner approval requirements.
 
+A review with acceptance criteria is bound to the working-copy contents it inspected. In a shared checkout it waits while another task's worker is still writing there. If the contents still change during the review, the stale verdict is discarded and the current contents are reviewed again, at most twice; a third change blocks the task with that reason.
+
+A goal runs only the reviews its plan needs. A plan with one task skips the final goal review, because that task's own review already covered the whole job. When the planner marks a small, low-risk job as simple, its tasks run their configured checks without a separate reviewer. Neither rule adds a review you turned off.
+
 ## Retry safely
 
 If creating a task loses its reply, keep the draft and retry it. The draft retains its creation identity and checks the original Host for the existing task before another save. If the original result is still unknown, resolve it on that project and machine before changing the target. Closing the draft and creating a separate new one is a new request.

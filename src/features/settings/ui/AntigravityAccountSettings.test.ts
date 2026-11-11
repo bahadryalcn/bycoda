@@ -59,22 +59,26 @@ function button() {
 
 it("opens shared-account setup from Accounts without offering unsupported named profiles", () => {
   act(() => root.render(createElement(AntigravityAccountSettings, { embedded: true })));
-  const setup = container.querySelector<HTMLButtonElement>(
-    'button[aria-controls="antigravity-account-setup"]',
-  )!;
-  const panel = container.querySelector<HTMLDivElement>("#antigravity-account-setup")!;
-  expect(setup.textContent).toBe("Set up account");
-  expect(panel.hidden).toBe(true);
-  act(() => setup.click());
-  expect(panel.hidden).toBe(false);
-  expect(setup.getAttribute("aria-expanded")).toBe("true");
+  const details = container.querySelector<HTMLDetailsElement>("#setting-antigravity-account")!;
+  const setup = details.querySelector<HTMLElement>("summary")!;
+  expect(setup.textContent).toContain("Antigravity CLI account");
+  expect(details.open).toBe(false);
+  act(() => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  expect(details.open).toBe(true);
+  const panel = details;
   expect(panel.textContent).toContain(
     "Separate named Antigravity accounts cannot currently be added",
   );
   expect(panel.textContent).toContain("/logout");
   expect(container.textContent).not.toContain("Add account");
-  act(() => setup.click());
-  expect(panel.hidden).toBe(true);
+  act(() => {
+    details.open = false;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  expect(details.open).toBe(false);
 });
 
 it("shows both native installers and the real agy authentication instructions", () => {

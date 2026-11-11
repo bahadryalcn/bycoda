@@ -455,17 +455,13 @@ function ProjectTerminalDockComponent({
             {
               kind: "item",
               id: "move-up",
-              get label() {
-                return t("Move up");
-              },
+              label: t("Move up"),
               disabled: dock.pane.files.findIndex((file) => file.id === terminalMenu.id) < 1,
             },
             {
               kind: "item",
               id: "move-down",
-              get label() {
-                return t("Move down");
-              },
+              label: t("Move down"),
               disabled:
                 dock.pane.files.findIndex((file) => file.id === terminalMenu.id) >=
                 dock.pane.files.length - 1,
@@ -475,9 +471,7 @@ function ProjectTerminalDockComponent({
             {
               kind: "item",
               id: "close-others",
-              get label() {
-                return t("Close Others");
-              },
+              label: t("Close Others"),
               disabled: dock.pane.files.length < 2,
             },
             { kind: "item", id: "close-all", label: t("Close All Terminals") },
@@ -536,9 +530,7 @@ function ProjectTerminalDockComponent({
                   {
                     kind: "item" as const,
                     id: "none",
-                    get label() {
-                      return t("No shells found");
-                    },
+                    label: t("No shells found"),
                     disabled: true,
                   },
                 ]
@@ -549,9 +541,7 @@ function ProjectTerminalDockComponent({
                   {
                     kind: "item" as const,
                     id: "default",
-                    get label() {
-                      return t("Select Default Profile…");
-                    },
+                    label: t("Select Default Profile…"),
                   },
                 ]
               : []),

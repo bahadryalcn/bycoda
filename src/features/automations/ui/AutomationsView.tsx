@@ -24,6 +24,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { Switch } from "../../../shared/ui/Switch";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Alert } from "../../../shared/ui/Alert";
+import { Heading } from "../../../shared/ui/Heading";
 import { Divider } from "../../../shared/ui/Divider";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -89,6 +90,7 @@ import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
 import { HostModelSource } from "../../connections/ui/HostModelSource";
+import { UnreachableMachinesNotice } from "../../connections/public/UnreachableMachinesNotice";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SkillPromptField } from "../../skills/ui/SkillPromptField";
 import { OverlayNav } from "../../../app/shell/TitleBar";
@@ -609,22 +611,14 @@ function AutomationsContent({
         </div>
       ) : null}
       {unreachableNames.length ? (
-        <Alert
-          tone="warning"
-          className="mx-3 mb-2 shrink-0"
-          action={
-            <Button
-              variant="secondary"
-              disabled={!queryVisible}
-              loading={host.fetching}
-              onClick={() => void refreshHost(true)}
-            >
-              {t("Retry")}
-            </Button>
-          }
-        >
-          {unreachableNotice(unreachableNames)}
-        </Alert>
+        <UnreachableMachinesNotice
+          className="shrink-0 px-2 py-1"
+          message={unreachableNotice(unreachableNames)}
+          detail={host.unreachableDetail}
+          disabled={!queryVisible}
+          retrying={host.fetching}
+          onRetry={() => void refreshHost(true)}
+        />
       ) : null}
       <div className="automation-body flex min-h-0 min-w-0 flex-1">
         {showList ? (
@@ -968,15 +962,51 @@ function AutomationPicker({
       .includes(templateQuery.trim().toLocaleLowerCase()),
   );
   const collapsible = !templateQuery.trim() && category === "all";
-  const shown = collapsible && !allTemplates ? templates.slice(0, FIRST_TEMPLATES) : templates;
+  const renderTemplate = (template: (typeof templates)[number]) => {
+    const Icon = TEMPLATE_ICONS[template.icon];
+    return (
+      <Button
+        key={template.id}
+        type="button"
+        onClick={() => onPick(template)}
+        variant="item"
+        layout="stacked"
+        className="automation-template"
+        tooltip={t(template.description)}
+      >
+        <span className="flex gap-3">
+          <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
+            <Icon className="icon-md" strokeWidth={1.75} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="line-clamp-2 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+              {t(template.name)}
+            </span>
+            <span className="mt-1 line-clamp-2 text-ui-caption leading-snug text-(--ui-text-muted)">
+              {t(template.description)}
+            </span>
+          </span>
+          <ChevronRight
+            aria-hidden
+            className="icon-sm mt-1 shrink-0 text-(--ui-text-muted)"
+            strokeWidth={1.75}
+          />
+        </span>
+        <span className="mt-auto flex min-w-0 items-center gap-1.5 ps-10 pt-2 text-ui-micro text-(--ui-text-muted)">
+          <TriggerMark kind={template.trigger.kind} className="icon-xs shrink-0" />
+          <span className="min-w-0 truncate">{t(template.triggerLabel)}</span>
+        </span>
+      </Button>
+    );
+  };
 
   return (
     <div ref={lockOverscroll} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none">
       <div className="automation-content automation-picker">
         <header>
-          <h1 className="text-ui-heading font-medium leading-tight text-(--ui-tone-neutral-fg)">
+          <Heading size="page">
             {firstUse ? t("Create your first automation") : t("New automation")}
-          </h1>
+          </Heading>
           <p className="mt-1.5 text-ui-secondary text-(--ui-text-muted)">
             {t("Choose how to start. You can edit everything before saving.")}
           </p>
@@ -1032,12 +1062,9 @@ function AutomationPicker({
         </div>
         <section className="mt-7" aria-labelledby="automation-templates-title">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <h2
-              id="automation-templates-title"
-              className="me-auto text-ui-secondary font-medium text-(--ui-tone-neutral-fg)"
-            >
+            <Heading id="automation-templates-title" size="item" level={2} className="me-auto">
               {t("Start from a template")}
-            </h2>
+            </Heading>
             <TextField
               label={t("Search templates")}
               hideLabel
@@ -1066,53 +1093,19 @@ function AutomationPicker({
             />
           ) : null}
           <div className="automation-gallery mt-3">
-            {shown.map((template) => {
-              const Icon = TEMPLATE_ICONS[template.icon];
-              return (
-                <Button
-                  key={template.id}
-                  type="button"
-                  onClick={() => onPick(template)}
-                  variant="item"
-                  layout="stacked"
-                  className="automation-template"
-                  tooltip={t(template.description)}
-                >
-                  <span className="flex gap-3">
-                    <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
-                      <Icon className="icon-md" strokeWidth={1.75} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="line-clamp-2 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
-                        {t(template.name)}
-                      </span>
-                      <span className="mt-1 line-clamp-2 text-ui-caption leading-snug text-(--ui-text-muted)">
-                        {t(template.description)}
-                      </span>
-                    </span>
-                    <ChevronRight
-                      aria-hidden
-                      className="icon-sm mt-1 shrink-0 text-(--ui-text-muted)"
-                      strokeWidth={1.75}
-                    />
-                  </span>
-                  <span className="mt-auto flex min-w-0 items-center gap-1.5 ps-10 pt-2 text-ui-micro text-(--ui-text-muted)">
-                    <TriggerMark kind={template.trigger.kind} className="icon-xs shrink-0" />
-                    <span className="min-w-0 truncate">{t(template.triggerLabel)}</span>
-                  </span>
-                </Button>
-              );
-            })}
+            {(collapsible ? templates.slice(0, FIRST_TEMPLATES) : templates).map(renderTemplate)}
           </div>
           {collapsible && templates.length > FIRST_TEMPLATES ? (
-            <Button
+            <Disclosure
               className="mt-3"
-              variant="ghost"
-              aria-expanded={allTemplates}
-              onClick={() => setAllTemplates((value) => !value)}
+              open={allTemplates}
+              onOpenChange={setAllTemplates}
+              summary={`${t(allTemplates ? "Show less" : "Show all")} · ${templates.length}`}
             >
-              {t(allTemplates ? "Show less" : "Show all")} · {templates.length}
-            </Button>
+              <div className="automation-gallery">
+                {templates.slice(FIRST_TEMPLATES).map(renderTemplate)}
+              </div>
+            </Disclosure>
           ) : null}
         </section>
       </div>
