@@ -24,16 +24,24 @@ export async function acquireNativeAdmissionLock(
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       // Windows can report a sharing violation while another owner holds this file.
-      // Retry only a proven regular lock file; permission failures still fail closed.
+      // Its owner may unlink the lock between the failed open and this probe.
+      // Neither an existing lock nor ENOENT grants ownership: the next wx must succeed.
+      let lockDisappeared = false;
       const sharingViolation =
         process.platform === "win32" &&
         code === "EPERM" &&
         (await lstat(lockPath).then(
           (entry) => entry.isFile(),
-          () => false,
+          (probeError: NodeJS.ErrnoException) => {
+            lockDisappeared = probeError.code === "ENOENT";
+            return lockDisappeared;
+          },
         ));
       if (code !== "EEXIST" && !sharingViolation) throw error;
-      if (elapsedSince(started) >= timeoutMs) throw new Error("Native admission registry is busy.");
+      if (elapsedSince(started) >= timeoutMs) {
+        if (lockDisappeared) throw error;
+        throw new Error("Native admission registry is busy.");
+      }
       await new Promise<void>((resolve) =>
         setTimeout(resolve, Math.min(25, Math.max(1, timeoutMs - elapsedSince(started)))),
       );

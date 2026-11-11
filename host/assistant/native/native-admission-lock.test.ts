@@ -44,12 +44,37 @@ it("keeps the existing acquisition deadline while a Windows lock remains held", 
   expect(unlink).not.toHaveBeenCalled();
 });
 
-it.each(["missing", "directory", "unreadable"])(
+it("reacquires exclusively when a Windows lock disappears before its sharing-violation probe", async () => {
+  vi.mocked(open).mockRejectedValueOnce(denied).mockResolvedValueOnce(handle);
+  vi.mocked(lstat).mockRejectedValue(
+    Object.assign(new Error("lock was removed"), { code: "ENOENT" }),
+  );
+  const release = await acquireNativeAdmissionLock("registry.json", 500);
+  expect(open).toHaveBeenNthCalledWith(1, "registry.json.lock", "wx", 0o600);
+  expect(open).toHaveBeenNthCalledWith(2, "registry.json.lock", "wx", 0o600);
+  expect(unlink).not.toHaveBeenCalled();
+  await release();
+  expect(close).toHaveBeenCalledOnce();
+  expect(unlink).toHaveBeenCalledExactlyOnceWith("registry.json.lock");
+});
+
+it("retains a permanent permission error when an absent Windows lock cannot be created", async () => {
+  vi.mocked(open).mockRejectedValue(denied);
+  vi.mocked(lstat).mockRejectedValue(Object.assign(new Error("absent"), { code: "ENOENT" }));
+  await expect(acquireNativeAdmissionLock("registry.json", 35)).rejects.toBe(denied);
+  expect(open).toHaveBeenCalled();
+  expect(close).not.toHaveBeenCalled();
+  expect(unlink).not.toHaveBeenCalled();
+});
+
+it.each(["directory", "symlink", "unreadable", "permission-denied"])(
   "retains the original Windows permission error for an unproven %s lock",
   async (kind) => {
     vi.mocked(open).mockRejectedValue(denied);
-    if (kind === "directory")
+    if (kind === "directory" || kind === "symlink")
       vi.mocked(lstat).mockResolvedValue({ isFile: () => false } as typeof regularFile);
+    else if (kind === "permission-denied")
+      vi.mocked(lstat).mockRejectedValue(Object.assign(new Error(kind), { code: "EACCES" }));
     else vi.mocked(lstat).mockRejectedValue(new Error(kind));
     await expect(acquireNativeAdmissionLock("registry.json")).rejects.toBe(denied);
     expect(open).toHaveBeenCalledOnce();
