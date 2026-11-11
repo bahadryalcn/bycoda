@@ -13,10 +13,13 @@
   position: relative;
   flex: none;
 }
+.icons[data-compact] .star {
+  padding-block-end: var(--space-3);
+}
 .dismiss {
   position: absolute;
-  inset-inline-end: calc(-1 * var(--space-2));
-  inset-block-end: calc(-1 * var(--space-1));
+  inset-inline-end: calc(-1 * var(--space-3));
+  inset-block-start: calc(var(--ui-control-height-sm) - var(--space-2));
   opacity: 0;
   visibility: hidden;
   transition:
@@ -30,7 +33,7 @@
 }
 /* Reserve the corner for dismiss without putting it over the star's hit target. */
 .star:is(:hover, :focus-within) .open {
-  clip-path: polygon(0 0, 100% 0, 100% 55%, 65% 55%, 65% 100%, 0 100%);
+  clip-path: polygon(0 0, 100% 0, 100% 65%, 65% 65%, 65% 100%, 0 100%);
 }
 @media (hover: none), (pointer: coarse) {
   .dismiss {
@@ -38,7 +41,7 @@
     visibility: visible;
   }
   .open {
-    clip-path: polygon(0 0, 100% 0, 100% 55%, 65% 55%, 65% 100%, 0 100%);
+    clip-path: polygon(0 0, 100% 0, 100% 65%, 65% 65%, 65% 100%, 0 100%);
   }
   /* Keep the shared inset action's extra touch area off the star. */
   .star .dismiss[data-button-hierarchy]::before {

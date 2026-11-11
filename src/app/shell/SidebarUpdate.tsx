@@ -86,8 +86,8 @@ export function SidebarUpdateFooter({
     snapshot.phase === "downloading" ? (
       <Spinner size="md" className="shrink-0" />
     ) : icon ? (
-      <span className="relative grid icon-lg shrink-0 place-items-center">
-        <ArrowDownCircle className="icon-lg" aria-hidden />
+      <span className="relative grid icon-md shrink-0 place-items-center">
+        <ArrowDownCircle className="icon-md" aria-hidden />
         <StatusDot
           tone={snapshot.phase === "error" ? "warning" : "accent"}
           appearance="solid"
@@ -106,7 +106,6 @@ export function SidebarUpdateFooter({
         : repositoryPrompt || icon
           ? { iconOnly: true as const, label: actionLabel }
           : { label: actionLabel })}
-      size={icon ? "lg" : "sm"}
       variant={repositoryPrompt || icon ? "ghost" : "secondary"}
       tone={snapshot.phase === "error" ? "warning" : "neutral"}
       motion="none"

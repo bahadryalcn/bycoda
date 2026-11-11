@@ -6,7 +6,7 @@ countdown; returning resumes the remaining time. Hovering over a toast or focusi
 its controls also pauses it. Notices explicitly kept open for an action remain until
 their owner dismisses them; closing a notification never answers an approval request.
 
-The compact rail keeps its width while using larger navigation targets and icons.
+The compact rail keeps its width and uses standard-sized navigation targets and icons.
 The footer places the voice companion first, followed by GitHub and available updates,
 then Settings and Account. Hover or focus the GitHub star to reveal its corner dismiss
 button. Dismissal applies to both compact and expanded footers for the current version.

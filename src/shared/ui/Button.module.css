@@ -240,8 +240,16 @@
 }
 /* An icon stays in place while a toolbar action reveals its label. */
 .control[data-button-reveal-label] {
+  --button-reveal-height: var(--control-height-sm);
+  --button-icon-size: var(--ui-icon-md);
+  padding-inline: calc((var(--button-reveal-height) - var(--button-icon-size)) / 2 - 1px);
+}
+.control[data-button-reveal-label][data-button-size="md"] {
+  --button-reveal-height: var(--control-height-md);
+}
+.control[data-button-reveal-label][data-button-size="lg"] {
+  --button-reveal-height: var(--control-height-lg);
   --button-icon-size: var(--ui-icon-lg);
-  padding-inline: calc((var(--control-height-lg) - var(--button-icon-size)) / 2 - 1px);
 }
 .control[data-button-reveal-label] > .nativeContent {
   display: inline-grid;

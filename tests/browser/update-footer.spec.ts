@@ -10,7 +10,7 @@ const appVersion = (
 const route = "/tests/browser/update-footer.html";
 const captureRoot = "temp/verification/2026-10-27-update-footer";
 const nextVersion = "0.6.93";
-const accountCaptureRoot = "temp/verification/2026-11-11-rail-footer";
+const accountCaptureRoot = "temp/verification/2026-11-11-rail-size-reset";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(
@@ -220,7 +220,7 @@ test("captures both themes and widths with disabled and pending shared actions",
   await page.screenshot({ path: `${captureRoot}/footer-dark-1280-normal-motion.png` });
 });
 
-test("compact account rail preserves its width, larger targets and action order", async ({
+test("compact account rail preserves its width, standard targets and action order", async ({
   page,
 }) => {
   await page.goto(`${route}?account&compact`);
@@ -231,9 +231,12 @@ test("compact account rail preserves its width, larger targets and action order"
   expect((await rail.boundingBox())!.width).toBe(56);
   const top = rail.getByRole("navigation", { name: "Workspace tools" });
   for (const button of await top.getByRole("button").all()) {
-    expect((await button.boundingBox())!.height).toBe(40);
+    expect((await button.boundingBox())!.height).toBe(28);
     const icon = button.locator("svg").first();
-    expect((await icon.boundingBox())!.width).toBe(20);
+    expect((await icon.boundingBox())!.width).toBe(14);
+  }
+  for (const button of await footer.getByRole("button").all()) {
+    expect((await button.boundingBox())!.height).toBe(28);
   }
   const order = await footer
     .getByRole("button", { includeHidden: true })
@@ -322,7 +325,7 @@ test.describe("touch footer targets", () => {
         const nameAt = (x: number, y: number) =>
           document.elementFromPoint(x, y)?.closest("button")?.getAttribute("aria-label");
         return {
-          star: nameAt(star.x + 21, star.y + 21),
+          star: nameAt(star.x + star.width * 0.525, star.y + star.height * 0.525),
           dismiss: nameAt(dismiss.x + dismiss.width / 2, dismiss.y + dismiss.height / 2),
         };
       },
@@ -337,7 +340,10 @@ test.describe("touch footer targets", () => {
     expect(dismissBounds.x + dismissBounds.width).toBeLessThanOrEqual(
       railBounds.x + railBounds.width,
     );
-    await page.touchscreen.tap(starBounds.x + 21, starBounds.y + 21);
+    await page.touchscreen.tap(
+      starBounds.x + starBounds.width * 0.525,
+      starBounds.y + starBounds.height * 0.525,
+    );
     await expect(github).toBeVisible();
     expect(
       await page.evaluate(

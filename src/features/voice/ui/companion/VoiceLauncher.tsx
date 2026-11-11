@@ -45,12 +45,10 @@ export function VoiceReturnButton({
   ref: Ref<HTMLButtonElement>;
   onReturn: () => void;
 }) {
-  const slot = useVoiceLauncherSlot();
   return (
     <VoiceLauncherFrame>
       <Button
         ref={ref}
-        size={slot ? "lg" : "sm"}
         iconOnly
         selected
         label={t("Return voice companion to this window")}
@@ -125,7 +123,6 @@ export function VoiceLauncher({
       <Button
         ref={ref}
         shape="pill"
-        size={slot ? "lg" : "sm"}
         iconOnly={compact}
         className={styles.launcherButton}
         data-docked={slot ? "" : undefined}

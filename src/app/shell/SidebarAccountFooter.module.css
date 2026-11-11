@@ -38,7 +38,7 @@
 /* A revealed update label yields to the companion in a narrow expanded sidebar. */
 @container account-footer (width < 280px) {
   .actions :global([data-button-reveal-label]) {
-    max-inline-size: var(--ui-control-height-lg);
+    max-inline-size: var(--ui-control-height-sm);
     overflow: hidden;
   }
 }

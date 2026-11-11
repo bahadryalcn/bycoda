@@ -73,7 +73,6 @@ export function GithubStarPrompt({
       <Button
         {...(icon ? { iconOnly: true as const } : { iconOnly: false as const })}
         label={t("View {p0} on GitHub", { p0: PRODUCT_IDENTITY.displayName })}
-        size={icon ? "lg" : "sm"}
         variant="ghost"
         motion="none"
         type="button"
@@ -81,7 +80,7 @@ export function GithubStarPrompt({
         onClick={star.open}
         className={icon ? styles.open : "min-w-0 flex-1"}
       >
-        <Star className={icon ? "icon-lg" : "icon-xs shrink-0"} strokeWidth={1.75} />
+        <Star className={icon ? "icon-md" : "icon-xs shrink-0"} strokeWidth={1.75} />
         {!icon ? (
           <span className="truncate text-ui-caption font-medium">{t("View on GitHub")}</span>
         ) : null}

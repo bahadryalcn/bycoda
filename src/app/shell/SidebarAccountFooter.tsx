@@ -28,7 +28,6 @@ export function SidebarAccountFooter({
   const settingsShortcut = useKeybindingShortcut("App: Settings");
   const account = (
     <AccountMenu
-      size="lg"
       state={state}
       presence={{
         hidden: presence.hidden,
@@ -47,7 +46,6 @@ export function SidebarAccountFooter({
   const settings = (
     <Button
       iconOnly
-      size="lg"
       variant="ghost"
       motion="none"
       label={t("Settings")}
@@ -56,7 +54,7 @@ export function SidebarAccountFooter({
       onClick={onOpenSettings}
       disabled={!onOpenSettings}
     >
-      <Settings className="icon-lg" aria-hidden />
+      <Settings className="icon-md" aria-hidden />
     </Button>
   );
   return (
