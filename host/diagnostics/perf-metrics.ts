@@ -172,6 +172,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "decisionModels.sources.test",
   "decisionModels.sources.evaluate",
   "decisionModels.discovery.scan",
+  "decisionModels.discovery.cancel",
   "decisionModels.discovery.results",
   "decisionModels.discovery.settings.get",
   "decisionModels.discovery.settings.set",

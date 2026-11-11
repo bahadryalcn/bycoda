@@ -237,7 +237,9 @@ export function AssistantSettings({
               <>
                 <InlineError>{t("Discard unsaved changes?")}</InlineError>
                 <div className={settingsStyles.footerActions}>
-                  <Button onClick={() => setLeave(null)}>{t("Keep editing")}</Button>
+                  <Button key="keep-editing" onClick={() => setLeave(null)}>
+                    {t("Keep editing")}
+                  </Button>
                   <Button
                     variant="danger"
                     disabled={busy}
@@ -259,6 +261,7 @@ export function AssistantSettings({
                 </Button>
                 <div className={settingsStyles.footerActions}>
                   <Button
+                    key="save-profile"
                     type="submit"
                     form={formId}
                     variant="primary"

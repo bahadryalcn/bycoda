@@ -173,7 +173,8 @@ Changing sections does not save drafts. Search
 projects by name or folder path; paths distinguish projects with the same name.
 Helper executable and checksum fields are under **Advanced helper settings**.
 Closing settings or running setup again asks before discarding unsaved profile,
-project or computer drafts. Pending saves and helper preparation keep settings open.
+project or computer drafts. **Keep editing** retains those drafts without saving them.
+Pending saves and helper preparation keep settings open.
 
 Personal preferences also set how often the assistant uses your name (always,
 sometimes or never), its tone, whether profanity is allowed, and a free-text

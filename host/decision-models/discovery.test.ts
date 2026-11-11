@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -160,7 +160,7 @@ describe("automatic discovery", () => {
           detail: expect.stringContaining("not verified"),
         }),
       ]);
-      expect(models[0].detail).toContain(model);
+      expect(models[0].detail).toContain(realpathSync(model));
       expect(result.found.some((candidate) => candidate.detail?.includes("secret.gguf"))).toBe(
         false,
       );

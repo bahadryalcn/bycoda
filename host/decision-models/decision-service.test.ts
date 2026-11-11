@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -435,8 +435,8 @@ describe("DecisionModelsService discovery, first run and manual checks", () => {
       await service.verifyManual({ kind: "model_installation", path: modelPath }),
     ).toMatchObject({
       kind: "installation_folder",
-      folder: directory,
-      modelPath,
+      folder: realpathSync(directory),
+      modelPath: realpathSync(modelPath),
       verified: false,
     });
     expect(await service.listSources()).toEqual([]);

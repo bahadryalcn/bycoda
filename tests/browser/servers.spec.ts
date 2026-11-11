@@ -592,7 +592,7 @@ test("saved SSH command previews its target and copies without terminal input or
     dialog.getByRole("button", { name: "Insert into terminal", exact: true }),
   ).toHaveCount(0);
   await dialog.getByRole("button", { name: "Copy command", exact: true }).click();
-  await expect(dialog.getByRole("status")).toHaveText("Copied");
+  await expect(dialog.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("pwd");
   expect(
     await page.evaluate(() =>

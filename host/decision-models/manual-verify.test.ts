@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -89,8 +89,8 @@ describe("installation folder check", () => {
     expect(result.models).toEqual([
       expect.objectContaining({
         name: "custom",
-        modelPath: join(dir, "models", "custom.gguf"),
-        runtimePath: join(dir, "runtime", "llama-server.exe"),
+        modelPath: realpathSync(join(dir, "models", "custom.gguf")),
+        runtimePath: realpathSync(join(dir, "runtime", "llama-server.exe")),
         verified: false,
       }),
     ]);
@@ -113,8 +113,10 @@ describe("installation folder check", () => {
       }),
     );
     const result = await verifyInstallationFolder(dir, EMPTY_CATALOG);
-    expect(result.runtimePath).toBe(join(dir, "runtime-vision-b11429", "llama-server.exe"));
-    expect(result.projectorPath).toBe(projectorPath);
+    expect(result.runtimePath).toBe(
+      realpathSync(join(dir, "runtime-vision-b11429", "llama-server.exe")),
+    );
+    expect(result.projectorPath).toBe(realpathSync(projectorPath));
     expect(result.models).toHaveLength(1);
   });
 
@@ -182,11 +184,11 @@ describe("model installation check", () => {
     );
     const result = await verifyModelInstallation(modelPath, EMPTY_CATALOG);
     expect(result).toMatchObject({
-      folder: dir,
-      modelPath,
+      folder: realpathSync(dir),
+      modelPath: realpathSync(modelPath),
       model: "clef-flash",
-      projectorPath,
-      runtimePath: join(dir, "runtime-vision-b11429", "llama-server.exe"),
+      projectorPath: realpathSync(projectorPath),
+      runtimePath: realpathSync(join(dir, "runtime-vision-b11429", "llama-server.exe")),
       endpoint: "http://127.0.0.1:8767/v1/systemone",
     });
   });
@@ -206,7 +208,7 @@ describe("model installation check", () => {
       }),
     );
     const result = await verifyModelInstallation(modelPath, EMPTY_CATALOG);
-    expect(result.modelPath).toBe(modelPath);
+    expect(result.modelPath).toBe(realpathSync(modelPath));
     expect(result.models).toHaveLength(2);
     expect(result.model).toBeUndefined();
     expect(result.projectorPath).toBeUndefined();
@@ -219,9 +221,9 @@ describe("model installation check", () => {
     const modelPath = join(dir, "custom.gguf");
     writeFileSync(modelPath, GGUF_HEADER);
     expect(await verifyModelInstallation(modelPath, EMPTY_CATALOG)).toMatchObject({
-      folder: dir,
-      modelPath,
-      runtimePath: join(dir, "runtime", "llama-server.exe"),
+      folder: realpathSync(dir),
+      modelPath: realpathSync(modelPath),
+      runtimePath: realpathSync(join(dir, "runtime", "llama-server.exe")),
       verified: false,
     });
   });

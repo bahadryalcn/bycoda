@@ -1,11 +1,12 @@
 import { createRoot } from "react-dom/client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { QueryProvider } from "../../src/app/QueryProvider";
 import { CrewsSettings } from "../../src/features/crews/ui/CrewsSettings";
 import { CrewsPage } from "../../src/features/crews/ui/page/CrewsPage";
 import { CrewSidebar } from "../../src/features/crews/ui/CrewSessions";
 import { CrewRailSection } from "../../src/features/crews/ui/CrewRailSection";
+import { OPEN_CREWS_PAGE_EVENT } from "../../src/features/crews/model/crewsPage";
 import { CrewTaskPicker } from "../../src/features/crews/ui/CrewTaskPicker";
 import {
   defaultCrewPolicy,
@@ -789,6 +790,11 @@ const drag = {
 function Fixture() {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [view, setView] = useState("sessions");
+  useEffect(() => {
+    const open = () => setView("page");
+    window.addEventListener(OPEN_CREWS_PAGE_EVENT, open);
+    return () => window.removeEventListener(OPEN_CREWS_PAGE_EVENT, open);
+  }, []);
   const [opened, setOpened] = useState("");
   const [crew, setCrew] = useState<string | undefined>();
   const [valid, setValid] = useState(true);

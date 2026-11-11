@@ -179,14 +179,18 @@ test("working sessions and usage meters stay contained in narrow and short works
   await firstCard.focus();
   await firstCard.press("Enter");
   await expect(page.getByLabel("Selected live session")).toHaveText("live-0");
-  // The headline counts only working agents; attention follows as separate text.
-  const workingToggle = rail.getByRole("button", {
-    name: "Working 5 · 1 needs attention",
+  // The headline count and attention badge remain separate from the disclosure.
+  const working = rail.getByRole("region", { name: "Working agents", exact: true });
+  await expect(working.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
+  const workingToggle = working.getByRole("button", {
+    name: "Working 5 1 needs attention",
     exact: true,
   });
   await workingToggle.click();
+  await expect(workingToggle).toHaveAttribute("aria-expanded", "false");
   await expect(firstCard).toBeHidden();
   await workingToggle.click();
+  await expect(workingToggle).toHaveAttribute("aria-expanded", "true");
   await expect(firstCard).toBeVisible();
   const details = page.getByRole("button", {
     name: "Codex usage details",
@@ -383,7 +387,16 @@ test("compact rail centers group and social icons without wrapping labels", asyn
           );
         }
       }
-      expect((await social.boundingBox())!.height).toBeLessThanOrEqual(32);
+      const targetHeight = await social.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.blockSize = "var(--ui-control-height-lg)";
+        probe.style.position = "absolute";
+        element.append(probe);
+        const height = probe.getBoundingClientRect().height;
+        probe.remove();
+        return height;
+      });
+      expect((await social.boundingBox())!.height).toBeCloseTo(width < 140 ? targetHeight : 28, 1);
     }
   }
   await rail.evaluate((element) => {
@@ -405,7 +418,7 @@ test("compact rail centers group and social icons without wrapping labels", asyn
   await expect(page.locator("body")).toHaveAttribute("data-social-cwd", "G:/wallet/api");
 });
 
-test("rail appearance keeps two icon rows and applies independent translucent colors", async ({
+test("rail appearance keeps compact five-column icons and applies independent translucent colors", async ({
   page,
 }, testInfo) => {
   await page
@@ -418,7 +431,17 @@ test("rail appearance keeps two icon rows and applies independent translucent co
     .click();
   const menu = page.getByRole("dialog", { name: "Appearance", exact: true });
   const icons = menu.getByRole("group", { name: "Project icons", exact: true });
-  await expect(icons).toHaveCSS("height", "140px");
+  await expect(icons).toHaveCSS("max-height", "176px");
+  const grid = icons.locator(":scope > div").first();
+  expect(
+    await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ")),
+  ).toHaveLength(5);
+  const choices = grid.getByRole("button");
+  const firstRow = await choices.nth(0).boundingBox();
+  const lastInFirstRow = await choices.nth(4).boundingBox();
+  const secondRow = await choices.nth(5).boundingBox();
+  expect(lastInFirstRow!.y).toBeCloseTo(firstRow!.y, 1);
+  expect(secondRow!.y).toBeGreaterThanOrEqual(firstRow!.y + firstRow!.height);
   const iconHeading = await menu.getByText("Project icon", { exact: true }).boundingBox();
   const automatic = await menu
     .getByRole("button", { name: "Use automatic project icon", exact: true })

@@ -314,7 +314,7 @@ export function Button({
       : tooltipDetails;
   const hintShortcut = suppressed ? null : shortcut;
   const hint = useTooltip({
-    when: tooltipWhen,
+    when: reason ? "always" : tooltipWhen,
     label: hintLabel,
     details: hintDetails,
     shortcut: hintShortcut,

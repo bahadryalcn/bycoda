@@ -245,11 +245,11 @@ test("dropdown keyboard: roving focus, disabled rows skipped, Escape returns foc
   await expect(menu.getByRole("menuitem", { name: "Rename", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Copy path" })).toBeFocused();
-  // Keyboard focus is visible: the shared ring is inset and the row takes the hover fill.
+  // Keyboard focus is visible: the shared ring is inset and the row takes the selected fill.
   const focused = menu.getByRole("menuitem", { name: "Copy path" });
   await settle(page);
   expect(await focused.evaluate(focusRing)).toBe(true);
-  expect(await background(focused)).toBe(await roleColor(page, "--ui-surface-hover"));
+  expect(await background(focused)).toBe(await roleColor(page, "--ui-surface-selected"));
   await page.keyboard.press("ArrowDown"); // Archive is disabled and skipped.
   await expect(menu.getByRole("menuitem", { name: /Rename the current checkout/ })).toBeFocused();
   await page.keyboard.press("End");

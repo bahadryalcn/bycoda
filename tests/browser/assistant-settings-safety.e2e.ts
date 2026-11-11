@@ -16,7 +16,7 @@ async function openSettings(page: Page, extra = "") {
   );
   await page.getByRole("button", { name: tr("Settings"), exact: true }).click();
   const dialog = page.getByRole("dialog").first();
-  await dialog.getByRole("tab", { name: tr("Computer use"), exact: true }).click();
+  await dialog.getByRole("tab", { name: tr("Access"), exact: true }).click();
   return dialog;
 }
 for (const state of ["disabled", "enabled-idle", "active", "stopped", "unavailable"] as const)
@@ -88,7 +88,7 @@ test("single save writes the profile and the computer draft together", async ({ 
   await dialog
     .getByRole("textbox", { name: tr("Assistant name"), exact: true })
     .fill("Saved profile");
-  await dialog.getByRole("tab", { name: tr("Computer use"), exact: true }).click();
+  await dialog.getByRole("tab", { name: tr("Access"), exact: true }).click();
   const application = dialog.getByRole("textbox", { name: tr("Application name"), exact: true });
   await application.fill("Notepad");
   await dialog.getByRole("button", { name: tr("Add application"), exact: true }).click();
@@ -101,15 +101,13 @@ test("single save writes the profile and the computer draft together", async ({ 
   await page.evaluate(() => {
     (window as any).__desktopHoldConfigure = true;
   });
-  const save = dialog.locator("footer button[type=submit]");
+  const save = dialog.locator("button[type=submit][form]");
   await save.click();
   await expect(save).toBeDisabled();
   await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(tr("Discard unsaved changes?"), { exact: true })).toHaveCount(0);
-  await expect(
-    dialog.getByRole("button", { name: tr("Run setup again"), exact: true }),
-  ).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: tr("Quick setup"), exact: true })).toBeDisabled();
   await page.evaluate(() => (window as any).__desktopConfigureRelease());
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   expect(await page.evaluate(() => (window as any).__desktopFixtureConfiguration)).toMatchObject({

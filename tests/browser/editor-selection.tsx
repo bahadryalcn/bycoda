@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { EditorView } from "@codemirror/view";
 import { CodeMirrorEditor } from "../../src/features/files/ui/CodeMirrorEditor";
 import {
   ADD_TO_CHAT_EVENT,
@@ -31,6 +32,16 @@ if (searchMode)
 const searchDoc = Array.from({ length: 300 }, (_, index) => `const value${index} = ${index};`).join(
   "\n",
 );
+
+// Read the real document: focusing can change which lines CodeMirror renders.
+Object.assign(window, {
+  __editorDocument(index: number): string {
+    const element = document.querySelectorAll<HTMLElement>(".cm-editor")[index];
+    const view = element && EditorView.findFromDOM(element);
+    if (!view) throw new Error("Fixture editor is not mounted");
+    return view.state.doc.toString();
+  },
+});
 
 function Fixture() {
   const [draft, setDraft] = useState("Explain this code");

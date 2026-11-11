@@ -58,6 +58,8 @@ describe("split diff", () => {
     expect(getSearchQuery(split.b.state).search).toBe("beta");
     openSearchPanel(split.a);
     expect(split.a.state.readOnly).toBe(true);
+    expect(split.a.contentDOM.contentEditable).toBe("false");
+    expect(split.a.contentDOM.tabIndex).toBe(0);
     expect(split.a.state.doc.toString()).toBe("alpha alpha");
     expect(split.dom.querySelector(".cm-panels-bottom")).toBeNull();
   });

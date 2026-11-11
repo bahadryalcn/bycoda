@@ -245,7 +245,8 @@ not sent anything yet to another account applies that account's defaults.
 
 The model panel opens from the model button. It lists providers on the left, the
 provider's models in the middle and the selected model's options on the right, with
-a short explanation of the option under the pointer at the bottom. The account
+a short explanation of the option under the pointer at the bottom. This help area
+keeps its height as the pointer moves, so the options stay in place. The account
 control beside the provider name depends on how many accounts it has: one is shown
 by name, two switch with one click, three or more open a list with each account's
 usage and reset time, and six or more can be searched. Picking an account on the

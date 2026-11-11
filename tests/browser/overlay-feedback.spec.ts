@@ -243,11 +243,24 @@ test.describe("feedback behavior", () => {
     await expect(skeleton).toHaveCount(0);
   });
 
-  test("danger notices never expire, announce assertively and keep a pending retry single", async ({
+  test("ordinary danger notices expire after ten focused seconds", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
+    await page.clock.pauseAt(new Date("2026-01-01T00:00:01Z"));
+    await open(page);
+    await expect(page.locator('[data-frame="notice-danger"]').getByRole("alert")).toContainText(
+      "The release feed returned 503",
+    );
+    await page.clock.fastForward(9_999);
+    expect(await counter(page, "dismiss-danger")).toBe(0);
+    await page.clock.fastForward(1);
+    expect(await counter(page, "dismiss-danger")).toBe(1);
+  });
+
+  test("explicitly persistent danger notices announce assertively and keep a pending retry single", async ({
     page,
   }) => {
     await page.clock.install();
-    await open(page);
+    await open(page, "?persistent-notice");
     const notice = page.locator('[data-frame="notice-danger"]').getByRole("alert");
     await expect(notice).toContainText("The release feed returned 503");
     await page.clock.fastForward(120_000);

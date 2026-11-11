@@ -124,11 +124,14 @@
   min-inline-size: 1ch;
   min-block-size: 0;
   padding: 0;
-  line-height: inherit;
+  line-height: var(--ui-leading-caption);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
 .count.sm {
   min-inline-size: 1ch;
   min-block-size: 0;
+}
+.count .body {
+  display: flex;
 }

@@ -75,13 +75,7 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
       await agents.click();
     const picker = panel.locator("[data-model-setting-picker]");
     if (name === "Advisor") await advisorField.click();
-    else {
-      // Pointer hover swaps the help strip's height, so the clipped Add row shifts under the
-      // cursor; keyboard activation does not depend on a stable hit target.
-      const add = setting(name).getByRole("button", { name: "Add", exact: true });
-      await add.focus();
-      await add.press("Enter");
-    }
+    else await setting(name).getByRole("button", { name: "Add", exact: true }).click();
     await expect(picker).toBeVisible();
     await picker
       .getByRole("radio", { name: option })

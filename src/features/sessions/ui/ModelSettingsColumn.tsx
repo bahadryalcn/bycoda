@@ -58,7 +58,7 @@ export function ModelSettingHelp({
       className="flex shrink-0 items-start gap-2 border-t border-(--ui-frosted-divider) px-3 py-1.5 ui-caption-text"
     >
       <CircleHelp className="icon-xs mt-0.5 shrink-0" aria-hidden />
-      <p className="line-clamp-3 min-w-0 flex-1 leading-4">
+      <p className="line-clamp-3 h-[3lh] min-w-0 flex-1 leading-4">
         {setting && help ? (
           <>
             <span className="font-medium text-(--ui-tone-neutral-fg)">
@@ -298,7 +298,7 @@ function SettingRow({
       // Picked subagents read as chips; the full list opens only to add more.
       // Last in the column, the list shrinks and scrolls on its own so the rows above stay put.
       return (
-        <div data-setting-id={setting.id} className="flex min-h-0 flex-col pb-1 not-last:shrink-0">
+        <div data-setting-id={setting.id} className="flex min-h-0 shrink-0 flex-col pb-1">
           {heading(
             <span className="ui-caption-text">
               {/* No image model picked means every available one may be used. */}

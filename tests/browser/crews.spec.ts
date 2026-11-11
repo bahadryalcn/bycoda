@@ -36,10 +36,11 @@ for (const theme of ["light", "dark"] as const) {
   for (const width of [1280, 800]) {
     test(`project picker and creation stay compact ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/crews.html?longProjects&theme=${theme}`);
       const management = await openWork(page);
       const project = management.getByRole("button", {
-        name: "Project: C:/fixture/crew-project",
+        name: "Project: crew-project",
         exact: true,
       });
       await expect(project).toBeVisible();
@@ -75,9 +76,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(management).toBeVisible();
       await page.keyboard.press("Escape");
       const start = await openStart(page);
-      await start
-        .getByRole("button", { name: "Project: C:/fixture/crew-project", exact: true })
-        .click();
+      await start.getByRole("button", { name: "Project: crew-project", exact: true }).click();
       await expect(option).toBeVisible();
       await page.screenshot({
         path: `temp/verification/2026-11-11-crew-pickers/new-work-picker-${theme}-${width}.png`,
@@ -100,7 +99,7 @@ test("project creation retains invalid and failed drafts then selects created pr
   await page.goto("/tests/browser/crews.html?failOperation=projects.createDirectory");
   const management = await openWork(page);
   const project = management.getByRole("button", {
-    name: "Project: C:/fixture/crew-project",
+    name: "Project: crew-project",
     exact: true,
   });
   await project.click();
@@ -109,28 +108,26 @@ test("project creation retains invalid and failed drafts then selects created pr
   const name = create.getByRole("textbox", { name: "Project name", exact: true });
   await name.fill("../invalid");
   await create.getByRole("button", { name: "Create project", exact: true }).click();
-  await expect(
-    create.getByText("Use a folder name without slashes or special characters.", { exact: true }),
-  ).toBeVisible();
+  await expect(create.getByRole("alert")).toContainText(
+    "Use a folder name without slashes or special characters.",
+  );
   await name.fill("new-project");
   await create.getByRole("button", { name: "Create project", exact: true }).click();
-  await expect(
-    create.getByText("The Host could not complete this action. Try again in a moment.", {
-      exact: true,
-    }),
-  ).toBeVisible();
+  await expect(create.getByRole("alert")).toContainText(
+    "The Host could not complete this action. Try again in a moment.",
+  );
   await expect(name).toHaveValue("new-project");
   await create.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(management).toBeVisible();
   await page.goto("/tests/browser/crews.html");
   const next = await openWork(page);
-  await next.getByRole("button", { name: "Project: C:/fixture/crew-project", exact: true }).click();
+  await next.getByRole("button", { name: "Project: crew-project", exact: true }).click();
   await page.getByRole("button", { name: "New project…", exact: true }).click();
   await name.fill("new-project");
   await create.getByRole("button", { name: "Create project", exact: true }).click();
   await expect(create).toHaveCount(0);
   await expect(
-    next.getByRole("button", { name: "Project: C:/fixture/new-project", exact: true }),
+    next.getByRole("button", { name: "Project: new-project", exact: true }),
   ).toBeVisible();
 });
 
@@ -245,7 +242,10 @@ test("model catalog failure leaves existing work controls and sessions usable", 
   const work = management.locator('[data-crew-run="run"]');
   await work.getByRole("button", { name: "Pause new assignments" }).click();
   await expect(work.getByRole("button", { name: "Resume work" })).toBeVisible();
-  await work.getByRole("button", { name: /Coordinator/ }).click();
+  await work
+    .getByRole("list", { name: "Sessions", exact: true })
+    .getByRole("button", { name: /Coordinator/ })
+    .click();
   await expect(page.getByLabel("Opened session")).toHaveText("lead-session");
 });
 
@@ -672,7 +672,10 @@ test("opens ongoing work from the rail and keeps the delivery while editing the 
   await row.getByRole("button", { name: /Website Crew, Needs decision/ }).click();
   const workDialog = page.getByRole("dialog", { name: "Website Crew" });
   await expect(workDialog).toBeVisible();
-  await workDialog.getByRole("button", { name: /Coordinator/ }).click();
+  await workDialog
+    .getByRole("list", { name: "Sessions", exact: true })
+    .getByRole("button", { name: /Coordinator/ })
+    .click();
   await expect(page.getByLabel("Opened session")).toHaveText("lead-session");
   await row.hover();
   await row.getByRole("button", { name: "New work with Website Crew" }).click();
@@ -778,7 +781,11 @@ test("compact work list opens selected work with visible conversations", async (
   await expect(work.getByText("Needs decision", { exact: true })).toBeVisible();
   await expect(work).toContainText("0/1 tasks");
   await expect(work).toContainText("Need image generation for the hero");
-  await expect(work.getByRole("button", { name: /Coordinator/ })).toBeVisible();
+  await expect(
+    work
+      .getByRole("list", { name: "Sessions", exact: true })
+      .getByRole("button", { name: /Coordinator/ }),
+  ).toBeVisible();
   await expect(work.getByRole("button", { name: /UI.*Awaiting acceptance/ })).toBeVisible();
   await expect(work.getByRole("button", { name: /Reviewer.*Build settings/ })).toBeVisible();
   await page.screenshot({
@@ -817,7 +824,10 @@ test("work management exposes long decisions and blockers without extra disclosu
   await page.screenshot({
     path: `${shots}/blocked-narrow-${testInfo.project.name}.png`,
   });
-  await work.getByRole("button", { name: /Coordinator/ }).focus();
+  await work
+    .getByRole("list", { name: "Sessions", exact: true })
+    .getByRole("button", { name: /Coordinator/ })
+    .focus();
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Opened session")).toHaveText("lead-session");
 });
@@ -848,7 +858,11 @@ test("one manager selects ongoing and finished work without mixing conversations
   await expect(management.locator('[data-crew-run="run"]')).toHaveCount(0);
   const second = management.locator('[data-crew-run="second-run"]');
   await expect(second).toContainText("Improve mobile navigation");
-  await expect(second.getByRole("button", { name: /Reviewer/ })).toHaveCount(0);
+  await expect(
+    second
+      .getByRole("list", { name: "Sessions", exact: true })
+      .getByRole("button", { name: /Reviewer/ }),
+  ).toHaveCount(0);
   await management.getByRole("radio", { name: "Finished", exact: true }).click();
   await management.getByRole("button", { name: /^Audit landing page/ }).click();
   await expect(management.locator('[data-crew-run="old-run"]')).toContainText("Audit landing page");
@@ -859,6 +873,7 @@ test("one manager selects ongoing and finished work without mixing conversations
   await management.getByRole("button", { name: /^Improve mobile navigation/ }).click();
   await management
     .locator('[data-crew-run="second-run"]')
+    .getByRole("list", { name: "Sessions", exact: true })
     .getByRole("button", { name: /Coordinator/ })
     .click();
   await expect(page.getByLabel("Opened session")).toHaveText("second-lead");
@@ -1005,6 +1020,7 @@ test("deleted crew definitions retain accessible work history", async ({ page })
   await expect(management.locator('[data-crew-run="old-run"]')).toContainText("Audit landing page");
   await management
     .locator('[data-crew-run="old-run"]')
+    .getByRole("list", { name: "Sessions", exact: true })
     .getByRole("button", { name: /Coordinator/ })
     .click();
   await expect(page.getByLabel("Opened session")).toHaveText("old-lead");
@@ -1043,6 +1059,7 @@ test("the crew card menu opens the selected work's conversation", async ({ page 
   });
   await management
     .locator('[data-crew-run="run"]')
+    .getByRole("list", { name: "Sessions", exact: true })
     .getByRole("button", { name: /Coordinator/ })
     .click();
   await expect(page.getByLabel("Opened session")).toHaveText("lead-session");
@@ -1375,9 +1392,16 @@ for (const theme of ["light", "dark"] as const) {
       await profile.getByText("Available in", { exact: true }).scrollIntoViewIfNeeded();
       await shot("profile-model-pool");
       await profile.getByText("Tools", { exact: true }).first().scrollIntoViewIfNeeded();
-      await expect(profile.getByRole("checkbox", { name: "Write code" })).toBeVisible();
-      await expect(profile.getByRole("checkbox", { name: "Image generation" })).toBeHidden();
+      const tools = profile.getByRole("group", { name: "Tool profile", exact: true });
+      await expect(tools.getByRole("radio", { name: /^Full access/ })).toBeChecked();
+      await expect(tools.getByRole("radio")).toHaveCount(5);
+      await tools.getByRole("radio", { name: /^Custom/ }).check();
+      await expect(profile.getByRole("button", { name: /^Host tools:/ })).toBeVisible();
+      await expect(profile.getByRole("button", { name: /^MCP servers:/ })).toBeVisible();
+      await expect(profile.getByRole("button", { name: /^Skills:/ })).toBeVisible();
       await shot("profile-tools");
+      await tools.getByRole("radio", { name: /^Full access/ }).check();
+      await expect(profile.getByRole("button", { name: /^Host tools:/ })).toHaveCount(0);
       await page.keyboard.press("Escape");
       // Models tab: Host model pools.
       await content.getByRole("tab", { name: "Models", exact: true }).click();

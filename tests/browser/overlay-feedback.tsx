@@ -249,6 +249,9 @@ function NoticesSection() {
             title="Update failed"
             message="The release feed returned 503. Nothing was changed."
             action={{ label: "Retry", onClick: () => void retry(), pending }}
+            durationMs={
+              new URLSearchParams(location.search).has("persistent-notice") ? null : undefined
+            }
             onDismiss={dismiss("danger")}
           />
         </Frame>

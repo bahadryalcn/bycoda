@@ -191,7 +191,9 @@ for (const light of [false, true]) {
     const queuedMessage = queueRows.getByText(retained, { exact: true });
     await expect(queuedMessage).toHaveCount(1);
     await expect(queuedMessage).toBeVisible();
-    await expect(queueRows.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
+    await expect(
+      queueRows.getByRole("button", { name: "Remove queued message", exact: true }),
+    ).toHaveCount(1);
     await expect(
       page.locator("[data-delivery-progress]").getByText(retained, { exact: true }),
     ).toBeVisible();

@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Render terminal colors and text styles in command output and remove control codes from copied text.
 - Dismiss ordinary error and status toasts after ten focused seconds, pausing their timers while the app is unfocused.
 - Keep narrow workspace headers and row actions within their bounds and preserve workspace-return navigation.
+- Keep model settings in place while reading their help and retain compact rail counters.
+- Keep read-only diff panes keyboard accessible and narrow search fields readable.
+- Show the reason for disabled actions even when their labels fit.
+- Keep unsaved Assistant settings as drafts when choosing Keep editing.
 - Require confirmation for Host updates and retain recovery data when retiring missing workspaces.
 
 ## [0.7.8]

@@ -31,7 +31,18 @@ for (const theme of ["light", "dark"])
       );
       await page.getByRole("button", { name: tr("Settings"), exact: true }).click();
       const dialog = page.getByRole("dialog").first();
-      const tab = (name: string) => dialog.getByRole("tab", { name: tr(name), exact: true });
+      const tab = (name: string) =>
+        dialog.getByRole("tab", {
+          name: tr(
+            (
+              { Schedule: "Work", Projects: "Access", "Computer use": "Access" } as Record<
+                string,
+                string
+              >
+            )[name] ?? name,
+          ),
+          exact: true,
+        });
       const group = (name: string) =>
         name === "Computer use"
           ? dialog
@@ -40,7 +51,18 @@ for (const theme of ["light", "dark"])
           : dialog
               .locator("section")
               .filter({
-                has: page.getByRole("heading", { name: tr(name), exact: true }),
+                has: page.getByRole("heading", {
+                  name: tr(
+                    (
+                      {
+                        Personality: "Language",
+                        Conversation: "Language",
+                        Jobs: "Work mode",
+                      } as Record<string, string>
+                    )[name] ?? name,
+                  ),
+                  exact: true,
+                }),
               })
               .first();
       const capture = async (name: string) => {
@@ -71,12 +93,18 @@ for (const theme of ["light", "dark"])
           animations: "disabled",
         });
       };
-      await expect(dialog.getByRole("tab")).toHaveCount(6);
+      await expect(dialog.getByRole("tab")).toHaveCount(4);
       await dialog
         .getByRole("textbox", { name: tr("Assistant name"), exact: true })
         .fill("Settings fixture");
       await capture("personal");
       await sectionCapture("Identity", "identity");
+      const conversation = dialog.getByRole("button", {
+        name: tr("Personality and conversation"),
+        exact: true,
+      });
+      await expect(conversation).toBeVisible();
+      await conversation.click();
       await sectionCapture("Personality", "personality");
       await sectionCapture("Conversation", "conversation");
 
@@ -87,7 +115,10 @@ for (const theme of ["light", "dark"])
       await tab("Personal").focus();
       await page.keyboard.press("ArrowRight");
       await expect(tab("Work")).toHaveAttribute("aria-selected", "true");
-      const worker = dialog.locator("[data-settings-page=work] fieldset").first();
+      const worker = dialog.getByRole("group", {
+        name: tr("Model {p0}").replace("{p0}", "1"),
+        exact: true,
+      });
       await expect(worker).toContainText("Fixture worker");
       await worker.getByRole("button", { name: /Fixture worker/ }).click();
       // Reasoning is an inline radio row in the model panel's settings column.
@@ -98,6 +129,7 @@ for (const theme of ["light", "dark"])
       await page.keyboard.press("Escape");
       const workerBefore = await worker.innerText();
       await capture("work");
+      await dialog.getByRole("button", { name: tr("Customize"), exact: true }).click();
       await sectionCapture("Jobs", "autonomy");
 
       await tab("Schedule").click();
@@ -205,11 +237,22 @@ for (const theme of ["light", "dark"])
       await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
       await expect(dialog.getByText(tr("Discard unsaved changes?"), { exact: true })).toBeVisible();
       await capture("unsaved-close");
+      const profileWritesBeforeKeepEditing = (await requests(page)).filter(
+        (request) => request.input.op === "profile.update",
+      );
       await dialog.getByRole("button", { name: tr("Keep editing"), exact: true }).click();
+      await expect(
+        dialog.getByRole("button", { name: tr("Keep editing"), exact: true }),
+      ).toHaveCount(0);
       await expect(dialog).toBeVisible();
       await expect(unsavedAddress).toHaveValue("Retained unsaved address");
+      expect(
+        (await requests(page)).filter((request) => request.input.op === "profile.update"),
+      ).toEqual(profileWritesBeforeKeepEditing);
       await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
-      await dialog.getByRole("button", { name: tr("Discard"), exact: true }).click();
+      const discard = dialog.getByRole("button", { name: tr("Discard"), exact: true });
+      await expect(discard).toBeVisible();
+      await discard.click();
       await expect(dialog).toHaveCount(0);
     });
 
@@ -228,7 +271,7 @@ for (const theme of ["light", "dark"])
       await dialog
         .getByRole("textbox", { name: "Assistant name", exact: true })
         .fill("Arif updated");
-      await dialog.getByRole("tab", { name: "Schedule", exact: true }).click();
+      await dialog.getByRole("tab", { name: "Work", exact: true }).click();
       await dialog.getByRole("button", { name: "Save profile settings", exact: true }).click();
       const saved = dialog.getByRole("button", { name: "Saved", exact: true });
       await expect(saved).toBeVisible();

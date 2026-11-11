@@ -426,7 +426,14 @@ for (const light of [false, true]) {
       await page.goto(`/tests/browser/session-row-layout.html?wide&${light ? "light" : "dark"}`, {
         waitUntil: "domcontentloaded",
       });
-      await page.getByRole("button", { name: "Last sessions", exact: true }).click();
+      const lastSessions = page
+        .getByRole("button", { name: "Last sessions", exact: true })
+        .filter({ hasText: /^Last sessions$/ });
+      await lastSessions.click();
+      await expect(lastSessions).toHaveAttribute("aria-current", "page");
+      await expect(
+        page.getByRole("button", { name: "Last sessions", exact: true, expanded: true }),
+      ).toBeVisible();
       await expect(page.locator('[data-session-card="row-demo"]')).toBeVisible();
       await expect(page.getByRole("status", { name: "Last Sessions mode" })).toHaveText("true");
       await page.screenshot({

@@ -9,12 +9,12 @@ const setupTitles = [
   "Voice",
   "Microphone test",
   "Conversation behavior",
-  "Autonomy",
+  "Work mode",
   "Presence and hours",
   "First rules",
   "Review",
 ];
-test("an untouched discovered worker becomes explicit only when setup advances", async ({
+test("an untouched discovered worker becomes explicit only after choosing a work mode", async ({
   page,
 }) => {
   await page.goto("/tests/browser/assistant-room.html?real-controls&setup=core&fresh");
@@ -22,20 +22,24 @@ test("an untouched discovered worker becomes explicit only when setup advances",
   await expect(dialog).toHaveAccessibleName("Identity");
   expect((await setupDraft(page)).patch.execution).toBeNull();
   await dialog.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(dialog).toHaveAccessibleName("Autonomy");
-  await expect(dialog.getByRole("group", { name: "Workers", exact: true })).toContainText(
-    "Fixture worker",
-  );
+  await expect(dialog).toHaveAccessibleName("Work mode");
   expect((await setupDraft(page)).patch.execution).toBeNull();
-  await dialog.getByRole("button", { name: "Next", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  await expect(dialog).toHaveAccessibleName("First rules");
+  const workAndAsk = dialog.getByRole("radio", { name: /^Work and ask/ });
+  await expect(workAndAsk).toBeVisible();
+  await workAndAsk.click();
   expect((await setupDraft(page)).patch.execution).toMatchObject({
     harness: "codex",
     model: "codex:fixture-worker",
     modelSettings: { reasoningEffort: "low" },
   });
   expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__setupRequests.filter(
+        (request: any) => request.input.op === "profile.update",
+      ),
+    ),
+  ).toEqual([]);
   await dialog.getByRole("button", { name: "Next", exact: true }).click();
   await expect(dialog).toHaveAccessibleName("Review");
   await expect(dialog).toContainText("Fixture worker");
@@ -57,8 +61,12 @@ async function finishSetup(page: Page) {
   await ready.getByRole("button", { name: "Done", exact: true }).click();
 }
 async function chooseSetupValue(page: Page, label: string, option: string) {
-  await page.getByRole("button", { name: new RegExp(`^${label}:`) }).click();
-  await page.getByRole("option", { name: option, exact: true }).click();
+  const field = page.getByRole("button", { name: new RegExp(`^${label}:`) });
+  await expect(field).toBeVisible();
+  await field.click();
+  const choice = page.getByRole("option", { name: option, exact: true });
+  await expect(choice).toBeVisible();
+  await choice.click();
 }
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
@@ -160,32 +168,25 @@ for (const theme of ["light", "dark"])
       await next();
       await capture(5);
       await next();
-      const worker = dialog.getByRole("group", { name: "Workers", exact: true });
-      await worker.getByRole("button").first().click();
-      // Reasoning is an inline radio row in the model panel's settings column.
-      await page
-        .getByRole("dialog", { name: "Model and settings", exact: true })
-        .getByRole("radio", { name: "High", exact: true })
-        .click();
-      await page.keyboard.press("Escape");
-      expect((await setupDraft(page)).patch.execution).toMatchObject({
-        harness: "codex",
-        model: "codex:fixture-worker",
-        modelSettings: { reasoningEffort: "high" },
+      for (const name of ["Only watch", "Work freely", "Work and ask"]) {
+        const mode = dialog.getByRole("radio", { name: new RegExp(`^${name}`) });
+        await expect(mode).toBeVisible();
+        await mode.click();
+        await expect(mode).toBeChecked();
+      }
+      expect((await setupDraft(page)).patch).toMatchObject({
+        autonomy: "chief",
+        confirmJobs: true,
+        planApproval: "large",
+        allowRoutineQuestions: true,
+        execution: {
+          harness: "codex",
+          model: "codex:fixture-worker",
+          modelSettings: { reasoningEffort: "low" },
+          runtimeMode: "supervised",
+        },
       });
       expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
-      for (const amount of ["100k", "500k", "1m", "5m"])
-        await chooseSetupValue(page, "Daily token budget", `${amount} tokens/day`);
-      await chooseSetupValue(page, "Daily token budget", "Custom");
-      await dialog
-        .getByRole("spinbutton", { name: "Custom Daily token budget", exact: true })
-        .fill("0");
-      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
-      await dialog
-        .getByRole("spinbutton", { name: "Custom Daily token budget", exact: true })
-        .fill("123456");
-      expect((await setupDraft(page)).patch.dailyTokenBudget).toBe(123456);
-      await dialog.getByRole("button", { name: /^Autonomy:/ }).scrollIntoViewIfNeeded();
       await capture(6);
       await next();
       // "Work hours" is on while a range is set; off means all day.
@@ -214,7 +215,7 @@ for (const theme of ["light", "dark"])
         .fill("Keep my drafts intact.");
       await capture(8);
       await next();
-      await expect(dialog).toContainText("123,456");
+      await expect(dialog).toContainText("2,000,000");
       await capture(9);
       expect(
         await page.evaluate(() =>
@@ -230,8 +231,8 @@ for (const theme of ["light", "dark"])
         name: "Setup fixture",
         setupComplete: true,
         voiceSetupComplete: true,
-        dailyTokenBudget: 123456,
-        execution: { model: "codex:fixture-worker", modelSettings: { reasoningEffort: "high" } },
+        dailyTokenBudget: 2000000,
+        execution: { model: "codex:fixture-worker", modelSettings: { reasoningEffort: "low" } },
         activeStart: 22,
         activeEnd: 6,
       });
@@ -302,6 +303,19 @@ for (const theme of ["light", "dark"])
         .click();
       await page.keyboard.press("Escape");
       expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
+      await showGroup("Jobs");
+      for (const amount of ["100k", "500k", "1m", "5m"])
+        await chooseSetupValue(page, "Daily token budget", `${amount} tokens/day`);
+      await chooseSetupValue(page, "Daily token budget", "Custom");
+      const customBudget = dialog.getByRole("spinbutton", {
+        name: "Custom Daily token budget",
+        exact: true,
+      });
+      await customBudget.fill("0");
+      expect(
+        await customBudget.evaluate((input) => (input as HTMLInputElement).validity.rangeUnderflow),
+      ).toBe(true);
+      await customBudget.fill("123456");
       await chooseSetupValue(page, "Daily token budget", "500k tokens/day");
       await autonomy.screenshot({
         animations: "disabled",
@@ -365,7 +379,7 @@ for (const theme of ["light", "dark"])
       ).toHaveAttribute("aria-checked", "true");
     });
 
-const headings: Record<string, string> = { "Conversation behavior": "Conversation" };
+const headings: Record<string, string> = { "Conversation behavior": "Language", Jobs: "Work mode" };
 async function openSettingsGroup(page: Page, name: string) {
   const pages: Record<string, string> = {
     Identity: "Personal",
@@ -373,13 +387,28 @@ async function openSettingsGroup(page: Page, name: string) {
     "Conversation behavior": "Personal",
     Jobs: "Work",
     Models: "Work",
-    "Presence and hours": "Schedule",
+    "Presence and hours": "Work",
     "Cost and context": "Advanced",
-    "Manual session supervision": "Projects",
-    "Computer use": "Computer use",
+    "Manual session supervision": "Access",
+    "Computer use": "Access",
     "Retention and usage": "Advanced",
   };
-  await page.getByRole("dialog").getByRole("tab", { name: pages[name], exact: true }).click();
+  const tab = page.getByRole("dialog").getByRole("tab", { name: pages[name], exact: true });
+  await expect(tab).toBeVisible();
+  await tab.click();
+  const disclosureName =
+    name === "Conversation behavior"
+      ? "Personality and conversation"
+      : name === "Jobs"
+        ? "Customize"
+        : undefined;
+  if (disclosureName) {
+    const disclosure = page
+      .getByRole("dialog")
+      .getByRole("button", { name: disclosureName, exact: true });
+    await expect(disclosure).toBeVisible();
+    if ((await disclosure.getAttribute("aria-expanded")) !== "true") await disclosure.click();
+  }
   if (name === "Computer use")
     return page
       .getByRole("dialog")
@@ -1570,16 +1599,16 @@ for (const theme of ["light", "dark"])
       const worker = models.getByRole("group", { name: "Model 1", exact: true });
       const planner = models.getByRole("group", { name: "Model 2", exact: true });
       const chief = models.getByRole("group", { name: "Model 3", exact: true });
-      await expect(worker.getByRole("checkbox", { name: "Reply", exact: true })).toBeChecked();
-      await expect(planner.getByRole("checkbox", { name: "Planning", exact: true })).toBeChecked();
-      await expect(chief.getByRole("checkbox", { name: "Chief", exact: true })).toBeChecked();
+      await expect(worker.getByRole("checkbox", { name: "Replies", exact: true })).toBeChecked();
+      await expect(planner.getByRole("checkbox", { name: "Planner", exact: true })).toBeChecked();
+      await expect(chief.getByRole("checkbox", { name: "Supervisor", exact: true })).toBeChecked();
       await models.screenshot({
         animations: "disabled",
         path: join(output, `roles-compact-${theme}-${width}.png`),
       });
       // Assign replies to another pool model without changing the worker or Chief rows.
-      await worker.getByRole("checkbox", { name: "Reply", exact: true }).uncheck();
-      await planner.getByRole("checkbox", { name: "Reply", exact: true }).check();
+      await worker.getByRole("checkbox", { name: "Replies", exact: true }).uncheck();
+      await planner.getByRole("checkbox", { name: "Replies", exact: true }).check();
       await planner.getByRole("button", { name: "codex:fixture-worker", exact: true }).click();
       await expect(
         planner.getByRole("button", { name: "fixture-worker-model", exact: true }),
@@ -1591,13 +1620,13 @@ for (const theme of ["light", "dark"])
         chief.getByRole("button", { name: "codex:fixture-worker", exact: true }),
       ).toBeVisible();
       // An uncovered optional role falls back to Worker models; restoring it removes the notice.
-      await planner.getByRole("checkbox", { name: "Planning", exact: true }).uncheck();
+      await planner.getByRole("checkbox", { name: "Planner", exact: true }).uncheck();
       const fallback = models.getByText(
-        "No model is set for Planning; the Worker models are used.",
+        "No model is set for Planner; the Worker models are used.",
         { exact: true },
       );
       await expect(fallback).toBeVisible();
-      await planner.getByRole("checkbox", { name: "Planning", exact: true }).check();
+      await planner.getByRole("checkbox", { name: "Planner", exact: true }).check();
       await expect(fallback).toHaveCount(0);
       await models.screenshot({
         animations: "disabled",
@@ -1607,17 +1636,19 @@ for (const theme of ["light", "dark"])
       await expect(dialog).toHaveCount(0);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Models");
-      await expect(worker.getByRole("checkbox", { name: "Reply", exact: true })).not.toBeChecked();
+      await expect(
+        worker.getByRole("checkbox", { name: "Replies", exact: true }),
+      ).not.toBeChecked();
       await expect(worker.getByRole("checkbox", { name: "Worker", exact: true })).toBeChecked();
       await expect(
         worker.getByRole("button", { name: "codex:fixture-worker", exact: true }),
       ).toBeVisible();
-      for (const role of ["Worker", "Planning", "Reply"])
+      for (const role of ["Worker", "Planner", "Replies"])
         await expect(planner.getByRole("checkbox", { name: role, exact: true })).toBeChecked();
       await expect(
         planner.getByRole("button", { name: "fixture-worker-model", exact: true }),
       ).toBeVisible();
-      await expect(chief.getByRole("checkbox", { name: "Chief", exact: true })).toBeChecked();
+      await expect(chief.getByRole("checkbox", { name: "Supervisor", exact: true })).toBeChecked();
       await expect(
         chief.getByRole("button", { name: "codex:fixture-worker", exact: true }),
       ).toBeVisible();
@@ -1797,7 +1828,10 @@ for (const theme of ["light", "dark"])
 
 async function saveProfileSettings(page: Page) {
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Save profile settings", exact: true }).click();
-  await expect(dialog.getByText("Saved", { exact: true })).toBeVisible();
+  const save = dialog.getByRole("button", { name: "Save profile settings", exact: true });
+  await expect(save).toBeVisible();
+  await save.click();
+  await expect(dialog.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
 }

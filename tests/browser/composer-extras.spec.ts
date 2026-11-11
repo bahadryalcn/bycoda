@@ -145,7 +145,9 @@ test("Steer explains a prolonged wait and preserves the paused queue at narrow w
         .locator("[data-message-queue-rows]")
         .getByText("Queued task waiting for the current turn", { exact: true }),
     ).toBeVisible();
-    await expect(card.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
+    await expect(
+      card.getByRole("button", { name: "Remove queued message", exact: true }),
+    ).toHaveCount(1);
     await expect(card.getByRole("button", { name: "Steer", exact: true })).toBeEnabled();
   }
 });
@@ -178,7 +180,9 @@ test("queue actions expose progress and recovery in both themes at narrow widths
         .locator("[data-message-queue-rows]")
         .getByText("Queued task waiting for the current turn", { exact: true }),
     ).toBeVisible();
-    await expect(card.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
+    await expect(
+      card.getByRole("button", { name: "Remove queued message", exact: true }),
+    ).toHaveCount(1);
     expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   }
   await card.getByRole("button", { name: "Resume", exact: true }).click();
@@ -1333,14 +1337,34 @@ test("model panel stays inside the viewport", async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     await expect(panel).toBeInViewport();
     const help = panel.locator("[data-model-setting-help]");
-    const helpText = await help.locator("p").boundingBox();
-    const settingsButton = await help.locator("[data-model-provider-settings]").boundingBox();
+    const { helpText, settingsButton } = await help.evaluate((element) => {
+      const text = element.querySelector("p")?.getBoundingClientRect();
+      const button = element
+        .querySelector("[data-model-provider-settings]")
+        ?.getBoundingClientRect();
+      return {
+        helpText: text ? { y: text.y, height: text.height } : null,
+        settingsButton: button ? { y: button.y, height: button.height } : null,
+      };
+    });
     expect(helpText).not.toBeNull();
     expect(settingsButton).not.toBeNull();
     expect(
       Math.abs(settingsButton!.y + settingsButton!.height / 2 - (helpText!.y + 8)),
     ).toBeLessThanOrEqual(8);
-    expect((await help.boundingBox())!.height).toBeLessThanOrEqual(44);
+    const helpHeight = await help.evaluate((element) => {
+      const strip = getComputedStyle(element);
+      const paragraph = getComputedStyle(element.querySelector("p")!);
+      return (
+        parseFloat(paragraph.lineHeight) * 3 +
+        parseFloat(strip.paddingTop) +
+        parseFloat(strip.paddingBottom) +
+        parseFloat(strip.borderTopWidth)
+      );
+    });
+    expect(Math.abs((await help.boundingBox())!.height - helpHeight)).toBeLessThanOrEqual(1);
+    await help.hover();
+    expect(Math.abs((await help.boundingBox())!.height - helpHeight)).toBeLessThanOrEqual(1);
     // The panel and its rail, model list and settings column all fit the viewport.
     await expect
       .poll(() =>

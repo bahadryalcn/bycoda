@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { useTooltip, type TooltipContent } from "./Tooltip";
+import { Button } from "./Button";
 
 const roots: Root[] = [];
 
@@ -61,4 +62,28 @@ it("keeps detail lines for a visible label", async () => {
 
 it("does not infer overflow from different tooltip and anchor wording", async () => {
   expect(await hover({ when: "overflow", label: "Full notes title" }, "Notes")).toBeNull();
+});
+
+it("explains a disabled action even when its visible label does not overflow", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  roots.push(root);
+  await act(async () =>
+    root.render(
+      createElement(
+        Button,
+        { disabled: true, disabledReason: "Choose a project first", tooltipWhen: "overflow" },
+        "Start",
+      ),
+    ),
+  );
+  const button = host.querySelector("button")!;
+  await act(async () => {
+    button.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  });
+  expect(button.getAttribute("aria-disabled")).toBe("true");
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Choose a project first");
 });

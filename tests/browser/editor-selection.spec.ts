@@ -491,8 +491,12 @@ test("split search keeps independent compact toolbars and keyboard focus", async
   await leftFind.press("Control+f");
   await expect(leftFind).toBeFocused();
   await expect(left.locator(".cm-content")).toHaveAttribute("contenteditable", "false");
-  const original = await left.locator(".cm-content").innerText();
+  const originalDocument = () =>
+    page.evaluate(() =>
+      (window as Window & { __editorDocument(index: number): string }).__editorDocument(0),
+    );
+  const original = await originalDocument();
   await left.locator(".cm-content").focus();
   await page.keyboard.type("unexpected edit");
-  expect(await left.locator(".cm-content").innerText()).toBe(original);
+  expect(await originalDocument()).toBe(original);
 });

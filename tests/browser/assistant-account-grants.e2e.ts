@@ -31,7 +31,7 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/assistant-room.html?global-room&theme=${theme}`);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       const dialog = page.getByRole("dialog").first();
-      await dialog.getByRole("tab", { name: "Schedule", exact: true }).click();
+      await dialog.getByRole("tab", { name: "Work", exact: true }).click();
       await expect(dialog.getByText("Readiness not confirmed", { exact: true })).toBeVisible();
       await dialog.screenshot({
         path: join(output, `observation-${theme}-${width}.png`),

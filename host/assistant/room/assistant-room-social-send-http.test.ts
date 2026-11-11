@@ -273,6 +273,8 @@ it("runs reviewed Room Social send over HTTP with signed project and account adm
       }
       return await pending;
     };
+    // Advertise the fixture desktop before racing any HTTP operation against its relay poll.
+    expect((await call("conversation.desktop.take", {})).result).toEqual([]);
     const proposal = {
       requestId: "send-one",
       accountId: account.id,
