@@ -160,7 +160,7 @@ describe("automatic discovery", () => {
           detail: expect.stringContaining("not verified"),
         }),
       ]);
-      expect(models[0].detail).toContain(realpathSync(model));
+      expect(models[0].detail).toContain(realpathSync.native(model));
       expect(result.found.some((candidate) => candidate.detail?.includes("secret.gguf"))).toBe(
         false,
       );

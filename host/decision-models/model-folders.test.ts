@@ -24,7 +24,7 @@ describe("bounded model folder scan", () => {
       found.push(path);
       controller.abort();
     });
-    expect(found).toEqual([realpathSync(join(root, "model.gguf"))]);
+    expect(found).toEqual([realpathSync.native(join(root, "model.gguf"))]);
     expect(result.incomplete).toBe(true);
   });
 

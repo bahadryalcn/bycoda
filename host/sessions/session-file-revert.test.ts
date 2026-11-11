@@ -82,7 +82,7 @@ describe("session message file revert", () => {
       if (priorDelete) expect(ignored?.conflict).toBeUndefined();
       else expect(ignored?.conflict).toMatch(/ignored.*unavailable/);
       const result = await f.checkpoints.filesRevert("s", f.cwd, "one");
-      expect(result.reverted).toContain("proven-new.txt");
+      expect(result.reverted, JSON.stringify(result)).toContain("proven-new.txt");
       expect(result.skipped.map((file) => file.path)).toEqual(priorDelete ? [] : ["ignored.txt"]);
       expect(await f.read("ignored.txt")).toBe(
         priorDelete ? "peer bytes before turn\n" : "provider replacement\n",

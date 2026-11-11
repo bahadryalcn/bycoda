@@ -435,8 +435,8 @@ describe("DecisionModelsService discovery, first run and manual checks", () => {
       await service.verifyManual({ kind: "model_installation", path: modelPath }),
     ).toMatchObject({
       kind: "installation_folder",
-      folder: realpathSync(directory),
-      modelPath: realpathSync(modelPath),
+      folder: realpathSync.native(directory),
+      modelPath: realpathSync.native(modelPath),
       verified: false,
     });
     expect(await service.listSources()).toEqual([]);
