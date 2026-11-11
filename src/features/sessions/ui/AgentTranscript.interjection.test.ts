@@ -20,10 +20,13 @@ beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      constructor(private callback: () => void) {}
+      constructor(private callback: (entries: ResizeObserverEntry[]) => void) {}
       observe(el: Element) {
-        if (el.tagName === "PRE") resize = this.callback;
+        // The shared observer routes entries by target, so a resize names the element.
+        if (el.tagName === "PRE")
+          resize = () => this.callback([{ target: el } as ResizeObserverEntry]);
       }
+      unobserve() {}
       disconnect() {}
     },
   );

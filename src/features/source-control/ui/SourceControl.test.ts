@@ -20,6 +20,8 @@ vi.mock("../hooks/useProjectWorktrees", () => ({
 vi.mock("../../../platform/tauri/fs", () => ({
   basename: (path: string) => path.split("/").pop(),
   notifyGitChanged: state.notify,
+  subscribeGitChanged: () => () => {},
+  isGitWatched: () => false,
 }));
 vi.mock("../../../shared/ui/SearchableSelect", () => ({
   SearchableSelect: (props: {

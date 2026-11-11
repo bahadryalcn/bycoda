@@ -82,6 +82,7 @@ vi.mock("../../../shared/ui/SearchableSelect", () => ({
       ),
     ),
 }));
+import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { UsageOverview } from "./UsageOverview";
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
@@ -182,6 +183,9 @@ it("preserves explicit custom intervals during workspace refresh", async () => {
 it("keeps loading distinct from trustworthy zero usage", async () => {
   fetchUsage.mockReturnValue(new Promise(() => {}));
   await render(0);
+  // The passive loader stays hidden for LOADING_DELAY_MS so a quick load never flashes it.
+  expect(host.querySelector('[role="status"][aria-label="Loading usage…"]')).toBeNull();
+  await act(async () => vi.advanceTimersByTime(LOADING_DELAY_MS));
   expect(host.querySelector('[role="status"][aria-label="Loading usage…"]')).not.toBeNull();
   expect(host.querySelector(".usage-metrics")).toBeNull();
   expect(chart).not.toHaveBeenCalled();

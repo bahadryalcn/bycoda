@@ -129,6 +129,16 @@ describe("Composer Explorer file drops", () => {
     expect(invoke).toHaveBeenCalledWith("inspect_paths", {
       paths: ["/project/src/main.ts", "/project/src/other.ts"],
     });
-    expect(container.querySelector('[title="/project/src/main.ts"]')).not.toBeNull();
+    const chip = container.querySelector<HTMLElement>('[data-attachment-chip="file"]');
+    expect(chip?.textContent).toContain("main.ts");
+    // The full path is the app tooltip on the chip body, not a native title.
+    const anchor = chip!.querySelector<HTMLElement>("[class*='thumbnail']")!;
+    await act(async () => {
+      anchor.dispatchEvent(new Event("pointerover", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 520));
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+      "/project/src/main.ts",
+    );
   });
 });

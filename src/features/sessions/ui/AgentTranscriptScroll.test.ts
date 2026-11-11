@@ -25,6 +25,9 @@ beforeEach(() => {
       observe(target: Element) {
         this.targets.push(target);
       }
+      unobserve(target: Element) {
+        this.targets = this.targets.filter((item) => item !== target);
+      }
       disconnect() {
         this.targets = [];
       }

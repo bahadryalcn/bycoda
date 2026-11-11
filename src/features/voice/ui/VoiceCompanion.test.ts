@@ -1156,7 +1156,8 @@ it("compact mode shows the latest spoken line beside a borderless orb", async ()
   const handle = container.querySelector<HTMLElement>('button[aria-label^="Move voice window"]')!;
   expect(handle.dataset.buttonVariant).toBe("ghost");
   await speech("How are the tests?");
-  expect(container.querySelector("h2")?.nextElementSibling?.textContent).toBe("Tests are passing.");
+  const title = container.querySelector("h2")!.closest("[data-section-label]");
+  expect(title?.nextElementSibling?.textContent).toBe("Tests are passing.");
 });
 it("floats outside the app while the session and microphone stay in this window", async () => {
   overlay.native = true;
