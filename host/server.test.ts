@@ -3117,14 +3117,18 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
   let turn: SendTurnInput | undefined;
   let finish = () => {};
   let providerStarted!: () => void;
-  const started = new Promise<void>((resolve) => {
+  let nextStarted = new Promise<void>((resolve) => {
     providerStarted = resolve;
   });
+  const started = nextStarted;
   const send = vi.fn((input: SendTurnInput) => {
     turn = input;
     return new Promise<void>((resolve) => {
       finish = resolve;
       providerStarted();
+      nextStarted = new Promise<void>((resolve) => {
+        providerStarted = resolve;
+      });
     });
   });
   const engine = new HostEngine(store, {
@@ -3212,6 +3216,7 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
     second,
     send,
     started,
+    nextStarted: () => nextStarted,
     turn: () => turn!,
     finish: () => finish(),
   };
@@ -3684,6 +3689,7 @@ describe("shared queued messages", () => {
     });
 
     it("sends the queue itself once the holder's lease ran out, and not while it is alive", async () => {
+      const realSetTimeout = globalThis.setTimeout;
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
       try {
         const s = await setup();
@@ -3707,27 +3713,40 @@ describe("shared queued messages", () => {
         });
         await s.call("sessions.queue.lease", { sessionId, clientId: "desktop:win1", ...aware });
         // The turn ends while the desktop holds the queue: the host leaves it alone.
+        const initialRun = (await s.store.session(sessionId)).runId;
         s.finish();
-        // 15 s of real time for a slow runner; the fake clock stays under half the 90 s lease.
-        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"), {
-          timeout: 15_000,
-        });
+        await s.engine.waitForRun(sessionId, initialRun);
+        expect(await s.store.sessionStatus(sessionId)).toBe("idle");
         await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS / 2);
         expect(s.send).toHaveBeenCalledOnce();
         // The desktop is gone: at the end of its lease the host sends the head itself.
+        const secondStarted = s.nextStarted();
         await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS / 2 + 2_000);
-        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2));
+        await secondStarted;
+        expect(s.send).toHaveBeenCalledTimes(2);
         expect(s.turn().text).toBe("send a");
         const queue = (
           await s.call("sessions.queue.get", { sessionId, clientId: "remote:mac", ...aware })
         ).value.result;
         expect(queue.messages.map((row: { id: string }) => row.id)).toEqual(["b"]);
         // The turn it started settles and the host sends the next one, once.
+        const finishCheckpoint = s.engine.checkpoints.finishFilesTurn.bind(s.engine.checkpoints);
+        vi.spyOn(s.engine.checkpoints, "finishFilesTurn").mockImplementationOnce(
+          async (...args) => {
+            // Slow real checkpoint I/O can exceed waitFor's 1 s default; it must not advance leases.
+            await new Promise<void>((resolve) => realSetTimeout(resolve, 1250));
+            return finishCheckpoint(...args);
+          },
+        );
+        const thirdStarted = s.nextStarted();
         s.finish();
-        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(3));
+        await thirdStarted;
+        expect(s.send).toHaveBeenCalledTimes(3);
         expect(s.turn().text).toBe("send b");
+        const finalRun = (await s.store.session(sessionId)).runId;
         s.finish();
-        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"));
+        await s.engine.waitForRun(sessionId, finalRun);
+        expect(await s.store.sessionStatus(sessionId)).toBe("idle");
         expect(
           (await s.call("sessions.queue.get", { sessionId, clientId: "remote:mac", ...aware }))
             .value.result.messages,

@@ -437,11 +437,15 @@ test("rail appearance keeps compact five-column icons and applies independent tr
     await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ")),
   ).toHaveLength(5);
   const choices = grid.getByRole("button");
-  const firstRow = await choices.nth(0).boundingBox();
-  const lastInFirstRow = await choices.nth(4).boundingBox();
-  const secondRow = await choices.nth(5).boundingBox();
-  expect(lastInFirstRow!.y).toBeCloseTo(firstRow!.y, 1);
-  expect(secondRow!.y).toBeGreaterThanOrEqual(firstRow!.y + firstRow!.height);
+  // Read one animation frame so popover motion cannot separate the row samples.
+  const [firstRow, lastInFirstRow, secondRow] = await choices.evaluateAll((nodes) =>
+    [0, 4, 5].map((index) => {
+      const { y, height } = nodes[index].getBoundingClientRect();
+      return { y, height };
+    }),
+  );
+  expect(lastInFirstRow.y).toBeCloseTo(firstRow.y, 1);
+  expect(secondRow.y).toBeGreaterThanOrEqual(firstRow.y + firstRow.height);
   const iconHeading = await menu.getByText("Project icon", { exact: true }).boundingBox();
   const automatic = await menu
     .getByRole("button", { name: "Use automatic project icon", exact: true })
