@@ -322,7 +322,7 @@ export function ProviderBinaryControl({
         aria-expanded={open}
         aria-controls={`${provider}-binary-popover`}
         aria-haspopup="dialog"
-        tooltip={t(restartRequired ? "{p0} CLI path — restart required" : "{p0} CLI path", {
+        tooltip={t(restartRequired ? "{p0} CLI path (restart required)" : "{p0} CLI path", {
           p0: title,
         })}
         onClick={() => {

@@ -436,7 +436,7 @@ fn build(
         app,
         "open_model_picker",
         "Switch Model…",
-        "CmdOrCtrl+.",
+        "CmdOrCtrl+Shift+.",
         "App: Switch Model",
         overrides,
     )?;

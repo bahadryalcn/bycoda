@@ -46,9 +46,26 @@ the reason, while another file operation runs; a rejected name stays editable on
 its row. Showing excluded files uses the existing saved Workspace
 preference. Ignored files remain visually subordinate and retain their Git state.
 Search stays inside the Explorer pane. Match case, whole word and regular
-expression toggles sit inside the query field. The chevron and **Toggle Search
-Details** action show inline include/exclude fields; saved path filters reveal
-those fields when search reopens. Reset clears search options and keeps the query.
+expression toggles sit inside the query field. The chevron opens the Replace row;
+**Toggle Search Details** independently shows include/exclude fields, aligned
+with the query. Saved path filters reveal those fields when search reopens.
+The compact Reset action clears search options and keeps the query.
+
+**Replace All** previews exact occurrence and file counts, then asks for
+confirmation before changing files on the project’s owning computer (local or
+connected Host). Regex replacement supports `$1` and `${1}` capture references;
+plain replacement treats dollar signs literally. Replacement applies to matching
+lines on the current search page, including every occurrence on those lines.
+Limited search results therefore mean limited replacement scope. Files changed
+since the confirmation preview are skipped and reported. Search refreshes after
+replacement; failures remain visible alongside the completed counts.
+
+Replacement preserves UTF-8 (including BOM) and existing line separators, uses
+atomic writes, and skips binary, non-UTF-8 and over-512 KiB files. Include/exclude,
+case and whole-word controls apply to replacement too. Open dirty editor buffers
+remain intact: existing external-change handling blocks autosave and presents a
+disk conflict for review; clean buffers reload through the same file watcher.
+Per-file/per-match replacement and preserve-case are not available.
 
 Selection scope is shown when selected entries are hidden by the current filter.
 Review that scope before acting on multiple paths.

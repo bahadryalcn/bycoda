@@ -107,3 +107,17 @@ view is open; use the refresh button any time.
 
 Credentials stay on this computer. Remove an account from its card to disconnect it
 and delete its stored credentials.
+
+## Mention work items in chat
+
+Connected tracker items can be referenced in drafts with `@alias:ref`. Jira accepts
+`jira`, `jr`, `j`; GitHub `github`, `gh`; Linear `linear`, `lin`, `ln`; GitLab
+`gitlab`, `gl`; Azure DevOps `ado`, `azure`, `az`. Examples: `@jira:PROJ-123`,
+`@gh:142`, `@github:owner/repo#142`, `@linear:ENG-42`, `@gl:group/proj!57`,
+`@ado:12`. Sending includes available item context without changing the draft token;
+an unavailable lookup does not prevent sending. See [chat references](chat-artifacts-and-connected-files.md#reference-tracker-work-items)
+for reference limits and sent-message behavior.
+
+Jira key prefixes and numeric queries use Jira Cloud's issue picker, then load up to
+20 existing issues in picker order. Exact keys also retain their direct lookup;
+ordinary text searches use Jira text search. Hidden Jira projects remain excluded.

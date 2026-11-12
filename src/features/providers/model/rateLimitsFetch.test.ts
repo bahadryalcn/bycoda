@@ -61,7 +61,46 @@ vi.mock("../../../integrations/harness/core/jsonRpc", () => ({
 }));
 
 import { createChildProcessHandle } from "../../../integrations/harness/core/child";
-import { consumeCodexRateLimitResetCredit, fetchCodexRateLimits } from "./rateLimitsFetch";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  consumeClaudeLimitReset,
+  consumeCodexRateLimitResetCredit,
+  fetchCodexRateLimits,
+} from "./rateLimitsFetch";
+
+describe("consumeClaudeLimitReset", () => {
+  const answer = (result: string) =>
+    vi.mocked(invoke).mockResolvedValueOnce({ status: "ok", body: JSON.stringify({ result }) });
+  beforeEach(() => vi.mocked(invoke).mockReset());
+
+  it("spends the grant behind a row id and maps the server result", async () => {
+    answer("reset");
+    await expect(consumeClaudeLimitReset("full-reset-2611:0", "account-work")).resolves.toBe(
+      "reset",
+    );
+    expect(invoke).toHaveBeenCalledWith("consume_claude_limit_reset", {
+      accountId: "account-work",
+      grantId: "full-reset-2611",
+      requestId: expect.stringMatching(/^[A-Za-z0-9_-]{1,64}$/),
+    });
+    answer("not_limited");
+    await expect(consumeClaudeLimitReset("g:0")).resolves.toBe("nothingToReset");
+    answer("already_used");
+    await expect(consumeClaudeLimitReset("g:1")).resolves.toBe("alreadyRedeemed");
+  });
+
+  it("never reports an unconfirmed or refused reset as used", async () => {
+    answer("cooldown");
+    await expect(consumeClaudeLimitReset("g:0")).rejects.toThrow(/Another reset was just used/);
+    answer("something-new");
+    await expect(consumeClaudeLimitReset("g:0")).rejects.toThrow(/Could not confirm/);
+    vi.mocked(invoke).mockResolvedValueOnce({ status: "error", error: "Claude sign-in expired" });
+    await expect(consumeClaudeLimitReset("g:0")).rejects.toThrow("Claude sign-in expired");
+    await expect(consumeClaudeLimitReset(undefined)).rejects.toThrow(/no id/);
+    await expect(consumeClaudeLimitReset("no-index")).rejects.toThrow(/no id/);
+    expect(invoke).toHaveBeenCalledTimes(3);
+  });
+});
 
 describe("fetchCodexRateLimits", () => {
   beforeEach(() => {

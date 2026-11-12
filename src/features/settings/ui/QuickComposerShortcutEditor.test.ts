@@ -390,7 +390,9 @@ it("shows pressed keys without an error and Escape cancels recording", async () 
     hint.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
     await new Promise((resolve) => setTimeout(resolve, 500));
   });
-  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Del disables · Esc cancels");
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
+    "Del disables · Esc cancels",
+  );
   await act(async () =>
     document.body.dispatchEvent(
       new KeyboardEvent("keydown", {

@@ -1,3 +1,4 @@
+import "./canvas-paired-classic-scene";
 import "./canvas-paired-classic-loss";
 import { compareSequence } from "./paired-proof";
 import { createCrewFrameHarness } from "../../../src/features/sessions/ui/crewCanvasHost";
@@ -15,6 +16,10 @@ function inputs(options: Classic, frame: { time: number; stand: number }): CrewC
     activity: Array.from({ length: Math.max(6, options.count) }, (_, id) => ({
       stand: id < options.count ? frame.stand : 0,
       talk: 0,
+      ...(options.color ? { charge: options.context } : {}),
+      ...(options.scenario === "color"
+        ? { charge: id % 6 === 5 ? undefined : (frame.time * (id + 1)) % 1 }
+        : {}),
       ...(options.scenario === "arrivals" ? { arrival: id < 6 ? 1 : frame.stand } : {}),
       ...(options.scenario === "growth"
         ? {
@@ -68,74 +73,84 @@ async function mainTiming() {
   await document.fonts.ready;
   await loadCrewSignLogo();
   const results = [];
-  for (const renderer of ["auto", "canvas"] as const) {
-    const canvas = document.createElement("canvas");
-    const start = performance.now();
-    const draw = createCodeArtPainter(canvas, { renderer });
-    const creation = performance.now() - start;
-    const durations = [];
-    for (let index = 0; index < 300; index++) {
-      const frame = inputs({ kind: "crew", count: 3, renderer }, { time: index * 0.12, stand: 1 });
+  for (const renderer of ["auto", "canvas"] as const)
+    for (const color of [false, true]) {
+      const canvas = document.createElement("canvas");
       const start = performance.now();
-      draw(frame.actions, frame.activity, frame.width, frame.time);
-      durations.push(performance.now() - start);
+      const draw = createCodeArtPainter(canvas, { renderer });
+      const creation = performance.now() - start;
+      const durations = [];
+      for (let index = 0; index < 300; index++) {
+        const frame = inputs(
+          { kind: "crew", count: 3, renderer, color, context: 0.5 },
+          { time: index * 0.12, stand: 1 },
+        );
+        const start = performance.now();
+        draw(frame.actions, frame.activity, frame.width, frame.time);
+        durations.push(performance.now() - start);
+      }
+      results.push({
+        renderer,
+        color,
+        creation,
+        frames: 300,
+        dpr: devicePixelRatio,
+        backend: draw.backend,
+        paint: stats(durations),
+      });
+      draw.dispose?.();
     }
-    results.push({
-      renderer,
-      creation,
-      frames: 300,
-      dpr: devicePixelRatio,
-      backend: draw.backend,
-      paint: stats(durations),
-    });
-    draw.dispose?.();
-  }
   return results;
 }
 async function workerTiming() {
   const results = [];
-  for (const renderer of ["auto", "canvas"] as const) {
-    const signDraw: number[] = [];
-    const bitmap: number[] = [];
-    const harness = await createCrewFrameHarness(
-      document.createElement("canvas"),
-      "worker",
-      renderer,
-      false,
-      (timing) => {
-        signDraw.push(timing.draw);
-        bitmap.push(timing.bitmap);
-      },
-    );
-    const durations: number[] = [];
-    const submit: number[] = [];
-    window.workerTelemetry.post.length = 0;
-    window.workerTelemetry.roundTrip.length = 0;
-    window.workerTelemetry.ack.length = 0;
-    for (let index = 0; index < 300; index++) {
-      const start = performance.now();
-      const pending = harness.draw(
-        inputs({ kind: "crew", count: 3, renderer }, { time: index * 0.12, stand: 1 }),
+  for (const renderer of ["auto", "canvas"] as const)
+    for (const color of [false, true]) {
+      const signDraw: number[] = [];
+      const bitmap: number[] = [];
+      const harness = await createCrewFrameHarness(
+        document.createElement("canvas"),
+        "worker",
+        renderer,
+        false,
+        (timing) => {
+          signDraw.push(timing.draw);
+          bitmap.push(timing.bitmap);
+        },
       );
-      submit.push(performance.now() - start);
-      await pending;
-      durations.push(performance.now() - start);
+      const durations: number[] = [];
+      const submit: number[] = [];
+      window.workerTelemetry.post.length = 0;
+      window.workerTelemetry.roundTrip.length = 0;
+      window.workerTelemetry.ack.length = 0;
+      for (let index = 0; index < 300; index++) {
+        const start = performance.now();
+        const pending = harness.draw(
+          inputs(
+            { kind: "crew", count: 3, renderer, color, context: 0.5 },
+            { time: index * 0.12, stand: 1 },
+          ),
+        );
+        submit.push(performance.now() - start);
+        await pending;
+        durations.push(performance.now() - start);
+      }
+      results.push({
+        renderer,
+        color,
+        frames: 300,
+        backend: harness.backend(),
+        post: stats(window.workerTelemetry.post),
+        ack: stats(window.workerTelemetry.ack),
+        signDraw: stats(signDraw),
+        bitmap: stats(bitmap),
+        main: stats(
+          submit.map((duration, index) => duration + (window.workerTelemetry.ack[index] ?? 0)),
+        ),
+        roundTrip: stats(durations),
+      });
+      harness.dispose();
     }
-    results.push({
-      renderer,
-      frames: 300,
-      backend: harness.backend(),
-      post: stats(window.workerTelemetry.post),
-      ack: stats(window.workerTelemetry.ack),
-      signDraw: stats(signDraw),
-      bitmap: stats(bitmap),
-      main: stats(
-        submit.map((duration, index) => duration + (window.workerTelemetry.ack[index] ?? 0)),
-      ),
-      roundTrip: stats(durations),
-    });
-    harness.dispose();
-  }
   return results;
 }
 declare global {

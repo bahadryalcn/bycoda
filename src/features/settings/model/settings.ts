@@ -2231,7 +2231,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
     keys: `${MOD}${SHIFT}B`,
     when: "Always",
   },
-  { command: "App: Switch Model", keys: `${MOD}.`, when: "Always" },
+  { command: "App: Switch Model", keys: `${MOD}${SHIFT}.`, when: "Always" },
   {
     command: "Composer: Toggle Workspace",
     keys: `${MOD}${SHIFT}G`,

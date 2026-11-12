@@ -1,8 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   define: { "process.env.NODE_ENV": JSON.stringify("development") },
   build: {
     outDir: "temp/build/browser-canvas-paired",

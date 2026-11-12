@@ -113,7 +113,7 @@ export function ModelPanel({
       frosted
       dismissOnEscape={false}
       onDismiss={onDismiss}
-      role="dialog"
+      kind="dialog"
       aria-label={t("Model and settings")}
       data-model-picker
       data-model-panel

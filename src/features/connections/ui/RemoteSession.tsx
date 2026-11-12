@@ -3028,7 +3028,7 @@ function ConnectedRemoteSession({
           // Saved and not yet confirmed: it goes out again by itself once the machine answers.
           text: online
             ? t("Waiting for the host to confirm your request.")
-            : t("Reconnecting — will send automatically."),
+            : t("Reconnecting. Your message will be sent automatically."),
           detail: error,
           action: {
             get label() {

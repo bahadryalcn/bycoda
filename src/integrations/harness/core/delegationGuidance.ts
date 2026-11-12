@@ -39,7 +39,7 @@ export function delegationGuidance(
   // The ref key is what agents.delegate takes as `model`, so no agents.options round trip is needed.
   if (automatic)
     lines.push(
-      `Automatic subagent models (refresh with agents.options): ${SUBAGENT_TIERS.map(
+      `Automatic subagent catalog preview (account availability unverified; call agents.options before delegating): ${SUBAGENT_TIERS.map(
         (tier) =>
           `${tier}: ${
             subagents

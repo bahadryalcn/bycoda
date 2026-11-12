@@ -28,3 +28,5 @@ export {
   subscribePickerVisibility,
 } from "../model/models";
 export type { AgentModel, ModelSetting, ModelSettingChoice } from "../model/models";
+
+export { modelBelongsToHarness } from "../model/models";

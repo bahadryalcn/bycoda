@@ -1,14 +1,23 @@
+import {
+  classicInk,
+  classicColorTable,
+  classicColorEdge,
+  colorCell,
+  sampleColorTag,
+} from "./crewCodeColor";
+export { glyphTile } from "./crewCodeArtCompositor";
 import type { CanvasSurface } from "../../../shared/lib/canvas-worker/types";
 import {
   canvas2D,
+  glyphTile,
   domCanvas,
   GLYPH_BANDS,
-  TILE_WIDTH,
-  TILE_HEIGHT,
   webglCompositor,
   canvasCompositor,
   type Compositor,
 } from "./crewCodeArtCompositor";
+import { drawSign, type SignImage } from "./crewCodeSign";
+export { drawSign, crewSignImage, loadCrewSignLogo } from "./crewCodeSign";
 export type CodeArtOptions = {
   debug?: "tones" | "mask";
   renderer?: "auto" | "canvas";
@@ -18,7 +27,7 @@ export type CodeArtOptions = {
   paintSign?: typeof drawSign;
 };
 import { themePalette } from "../../../shared/theme/palette";
-/** Transparent monochrome binary art. Shapes are sampled into actual text glyphs. */
+/** Transparent binary art. Shapes are sampled into actual text glyphs; context can tint the ink. */
 // Public canvas dimensions are layout units. Sampling resolution stays private.
 export const CODE_WIDTH = 760;
 /** The crew's floor frame is 320 units tall; the bycoda sign hangs in the CREW_TOP units above it. */
@@ -54,7 +63,9 @@ function sitter(
   pose: TeaPose,
   activity?: CrewActivity,
   time = 0,
+  colorEdge = 0,
 ) {
+  const colorId = id;
   const guest = Math.floor(id / 6);
   id %= 6;
   c.save();
@@ -68,8 +79,10 @@ function sitter(
   const lean =
     ([0, -8, 0, 3, 8, -6][id] + (guest ? ((guest % 3) - 1) * 3 : 0)) * (1 - 0.65 * standing);
   const wide = [31, 23, 21, 30, 25, 22][id];
+  let region = 0;
+  const ink = (v: number) => classicInk(v, activity?.charge, colorId, region, colorEdge);
   const fill = (v: number) => {
-    c.fillStyle = `rgb(${v},${v},${v})`;
+    c.fillStyle = ink(v);
   };
   const ellipse = (px: number, py: number, rx: number, ry: number, v: number) => {
     fill(v);
@@ -78,7 +91,7 @@ function sitter(
     c.fill();
   };
   const line = (points: number[][], v: number, width: number) => {
-    c.strokeStyle = `rgb(${v},${v},${v})`;
+    c.strokeStyle = ink(v);
     c.lineWidth = width;
     c.lineCap = "round";
     c.lineJoin = "round";
@@ -94,6 +107,8 @@ function sitter(
     c.fill();
   };
   const shoe = (sx: number, sy: number, direction: number) => {
+    const previousRegion = region;
+    region = 5;
     c.save();
     c.translate(sx, sy);
     c.scale(direction, 1);
@@ -183,6 +198,7 @@ function sitter(
       2,
     );
     c.restore();
+    region = previousRegion;
   };
   // Chair, relaxed legs and shoes. Two sitters have crossed legs.
   if (!guest) {
@@ -273,6 +289,7 @@ function sitter(
       3.6,
     );
   }
+  region = 4;
   if (progress > 0) {
     const seatedLeft =
       id === 1
@@ -402,6 +419,7 @@ function sitter(
     shoe(-28, -2, -1);
     shoe(32, -2, 1);
   }
+  region = 3;
   // Sloping shoulders, cloth hanging from the ribcage and a seated waist.
   const turn = activity?.turn ?? 0;
   const cupless = standing > 0.02 || activity?.working === true;
@@ -1265,6 +1283,7 @@ function sitter(
   const faceHeight = [22, 24, 22, 20, 21, 24][id];
   const blink = activity?.blink ?? 0;
   const look = turn * 1.8 - thought * 1.2;
+  region = 1;
   // Value-sculpted head: lit cheek, soft shade side and a pale forehead. Features are
   // broad value breaks (brow bands, eye slits, moustache) so they survive glyph sampling.
   shape(
@@ -1344,6 +1363,7 @@ function sitter(
       1.6,
     );
   }
+  region = 2;
   if (role === "lead") {
     // Tall bright fez with a dark band and a swinging tassel: the lead's signature silhouette.
     shape(
@@ -1525,6 +1545,7 @@ function sitter(
       4,
     );
   }
+  region = 1;
   // Brows carry most of the expression: anger pulls the inner ends down, laughter lifts them.
   const browTone = guest ? [200, 80, 110][(guest + id) % 3] : [215, 95, 80, 70, 90, 228][id];
   const browLift = laugh * 1.5 + thought * 0.8;
@@ -1595,6 +1616,7 @@ function sitter(
   ellipse(lean + 0.8, -163.6, 3.1, 2.5, 234);
   ellipse(lean + 3.6, -162.2, 2.1, 1.5, 128);
   ellipse(lean - 1.8, -161.6, 1.1, 0.8, 140);
+  region = 6;
   // Moustache masses are the strongest facial landmark at small sizes.
   if (id === 5) {
     shape(
@@ -1905,6 +1927,7 @@ function sitter(
     ellipse(lean + 2, -151, 3.7, 3, 225);
     ellipse(lean + 3, -152, 2, 1.8, 45);
   }
+  region = 4;
   // Trouser folds and substantial shoe tips keep the seated anatomy readable.
   c.restore();
   if (progress > 0) {
@@ -1998,6 +2021,7 @@ function sitter(
       2,
     );
   }
+  region = 7;
   // A tulip-shaped tea glass and saucer, visible for every seated man (never for a working, standing one).
   if (!cupless) {
     fill(255);
@@ -2258,9 +2282,10 @@ function member(
   pose: TeaPose,
   activity: CrewActivity | undefined,
   time: number,
+  colorEdge: number,
 ) {
   if (stage >= UNCLE_STAGE) {
-    sitter(c, id, 0, 0, pose, activity, time);
+    sitter(c, id, 0, 0, pose, activity, time, colorEdge);
     return;
   }
   const grow = stage === 2 ? 0.97 + 0.04 * growth : 0.9 + 0.14 * growth;
@@ -2276,107 +2301,12 @@ function member(
   c.restore();
 }
 
-export function crewSignImage() {
-  return signLogo;
-}
-const SIGN_LOGO_SRC = "/brand/bycoda/logo-horizontal-white.svg";
-type SignImage = { image?: CanvasImageSource; naturalWidth: number; naturalHeight: number };
-let signLogo: (HTMLImageElement & SignImage) | null = null;
-let signLogoLoad: Promise<void> | null = null;
-/** Loads the sign's logo once; resolves (never rejects) when it can be painted or has failed. */
-export function loadCrewSignLogo(): Promise<void> {
-  if (signLogoLoad) return signLogoLoad;
-  if (typeof Image === "undefined") return (signLogoLoad = Promise.resolve());
-  const image = new Image();
-  signLogoLoad = new Promise<void>((resolve) => {
-    image.onload = () => {
-      signLogo = image;
-      resolve();
-    };
-    image.onerror = () => resolve();
-  });
-  image.src = SIGN_LOGO_SRC;
-  return signLogoLoad;
-}
-export function drawSign(
-  c: CanvasRenderingContext2D,
-  time: number,
-  logo: SignImage | null = signLogo,
-) {
-  const cx = CODE_WIDTH / 2,
-    w = 236,
-    h = SIGN_HEIGHT,
-    top = SIGN_TOP,
-    x0 = cx - w / 2;
-  c.save();
-  c.translate(cx, 0);
-  c.rotate(Math.sin(time / 2400) * 0.012);
-  c.translate(-cx, 0);
-  c.strokeStyle = themePalette.hexa8a8a8;
-  c.lineWidth = 1.6;
-  c.fillStyle = themePalette.hexd0d0d0;
-  for (const x of [x0 + 34, x0 + w - 34]) {
-    c.beginPath();
-    c.moveTo(x, 0);
-    c.lineTo(x, top + 2);
-    c.stroke();
-    for (let link = 0; link < 3; link++) {
-      c.beginPath();
-      c.ellipse(x, 3 + link * 4.5, 1.6, 2.2, 0, 0, Math.PI * 2);
-      c.fill();
-    }
-  }
-  c.fillStyle = themePalette.hex7a7a7a;
-  c.fillRect(x0, top, w, h);
-  c.fillStyle = themePalette.hex565656;
-  c.fillRect(x0 + 5, top + 5, w - 10, h - 10);
-  c.strokeStyle = themePalette.hexcfcfcf;
-  c.lineWidth = 1.2;
-  c.strokeRect(x0 + 8, top + 8, w - 16, h - 16);
-  c.strokeStyle = themePalette.hex9a9a9a;
-  c.lineWidth = 1;
-  c.beginPath();
-  c.moveTo(x0 + 6, top + h - 3);
-  c.lineTo(x0 + w - 6, top + h - 3);
-  c.stroke();
-  c.fillStyle = themePalette.hexeeeeee;
-  for (const x of [x0 + 4, x0 + w - 4])
-    for (const y of [top + 4, top + h - 4]) {
-      c.beginPath();
-      c.arc(x, y, 1.5, 0, Math.PI * 2);
-      c.fill();
-    }
-  if (logo?.naturalWidth) {
-    const lw = 184,
-      lh = (lw * logo.naturalHeight) / logo.naturalWidth;
-    c.drawImage(logo.image ?? (logo as HTMLImageElement), cx - lw / 2, top + (h - lh) / 2, lw, lh);
-  }
-  c.restore();
-}
 export type CodeArtPainter = ((
   poses: TeaPose[],
   activity?: CrewActivity[],
   viewportWidth?: number,
   time?: number,
 ) => void) & { dispose?: () => void; busy?: () => boolean; readonly backend?: "webgl" | "canvas" }; // busy: still animating (fading effect)
-export function glyphTile(
-  band: (typeof GLYPH_BANDS)[number],
-  factory: () => CanvasSurface = domCanvas,
-): CanvasSurface {
-  const tile = factory();
-  tile.width = TILE_WIDTH;
-  tile.height = TILE_HEIGHT;
-  const glyphs = canvas2D(tile);
-  if (glyphs) {
-    glyphs.font = band.font;
-    glyphs.textBaseline = "top";
-    glyphs.fillStyle = themePalette.hexfff;
-    for (let row = 0; row < 4; row++)
-      for (let column = 0; column < 4; column++)
-        glyphs.fillText(band.chars(column, row), column * 3, row * 5);
-  }
-  return tile;
-}
 export function createCodeArtPainter(
   surface: CanvasSurface,
   options: CodeArtOptions = {},
@@ -2404,9 +2334,9 @@ export function createCodeArtPainter(
     return () => {};
   }
   let fallback: Compositor | null = null;
-  const composite = (cells: Uint8ClampedArray) => {
+  const composite = (cells: Uint8ClampedArray, colors: Uint8Array) => {
     fallback ??= canvasCompositor(surface, columns, rows, tiles, options.debug, mask, factory);
-    fallback?.(cells);
+    fallback?.(cells, colors);
   };
   const coverage = new Float32Array(columns * rows);
   const shade = new Uint8ClampedArray(columns * rows);
@@ -2415,6 +2345,7 @@ export function createCodeArtPainter(
     { length: 256 },
     (_, v) => 70 + 185 * Math.pow(v / 255, 1.35),
   );
+  const colors = classicColorTable();
   const paint: CodeArtPainter = (
     poses: TeaPose[],
     activity?: CrewActivity[],
@@ -2458,15 +2389,25 @@ export function createCodeArtPainter(
       c.scale(place.scale, place.scale);
       const state = activity?.[place.id],
         age = state?.age;
+      const colorEdge = classicColorEdge(place, state, rows);
       if (age && age.from !== undefined && age.change !== undefined && age.change < 1) {
         // A stage change cross-fades the two ages under a ring of sparkles.
         c.save();
         c.globalAlpha = 1 - age.change;
-        member(c, place.id, age.from, age.from < age.stage ? 1 : 0, poses[place.id], state, time);
+        member(
+          c,
+          place.id,
+          age.from,
+          age.from < age.stage ? 1 : 0,
+          poses[place.id],
+          state,
+          time,
+          colorEdge,
+        );
         c.restore();
         c.save();
         c.globalAlpha = age.change;
-        member(c, place.id, age.stage, age.growth, poses[place.id], state, time);
+        member(c, place.id, age.stage, age.growth, poses[place.id], state, time, colorEdge);
         c.restore();
         growthSparkle(c, age.change, age.stage >= 2 ? 190 : 80 + age.stage * 50);
       } else
@@ -2478,12 +2419,13 @@ export function createCodeArtPainter(
           poses[place.id],
           state,
           time,
+          colorEdge,
         );
       c.restore();
     }
     if (gpu) {
       try {
-        if (gpu(mask) !== false) return;
+        if (gpu(mask, colors) !== false) return;
       } catch {
         /* Preserve the software glyph fallback. */
       }
@@ -2535,10 +2477,11 @@ export function createCodeArtPainter(
         const v = Math.min(255, shade[cell] + (rim ? 38 : 0));
         const alpha = Math.min(1, (a - 0.1) / 0.5);
         cells[o] = ramp[v];
+        cells[o + 2] = colorCell(sampleColorTag(pixels, y * 2 * stride + x * 8, stride), y);
         cells[o + 1] = v >= GLYPH_BANDS[2].from ? 200 : v >= GLYPH_BANDS[1].from ? 100 : 0;
         cells[o + 3] = 255 * alpha * alpha * (3 - 2 * alpha);
       }
-    composite(cells);
+    composite(cells, colors);
   };
   Object.defineProperty(paint, "backend", { get: () => (gpu ? "webgl" : "canvas") });
   paint.dispose = () => {

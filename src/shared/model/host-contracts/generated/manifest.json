@@ -29545,6 +29545,7 @@
                     "color": { "type": "string" },
                     "derivedKind": { "enum": ["personal", "work"], "type": "string" },
                     "id": { "type": "string" },
+                    "isDefault": { "type": "boolean" },
                     "kind": { "enum": ["personal", "work"], "type": "string" },
                     "label": { "type": "string" }
                   },
@@ -29560,6 +29561,7 @@
                     "color": { "type": "string" },
                     "derivedKind": { "enum": ["personal", "work"], "type": "string" },
                     "id": { "type": "string" },
+                    "isDefault": { "type": "boolean" },
                     "kind": { "enum": ["personal", "work"], "type": "string" },
                     "label": { "type": "string" }
                   },
@@ -70768,5 +70770,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "08f9e86d89ba28d1ba592160001bede4212d23f27d5b0a89fe110d976939dd4e"
+  "schemaHash": "a0b38bc6753a55bb43a708775d1d39a9642e4d23fc14c8efea88471335449eea"
 }

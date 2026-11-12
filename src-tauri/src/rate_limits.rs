@@ -20,6 +20,9 @@ const OAUTH_BETA: &str = "oauth-2025-04-20";
 // if the server raises its minimum.
 const USER_AGENT: &str = "claude-cli/2.1.322 (external, cli)";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+// Claude Code's own deadline for spending a reset.
+const RESET_TIMEOUT: Duration = Duration::from_secs(25);
+const RESET_PROGRAM: &str = "cedar_ember";
 
 #[cfg(target_os = "macos")]
 const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -602,6 +605,129 @@ fn usage_error(status: u16) -> ClaudeUsageFetch {
     usage_result("error", Some(status), None, Some(message))
 }
 
+/// Spend one banked limit reset, as `/limit-reset` does in Claude Code. Only an
+/// explicit, confirmed click reaches this; the body is the server's own answer.
+#[tauri::command]
+pub async fn consume_claude_limit_reset(
+    app: AppHandle,
+    account_id: Option<String>,
+    grant_id: String,
+    request_id: String,
+) -> Result<ClaudeUsageFetch, String> {
+    if !valid_reset_grant_id(&grant_id) || !valid_reset_request_id(&request_id) {
+        return Err("Malformed reset request".into());
+    }
+    let config_dir = crate::harness::provider_account_dir(&app, "claude", account_id.as_deref())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        consume_claude_limit_reset_sync(config_dir, &grant_id, &request_id)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+fn consume_claude_limit_reset_sync(
+    config_dir: Option<PathBuf>,
+    grant_id: &str,
+    request_id: &str,
+) -> ClaudeUsageFetch {
+    let failed = |message: &str| usage_result("error", None, None, Some(message.into()));
+    let Some(creds) = read_claude_credentials(config_dir.as_deref()) else {
+        return usage_result(
+            "unavailable",
+            None,
+            None,
+            Some("Claude not signed in".into()),
+        );
+    };
+    // Renewing the token here would race the CLI that owns it; see `guarded_claude_usage`.
+    if token_expired(creds.expires_at_ms, now_ms()) {
+        return failed("Claude sign-in needs renewal. Use Claude once, then try again");
+    }
+    let organization = claude_oauth_get(
+        crate::account_identity::CLAUDE_PROFILE_URL,
+        &creds.access_token,
+    )
+    .ok()
+    .and_then(|response| response.into_string().ok())
+    .and_then(|body| serde_json::from_str::<Value>(&body).ok())
+    .and_then(|profile| profile_organization_uuid(&profile));
+    let Some(organization) = organization else {
+        return failed("Could not read the Claude organization for this account");
+    };
+    let result = ureq::AgentBuilder::new()
+        .timeout(RESET_TIMEOUT)
+        .build()
+        .post(&format!(
+            "https://api.anthropic.com/api/organizations/{organization}/reset_rate_limits"
+        ))
+        .set("Authorization", &format!("Bearer {}", creds.access_token))
+        .set("anthropic-beta", OAUTH_BETA)
+        .set("User-Agent", USER_AGENT)
+        .set("Content-Type", "application/json")
+        .send_string(
+            &serde_json::json!({
+                "program": RESET_PROGRAM,
+                "grant_id": grant_id,
+                "request_id": request_id,
+            })
+            .to_string(),
+        );
+    match result {
+        Ok(response) => {
+            let http_status = response.status();
+            match response.into_string() {
+                Ok(body) => usage_result("ok", Some(http_status), Some(body), None),
+                Err(_) => failed(RESET_UNCONFIRMED),
+            }
+        }
+        Err(ureq::Error::Status(status, response)) => {
+            let _ = response.into_string();
+            usage_result(
+                "error",
+                Some(status),
+                None,
+                Some(reset_error(status).into()),
+            )
+        }
+        // The request may have reached the server before the transport failed.
+        Err(_) => failed(RESET_UNCONFIRMED),
+    }
+}
+
+const RESET_UNCONFIRMED: &str =
+    "Could not confirm the reset. Check your usage in a moment before trying again";
+
+fn reset_error(status: u16) -> &'static str {
+    match status {
+        401 | 403 => "This Claude sign-in cannot use the reset. Sign in again, then retry",
+        429 => "Too many reset attempts. Nothing was used; try again in a moment",
+        _ => RESET_UNCONFIRMED,
+    }
+}
+
+/// Grant ids come from the usage body and end up in a request, so they are
+/// held to the shape Claude Code itself accepts.
+fn valid_reset_grant_id(id: &str) -> bool {
+    (1..=40).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'-'))
+}
+
+fn valid_reset_request_id(id: &str) -> bool {
+    (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+}
+
+/// The organization id becomes a URL path segment: accept a plain UUID only.
+fn profile_organization_uuid(profile: &Value) -> Option<String> {
+    let uuid = profile.get("organization")?.get("uuid")?.as_str()?.trim();
+    (uuid.len() == 36 && uuid.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-'))
+        .then(|| uuid.to_string())
+}
+
 pub(crate) fn read_claude_credentials(
     config_dir: Option<&std::path::Path>,
 ) -> Option<ClaudeCredentials> {
@@ -1016,6 +1142,35 @@ mod tests {
         );
         assert_eq!(read_opencode_go_api_key(), None);
         std::env::remove_var("OPENCODE_AUTH_CONTENT");
+    }
+
+    #[test]
+    fn limit_reset_request_parts_are_validated_before_they_reach_the_url_or_body() {
+        assert!(valid_reset_grant_id("launch_fable-2"));
+        for bad in ["", "Grant", "a/b", "a:0", &"a".repeat(41)] {
+            assert!(!valid_reset_grant_id(bad), "{bad}");
+        }
+        assert!(valid_reset_request_id(
+            "019a7c1e-4b2d-7a3f-9c10-0123456789ab"
+        ));
+        assert!(!valid_reset_request_id("id with space"));
+        assert!(!valid_reset_request_id(""));
+
+        let profile = |uuid: &str| serde_json::json!({ "organization": { "uuid": uuid } });
+        assert_eq!(
+            profile_organization_uuid(&profile("0f8fad5b-d9cb-469f-a165-70867728950e")).as_deref(),
+            Some("0f8fad5b-d9cb-469f-a165-70867728950e")
+        );
+        assert_eq!(
+            profile_organization_uuid(&profile("../admin/0000000000000000000000000000")),
+            None
+        );
+        assert_eq!(profile_organization_uuid(&serde_json::json!({})), None);
+        assert_eq!(
+            reset_error(429),
+            "Too many reset attempts. Nothing was used; try again in a moment"
+        );
+        assert_eq!(reset_error(500), RESET_UNCONFIRMED);
     }
 
     #[test]

@@ -251,7 +251,7 @@ export function prepareSubmittedTurn(
               {
                 id: crypto.randomUUID(),
                 role: "system",
-                text: `${next.harness} is not connected yet — install and sign in to that provider, then retry.`,
+                text: `${next.harness} is not connected. Install it and sign in, then try again.`,
                 notice: "error",
               },
             ],

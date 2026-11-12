@@ -23,7 +23,9 @@ import { DelegationSubagentsControl } from "./DelegationSettings";
 
 // A plain surface that keeps the menu's role, ref and key handling, and dismisses on Escape like the real popover.
 vi.mock("../../../shared/ui/Popover", async () => ({
-  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>("../../../shared/ui/Popover")),
+  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>(
+    "../../../shared/ui/Popover",
+  )),
   Popover: ({
     children,
     ref,
@@ -315,5 +317,6 @@ it("distinguishes Automatic, Off and explicit lists and switches modes without s
   renderControl(automatic);
   expect(container.textContent).toContain("Automatic");
   expect(container.querySelector('[data-tone="accent"]')).not.toBeNull();
-  expect(container.textContent).toContain("Strong");
+  // The resolved models are not listed: the badge alone says Automatic.
+  expect(container.textContent).not.toContain("Strong");
 });

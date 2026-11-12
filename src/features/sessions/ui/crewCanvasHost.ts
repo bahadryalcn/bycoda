@@ -1,4 +1,4 @@
-import { createCrewSignLayer, type SignLayerTiming } from "./crewCanvasSignLayer";
+import { type SignLayerTiming } from "./crewCanvasSignLayer";
 import { createCanvasWorkerHost } from "../../../shared/lib/canvas-worker/host";
 import type { CanvasReply } from "../../../shared/lib/canvas-worker/types";
 import {
@@ -12,8 +12,8 @@ import {
 import { prepareClassicCrewAssets, type ClassicCrewAssets } from "./crewCanvasAssets";
 
 export const CREW_RENDERER_ID = "classic-crew";
-/** Product rollout stays disabled pending owner approval and native acceptance. */
-export const CLASSIC_CREW_WORKER_QUALIFIED = false;
+/** Owner-admitted classic experiment; the runtime switch still controls selection. */
+export const CLASSIC_CREW_WORKER_QUALIFIED = true;
 export type CrewCanvasFrame = {
   actions: TeaPose[];
   activity?: CrewActivity[];
@@ -36,7 +36,6 @@ export function createCrewCanvasHost(
   let main: CodeArtPainter | undefined = createCodeArtPainter(original);
   let host: ReturnType<typeof createCanvasWorkerHost<CrewCanvasFrame>> | undefined;
   let assets: ClassicCrewAssets | undefined;
-  let sign: ReturnType<typeof createCrewSignLayer> | undefined;
   let disposed = false;
   let failed = false;
   let ready = false;
@@ -62,7 +61,6 @@ export function createCrewCanvasHost(
     main = createCodeArtPainter(fresh);
     if (latest) paint(latest);
     show(fresh);
-    sign?.dispose();
     assets?.sign?.close();
   };
   void prepare()
@@ -72,12 +70,10 @@ export function createCrewCanvasHost(
         value.sign?.close();
         return;
       }
-      sign = createCrewSignLayer(!!assets.sign);
       host = createCanvasWorkerHost<CrewCanvasFrame>({
         canvas: candidate,
         size,
         assets,
-        prepareFrame: sign,
         createWorker,
         onReady: () => {
           ready = true;
@@ -112,7 +108,6 @@ export function createCrewCanvasHost(
     main?.dispose?.();
     main = undefined;
     host?.dispose();
-    sign?.dispose();
     assets?.sign?.close();
     if (active !== original) active.remove();
     candidate.remove();
@@ -147,7 +142,6 @@ export async function createCrewFrameHarness(
     assets.sign?.close();
     assets.sign = null;
   }
-  const sign = createCrewSignLayer(!!assets.sign, measureSign);
   let failure = "Worker failed";
   let backend: string | undefined;
   let settle: (ready: boolean) => void = () => {};
@@ -158,7 +152,6 @@ export async function createCrewFrameHarness(
     canvas,
     size,
     assets,
-    prepareFrame: sign,
     createWorker: createCrewWorker,
     onReady: () => settle(true),
     onFailure: (reason) => {
@@ -169,12 +162,12 @@ export async function createCrewFrameHarness(
   host.start();
   if (!(await ready)) {
     assets.sign?.close();
-    sign.dispose();
     host.dispose();
     throw new Error(failure);
   }
   return {
     async draw(frame: CrewCanvasFrame) {
+      measureSign?.({ draw: 0, bitmap: 0 });
       const reply = await new Promise<CanvasReply | null>((resolve) => host.draw(frame, resolve));
       if (reply?.type !== "drawn") throw new Error(failure);
       backend = reply.backend;
@@ -187,7 +180,6 @@ export async function createCrewFrameHarness(
     backend: () => backend,
     dispose() {
       host.dispose();
-      sign.dispose();
       assets.sign?.close();
     },
   };

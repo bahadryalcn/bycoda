@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import { worktreeTabStatsEqual } from "../../model/sidebarEquality";
 import { type Session } from "../../../features/sessions/model/session";
+import { sessionWorkingNow } from "../../../features/sessions/model/sessionWait";
 import { leafIds, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
   filterTabsForProject,
@@ -44,9 +45,10 @@ export function useWorktreeDeckTabs({
       const key = pathKey(workspace);
       const entry = stats.get(key) ?? { tabs: 0, busy: false };
       entry.tabs += 1;
-      entry.busy ||= leafIds(tab.layout).some(
-        (id) => sessions.find((session) => session.id === id)?.busy,
-      );
+      entry.busy ||= leafIds(tab.layout).some((id) => {
+        const session = sessions.find((candidate) => candidate.id === id);
+        return !!session && sessionWorkingNow(session);
+      });
       stats.set(key, entry);
     }
     return stats;

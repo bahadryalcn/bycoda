@@ -1,5 +1,3 @@
-import { resolveSubagents } from "../../../shared/model/automaticSubagents";
-import { defaultProviderAccountId } from "../../providers/public/providerAccounts";
 import { isModelEnabled, type AgentModel, type ModelSetting } from "./models";
 import { modelDisplayName } from "./modelDisplayName";
 import { HARNESS_TITLE, type HarnessId } from "./session";
@@ -195,24 +193,6 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
     label: "Subagents",
     kind: "select",
     value: encodeSubagents(legacySubagent ? [legacySubagent] : []) ?? "",
-    resolvedSubagents: resolveSubagents(AUTOMATIC_SUBAGENTS, {
-      harness: input.current.harness,
-      providerAccountId: input.currentAccountId,
-      providers: input.harnesses,
-      models: input.harnesses.flatMap((id) =>
-        input.source.modelsFor(id).filter((model) => isModelEnabled(model.id)),
-      ),
-      defaultAccounts: Object.fromEntries(
-        ["claude", "codex"].map((id) => [
-          id,
-          input.source.accounts
-            ? (input.source.accounts[id as "claude" | "codex"]?.find((account) => account.isDefault)
-                ?.id ?? "default")
-            : defaultProviderAccountId(id as "claude" | "codex"),
-        ]),
-      ),
-      signedOutAccounts: input.signedOutAccounts,
-    }),
     options: [
       OFF,
       { value: AUTOMATIC_SUBAGENTS, label: "Automatic" },
@@ -241,6 +221,8 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
     {
       id: CROSS_SUBAGENT_MAX_EFFORT_KEY,
       label: "Subagent max effort",
+      description:
+        "The highest thinking level a subagent may use, whatever the main model's own level. Automatic sets no limit.",
       kind: "select",
       value: "",
       options: [

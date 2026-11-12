@@ -7,6 +7,7 @@ import { isRemoteProjectPath } from "../../projects/public/recents";
  * every return. A remote project lists this computer's own skills without the project folder.
  */
 const lastLists = new Map<string, DiscoveredSkill[]>();
+const pendingLists = new Map<string, Promise<DiscoveredSkill[]>>();
 
 const scopeOf = (cwd: string) => (isRemoteProjectPath(cwd) ? "" : cwd);
 
@@ -16,13 +17,23 @@ export function cachedLocalSkills(cwd: string): DiscoveredSkill[] | null {
 }
 
 /** Reads this computer's skills and remembers a successful result. Failures are not cached. */
-export async function loadLocalSkills(cwd: string): Promise<DiscoveredSkill[]> {
+export function loadLocalSkills(cwd: string): Promise<DiscoveredSkill[]> {
   const scope = scopeOf(cwd);
-  const next = await listSkills(scope);
-  lastLists.set(scope, next);
-  return next;
+  const pending = pendingLists.get(scope);
+  if (pending) return pending;
+  const request = listSkills(scope)
+    .then((next) => {
+      if (pendingLists.get(scope) === request) lastLists.set(scope, next);
+      return next;
+    })
+    .finally(() => {
+      if (pendingLists.get(scope) === request) pendingLists.delete(scope);
+    });
+  pendingLists.set(scope, request);
+  return request;
 }
 
 export function clearLocalSkillsCache() {
   lastLists.clear();
+  pendingLists.clear();
 }

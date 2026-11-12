@@ -265,7 +265,9 @@ export function TabGroupMenu({
               {t("Project logo")}
             </Text>
             <Text as="p" size="secondary" tone="secondary" truncate>
-              {logoPath ? t("Shown in tabs and composer") : t("Optional — replaces folder icon")}
+              {logoPath
+                ? t("Shown in tabs and composer")
+                : t("Optional. Replaces the folder icon.")}
             </Text>
           </div>
           {logoPath ? (

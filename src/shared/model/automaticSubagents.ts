@@ -1,4 +1,4 @@
-import type { HarnessId } from "./harnessIdentity";
+import { HARNESSES, type HarnessId } from "./harnessIdentity";
 import {
   AUTOMATIC_SUBAGENTS,
   DELEGATION_LIMITS,
@@ -65,6 +65,27 @@ export type AutomaticSubagentInput = {
   signedOutAccounts?: ReadonlySet<string>;
 };
 export type RankedSubagent = DelegateModelRef & { tier: SubagentTier };
+
+/** The catalog key owns provider identity; legacy adapters may omit model.harness. */
+export function subagentCatalogModels(
+  catalog: Partial<
+    Record<HarnessId, readonly { id: string; harness?: HarnessId; enabled?: boolean }[]>
+  >,
+): AutomaticSubagentInput["models"] {
+  return HARNESSES.flatMap((harness) =>
+    (catalog[harness] ?? []).map((model) => ({ ...model, harness })),
+  );
+}
+
+/** Explain an empty Automatic result without exposing account or credential data. */
+export function automaticSubagentEmptyReason(input: AutomaticSubagentInput) {
+  if (!input.models.length) return "no catalog models";
+  const enabled = input.models.filter((model) => model.enabled !== false);
+  if (!enabled.length) return "no enabled models";
+  if (!enabled.some((model) => input.providers.includes(model.harness)))
+    return "no connected providers";
+  return "all accounts signed out";
+}
 
 /** Resolve at use time. Round-robin provider/tier buckets preserve diversity
  * before filling with further versions. Final order is rank, provider, model. */

@@ -186,7 +186,8 @@ describe("providers scope inheritance", () => {
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Save in"]')!;
     await act(async () => trigger.click());
     const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-      (node) => [...node.querySelectorAll("span.truncate")].some((span) => span.textContent === label),
+      (node) =>
+        [...node.querySelectorAll("span.truncate")].some((span) => span.textContent === label),
     );
     expect(option).toBeTruthy();
     await act(async () => option!.click());

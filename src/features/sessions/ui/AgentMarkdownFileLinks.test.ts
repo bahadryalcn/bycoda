@@ -159,7 +159,7 @@ describe("markdown file navigation", () => {
     await render("`user+tag@example.com`");
     const button = container.querySelector<HTMLButtonElement>('[aria-label="Copy"]')!;
     await act(async () => button.click());
-    expect(button.getAttribute("aria-label")).toBe("Copy failed — try again");
+    expect(button.getAttribute("aria-label")).toBe("Copy failed. Try again.");
     await act(async () => button.click());
     expect(copy).toHaveBeenLastCalledWith("user+tag@example.com");
     expect(button.getAttribute("aria-label")).toBe("Copied");

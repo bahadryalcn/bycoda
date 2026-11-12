@@ -8,11 +8,10 @@ import { Fragment, useState } from "react";
 import { splitAttachmentTokens } from "../model/attachmentTokens";
 import { splitCitationTokens } from "../model/citationTokens";
 import type { ChatCitation } from "../model/chatCitation";
-import { CitationTokenPill } from "./ChatCitationText";
+import { CitationTokenPill, WorkItemMentionText } from "./ChatCitationText";
 import type { Attachment } from "../model/session";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { useAttachmentPreview } from "./useAttachmentPreview";
-import { SkillTokenText } from "./SkillTokenText";
 import { AttachmentIdentity } from "./AttachmentIdentity";
 import { attachmentPresentation, formatAttachmentSize } from "../model/attachmentPresentation";
 import styles from "./AttachmentTokenText.module.css";
@@ -139,12 +138,12 @@ function CitationTokenText({
   text: string;
   citations?: readonly ChatCitation[];
 }) {
-  if (!citations.length) return <SkillTokenText text={text} />;
+  if (!citations.length) return <WorkItemMentionText text={text} />;
   return splitCitationTokens(text, citations.length).map((part, index) =>
     "token" in part ? (
       <CitationTokenPill key={index} token={part.token} citation={citations[part.index]} />
     ) : (
-      <SkillTokenText key={index} text={part.text} />
+      <WorkItemMentionText key={index} text={part.text} />
     ),
   );
 }

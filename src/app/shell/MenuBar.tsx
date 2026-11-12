@@ -449,7 +449,7 @@ const MemoMenuBar = memo(function MenuBar({
             kind: "item",
             id: "open_model_picker",
             label: t("Switch Model…"),
-            shortcut: shortcut("App: Switch Model", `${MOD}.`),
+            shortcut: shortcut("App: Switch Model", `${MOD}${SHIFT}.`),
           },
           {
             kind: "item",

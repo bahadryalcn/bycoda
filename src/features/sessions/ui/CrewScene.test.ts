@@ -326,3 +326,26 @@ it("keeps classic crew labels below the hanging sign at every scene size", () =>
   // Rigged themes draw no sign, so their labels keep their natural lift.
   expect(labelLift(signBottom + 10, false)).toBe("-100%");
 });
+
+it("classic color mode keeps uncles and agrees with context meters", () => {
+  state.enabled = false;
+  act(() => saveCrewGrowthEnabled(false));
+  const make = (context?: number) =>
+    Array.from({ length: 6 }, () => ({ role: "subagent" as const, working: false, context }));
+  act(() => root.render(createElement(CrewScene, { crew: make(0.5) })));
+  const labels = () => [...container.querySelectorAll(".crew-scene__label")];
+  expect(labels().every((label) => label.getAttribute("data-age") === "3")).toBe(true);
+  expect(labels().every((label) => label.getAttribute("data-charge") === "50")).toBe(true);
+  expect(labels()[0].textContent).toContain("50%");
+  expect(labels()[0].querySelector(".crew-scene__name")?.textContent).not.toContain("50%");
+  expect(labels()[0].querySelector(".crew-scene__charge")?.textContent).toBe("50%");
+  expect(container.querySelector(".crew-scene")?.getAttribute("aria-label")).not.toContain(
+    "Monochrome",
+  );
+  act(() => root.render(createElement(CrewScene, { crew: make() })));
+  expect(labels()[0].getAttribute("data-charge")).toBe("unknown");
+  expect(labels()[0].querySelector(".crew-scene__charge")?.textContent).toBe("—");
+  act(() => saveCrewGrowthEnabled(true));
+  expect(labels()[0].hasAttribute("data-charge")).toBe(false);
+  expect(labels()[0].querySelector(".crew-scene__charge, .crew-scene__meter")).toBeNull();
+});

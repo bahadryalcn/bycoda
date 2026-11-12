@@ -7,3 +7,5 @@ export {
   useDefaultTranslationChoice,
 } from "../model/translationPreferences";
 export type { TranslationChoice } from "../model/translationPreferences";
+
+export { parseTranslationChoice } from "../model/translationPreferences";

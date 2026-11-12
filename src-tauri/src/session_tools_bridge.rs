@@ -326,13 +326,27 @@ fn broker() -> Result<&'static Broker, String> {
                     });
                 }
                 for socket in listener.incoming().flatten() {
-                    let _ = tx.try_send(socket);
+                    enqueue_socket(&tx, socket);
                 }
             });
             Ok(Broker { port, registry })
         })
         .as_ref()
         .map_err(Clone::clone)
+}
+
+fn enqueue_socket(tx: &mpsc::SyncSender<TcpStream>, socket: TcpStream) {
+    let mut socket = match tx.try_send(socket) {
+        Ok(()) => return,
+        Err(mpsc::TrySendError::Full(socket) | mpsc::TrySendError::Disconnected(socket)) => socket,
+    };
+    // Bound the pre-dispatch rejection so a stalled peer cannot block admission.
+    let replied = socket.set_write_timeout(Some(Duration::from_millis(100)))
+        .and_then(|()| socket.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"))
+        .is_ok();
+    log::warn!(
+        "event=session_tools_bridge_admission_rejected reason=queue_unavailable replied={replied}"
+    );
 }
 fn valid_scope(scope: &Value) -> bool {
     scope.as_object().is_some_and(|object| {
@@ -829,6 +843,24 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
     use std::thread;
+
+    #[test]
+    fn saturated_broker_answers_instead_of_dropping_the_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let (socket, _) = listener.accept().unwrap();
+        let (tx, _rx) = mpsc::sync_channel(0);
+        enqueue_socket(&tx, socket);
+        let mut reply = String::new();
+        client.read_to_string(&mut reply).unwrap();
+        assert!(
+            reply.starts_with("HTTP/1.1 503 "),
+            "missing overload response: {reply:?}"
+        );
+    }
 
     #[test]
     fn a_budget_spent_waiting_for_a_refusing_host_does_not_start_the_back_off() {

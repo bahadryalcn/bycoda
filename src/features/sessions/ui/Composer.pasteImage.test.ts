@@ -527,9 +527,7 @@ it("reports a copy that holds nothing attachable", async () => {
   paste(render(), "file:///home/dev/.DS_Store");
   await waitForAlert();
 
-  expect(alert()).toBe(
-    "Nothing to attach from that path — the file may have been moved, renamed, or deleted.",
-  );
+  expect(alert()).toBe("Nothing to attach. The file may have been moved, renamed, or deleted.");
 });
 
 it("attaches what fits and says how many copies it left out", async () => {

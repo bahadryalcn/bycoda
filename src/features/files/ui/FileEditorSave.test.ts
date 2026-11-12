@@ -339,7 +339,9 @@ it("keeps failed edits dirty and allows retry through the save action", async ()
 it("updates Markdown preview from the edited buffer and saves while preview is open", async () => {
   const view = await render(true, "/repo/save.md");
   const modeButton = (text: string) =>
-    [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')].find((button) => button.getAttribute("aria-label") === text || button.textContent === text)!;
+    [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')].find(
+      (button) => button.getAttribute("aria-label") === text || button.textContent === text,
+    )!;
   await act(async () => modeButton("Source").click());
   act(() => view.dispatch({ changes: { from: 0, insert: "updated " } }));
   await act(async () => modeButton("Preview").click());
@@ -355,7 +357,9 @@ it("updates Markdown preview from the edited buffer and saves while preview is o
 it("retains the same source editor, selection and undo while Preview owns the pane", async () => {
   const view = await render(true, "/repo/retained-preview.md");
   const modeButton = (text: string) =>
-    [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')].find((button) => button.getAttribute("aria-label") === text || button.textContent === text)!;
+    [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')].find(
+      (button) => button.getAttribute("aria-label") === text || button.textContent === text,
+    )!;
   await act(async () => modeButton("Source").click());
   act(() =>
     view.dispatch({ changes: { from: 0, insert: "draft " }, selection: { anchor: 1, head: 4 } }),

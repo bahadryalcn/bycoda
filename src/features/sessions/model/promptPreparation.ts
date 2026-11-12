@@ -1,5 +1,6 @@
 import { applyFileMentionsToTurn } from "../../files/public/fileMentions";
 import { applyNotesToTurn } from "../../notes";
+import { applyWorkItemMentionsToTurn } from "../../inbox/public/workItemMentions";
 import {
   applySkillsToTurn,
   warmNativeSkills,
@@ -29,7 +30,13 @@ export async function preparePrompt(
     return nativeCommandPrompt(context.harness, text);
   const withFiles = await applyFileMentionsToTurn(cited.text, context.cwd);
   const withNotes = await applyNotesToTurn(withFiles);
-  const withSkills = await applySkillsToTurn(withNotes, context);
+  let withWorkItems = withNotes;
+  try {
+    withWorkItems = await applyWorkItemMentionsToTurn(withNotes, context.cwd);
+  } catch {
+    // Optional tracker context must never prevent sending the original message.
+  }
+  const withSkills = await applySkillsToTurn(withWorkItems, context);
   const notes =
     context.delegation && context.sessionId
       ? await delegateCrewMentions(cited.text, {

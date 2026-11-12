@@ -28,6 +28,7 @@ import { hydrateComposerDrafts } from "./features/sessions/data/composerDraftSto
 import { installNativeProjectionCheckpointReceiver } from "./features/sessions/data/nativeProjectionCheckpoint";
 import { homeDir, pathEnvironment } from "./platform/tauri/fs";
 import { setHomeDir, setPathEnvironment } from "./shared/lib/paths";
+import { setCanvasWorkerEnabled } from "./shared/lib/canvas-worker/host";
 import { consumeInstalledUpdate } from "./app/model/updateNotice";
 import { initializeProviderBinaryPaths } from "./features/providers/model/providerBinaryPaths";
 // Lets file commands reach a connected machine for `remote://` paths.
@@ -143,6 +144,11 @@ void listen<number>("quit_commit", (event) => {
 void listen("quit_aborted", () => {
   abortQuit();
 });
+
+// Trial: the classic crew paints in a worker (CREW_RENDERER_ID in crewCanvasHost.ts,
+// not imported here to keep the painter out of the boot chunk). A worker that fails
+// to start falls back to the main-thread painter. Remove this line to switch it off.
+setCanvasWorkerEnabled("classic-crew", true);
 
 const appRoot = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 // Show a bounded, safe shell while workspace and durable drafts hydrate.

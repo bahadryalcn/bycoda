@@ -144,6 +144,9 @@ it("Automatic lists tier groups within ten lines and names a ceiling only when s
     { harness: "claude" },
   );
   expect(text).toContain("best:");
+  expect(text).toContain(
+    "catalog preview (account availability unverified; call agents.options before delegating)",
+  );
   expect(text).toContain("unranked:");
   expect(text).toContain("lowest tier");
   expect(text).toContain("ceiling: max");

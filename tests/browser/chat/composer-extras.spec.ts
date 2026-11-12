@@ -27,6 +27,26 @@ async function expectHint(
   await expect(hint).toHaveCount(0);
 }
 
+test("model panel accepts semantic click and Enter/Space activation", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.goto("/tests/browser/chat/composer-extras.html?chat-layout");
+  const trigger = page
+    .locator('[data-composer-model-controls] button[aria-haspopup="dialog"]')
+    .first();
+  const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+  for (const activation of ["click", "Enter", "Space"]) {
+    await trigger.focus();
+    if (activation === "click")
+      await trigger.evaluate((element: HTMLButtonElement) => element.click());
+    else await trigger.press(activation);
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole("combobox", { name: "Search models" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeFocused();
+  }
+});
+
 test("composer attachment submission stays local and keeps Stop available", async ({
   page,
 }, testInfo) => {

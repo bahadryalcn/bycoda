@@ -419,6 +419,38 @@ describe("GitChangesPanel commit message generation", () => {
     expect(container.textContent).toContain("Draft or changes changed during generation");
     expect(gitCommit).not.toHaveBeenCalled();
   });
+  it("keeps a generated message when only unstaged files change meanwhile", async () => {
+    const staged = { ...changedFile("src/app.ts"), staged: true, unstaged: false };
+    vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [staged] }));
+    let finish!: (message: string) => void;
+    vi.mocked(generateCommitMessage).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await renderPanel("/generation-unstaged-edit");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Generate commit message"]')!.click(),
+    );
+    // An agent edits files while the message is generated: the staged row's
+    // combined line counts move and a new unstaged file appears.
+    const reads = vi.mocked(gitDiffIndex).mock.calls.length;
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({
+        files: [{ ...staged, additions: 9, unstaged: true }, changedFile("src/other.ts")],
+      }),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Refresh source control"]')!
+        .click(),
+    );
+    expect(vi.mocked(gitDiffIndex).mock.calls.length).toBeGreaterThan(reads);
+    await act(async () => finish("feat: add app"));
+    expect(container.querySelector("textarea")?.value).toBe("feat: add app");
+    expect(container.textContent).not.toContain("Draft or changes changed during generation");
+  });
   it.each(["project", "default"])(
     "uses the saved %s model and advisor for generation",
     async (scope) => {
@@ -1561,6 +1593,56 @@ describe("GitChangesPanel loading and publication recovery", () => {
     );
     expect(container.textContent).not.toContain("Couldn’t check pull request");
     expect(create().disabled).toBe(false);
+  });
+
+  it("drops the pushed count when Sync finishes, before the reload answers", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({ remote: "origin", upstream: "origin/feature/pull", ahead: 1 }),
+    );
+    await renderPanel("/repo-sync-optimistic");
+    const push = () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes("Push"),
+      );
+    vi.mocked(gitDiffIndex).mockImplementation(() => new Promise(() => {}));
+    await act(async () => push()!.click());
+    expect(gitSync).toHaveBeenCalledWith("/repo-sync-optimistic");
+    expect(push()).toBeUndefined();
+    expect(container.textContent).toContain("No uncommitted changes");
+    expect(container.textContent).not.toContain("Loading changes…");
+  });
+
+  it("answers an explicit PR refresh with a new lookup, not one already running", async () => {
+    type Pr = Awaited<ReturnType<typeof gitPrStatus>>;
+    let finishStale!: (pr: Pr) => void;
+    vi.mocked(gitPrStatus).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishStale = resolve;
+        }),
+    );
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({ remote: "origin", upstream: "origin/feature/pull", aheadOfDefault: 1 }),
+    );
+    await renderPanel("/repo-pr-stale-flight");
+    vi.mocked(gitPrStatus).mockResolvedValue({
+      number: 7,
+      state: "open",
+      title: "Created meanwhile",
+      url: "https://example.test/pull/7",
+    });
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Refresh source control"]')!
+        .click(),
+    );
+    expect(gitPrStatus).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("View PR #7");
+    // The lookup that started before the pull request existed answers last.
+    await act(async () => finishStale(null));
+    await renderPanel("/other-checkout");
+    await renderPanel("/repo-pr-stale-flight");
+    expect(container.textContent).toContain("View PR #7");
   });
 
   it("ignores the previous branch’s late PR response", async () => {

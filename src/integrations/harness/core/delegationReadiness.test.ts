@@ -67,11 +67,12 @@ it("bounds a hung backend and handles rejected calls", async () => {
   expect(await conversationDelegationReady("session")).toBe(false);
 });
 
-it("restores both Codex feature flags after an earlier restricted turn", () => {
+it("restores Codex agent config after an earlier restricted turn", () => {
   const prior = codexThreadConfig(undefined, { nativeSubagents: "off" });
   expect(codexThreadConfig(prior, { nativeSubagents: "on" })).toEqual({
+    "agents.enabled": true,
     "features.multi_agent": true,
-    "features.multi_agent_v2": true,
+    "features.multi_agent_v2": false,
   });
 });
 

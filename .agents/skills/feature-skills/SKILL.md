@@ -11,6 +11,7 @@ Use for Skills management UI, catalog/policy state, document edit/preview/split,
 
 - `src/features/skills/ui/SkillsPage.tsx` composes the library and detail; `SkillRow.tsx`, `SkillMachinesPanel.tsx` and `CreateSkillDialog.tsx` own the row, per-machine copy/toggle tab and creation dialog. `SkillDocumentPreview.tsx`, `SkillPicker.tsx` and `SkillPromptField.tsx` own document and invocation surfaces.
 - `src/features/skills/model/skills.ts`, `skillPreferences.ts`, `machineSkills.ts`, `transferSkill.ts` and `deleteSkill.ts` own data/actions; `skillLibrary.ts` merges machine lists into rows and answers presence and "already installed" by name.
+- `src/features/skills/model/skillGroups.ts` owns durable groups and subscriptions; `autoGroupSkills.ts` validates isolated AI proposals, `skillGroupingModel.ts` owns model selection, and `skillGroupPicker.ts` expands groups under fresh invocation policy. Public exports live in `src/features/skills/index.ts`.
 - Read [skill policy](../../../docs/reference/skill-policy.md) for canonical availability/enforcement rules; use [surfaces](references/surfaces.md) for source/test routing.
 
 ## Recommended catalog and installation

@@ -26,6 +26,44 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it("highlights known tracker aliases, repeated refs and more than five tokens without changing draft text", () => {
+  const tokens = [
+    "@jira:PROJ-123",
+    "@jr:PROJ-123",
+    "@j:PROJ-1",
+    "@gh:142",
+    "@github:owner/repo#142",
+    "@linear:ENG-42",
+    "@lin:ENG-42",
+    "@ln:ENG-42",
+    "@gl:group/proj!57",
+    "@gitlab:group/proj!57",
+    "@ado:12",
+    "@azure:12",
+    "@az:12",
+    "@jira:PROJ-123",
+  ];
+  const text = `${tokens.join(" ")}. @unknown:123 @jira: person@jira:ABC-1`;
+  act(() =>
+    root.render(
+      createElement(ComposerHighlight, {
+        text,
+        mode: null,
+        names: new Set<string>(),
+        skillParts: (value: string) => [{ text: value }],
+        mentions: new Map(),
+        mcpTags: [],
+        attachments: [],
+        citations: 0,
+      }),
+    ),
+  );
+  expect(host.textContent).toBe(text);
+  expect(
+    [...host.querySelectorAll("[data-work-item-mention]")].map((node) => node.textContent),
+  ).toEqual(tokens);
+});
+
 it("boxes each link with its text intact and opens it from the end badge", () => {
   const text = "https://github.com/acme/app/pull/1267 bunu incele, https://example.com.";
   act(() =>

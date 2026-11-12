@@ -7,7 +7,7 @@ use tauri::AppHandle;
 
 use crate::dirs_home;
 
-const CLAUDE_PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
+pub(crate) const CLAUDE_PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
 
 #[derive(Serialize, Default, Debug, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]

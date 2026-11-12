@@ -379,11 +379,13 @@ html [data-session-streaming="true"] [data-message-queue-card] {
   pointer-events: none;
 }
 
-/* Sibling input and queue surfaces sample the same background without nested filters. */
+/* Sibling input and queue surfaces sample the same background without nested filters. A
+   question docked on the composer is one pane with the writing box, in every state. */
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   html:not([data-performance-no-blur]) [data-composer-box],
   html:not([data-performance-no-blur]) [data-composer-box]:hover,
-  html:not([data-performance-no-blur]) [data-composer-box]:focus-within {
+  html:not([data-performance-no-blur]) [data-composer-box]:focus-within,
+  html:not([data-performance-no-blur]) [data-composer] > [data-question-form] > form {
     background: var(--ui-activity-dock-glass);
     -webkit-backdrop-filter: var(--ui-activity-dock-filter);
     backdrop-filter: var(--ui-activity-dock-filter);
@@ -391,7 +393,8 @@ html [data-session-streaming="true"] [data-message-queue-card] {
 }
 html [data-session-streaming="true"] [data-composer-box],
 html [data-session-streaming="true"] [data-composer-box]:hover,
-html [data-session-streaming="true"] [data-composer-box]:focus-within {
+html [data-session-streaming="true"] [data-composer-box]:focus-within,
+html [data-session-streaming="true"] [data-composer] > [data-question-form] > form {
   background: var(--ui-composer-surface);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -399,7 +402,8 @@ html [data-session-streaming="true"] [data-composer-box]:focus-within {
 @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
   html [data-composer-box],
   html [data-composer-box]:hover,
-  html [data-composer-box]:focus-within {
+  html [data-composer-box]:focus-within,
+  html [data-composer] > [data-question-form] > form {
     background: var(--ui-composer-surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;

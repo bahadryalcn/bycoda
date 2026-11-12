@@ -77,6 +77,8 @@ import { claudeAdapter } from "../providers/claude/claudeAdapter";
 import { codexAdapter } from "../providers/codex/codexAdapter";
 import { genericAcpAdapter } from "../providers/generic-acp/genericAcpAdapter";
 import { registerBuiltinHarnesses } from "./register";
+import { LANGUAGES, setLanguagePreference, t } from "../../../shared/i18n/core";
+import { delegationFallback, delegationNotice } from "./delegationReadiness";
 
 function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapter {
   return {
@@ -94,6 +96,55 @@ function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapte
 }
 
 describe("harness registry", () => {
+  it.each(
+    LANGUAGES.flatMap(({ value: locale }) => [false, true].map((bounded) => ({ locale, bounded }))),
+  )(
+    "localizes delegation notice in $locale (bounded=$bounded), keeping guidance English",
+    async ({ locale, bounded }) => {
+      await setLanguagePreference(locale);
+      try {
+        nativeReceipts();
+        const invokeOriginal = nativeInvoke.getMockImplementation()!;
+        nativeInvoke.mockImplementation(async (command, args) =>
+          command === "harness_conversation_tools_bridge"
+            ? { ready: false }
+            : invokeOriginal(command, args),
+        );
+        const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+        registerHarness(stub("codex", { sendTurn }));
+        const onEvent = vi.fn();
+        const modelSettings = {
+          crossSubagents: "auto",
+          ...(bounded ? { crossSubagentMaxEffort: "high" } : {}),
+        };
+        const guidance = delegationFallback(modelSettings, false);
+        const notice = delegationNotice(guidance);
+        const expected = t(notice);
+        if (locale !== "en") expect(expected).not.toBe(notice);
+        await sendHarnessTurn({
+          harness: "codex",
+          sessionId: `notice-${locale}-${bounded}`,
+          cwd: "/tmp",
+          model: "codex:test",
+          modelSettings,
+          runtimeMode: "supervised",
+          text: "Keep my queued text.",
+          onEvent,
+        });
+        expect(onEvent).toHaveBeenCalledWith({
+          type: "status",
+          key: "delegation-unavailable",
+          text: expected,
+        });
+        const sent = sendTurn.mock.calls[0][0];
+        expect(sent.runtimeInstructions).toContain(guidance);
+        expect(sent.text).toBe("Keep my queued text.");
+      } finally {
+        await setLanguagePreference("en");
+      }
+    },
+  );
+
   it.each([true, false])(
     "checks bridge readiness before finalizing Automatic input (ready=%s)",
     async (ready) => {

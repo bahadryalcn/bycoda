@@ -457,7 +457,7 @@ function noteActivity(live: Live): void {
     live.stallNotified = true;
     live.onEvent({
       type: "status",
-      text: "Antigravity has been quiet for two minutes — its post-turn work may be stuck. Stop and resend to recover.",
+      text: "Antigravity has been silent for two minutes. Its post-turn work may be stuck. Stop and resend to recover.",
     });
   }, STALL_NOTIFY_MS);
 }
@@ -676,7 +676,7 @@ async function startLive(
       if (acpSessionId && droppedBinding) {
         emit({
           type: "status",
-          text: "Antigravity could not restore the previous conversation — starting a new session.",
+          text: "Antigravity could not restore the previous conversation. Starting a new session.",
         });
       }
     }

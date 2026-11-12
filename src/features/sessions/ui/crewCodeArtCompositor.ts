@@ -1,3 +1,4 @@
+import { themePalette } from "../../../shared/theme/palette";
 import type { CanvasSurface } from "../../../shared/lib/canvas-worker/types";
 export const domCanvas = () => document.createElement("canvas");
 /** Both native 2D contexts implement the drawing subset used by existing geometry. */
@@ -27,12 +28,14 @@ export const GLYPH_BANDS = [
 export const TILE_WIDTH = 12,
   TILE_HEIGHT = 20;
 
-export type Compositor = ((cells: Uint8ClampedArray) => void | false) & { dispose?: () => void };
+export type Compositor = ((cells: Uint8ClampedArray, colors: Uint8Array) => void | false) & {
+  dispose?: () => void;
+};
 const VERTEX_SHADER = `attribute vec2 p; varying vec2 uv;
 void main(){ uv=vec2(p.x*.5+.5,.5-p.y*.5); gl_Position=vec4(p,0.,1.); }`;
 // Sample the 2x2 mask directly in the fragment shader. No GPU-to-CPU readback.
 const FRAGMENT_SHADER = `precision highp float;
-uniform sampler2D tone; uniform sampler2D atlas; uniform vec2 cells; varying vec2 uv;
+uniform sampler2D tone; uniform sampler2D atlas; uniform sampler2D colors; uniform vec2 cells; varying vec2 uv;
 vec2 sampleCell(vec2 cell){
  if(cell.x<0. || cell.y<0. || cell.x>=cells.x || cell.y>=cells.y)return vec2(0.);
  vec2 base=cell*2.; vec2 size=cells*2.;
@@ -55,7 +58,16 @@ void main(){
  float light=floor(70.+185.*pow(v,1.35)+.5)/255.;
  vec2 inTile=mod(cell,4.)/4.;
  float ink=texture2D(atlas,vec2((band+inTile.x)/3.,inTile.y)).a*alpha;
- gl_FragColor=vec4(vec3(light*ink),ink);
+ vec2 base=at*2.; vec2 size=cells*2.;
+ vec4 a=texture2D(tone,(base+vec2(.5,.5))/size);
+ vec4 b=texture2D(tone,(base+vec2(1.5,.5))/size);
+ vec4 c=texture2D(tone,(base+vec2(.5,1.5))/size);
+ vec4 d=texture2D(tone,(base+vec2(1.5,1.5))/size);
+ vec4 best=a; if(b.a>best.a)best=b; if(c.a>best.a)best=c; if(d.a>best.a)best=d;
+ float tag=abs(best.r-best.g)<.5/255. && abs(best.r-best.b)<.5/255. ? 0. : floor(best.g*255.+.5);
+ vec4 palette=texture2D(colors,vec2((tag+.5)/256.,.5));
+ vec3 tint=tag>0. && at.y>=floor(best.b*255.+.5) ? .35+.65*palette.rgb : vec3(1.);
+ gl_FragColor=vec4(tint*light*ink,ink);
 }`;
 
 /** One draw call: each output pixel looks up its cell's tone and its band's glyph tile. */
@@ -65,7 +77,7 @@ export function webglCompositor(
   rows: number,
   tiles: CanvasSurface[],
   factory: () => CanvasSurface = domCanvas,
-): (((mask: CanvasSurface) => void | false) & { dispose?: () => void }) | null {
+): (((mask: CanvasSurface, colors: Uint8Array) => void | false) & { dispose?: () => void }) | null {
   // A canvas cannot become a 2D canvas after acquiring a WebGL context. Keep GPU
   // resources private so failed shaders/context loss never disable the visible fallback.
   const gpu = factory();
@@ -144,6 +156,20 @@ export function webglCompositor(
       context.UNSIGNED_BYTE,
       null,
     );
+    texture(2);
+    context.texImage2D(
+      context.TEXTURE_2D,
+      0,
+      context.RGBA,
+      256,
+      1,
+      0,
+      context.RGBA,
+      context.UNSIGNED_BYTE,
+      new Uint8Array(1024),
+    );
+    context.uniform1i(context.getUniformLocation(program, "colors"), 2);
+    context.activeTexture(context.TEXTURE0);
     context.uniform1i(context.getUniformLocation(program, "tone"), 0);
     context.uniform1i(context.getUniformLocation(program, "atlas"), 1);
     context.uniform2f(context.getUniformLocation(program, "cells"), columns, rows);
@@ -169,8 +195,21 @@ export function webglCompositor(
   // Context loss switches the painter to its visible 2D fallback.
   const lost = (event: Event) => event.preventDefault();
   gpu.addEventListener("webglcontextlost", lost);
-  const composite = (mask: CanvasSurface): void | false => {
+  const composite = (mask: CanvasSurface, colors: Uint8Array): void | false => {
     if (context.isContextLost()) return false;
+    context.activeTexture(context.TEXTURE0 + 2);
+    context.texSubImage2D(
+      context.TEXTURE_2D,
+      0,
+      0,
+      0,
+      256,
+      1,
+      context.RGBA,
+      context.UNSIGNED_BYTE,
+      colors,
+    );
+    context.activeTexture(context.TEXTURE0);
     context.texSubImage2D(context.TEXTURE_2D, 0, 0, 0, context.RGBA, context.UNSIGNED_BYTE, mask);
     context.clear(context.COLOR_BUFFER_BIT);
     context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
@@ -212,7 +251,7 @@ export function canvasCompositor(
       data: toneContext?.createImageData(columns, rows),
     };
   });
-  return (cells) => {
+  return (cells, colors) => {
     for (const band of bands) band.data?.data.fill(0);
     const used = [false, false, false];
     for (let o = 0; o < cells.length; o += 4) {
@@ -221,8 +260,12 @@ export function canvasCompositor(
       const data = bands[index].data?.data;
       if (!data) continue;
       used[index] = true;
-      // Neutral grey only: no tint in any channel.
-      data[o] = data[o + 1] = data[o + 2] = cells[o];
+      // Region tags tint below the context edge; absent tags preserve the original grey.
+      const tag = cells[o + 2];
+      for (let channel = 0; channel < 3; channel++)
+        data[o + channel] = tag
+          ? cells[o] * (0.35 + (0.65 * colors[tag * 4 + channel]) / 255)
+          : cells[o];
       data[o + 3] = cells[o + 3];
     }
     context.setTransform(1, 0, 0, 1, 0, 0);
@@ -249,4 +292,24 @@ export function canvasCompositor(
       context.drawImage(scratch, 0, 0);
     });
   };
+}
+
+export function glyphTile(
+  band: (typeof GLYPH_BANDS)[number],
+  factory: () => CanvasSurface = domCanvas,
+): CanvasSurface {
+  const tile = factory();
+  tile.width = TILE_WIDTH;
+  tile.height = TILE_HEIGHT;
+  const glyphs = canvas2D(tile);
+  if (glyphs) {
+    glyphs.font = band.font;
+    glyphs.textBaseline = "top";
+    // ui-drift-ignore: theme-palette-literal -- Code-art pigment preserves artwork, not UI surface styling.
+    glyphs.fillStyle = themePalette.hexfff;
+    for (let row = 0; row < 4; row++)
+      for (let column = 0; column < 4; column++)
+        glyphs.fillText(band.chars(column, row), column * 3, row * 5);
+  }
+  return tile;
 }

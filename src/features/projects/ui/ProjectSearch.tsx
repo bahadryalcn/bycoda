@@ -1,3 +1,4 @@
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
@@ -15,6 +16,7 @@ import {
   ChevronDown,
   ChevronRight,
   MoreHorizontal,
+  Replace,
   ChevronLeft,
   Regex,
   WholeWord,
@@ -31,6 +33,7 @@ import {
 import {
   cancelProjectSearch,
   searchProject,
+  replaceProject,
   type OpenFileFn,
   type ProjectSearchMatch,
   type ProjectSearchOptions,
@@ -91,6 +94,14 @@ function ProjectSearchContent({
   const [regex, setRegex] = useRetainedState(`${stateKey}:regex`, false);
   const [detailsExpanded, setDetailsExpanded] = useState(() => !!include || !!exclude);
   const detailsId = useId();
+  const replaceId = useId();
+  const [replaceExpanded, setReplaceExpanded] = useState(false);
+  const [replacement, setReplacement] = useRetainedState(`${stateKey}:replacement`, "");
+  const [replacing, setReplacing] = useState(false);
+  const [replaceError, setReplaceError] = useState<string | null>(null);
+  const [replaceSummary, setReplaceSummary] = useState<string | null>(null);
+  const [refresh, setRefresh] = useState(0);
+  const confirmation = useConfirm();
   const toggleDetails = () => setDetailsExpanded((expanded) => !expanded);
   const request = useMemo(
     () => ({
@@ -182,11 +193,56 @@ function ProjectSearchContent({
         void cancelProjectSearch(cwd, searchId).catch(() => undefined);
       }
     };
-  }, [cwd, request, search]);
+  }, [cwd, request, search, refresh]);
 
   const groups = groupMatches(matches);
   const matchCount = matches.length;
   const fileCount = groups.length;
+
+  const replaceAll = () => {
+    if (!matches.length || !request.query || replacing) return;
+    setReplacing(true);
+    setReplaceError(null);
+    setReplaceSummary(null);
+    const options = { ...request, searchId: crypto.randomUUID(), replacement };
+    return replaceProject({ ...options, dryRun: true })
+      .then(async (preview) => {
+        if (!preview.replacements) {
+          setReplaceError(preview.failures.join("\n") || t("No results"));
+          return;
+        }
+        const accepted = await confirmation.confirm({
+          title: t("Replace All"),
+          message: t("Replace {p0} occurrences across {p1} files with '{p2}'?", {
+            p0: preview.replacements,
+            p1: preview.filesChanged,
+            p2: replacement,
+          }),
+          confirmLabel: t("Replace All"),
+        });
+        if (!accepted) {
+          return;
+        }
+        const changed = await replaceProject({
+          ...options,
+          dryRun: false,
+          revisions: preview.revisions,
+        });
+        setReplaceSummary(
+          t("Replaced {p0} occurrences in {p1} files", {
+            p0: changed.replacements,
+            p1: changed.filesChanged,
+          }),
+        );
+        setReplaceError(changed.failures.join("\n") || null);
+        setResult(null);
+        setRefresh((value) => value + 1);
+      })
+      .catch((error: unknown) => {
+        setReplaceError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => setReplacing(false));
+  };
 
   const openMatch = (match: ProjectSearchMatch, pin = false) => {
     if (!matches.includes(match)) return;
@@ -208,6 +264,7 @@ function ProjectSearchContent({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {confirmation.dialog}
       {showHeader ? (
         <div className="flex shrink-0 items-center gap-1 border-b border-stroke px-1.5 py-1">
           <Button variant="ghost" iconOnly label={t("Back to files")} onClick={onClose}>
@@ -219,64 +276,97 @@ function ProjectSearchContent({
         </div>
       ) : null}
       <div className="min-w-0 shrink-0 space-y-1 border-b border-stroke p-2">
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex min-w-0 items-stretch gap-1">
           <Button
             variant="ghost"
             iconOnly
-            inset
-            label={t("Toggle Search Details")}
-            aria-expanded={detailsExpanded}
-            aria-controls={detailsId}
-            onClick={toggleDetails}
+            size="sm"
+            motion="none"
+            stretch
+            className="w-4 shrink-0"
+            label={t("Toggle Replace")}
+            aria-expanded={replaceExpanded}
+            aria-controls={replaceId}
+            onClick={() => setReplaceExpanded((value) => !value)}
           >
-            {detailsExpanded ? (
+            {replaceExpanded ? (
               <ChevronDown className="icon-sm" />
             ) : (
               <ChevronRight className="icon-sm" />
             )}
           </Button>
-          <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-            <SearchInput
-              ref={inputRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={onQueryKeyDown}
-              placeholder={t("Search")}
-              aria-label={t("Search")}
-              spellCheck={false}
-              textSize="caption"
-              focusOwner="group"
-            />
-            <div className="flex shrink-0 items-center">
-              <Toggle
-                label={t("Match case")}
-                active={caseSensitive}
-                onClick={() => setCaseSensitive((value) => !value)}
-              >
-                <CaseSensitive className="icon-sm" strokeWidth={1.75} />
-              </Toggle>
-              <Toggle
-                label={t("Match whole word")}
-                active={wholeWord}
-                onClick={() => setWholeWord((value) => !value)}
-              >
-                <WholeWord className="icon-sm" strokeWidth={1.75} />
-              </Toggle>
-              <Toggle
-                label={t("Use regular expression")}
-                active={regex}
-                onClick={() => setRegex((value) => !value)}
-              >
-                <Regex className="icon-sm" strokeWidth={1.75} />
-              </Toggle>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+              <SearchInput
+                ref={inputRef}
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={onQueryKeyDown}
+                placeholder={t("Search")}
+                aria-label={t("Search")}
+                spellCheck={false}
+                textSize="caption"
+                focusOwner="group"
+              />
+              <div className="flex shrink-0 items-center">
+                <Toggle
+                  label={t("Match case")}
+                  active={caseSensitive}
+                  onClick={() => setCaseSensitive((value) => !value)}
+                >
+                  <CaseSensitive className="icon-sm" strokeWidth={1.75} />
+                </Toggle>
+                <Toggle
+                  label={t("Match whole word")}
+                  active={wholeWord}
+                  onClick={() => setWholeWord((value) => !value)}
+                >
+                  <WholeWord className="icon-sm" strokeWidth={1.75} />
+                </Toggle>
+                <Toggle
+                  label={t("Use regular expression")}
+                  active={regex}
+                  onClick={() => setRegex((value) => !value)}
+                >
+                  <Regex className="icon-sm" strokeWidth={1.75} />
+                </Toggle>
+              </div>
+            </SearchInputGroup>
+            <div id={replaceId} hidden={!replaceExpanded}>
+              <TextField
+                label={t("Replace")}
+                hideLabel
+                aria-label={t("Replace")}
+                placeholder={t("Replace")}
+                value={replacement}
+                onChange={(event) => setReplacement(event.target.value)}
+                spellCheck={false}
+                fieldVariant="compact"
+                fieldSize="sm"
+                textSize="caption"
+                endAdornment={
+                  <Button
+                    variant="ghost"
+                    iconOnly
+                    inset
+                    label={t("Replace All")}
+                    loading={replacing}
+                    disabled={!matches.length || !request.query || replacing}
+                    onClick={() => void replaceAll()}
+                  >
+                    <Replace className="icon-sm" />
+                  </Button>
+                }
+              />
             </div>
-          </SearchInputGroup>
+          </div>
         </div>
         <div className="flex justify-end">
           <Button
             variant="ghost"
             iconOnly
-            inset
+            size="sm"
             label={t("Toggle Search Details")}
             aria-expanded={detailsExpanded}
             aria-controls={detailsId}
@@ -285,7 +375,7 @@ function ProjectSearchContent({
             <MoreHorizontal className="icon-sm" />
           </Button>
         </div>
-        <div id={detailsId} hidden={!detailsExpanded}>
+        <div id={detailsId} className="ms-5" hidden={!detailsExpanded}>
           <div className="min-w-0 space-y-2">
             <TextField
               label={t("files to include")}
@@ -310,7 +400,9 @@ function ProjectSearchContent({
               fieldClassName="min-w-0 w-full"
             />
             <Button
-              variant="secondary"
+              variant="ghost"
+              size="sm"
+              inset="text"
               onClick={() => {
                 setInclude("");
                 setExclude("");
@@ -324,6 +416,12 @@ function ProjectSearchContent({
           </div>
         </div>
       </div>
+      {replaceError ? <InlineError className="px-3 py-1">{replaceError}</InlineError> : null}
+      {replaceSummary ? (
+        <Text size="micro" tone="secondary" className="px-3 py-1">
+          {replaceSummary}
+        </Text>
+      ) : null}
       <Text
         as="div"
         size="micro"

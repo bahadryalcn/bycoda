@@ -70,7 +70,11 @@ export function useDiffIndex(
   const holdRef = useRef(false);
   // The caller of `reload` announces its change itself.
   const announcedRef = useRef(false);
+  // The index on screen is this panel's own prediction of a finished action,
+  // not a cached read that may be stale: its confirming reload shows no loader.
+  const predictedRef = useRef(false);
   const reload = useCallback(() => {
+    predictedRef.current = holdRef.current;
     holdRef.current = false;
     announcedRef.current = true;
     setNonce((value) => value + 1);
@@ -176,7 +180,8 @@ export function useDiffIndex(
     const explicitRefresh =
       handledRefresh.current.cwd === cwd && handledRefresh.current.nonce !== nonce;
     handledRefresh.current = { cwd, nonce };
-    setChecking(true);
+    if (!(explicitRefresh && predictedRef.current)) setChecking(true);
+    predictedRef.current = false;
     void load(explicitRefresh, GIT_PANEL_ENTRY_FRESH_MS).finally(() => {
       if (!cancelled) setChecking(false);
     });

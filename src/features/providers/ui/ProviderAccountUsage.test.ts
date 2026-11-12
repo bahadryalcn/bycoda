@@ -78,9 +78,7 @@ it("exposes loading placeholders only while limits are unavailable", async () =>
   await act(async () =>
     root.render(createElement(AccountUsageMeters, { now: 0, limits: undefined })),
   );
-  await vi.waitFor(() =>
-    expect(container.querySelectorAll('[role="status"]')).toHaveLength(2),
-  );
+  await vi.waitFor(() => expect(container.querySelectorAll('[role="status"]')).toHaveLength(2));
   await act(async () =>
     root.render(
       createElement(AccountUsageMeters, {

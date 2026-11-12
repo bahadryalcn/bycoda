@@ -1,5 +1,4 @@
 import { Badge } from "../../../shared/ui/Badge";
-import { AutomaticSubagentModels } from "./AutomaticSubagentModels";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
@@ -113,7 +112,6 @@ export function DelegationSubagentsControl({
           <ChevronDown className="icon-xs shrink-0" />
         </Button>
       )}
-      {automatic ? <AutomaticSubagentModels setting={setting} /> : null}
       {open ? (
         <DropdownMenu
           anchor={anchor}

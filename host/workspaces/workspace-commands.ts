@@ -1,3 +1,4 @@
+import { replaceHostContent } from "./workspace-replace";
 import { joined, alreadyExists } from "./workspace-path-labels";
 import { moveWithRecovery } from "./cross-volume-move";
 import { renameWithRetry } from "../storage/rename-retry";
@@ -135,6 +136,7 @@ export const WORKSPACE_COMMANDS = [
   "git_worktrees",
   "git_submodules",
   "search_project",
+  "replace_project",
   "cancel_project_search",
   "list_skills",
   "list_claude_commands",
@@ -235,6 +237,7 @@ export class WorkspaceCommands {
       isHostGitMutation(String(command)) ||
       [
         "write_text_file",
+        "replace_project",
         "create_path",
         "rename_path",
         "delete_path",
@@ -246,11 +249,13 @@ export class WorkspaceCommands {
     const paths =
       isHostGitMutation(String(command)) || String(command).startsWith("session_checkpoint_")
         ? [input.cwd]
-        : command === "create_path"
-          ? [input.parent]
-          : command === "copy_path" || command === "move_path"
-            ? [input.from, input.destParent]
-            : [input.path];
+        : command === "replace_project"
+          ? [(input.options as Record<string, unknown> | undefined)?.cwd]
+          : command === "create_path"
+            ? [input.parent]
+            : command === "copy_path" || command === "move_path"
+              ? [input.from, input.destParent]
+              : [input.path];
     const releases: (() => Promise<void>)[] = [];
     try {
       if (mutating && this.delivery?.startMutation)
@@ -535,6 +540,15 @@ export class WorkspaceCommands {
         return await this.gitWorktrees(input.cwd);
       case "git_submodules":
         return hostGitSubmodules(await this.gitRoot(input.cwd), input.includeRepositories === true);
+      case "replace_project": {
+        const options = input.options as Record<string, unknown> | undefined;
+        const root = await this.gitRoot(options?.cwd);
+        return await replaceHostContent(root, input.options, async () => {
+          if (authorized && !(await authorized()))
+            throw new Error("Workspace authority was revoked");
+          await this.gitRoot(options?.cwd);
+        });
+      }
       case "search_project":
         return await this.searchProject(input.options, owner);
       case "cancel_project_search":

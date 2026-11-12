@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   codexExternalMcpArgs,
+  codexExternalMcpConfig,
   narrowExternalMcp,
   narrowPublishedMcp,
   opencodeConfigContent,
@@ -197,11 +198,25 @@ describe("Claude external MCP launch", () => {
 });
 
 describe("Codex external MCP launch", () => {
+  it("defers disabling to the actual account and trusted project config", () => {
+    const external: ExternalMcp = {
+      servers: [],
+      disable: { claude: [], codex: ["shadcn", "openaiDeveloperDocs", "missing", "a.b"] },
+    };
+    const project = {
+      shadcn: { command: "npx", args: ["-y", "shadcn@latest", "mcp"] },
+      openaiDeveloperDocs: { url: "https://developers.openai.com/mcp" },
+    };
+    expect(codexExternalMcpArgs(external)).toEqual([]);
+    expect(codexExternalMcpConfig(external, {})).toEqual({});
+    expect(codexExternalMcpConfig(external, { mcp_servers: project })).toEqual({
+      "mcp_servers.shadcn.enabled": false,
+      "mcp_servers.openaiDeveloperDocs.enabled": false,
+    });
+  });
   it("disables listed bare names, points hub servers at HTTP with the env-referenced token", () => {
     const args = codexExternalMcpArgs(external);
     expect(args).toEqual([
-      "-c",
-      "mcp_servers.rea={enabled=false}",
       "-c",
       `mcp_servers.arc-hub.url=${JSON.stringify(hub.url)}`,
       "-c",
@@ -217,7 +232,7 @@ describe("Codex external MCP launch", () => {
   it("prepends to app-server launches only and leaves other codex commands alone", () => {
     const launch = withExternalMcpArgs("codex", ["app-server"], external);
     expect(launch.at(-1)).toBe("app-server");
-    expect(launch.slice(0, 2)).toEqual(["-c", "mcp_servers.rea={enabled=false}"]);
+    expect(launch).not.toContain("mcp_servers.rea={enabled=false}");
     for (const input of [["login"], ["help", "app-server"]])
       expect(withExternalMcpArgs("codex", [...input], external)).toEqual(input);
   });
@@ -247,7 +262,10 @@ describe("narrowing to a member's MCP allowlist", () => {
     expect(narrowed.disable.claude).toEqual(["rea", "arc"]);
     expect(narrowed.disable.codex).toEqual(["rea", "a.b", "arc-hub"]);
     expect(narrowed.disable.opencode).toEqual(["arc"]);
-    expect(codexExternalMcpArgs(narrowed)).toContain("mcp_servers.arc-hub={enabled=false}");
+    expect(codexExternalMcpArgs(narrowed)).not.toContain("mcp_servers.arc-hub={enabled=false}");
+    expect(
+      codexExternalMcpConfig(narrowed, { mcp_servers: { "arc-hub": { url: hub.url } } }),
+    ).toEqual({ "mcp_servers.arc-hub.enabled": false });
   });
 
   it("an empty allowlist removes every hub server and Claude then loads only the hub config", () => {

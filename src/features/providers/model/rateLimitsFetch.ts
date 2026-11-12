@@ -179,6 +179,45 @@ export async function consumeCodexRateLimitResetCredit(
   throw new Error("Codex returned an unknown reset result");
 }
 
+const CLAUDE_RESET_ERRORS: Record<string, string> = {
+  cooldown: "Another reset was just used on this account. Try again in a minute.",
+  ineligible: "This reset is no longer available. Nothing was used.",
+  unavailable: "Could not confirm the reset. Check your usage in a moment before trying again.",
+};
+
+/**
+ * Spend one banked Claude limit reset, as `/limit-reset` does in Claude Code.
+ * `creditId` is a row id from `parseClaudeOAuthUsage`: `<grant id>:<index>`.
+ */
+export async function consumeClaudeLimitReset(
+  creditId: string | undefined,
+  accountId = "default",
+): Promise<CodexRateLimitResetOutcome> {
+  const grantId = creditId?.slice(0, Math.max(0, creditId.lastIndexOf(":")));
+  if (!grantId) throw new Error("This reset has no id to use");
+  const response = await invoke<ClaudeUsageFetch>("consume_claude_limit_reset", {
+    accountId,
+    grantId,
+    // One id per attempt: the server deduplicates a repeated request.
+    requestId: newRequestId(),
+  });
+  if (response.status !== "ok" || !response.body) {
+    throw new Error(response.error?.trim() || "Could not use this reset");
+  }
+  let result: unknown;
+  try {
+    result = asRecord(JSON.parse(response.body))?.result;
+  } catch {
+    result = undefined;
+  }
+  if (result === "reset") return "reset";
+  if (result === "not_limited") return "nothingToReset";
+  if (result === "already_used") return "alreadyRedeemed";
+  throw new Error(
+    (typeof result === "string" && CLAUDE_RESET_ERRORS[result]) || CLAUDE_RESET_ERRORS.unavailable,
+  );
+}
+
 // Every probe reuses USAGE_CHILD_ID and kills whatever holds it first, so
 // probes for different accounts (footer, Settings, account picker) must not
 // overlap or they terminate each other.

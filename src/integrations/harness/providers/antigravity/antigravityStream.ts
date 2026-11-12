@@ -279,7 +279,7 @@ async function ensureLive(
     resumeBySession.delete(sessionId);
     input.onEvent({
       type: "status",
-      text: "Antigravity could not restore the previous conversation — starting a new one.",
+      text: "Antigravity could not restore the previous conversation. Starting a new one.",
     });
   }
   if (live.state.conversationId) {

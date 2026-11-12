@@ -28,6 +28,14 @@ Owner: "right now when it calls agents it seems it can call agents other than th
 
 A saved subagent selection bounds every subagent path. Claude's native Agent tool is forced onto the one same-account Claude selection or removed; Codex's native multi-agent features are off while a selection is set. Host agents tools already reject unselected models.
 
+Mechanism correction 2026-11-12: Codex 0.167.2 requires `agents.enabled=false`
+in thread start/resume config; the two `features.multi_agent` / `features.multi_agent_v2`
+flags alone leave native tools exposed. Keep both legacy flags for 0.166.x and
+set all three to true for native fallback. Restart and resume the CLI when the
+native-agent policy changes; warm turns do not apply thread config again.
+On resume, Codex can retain historical tool declarations and send a namespace
+removal update instead of deleting the old declarations from history.
+
 Update 2026-11-08, owner: "please fix these too" (translated). Grok starts with `--no-subagents`; OpenCode sessions deny the `task` (v1) and `subagent` (v2, verified on 2.2.5) permissions. Antigravity, Cursor, Fx, Hermes, Pi, OMP and generic ACP have no verified switch yet and remain unenforced.
 
 ## Defaults save explicitly to a chosen target

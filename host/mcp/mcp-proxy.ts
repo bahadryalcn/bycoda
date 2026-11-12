@@ -116,12 +116,14 @@ export async function runMcpProxy(
   let bufferedResponseBytes = 0;
   const forward = async (message: Message | null) => {
     let heldBytes = 0;
+    const initializing = message?.method === "initialize";
+    const deadline = AbortSignal.timeout(initializing ? 5_000 : 250_000);
     try {
       const send = () =>
         fetcher(endpoint, {
           method: "POST",
           redirect: "error",
-          signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(250_000)]),
+          signal: AbortSignal.any([lifetime.signal, deadline]),
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
@@ -146,9 +148,12 @@ export async function runMcpProxy(
           );
         }
       }
-      if (!response.ok) {
+      if (
+        !response.ok ||
+        ((response.status === 202 || !response.body) && message && Object.hasOwn(message, "id"))
+      ) {
         await response.body?.cancel();
-        throw new Error();
+        throw new Error(`MCP host request failed (HTTP ${response.status}).`);
       }
       if (response.status === 202 || !response.body) return;
       const chunks: Uint8Array[] = [];
@@ -179,7 +184,12 @@ export async function runMcpProxy(
                 ? error.retryAfterSeconds
                   ? `MCP host rate limit exceeded. Retry after ${error.retryAfterSeconds} seconds.`
                   : "MCP host rate limit exceeded. Retry later."
-                : "MCP host request failed.",
+                : initializing && deadline.aborted
+                  ? "MCP initialize timed out."
+                  : error instanceof Error &&
+                      /^MCP host request failed \(HTTP \d{3}\)\.$/.test(error.message)
+                    ? error.message
+                    : "MCP host request failed.",
           },
         });
     } finally {

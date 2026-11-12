@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GitChangedFile, GitDiffIndex } from "../../../platform/tauri/fs";
-import { applyCommit, applyIndexAction } from "./optimisticIndex";
+import { applyCommit, applyIndexAction, applySync } from "./optimisticIndex";
 
 function file(relative: string, overrides: Partial<GitChangedFile> = {}): GitChangedFile {
   return {
@@ -117,6 +117,15 @@ describe("applyIndexAction", () => {
     const next = applyCommit(index([file("a.ts"), file("b.ts", { staged: true })]), true);
     expect(next.files).toEqual([]);
     expect([next.additions, next.deletions]).toEqual([0, 0]);
+  });
+
+  it("a finished sync leaves nothing to push or pull and names the published upstream", () => {
+    const start = { ...index([file("a.ts")]), remote: "origin", ahead: 2, behind: 1 };
+    const next = applySync(start);
+    expect([next.ahead, next.behind, next.headPushed]).toEqual([0, 0, true]);
+    expect(next.upstream).toBe("origin/main");
+    expect(next.files).toBe(start.files);
+    expect(applySync({ ...start, upstream: "fork/topic" }).upstream).toBe("fork/topic");
   });
 
   it("discarding keeps the staged side of a file", () => {

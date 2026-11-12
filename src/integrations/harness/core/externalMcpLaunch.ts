@@ -186,8 +186,8 @@ const BARE_KEY = /^[A-Za-z0-9_-]+$/;
 export function codexExternalMcpArgs(external: ExternalMcp): string[] {
   const args: string[] = [];
   const set = (value: string) => args.push("-c", value);
-  for (const name of external.disable.codex)
-    if (BARE_KEY.test(name)) set(`mcp_servers.${name}={enabled=false}`);
+  // Disable only after config/read: discovery cannot know which project layers
+  // this account trusts. An absent server plus enabled=false has no transport.
   for (const server of external.servers) {
     const base = `mcp_servers.${server.codexName}`;
     if (server.passthrough) {
@@ -205,6 +205,19 @@ export function codexExternalMcpArgs(external: ExternalMcp): string[] {
     }
   }
   return args;
+}
+
+/** Thread overrides use Codex's effective config, never the hub's file inventory. */
+export function codexExternalMcpConfig(
+  external: ExternalMcp,
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  const servers = isRecord(config.mcp_servers) ? config.mcp_servers : {};
+  return Object.fromEntries(
+    external.disable.codex
+      .filter((name) => BARE_KEY.test(name) && isRecord(servers[name]))
+      .map((name) => [`mcp_servers.${name}.enabled`, false]),
+  );
 }
 
 /** A member's MCP allowlist: other hub servers are dropped and disabled in the provider. */

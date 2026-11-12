@@ -381,6 +381,13 @@ function WebPopover({
 
   const place = useCallback(() => {
     const el = frame.current;
+    // A trigger inside a display:none subtree (a background session tab) has a
+    // 0,0 rect; hide until it renders again, and its ResizeObserver re-places us.
+    const trigger = anchorElement(anchorRef.current);
+    if (trigger?.checkVisibility?.() === false) {
+      setPosition(null);
+      return;
+    }
     const rect = anchorRect(anchorRef.current);
     if (!el || !rect) return;
     // DOM rects are physical viewport pixels; CSS placement and offset sizes

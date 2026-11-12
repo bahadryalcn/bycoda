@@ -16,6 +16,8 @@ import { SOCIAL_TOOLS, socialToolName } from "../../src/features/social/model/so
 import { socialToolCatalog } from "../social/social-tools";
 import { ConversationDesktopRelay } from "../conversation/conversation-tools";
 import { SharedBrowser } from "../browser/shared-browser";
+import { SessionToolsRelay } from "../sessions/session-tools-relay";
+import type { SessionGrantScope } from "../sessions/session-authority";
 import { ConversationWorkspaceTools } from "../conversation/conversation-workspace-tools";
 import { parseLocalSessionLink } from "../../src/features/sessions/model/localSessionReference";
 
@@ -103,6 +105,48 @@ async function setup(providers: Parameters<typeof createHostServer>[1] = []) {
   };
   return { store, engine, project, foreign, server, tokens, grant, rpc, send, url, desktopPath };
 }
+
+it("renews a conversation grant lost after admission through the real Host and relay", async () => {
+  const s = await setup();
+  const session = await s.engine.command({
+    type: "create",
+    workspaceMode: "current",
+    commandId: "renew-initialize",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "fixture",
+    runtimeMode: "supervised",
+  });
+  const access = s.server.conversationAccess;
+  const grant = await access.issueSessionGrant(session.sessionId);
+  const principal = access.principalForToken.bind(access);
+  let checks = 0;
+  // Expire the admitted credential at the post-body authorization boundary.
+  const spy = vi.spyOn(access, "principalForToken").mockImplementation(async (token) => {
+    if (token === grant.token && ++checks === 3) access.revokeSessionGrant(token);
+    return await principal(token);
+  });
+  const relay = new SessionToolsRelay(5_000);
+  cleanup.push(async () => {
+    spy.mockRestore();
+    await relay.close();
+  });
+  const renew = vi.fn(
+    async (scope: SessionGrantScope) =>
+      await access.issueSessionGrant(session.sessionId, undefined, scope),
+  );
+  const capability = await relay.create({ group: "conversation", upstream: s.url, grant, renew });
+  const response = await fetch(`${capability.endpoint}/mcp/conversation`, {
+    method: "POST",
+    signal: AbortSignal.timeout(6_000),
+    headers: { Authorization: `Bearer ${capability.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+  });
+  expect(response.status).toBe(200);
+  expect(((await response.json()) as any).result.serverInfo.name).toBe("bycoda-conversation");
+  expect(renew).toHaveBeenCalledExactlyOnceWith(grant.scope);
+  expect(await principal(grant.token)).toBeUndefined();
+});
 
 it("keeps bounded managed discovery inside external grants and preserves complete session discovery", async () => {
   const s = await setup();
@@ -869,31 +913,36 @@ describe("Streamable HTTP MCP", () => {
   it("rechecks revocation after a yielding body read and bounds chunked uploads", async () => {
     const s = await setup();
     const grant = await s.grant({ "runtime-logs": ["read"] });
-    const status = await new Promise<number>((resolve, reject) => {
-      const req = request(
-        s.url + "/mcp",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${grant.token}`,
-            "Content-Type": "application/json",
-            Accept: "application/json, text/event-stream",
+    const rejection = await new Promise<{ status: number; stage: string | string[] | undefined }>(
+      (resolve, reject) => {
+        const req = request(
+          s.url + "/mcp",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${grant.token}`,
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
+            },
           },
-        },
-        (res) => {
-          res.resume();
-          res.on("end", () => resolve(res.statusCode!));
-        },
-      );
-      req.on("error", reject);
-      req.flushHeaders();
-      req.write('{"jsonrpc":"2.0",');
-      setTimeout(async () => {
-        await s.tokens.revoke(grant.id);
-        req.end('"id":1,"method":"tools/list"}');
-      }, 30);
-    });
-    expect(status).toBe(401);
+          (res) => {
+            res.resume();
+            res.on("end", () =>
+              resolve({ status: res.statusCode!, stage: res.headers["x-bycoda-auth-stage"] }),
+            );
+          },
+        );
+        req.on("error", reject);
+        req.flushHeaders();
+        req.write('{"jsonrpc":"2.0",');
+        setTimeout(async () => {
+          await s.tokens.revoke(grant.id);
+          req.end('"id":1,"method":"tools/list"}');
+        }, 30);
+      },
+    );
+    expect(rejection.status).toBe(401);
+    expect(rejection.stage).toBe("before-dispatch");
     const next = await s.grant({ "runtime-logs": ["read"] });
     const oversized = await new Promise<number>((resolve, reject) => {
       const req = request(

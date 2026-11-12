@@ -1,3 +1,4 @@
+import { isSkillGroupPickerItem, skillGroupInsertion } from "../../skills/public/skillGroups";
 import { ComposerAction } from "./ComposerAction";
 import { Text } from "../../../shared/ui/Text";
 export { ComposerAction } from "./ComposerAction";
@@ -270,6 +271,7 @@ import {
 } from "./composerExternalDraft";
 import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
 import { useComposerMentionSources } from "./useComposerMentionSources";
+import { workItemMentionOf } from "../model/workItemMentionRows";
 import { keepEqualToken } from "./keepEqualToken";
 import { recheckSessionFolderState } from "./recheckSessionFolderState";
 import { useComposerWorkMode } from "./useComposerWorkMode";
@@ -1061,7 +1063,15 @@ export const Composer = memo(function Composer({
       window.removeEventListener("resize", onResize);
     };
   }, [reading]);
-  const { mentionIndex, rankedFiles, filesFailed, retryFiles } = useComposerMentionSources({
+  const {
+    mentionIndex,
+    rankedFiles,
+    filesFailed,
+    retryFiles,
+    workItemsLoading,
+    workItemsScoped,
+    workItemsAvailable,
+  } = useComposerMentionSources({
     executionCwd,
     remote,
     notesEnabled,
@@ -1634,6 +1644,31 @@ export const Composer = memo(function Composer({
         onResumeProviderSession();
         return;
       }
+      if (isSkillGroupPickerItem(skill)) {
+        const original = el.value;
+        void skillGroupInsertion(
+          skill.groupId,
+          { harness, cwd: executionCwd, sessionId },
+          token.trigger ?? "/",
+        )
+          .then((body) => {
+            if (
+              !body ||
+              !canMutateDraft() ||
+              ref.current !== el ||
+              el.value !== original ||
+              slashRef.current !== token
+            )
+              return;
+            const edit = insertTemplateBody(el.value, token.start, token.end, body);
+            applyTextareaEdit(el, edit.text, edit.caret);
+            setSlash(null);
+            setCreatingSkill(false);
+            el.focus();
+          })
+          .catch(() => setPasteError(t("Could not insert skill group")));
+        return;
+      }
       if (skill.kind === "template") {
         // Goes through the same input path as typing, so the draft, the
         // attachment tokens and the highlight all follow.
@@ -1662,6 +1697,10 @@ export const Composer = memo(function Composer({
     [
       canMutateDraft,
       enterBtwFromPrefix,
+      executionCwd,
+      harness,
+      sessionId,
+      t,
       publishDraft,
       onPlaceInFolder,
       openMcpPicker,
@@ -1680,19 +1719,24 @@ export const Composer = memo(function Composer({
         setMention(null);
         return;
       }
+      const workItem = workItemMentionOf(file);
+      const hint = workItem?.kind === "hint";
       const label =
-        remote || isNoteMentionPath(file.path)
+        workItem?.token ??
+        (remote || isNoteMentionPath(file.path)
           ? file.relative
-          : mentionLabel(file, mentionIndexRef.current);
-      const next = replaceMentionToken(el.value, token, label);
+          : mentionLabel(file, mentionIndexRef.current));
+      const next = replaceMentionToken(el.value, token, label, !hint);
       el.value = next;
       resizeComposer(el);
       let cursor = token.start + label.length + 1;
-      if (next[cursor] === " ") cursor += 1;
+      if (!hint && next[cursor] === " ") cursor += 1;
       el.setSelectionRange(cursor, cursor);
       setDraft(next);
       syncHasText(next);
-      setMention(null);
+      setMention(
+        hint ? { start: token.start, end: token.start + label.length + 1, query: label } : null,
+      );
       el.focus();
     },
     [canMutateDraft, syncHasText, remote],
@@ -3298,7 +3342,14 @@ export const Composer = memo(function Composer({
               files={rankedFiles}
               query={mention?.query ?? ""}
               active={mentionActive}
-              loading={looksLikeProject(executionCwd) && peekProjectFiles(executionCwd) == null}
+              loading={
+                workItemsLoading ||
+                (!workItemsScoped &&
+                  looksLikeProject(executionCwd) &&
+                  peekProjectFiles(executionCwd) == null)
+              }
+              workItemsScoped={workItemsScoped}
+              includeWorkItems={workItemsAvailable}
               failed={filesFailed}
               onRetry={retryFiles}
               includeNotes={notesEnabled}

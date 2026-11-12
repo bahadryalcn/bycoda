@@ -1,9 +1,11 @@
+import { prepareSignPaths, type SignPath } from "./crewCanvasSignAsset";
 import { crewSignImage, loadCrewSignLogo, glyphTile, type CodeArtOptions } from "./crewCodeArt";
 import { GLYPH_BANDS, canvas2D } from "./crewCodeArtCompositor";
 import { themePalette } from "../../../shared/theme/palette";
 
 export type ClassicCrewAssets = {
   tiles: ImageData[];
+  signPaths?: SignPath[];
   sign: ImageBitmap | null;
   signWidth: number;
   signHeight: number;
@@ -23,6 +25,7 @@ export async function prepareClassicCrewAssets(
       const tile = glyphTile(band);
       return canvas2D(tile)!.getImageData(0, 0, tile.width, tile.height);
     }),
+    signPaths: logo ? prepareSignPaths() : undefined,
     sign: logo ? await createImageBitmap(logo) : null,
     signWidth: logo?.naturalWidth ?? 0,
     signHeight: logo?.naturalHeight ?? 0,

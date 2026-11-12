@@ -905,7 +905,7 @@
   "Output": "Çıktı",
   "Codex": "Codex",
   "left": "kalan",
-  "{p0} — orchestration agent": "{p0} — orkestrasyon ajanı",
+  "{p0} · orchestration agent": "{p0} · orkestrasyon ajanı",
   "Shown in tabs and composer": "Sekmelerde ve mesaj alanında gösterilir",
   "Worktree base branch": "Çalışma ağacının temel dalı",
   "Hex color": "Hex renk kodu",
@@ -1225,5 +1225,8 @@
   "Add citation": "Alıntı ekle",
   "Add an optional comment…": "İsteğe bağlı bir yorum ekle…",
   "Close translation": "Çeviriyi kapat",
-  "Remove quoted replies before running this command. Your draft is preserved.": "Bu komutu çalıştırmadan önce alıntılanan yanıtları kaldırın. Taslağınız korunuyor."
+  "Remove quoted replies before running this command. Your draft is preserved.": "Bu komutu çalıştırmadan önce alıntılanan yanıtları kaldırın. Taslağınız korunuyor.",
+  "The original tea crew, drawn in binary code art.": "İkili kod sanatıyla çizilen özgün çay ekibi.",
+  "When on, each crew member ages with its own context window and stays monochrome: baby, child, adult, then uncle. When off, everyone is an uncle and fills with color from the feet up as context fills. Compaction lowers the level. Unknown context stays neutral.": "Açıkken her üye kendi bağlam penceresiyle yaşlanır ve tek renk kalır: bebek, çocuk, yetişkin, ardından amca. Kapalıyken herkes amcadır ve bağlam doldukça ayaklardan yukarı renklenir. Sıkıştırma seviyeyi düşürür. Bilinmeyen bağlam nötr kalır.",
+  "{p0} crew members beneath the bycoda sign; {p1} working. Binary code art with color and meters showing context usage, not task progress.": "bycoda tabelasının altında {p0} ekip üyesi; {p1} çalışıyor. İkili kod sanatındaki renkler ve göstergeler görev ilerlemesini değil, bağlam kullanımını gösterir."
 }

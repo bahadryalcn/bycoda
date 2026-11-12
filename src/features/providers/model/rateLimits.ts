@@ -17,8 +17,13 @@ export type RateLimitWindow = {
   resetsAt: number | null;
 };
 
+/** What a Claude reset refills; `fable` returns only Fable's share of the week. */
+export type RateLimitResetKind = "session" | "weekly" | "fable" | "full";
+
 export type RateLimitResetCredit = {
   id: string;
+  /** Claude only: names the row instead of the long provider title. */
+  kind?: RateLimitResetKind;
   resetType: "codexRateLimits" | "unknown";
   status: "available" | "redeeming" | "redeemed" | "unknown";
   grantedAt: number | null;
@@ -305,6 +310,7 @@ function parseClaudeResetGrants(raw: unknown): RateLimitResetCredits | null {
     for (let index = 0; index < left; index++) {
       credits.push({
         id: `${grant.id}:${index}`,
+        kind: claudeResetKind(grant),
         resetType: "unknown",
         status: grant.usable_now === true ? "available" : "unknown",
         grantedAt: parseResetTimestamp(grant.starts_at),
@@ -315,6 +321,18 @@ function parseClaudeResetGrants(raw: unknown): RateLimitResetCredits | null {
     }
   }
   return credits.length > 0 ? { availableCount: credits.length, credits } : null;
+}
+
+/** Same precedence as Claude Code's `/limit-reset` picker. */
+function claudeResetKind(grant: Record<string, unknown>): RateLimitResetKind {
+  if (grant.gives_back_weekly === true) return "fable";
+  if (grant.type === "session" || grant.type === "weekly" || grant.type === "full") {
+    return grant.type;
+  }
+  const clears = Array.isArray(grant.clears) ? grant.clears : [];
+  const session = clears.includes("five_hour");
+  const other = clears.some((limit) => limit !== "five_hour");
+  return session && !other ? "session" : other && !session ? "weekly" : "full";
 }
 
 type CodexWindowSnapshot = {

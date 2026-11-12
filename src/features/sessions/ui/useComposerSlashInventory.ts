@@ -1,4 +1,10 @@
+import {
+  useSkillGroups,
+  skillGroupPickerItems,
+  cachedSkillPolicy,
+} from "../../skills/public/skillGroups";
 import { useMemo, useSyncExternalStore } from "react";
+import { useT } from "../../../shared/i18n";
 import { hasNativeCommands, rankSkills, type SlashToken } from "../../skills/model/skills";
 import {
   loadPromptTemplates,
@@ -63,6 +69,13 @@ export function useComposerSlashInventory(input: {
   } = input;
   const skillCatalog = useComposerSkills({ harness, executionCwd, sessionId, pickerOpen });
   const skills = skillCatalog.skills;
+  const groups = useSkillGroups();
+  const translate = useT();
+  // Policy is re-read when groups or skills change; insertion re-checks authoritative policy.
+  const groupItems = useMemo(
+    () => skillGroupPickerItems(groups, skills, cachedSkillPolicy(), translate),
+    [groups, skills, translate],
+  );
   const promptTemplates = useSyncExternalStore(
     subscribePromptTemplates,
     loadPromptTemplates,
@@ -157,11 +170,13 @@ export function useComposerSlashInventory(input: {
             ),
             ...cliCommands.slashCommands,
           ]),
+      ...groupItems,
       ...templateItems,
     ],
     [
       harness,
       templateItems,
+      groupItems,
       skills,
       cliCommands.slashCommands,
       remote,
@@ -174,14 +189,18 @@ export function useComposerSlashInventory(input: {
   );
   const skillLimit = hasNativeCommands(harness) ? Number.POSITIVE_INFINITY : undefined;
   const dollarSkills = cliCommands.dollarSkills;
+  const dollarWithGroups = useMemo(
+    () => [...dollarSkills, ...groupItems],
+    [dollarSkills, groupItems],
+  );
   const rankedSkills = useMemo(
     () =>
       rankSkills(
-        slashTrigger === "$" ? dollarSkills : slashItems,
+        slashTrigger === "$" ? dollarWithGroups : slashItems,
         slashQuery,
         slashTrigger === "$" ? undefined : skillLimit,
       ),
-    [dollarSkills, slashTrigger, slashQuery, slashItems, skillLimit],
+    [dollarWithGroups, slashTrigger, slashQuery, slashItems, skillLimit],
   );
   const skillNames = useMemo(
     () =>
@@ -195,7 +214,7 @@ export function useComposerSlashInventory(input: {
   return {
     skillCatalog,
     promptTemplates,
-    dollarSkills,
+    dollarSkills: dollarWithGroups,
     rankedSkills,
     skillNames,
   };

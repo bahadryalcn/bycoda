@@ -50,7 +50,7 @@ function crewThemeHint(theme: CrewTheme): string {
     case "matrix":
       return t("Neo leads, Morpheus advises, and every subagent is another Agent Smith.");
     default:
-      return t("The original tea crew, drawn in monochrome code art.");
+      return t("The original tea crew, drawn in binary code art.");
   }
 }
 
@@ -95,7 +95,18 @@ export function CrewStageCard() {
           disabledReason={t("Turn on the agent crew first")}
           feedback={
             <div className="crew-stage-card">
-              <CrewScene workingCount={3} />
+              <CrewScene
+                workingCount={3}
+                crew={
+                  theme === "classic" && !growth
+                    ? Array.from({ length: 6 }, (_, id) => ({
+                        role: id === 2 ? "lead" : id === 3 ? "advisor" : "subagent",
+                        working: id === 0 || id === 2 || id === 3,
+                        context: [0.15, 0.35, 0.5, 0.7, 0.9, 1][id],
+                      }))
+                    : undefined
+                }
+              />
               <Text
                 as="p"
                 size="caption"
@@ -153,7 +164,7 @@ export function CrewStageCard() {
           description={
             theme === "classic"
               ? t(
-                  "Each crew member ages with its own context window: baby, child, adult, then uncle. Compaction makes them younger again. When off, everyone is an uncle.",
+                  "When on, each crew member ages with its own context window and stays monochrome: baby, child, adult, then uncle. When off, everyone is an uncle and fills with color from the feet up as context fills. Compaction lowers the level. Unknown context stays neutral.",
                 )
               : t(
                   "Each character fills with color from the feet up as its context fills. Compaction lowers the level. Unknown context stays neutral. When off, all characters stay in full color.",

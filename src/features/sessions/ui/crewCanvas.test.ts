@@ -8,6 +8,7 @@ import type { CrewCanvasFrame } from "./crewCanvasHost";
 const state = vi.hoisted(() => ({ painters: [] as any[] }));
 vi.mock("./crewCodeArt", async (original) => ({
   ...(await original<object>()),
+  drawSign: vi.fn(),
   createCodeArtPainter: vi.fn((canvas: HTMLCanvasElement, options: object) => {
     const draw = Object.assign(vi.fn(), { dispose: vi.fn(), backend: "webgl" });
     state.painters.push({ canvas, options, draw });
@@ -58,6 +59,10 @@ beforeEach(() => {
   vi.useFakeTimers();
   state.painters.length = 0;
   vi.stubGlobal("OffscreenCanvas", FakeCanvas);
+  vi.stubGlobal(
+    "Path2D",
+    vi.fn(function () {}),
+  );
   Object.defineProperty(HTMLCanvasElement.prototype, "transferControlToOffscreen", {
     configurable: true,
     value: vi.fn(() => new FakeCanvas()),
@@ -67,6 +72,9 @@ beforeEach(() => {
   worker = new FakeWorker();
   assets = {
     tiles: [],
+    signPaths: [
+      { path: "M0 0L1 1", matrix: [1, 0, 0, 1, 0, 0], fill: "none", stroke: "white", width: 1 },
+    ],
     sign: null,
     signWidth: 0,
     signHeight: 0,
@@ -87,8 +95,8 @@ const start = () =>
     () => worker as unknown as Worker,
     async () => assets,
   );
-it("refuses product admission until both loaded-sign backends have exact parity", () => {
-  expect(CLASSIC_CREW_WORKER_QUALIFIED).toBe(false);
+it("admits the owner-requested classic worker experiment behind its runtime switch", () => {
+  expect(CLASSIC_CREW_WORKER_QUALIFIED).toBe(true);
 });
 it("replays every main argument in order, assets before draws; retains original until ACK", async () => {
   const draw = start();
@@ -306,19 +314,11 @@ it("closes frame bitmaps after paint, errors, stale requests and disposal", () =
     size: { width: 2280, height: 1170, ratio: 1 },
     assets: { ...assets, sign: { close: vi.fn() }, tiles: [{ width: 12, height: 20 }] },
   });
-  const context = {
-    save: vi.fn(),
-    setTransform: vi.fn(),
-    drawImage: vi.fn(),
-    restore: vi.fn(),
-    imageSmoothingEnabled: true,
-  };
-  state.painters[0].draw.mockImplementation(() => state.painters[0].options.paintSign(context));
+  expect(state.painters[0].options.sign.paint).toBeTypeOf("function");
+  expect(Path2D).toHaveBeenCalledOnce();
   const close = vi.fn();
   send({ type: "draw", sequence: 1, frame: { ...frame, signLayer: { close } } });
-  expect(context.setTransform).toHaveBeenCalledExactlyOnceWith(1, 0, 0, 1, 0, 0);
-  expect(context.drawImage).toHaveBeenCalledWith(expect.objectContaining({ close }), 0, 0);
-  expect(context.imageSmoothingEnabled).toBe(false);
+  expect(Path2D).toHaveBeenCalledOnce();
   expect(close).toHaveBeenCalledTimes(1);
   send({ type: "draw", sequence: 1, frame: { ...frame, signLayer: { close } } });
   state.painters[0].draw.mockImplementation(() => {
@@ -330,3 +330,73 @@ it("closes frame bitmaps after paint, errors, stale requests and disposal", () =
   send({ type: "draw", sequence: 4, frame: { ...frame, signLayer: { close } } });
   expect(close).toHaveBeenCalledTimes(5);
 });
+
+it("submits animated loaded-sign frames without main-thread rasterization or bitmap work", async () => {
+  assets.sign = { close: vi.fn() } as unknown as ImageBitmap;
+  const transfer = vi.fn(() => ({ close: vi.fn() }));
+  const allocate = vi.fn(function () {
+    const surface = new FakeCanvas();
+    Object.assign(surface.context, { clearRect: vi.fn(), scale: vi.fn() });
+    Object.assign(surface, { transferToImageBitmap: transfer });
+    return surface;
+  });
+  vi.stubGlobal("OffscreenCanvas", allocate);
+  const clone = vi.fn(() => ({ close: vi.fn() }));
+  vi.stubGlobal("structuredClone", clone);
+  const draw = start();
+  await flush();
+  worker.reply("capabilities");
+  worker.reply("ready");
+  draw(frame.actions, frame.activity, frame.width, 0);
+  worker.reply("drawn", { sequence: 1 });
+  for (let index = 1; index <= 12; index++) {
+    draw(frame.actions, frame.activity, frame.width, index * 120);
+    worker.reply("drawn", { sequence: index + 1 });
+  }
+  expect(allocate).not.toHaveBeenCalled();
+  expect(transfer).not.toHaveBeenCalled();
+  expect(clone).not.toHaveBeenCalled();
+  expect(worker.postMessage.mock.calls.filter(([message]) => message.type === "draw")).toHaveLength(
+    13,
+  );
+  expect(state.painters[0].draw).toHaveBeenCalledTimes(1);
+  draw.dispose?.();
+  worker.reply("disposed");
+});
+
+it.each(["Path2D", "paths", "2D"])(
+  "runtime rejects unavailable %s before ready or drawing a missing sign",
+  (mode) => {
+    const replies: CanvasReply[] = [];
+    const receive = createCrewCanvasRuntime((reply) => replies.push(reply));
+    const send = (message: object) =>
+      receive({ version: 1, generation: 1, ...message } as CanvasRequest<CrewCanvasFrame>);
+    if (mode === "Path2D") vi.stubGlobal("Path2D", undefined);
+    if (mode === "2D")
+      vi.stubGlobal(
+        "OffscreenCanvas",
+        class extends FakeCanvas {
+          override getContext = vi.fn(() => null as never);
+        },
+      );
+    send({ type: "probe" });
+    if (mode !== "2D")
+      send({
+        type: "init",
+        canvas: new FakeCanvas(),
+        size: { width: 2280, height: 1170, ratio: 1 },
+        assets: {
+          ...assets,
+          sign: { close: vi.fn() },
+          signPaths: mode === "paths" ? [] : assets.signPaths,
+          tiles: [{ width: 12, height: 20 }],
+        },
+      });
+    expect(replies.at(-1)).toMatchObject({
+      type: "error",
+      reason: mode === "2D" ? "Worker 2D unavailable" : "Worker sign paths unavailable",
+    });
+    expect(replies.some((reply) => reply.type === "ready" || reply.type === "drawn")).toBe(false);
+    expect(state.painters).toHaveLength(0);
+  },
+);

@@ -1,5 +1,11 @@
+import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { expectPairedProof } from "./paired-proof-test";
+import {
+  CLASSIC_SIGN_PIXEL_CAP,
+  CLASSIC_SIGN_DELTA_CAP,
+  CLASSIC_SIGN_REGION,
+} from "./classic-sign-parity";
 
 for (const theme of ["classic", "star-wars", "lotr", "matrix"] as const) {
   for (const dpr of [1, 2]) {
@@ -28,6 +34,9 @@ test("paired harness detects an earlier one-channel mismatch after asynchronous 
   expect(result.differingPixels).toBe(1);
   expect(result.maxChannelDelta).toBe(1);
   expect(result.firstFailure?.sequence).toBe(0);
+  expect(result.regional.differingPixels).toBe(5);
+  expect(result.regional.outsideRegionPixels).toBe(2);
+  expect(result.regional.maxRegionPixelsPerFrame).toBe(1);
 });
 
 test("worker presentation equals main on light and dark backgrounds", async ({
@@ -202,7 +211,63 @@ test("classic visible main worker presentation", async ({ page }, testInfo) => {
           const label = `classic-${renderer}-${variant}-${signFailed ? "failed" : "loaded"}-${color}`;
           await testInfo.attach(`${label}-main`, { body: main, contentType: "image/png" });
           await testInfo.attach(`${label}-worker`, { body: worker, contentType: "image/png" });
-          expect(worker.equals(main), label).toBe(true);
+          if (signFailed) expect(worker.equals(main), label).toBe(true);
+          else {
+            const result = await page.evaluate(
+              async ({ images, region }) => {
+                const pixels = await Promise.all(
+                  images.map(async (encoded) => {
+                    const image = new Image();
+                    image.src = `data:image/png;base64,${encoded}`;
+                    await image.decode();
+                    const canvas = document.createElement("canvas");
+                    canvas.width = image.naturalWidth;
+                    canvas.height = image.naturalHeight;
+                    const context = canvas.getContext("2d")!;
+                    context.drawImage(image, 0, 0);
+                    return context.getImageData(0, 0, canvas.width, canvas.height);
+                  }),
+                );
+                const [a, b] = pixels;
+                if (a.width !== b.width || a.height !== b.height)
+                  throw new Error("Capture size mismatch");
+                const scaleX = a.width / 2280,
+                  scaleY = a.height / 1170;
+                let inside = 0,
+                  outside = 0,
+                  delta = 0;
+                for (let offset = 0; offset < a.data.length; offset += 4) {
+                  let changed = false;
+                  for (let channel = 0; channel < 4; channel++) {
+                    const difference = Math.abs(
+                      a.data[offset + channel] - b.data[offset + channel],
+                    );
+                    delta = Math.max(delta, difference);
+                    changed ||= difference !== 0;
+                  }
+                  if (!changed) continue;
+                  const x = (offset / 4) % a.width,
+                    y = Math.floor(offset / 4 / a.width);
+                  if (
+                    x >= region.x * scaleX &&
+                    x < (region.x + region.width) * scaleX &&
+                    y >= region.y * scaleY &&
+                    y < (region.y + region.height) * scaleY
+                  )
+                    inside++;
+                  else outside++;
+                }
+                return { inside, outside, delta };
+              },
+              {
+                images: [main.toString("base64"), worker.toString("base64")],
+                region: CLASSIC_SIGN_REGION,
+              },
+            );
+            expect(result.outside, label).toBe(0);
+            expect(result.inside, label).toBeLessThanOrEqual(CLASSIC_SIGN_PIXEL_CAP);
+            expect(result.delta, label).toBeLessThanOrEqual(CLASSIC_SIGN_DELTA_CAP);
+          }
         }
         await page.evaluate(() => (window as any).disposeClassic());
       }
@@ -314,3 +379,187 @@ for (const renderer of ["auto", "canvas"] as const) {
     expect(result.maxChannelDelta).toBe(0);
   });
 }
+
+for (const renderer of ["auto", "canvas"] as const) {
+  for (const context of [0, 0.25, 0.5, 1, undefined]) {
+    test(`classic color ${renderer} ${context ?? "unknown"} exact parity`, async ({
+      page,
+    }, testInfo) => {
+      await expectPairedProof(page, testInfo, {
+        kind: "crew",
+        renderer,
+        count: 3,
+        color: true,
+        context,
+      });
+    });
+  }
+}
+test("classic color captures and neutral equivalence", async ({ page }) => {
+  mkdirSync("temp/verification/R4-A", { recursive: true });
+  await page.goto("/tests/browser/crews/canvas-paired.html");
+  for (const context of [0, 0.5, 1, undefined]) {
+    await page.evaluate(async (context) => {
+      const options = { kind: "crew" as const, count: 3, renderer: "auto" as const };
+      const neutral = await window.createPairedRenderer({ ...options, path: "worker" });
+      document.querySelector<HTMLCanvasElement>("#worker")!.id = "main";
+      const color = await window.createPairedRenderer({
+        ...options,
+        path: "worker",
+        color: true,
+        context,
+      });
+      const frame = { time: 1.25, stand: 1, presence: 0 };
+      await neutral.draw(frame, 0);
+      await color.draw(frame, 0);
+      const a = await neutral.capture(),
+        b = await color.capture();
+      const differs = a.some((value, index) => value !== b[index]);
+      if (context === 0 || context === undefined) {
+        if (differs) throw new Error("Zero/unknown must preserve monochrome pixels");
+      } else if (!differs) throw new Error("Color must change visible glyphs");
+      (window as any).disposeColor = () => {
+        neutral.dispose?.();
+        color.dispose?.();
+        document.querySelectorAll("canvas").forEach((c) => c.remove());
+      };
+      document.querySelector<HTMLCanvasElement>("#main")!.style.display = "none";
+    }, context);
+    for (const dark of [false, true]) {
+      await page.evaluate((dark) => {
+        document.body.style.background = dark ? "#171719" : "#fafafa";
+      }, dark);
+      await page.locator("#worker").screenshot({
+        path: `temp/verification/R4-A/classic-color-${context === undefined ? "unknown" : context * 100}-${dark ? "dark" : "light"}.png`,
+      });
+    }
+    await page.evaluate(() => (window as any).disposeColor());
+  }
+  await page.evaluate(async () => {
+    const scene = await window.createPairedRenderer({
+      kind: "crew",
+      count: 3,
+      renderer: "auto",
+      scenario: "growth",
+    });
+    await scene.draw({ time: 0.25, stand: 1, presence: 0 }, 0);
+  });
+  await page.locator("#main").screenshot({ path: "temp/verification/R4-A/classic-growth-on.png" });
+});
+
+for (const renderer of ["auto", "canvas"] as const) {
+  test(`classic independent color levels and compaction ${renderer}`, async ({
+    page,
+  }, testInfo) => {
+    await expectPairedProof(page, testInfo, {
+      kind: "crew",
+      renderer,
+      count: 9,
+      scenario: "color",
+    });
+  });
+}
+test("classic production scene labels and color screenshots", async ({ page }) => {
+  await page.goto("/tests/browser/crews/canvas-paired.html");
+  for (const width of [1280, 800])
+    for (const dark of [false, true])
+      for (const context of [0, 0.5, 1, undefined]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate(async ({ context, dark }) => window.classicScene(context, dark), {
+          context,
+          dark,
+        });
+        await expect(page.locator(".crew-scene")).toHaveAttribute("data-art-status", "ready");
+        await expect(page.locator(".crew-scene__label")).toHaveCount(6);
+        const expected = context === undefined ? "unknown" : String(context * 100);
+        await expect(page.locator(".crew-scene__label").first()).toHaveAttribute(
+          "data-charge",
+          expected,
+        );
+        await page.locator("#classic-scene").screenshot({
+          path: `temp/verification/R4-A/scene-${expected}-${dark ? "dark" : "light"}-${width}.png`,
+        });
+      }
+  await page.evaluate(() => window.classicScene(0.1, true, true));
+  await expect(page.locator(".crew-scene")).toHaveAttribute("data-art-status", "ready");
+  await expect(page.locator(".crew-scene__label").first()).toHaveAttribute("data-age", "0");
+  await page
+    .locator("#classic-scene")
+    .screenshot({ path: "temp/verification/R4-A/scene-growth-on.png" });
+});
+
+test("classic context survives narrow labels and localized role truncation", async ({ page }) => {
+  test.setTimeout(120_000);
+  mkdirSync("temp/verification/R4-E", { recursive: true });
+  await page.goto("/tests/browser/crews/canvas-paired.html");
+  for (const width of [1280, 800, 512, 320, 240]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const dark of [false, true]) {
+      for (const language of ["en", "de", "fr", "tr", "ja"] as const) {
+        await page.evaluate(({ dark, language }) => window.classicScene(1, dark, false, language), {
+          dark,
+          language,
+        });
+        await expect(page.locator(".crew-scene")).toHaveAttribute("data-art-status", "ready");
+        const geometry = await page.locator(".crew-scene__label").evaluateAll((labels) =>
+          labels.map((label) => {
+            const name = label.querySelector(".crew-scene__name")!;
+            const charge = label.querySelector(".crew-scene__charge")!;
+            const meter = label.querySelector(".crew-scene__meter")!;
+            const bounds = label.getBoundingClientRect();
+            const value = charge.getBoundingClientRect();
+            const bar = meter.getBoundingClientRect();
+            return {
+              text: charge.textContent,
+              valueFits: value.left >= bounds.left - 0.5 && value.right <= bounds.right + 0.5,
+              meterFits:
+                bar.left >= bounds.left - 0.5 && bar.right <= bounds.right + 0.5 && bar.width > 0,
+              roleTruncates: getComputedStyle(name).textOverflow === "ellipsis",
+              valueShrinks: getComputedStyle(charge).flexShrink,
+              sceneFits: value.left >= 0 && bar.right <= innerWidth,
+            };
+          }),
+        );
+        expect(geometry).toHaveLength(6);
+        for (const label of geometry)
+          expect(label).toEqual({
+            text: "100%",
+            valueFits: true,
+            meterFits: true,
+            roleTruncates: true,
+            valueShrinks: "0",
+            sceneFits: true,
+          });
+        if (!dark) {
+          expect(
+            await page
+              .locator('.crew-scene__label[data-working="false"]')
+              .first()
+              .evaluate((label) => getComputedStyle(label).opacity),
+          ).toBe("1");
+        }
+        if (language === "en" || width === 512)
+          await page.locator("#classic-scene").screenshot({
+            path: `temp/verification/R4-E/scene-${dark ? "dark" : "light"}-${width}-${language}.png`,
+          });
+      }
+    }
+  }
+  await page.setViewportSize({ width: 512, height: 900 });
+  await page.evaluate(() => window.classicScene(0.5, true, true));
+  await expect(page.locator(".crew-scene")).toHaveAttribute("data-art-status", "ready");
+  await expect(page.locator(".crew-scene__charge, .crew-scene__meter")).toHaveCount(0);
+  await page.locator("#classic-scene").screenshot({ path: "temp/verification/R4-E/growth-on.png" });
+  for (const theme of ["star-wars", "lotr", "matrix"] as const) {
+    for (const dark of [false, true]) {
+      await page.evaluate(({ theme, dark }) => window.classicScene(0.5, dark, true, "en", theme), {
+        theme,
+        dark,
+      });
+      await expect(page.locator(".crew-scene")).toHaveAttribute("data-art-status", "ready");
+      await page.locator("#classic-scene").screenshot({
+        path: `temp/verification/R4-E/compare-${theme}-${dark ? "dark" : "light"}.png`,
+      });
+    }
+  }
+});

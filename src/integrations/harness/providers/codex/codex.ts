@@ -97,6 +97,8 @@ import {
 import { parseCodexGoalCommand, codexGoalRequest, codexGoalSummary } from "./codexGoal";
 import { trackAgentRow } from "./codexAgentRows";
 import { codexThreadConfig } from "./codexSubagentLimits";
+import { conversationToolsBridge } from "../../core/conversationToolsBridge";
+import { codexExternalMcpConfig } from "../../core/externalMcpLaunch";
 import { snapshotRemainder } from "../../core/streamText";
 import type {
   ApprovalDecision,
@@ -207,6 +209,7 @@ type Live = {
   /** Skill name to SKILL.md path, so a `$name` can be sent as a skill input. */
   skills: Map<string, string>;
   skillPolicyKey?: string;
+  nativeSubagents?: string;
   skillPolicy?: HarnessSessionInput["skillPolicy"];
   skillsLoading?: Promise<void>;
 };
@@ -874,6 +877,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing.cwd === input.cwd &&
     sameProviderAccountId(existing.providerAccountId, input.providerAccountId) &&
     existing.controlsAgents === controlsAgents &&
+    existing.nativeSubagents === input.modelSettings?.nativeSubagents &&
     existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
   ) {
     observeProviderProcess(input, existing.handle);
@@ -892,7 +896,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   try {
     observeProviderProcess(input, handle, "starting");
     if (existing) {
-      // Codex may retain the thread's sandbox network policy across turns.
+      // Codex retains sandbox and native-agent tool policy across warm turns.
       // Switch it when this session gains /operator access or loses agent
       // control, so its local CLI socket matches the current policy.
       if (
@@ -1051,6 +1055,17 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     });
     await startupRpc.notify("initialized", undefined);
 
+    const externalMcp = (await conversationToolsBridge(input.sessionId))?.externalMcp;
+    let mcpConfig: Record<string, unknown> | undefined;
+    if (externalMcp?.disable.codex.length) {
+      const result = await startupRpc.request("config/read", {
+        includeLayers: false,
+        cwd: input.cwd,
+      });
+      const config = asRecord(asRecord(result)?.config);
+      if (!config) throw new Error("Codex did not return its effective MCP configuration");
+      mcpConfig = codexExternalMcpConfig(externalMcp, config);
+    }
     let skillConfig: Record<string, unknown> | undefined;
     if (input.skillPolicy) {
       // Neither read needs the other's answer, and the inventory only matters
@@ -1085,7 +1100,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     const model = nativeModelId(input.model);
     const serviceTier = input.modelSettings?.serviceTier;
-    const threadConfig = codexThreadConfig(skillConfig, input.modelSettings);
+    const threadConfig = codexThreadConfig(
+      mcpConfig ? { ...mcpConfig, ...skillConfig } : skillConfig,
+      input.modelSettings,
+    );
 
     let threadId: string | undefined;
     let threadModel = model;
@@ -1192,6 +1210,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       skills: new Map(),
       skillPolicy: input.skillPolicy,
       skillPolicyKey: JSON.stringify(input.skillPolicy),
+      nativeSubagents: input.modelSettings?.nativeSubagents,
     };
     liveRef.current = live;
     liveByThread.set(input.sessionId, live);

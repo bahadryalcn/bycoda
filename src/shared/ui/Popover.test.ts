@@ -325,3 +325,21 @@ it("dismisses on an outside press even when its target stops pointerdown propaga
   expect(onDismiss).toHaveBeenCalledWith("outside");
   outside.remove();
 });
+
+it("hides while its anchor is not rendered and returns once the anchor shows again", async () => {
+  // A composer in a background session tab is display:none; its open picker must not jump to 0,0.
+  vi.spyOn(anchor, "getBoundingClientRect").mockReturnValue(new DOMRect(40, 50, 80, 20));
+  await act(async () => root.render(createElement(Popover, { anchor, bare: true }, "Menu")));
+  await frame();
+  const surface = document.querySelector<HTMLElement>("[data-popover-side]")!;
+  expect(surface.style.visibility).not.toBe("hidden");
+  anchor.style.display = "none";
+  await act(async () => resized());
+  await frame();
+  expect(surface.style.visibility).toBe("hidden");
+  anchor.style.display = "";
+  await act(async () => resized());
+  await frame();
+  expect(surface.style.visibility).not.toBe("hidden");
+  expect(Number.parseFloat(surface.style.left)).toBe(40);
+});

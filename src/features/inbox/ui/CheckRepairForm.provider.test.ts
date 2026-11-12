@@ -8,7 +8,9 @@ const { fetchCheckDetails } = vi.hoisted(() => ({
 }));
 vi.mock("../model/prChecks", () => ({ fetchCheckDetails }));
 vi.mock("../../../shared/ui/Popover", async () => ({
-  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>("../../../shared/ui/Popover")),
+  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>(
+    "../../../shared/ui/Popover",
+  )),
   Popover: ({ children }: { children: ReactNode }) => children,
 }));
 it("does not start a repair from a stale pending log while the account changes", async () => {

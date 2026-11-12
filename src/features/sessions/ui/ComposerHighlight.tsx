@@ -12,6 +12,7 @@ import { ComposerAttachmentHighlight } from "./ComposerAttachmentHighlight";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import styles from "./ComposerHighlight.module.css";
 import { ModeCommandText, type ModeCommandToken } from "./modeCommands";
+import { workItemMentionParts } from "./ChatCitationText";
 
 /** Overlay that paints skill, mention, MCP, attachment and quote tokens under the textarea. */
 export const ComposerHighlight = memo(function ComposerHighlight({
@@ -182,7 +183,15 @@ function MentionRuns({
             {part.text}
           </span>
         ) : (
-          <FileMentionRuns key={index} text={part.text} mentions={mentions} />
+          workItemMentionParts(part.text).map((run, runIndex) =>
+            run.workItem ? (
+              <span key={`${index}:${runIndex}`} className="text-mention" data-work-item-mention="">
+                {run.text}
+              </span>
+            ) : (
+              <FileMentionRuns key={`${index}:${runIndex}`} text={run.text} mentions={mentions} />
+            ),
+          )
         ),
       )}
     </>

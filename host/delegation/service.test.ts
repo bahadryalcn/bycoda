@@ -13,6 +13,14 @@ import {
 } from "../../src/shared/model/host-contracts/delegation";
 import { STOPPED_BY_USER } from "../sessions/sessionRuns";
 import { ConversationDelegation, type AgentsCaller } from "./service";
+import { DatabaseSync } from "node:sqlite";
+import { DesktopSessions } from "../desktop/desktopSessions";
+import { ModelCatalogCache } from "../providers/model-catalog-cache";
+import {
+  providerDefaultAccounts,
+  parseProviderAccountStyles,
+} from "../providers/provider-account-styles";
+import { ModelsListResultSchema } from "../../src/shared/model/host-contracts/models";
 
 type Command = { type: string } & Record<string, unknown>;
 type Entry = {
@@ -926,6 +934,84 @@ it("does not flag a parent reply as ownerFollowUp during concurrent waits", asyn
 });
 
 describe("Automatic and the subagent ceiling", () => {
+  it.each([
+    ["no catalog models", {}, ["codex"], "signedIn"],
+    ["no connected providers", { codex: [{ id: "codex:test", name: "Test" }] }, [], "signedIn"],
+    [
+      "all accounts signed out",
+      { codex: [{ id: "codex:test", name: "Test" }] },
+      ["codex"],
+      "signedOut",
+    ],
+  ] as const)("explains Automatic empty result: %s", async (reason, models, providers, status) => {
+    setup();
+    host.entries.get("parent")!.session.modelSettings.crossSubagents = "auto";
+    deps.models = async () => ({ models, errors: {} }) as unknown as HostModelCatalog;
+    deps.providers = [...providers];
+    deps.authStatus = async () => status;
+    expect(await call("agents.options")).toMatchObject({ subagents: [], automatic: { reason } });
+  });
+
+  it("resolves a desktop snapshot and catalog-key-only models with published account styles", async () => {
+    setup();
+    const dbPath = join(directory, "desktop.db");
+    const db = new DatabaseSync(dbPath);
+    db.exec(
+      `CREATE TABLE sessions(id TEXT PRIMARY KEY,cwd TEXT,harness TEXT,model TEXT,model_settings TEXT,runtime_mode TEXT,title TEXT,provider_session_id TEXT,blocks_json TEXT,created_at INTEGER,updated_at INTEGER,provider_account_id TEXT)`,
+    );
+    db.prepare("INSERT INTO sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(
+      "parent",
+      directory,
+      "codex",
+      "codex:gpt-6.1-sol",
+      JSON.stringify({ crossSubagents: "auto", crossSubagentMaxEffort: "high" }),
+      "default",
+      "Parent",
+      null,
+      "[]",
+      1,
+      1,
+      "default",
+    );
+    const desktop = new DesktopSessions(() => [dbPath]);
+    try {
+      deps.featureSession = async (id) => (await desktop.snapshotAsync(id, "p", directory))!;
+      const native = await deps.featureSession("parent");
+      expect(native.session.modelSettings).toEqual({
+        crossSubagents: "auto",
+        crossSubagentMaxEffort: "high",
+      });
+      const cache = new ModelCatalogCache(
+        ["codex", "claude"],
+        async () => "fixture",
+        async (provider) =>
+          ModelsListResultSchema.parse({
+            models: { [provider]: [{ id: `${provider}:fixture`, name: "Fixture" }] },
+            errors: {},
+          }).models[
+            provider
+          ]! as unknown as import("../../src/features/sessions/model/models").AgentModel[],
+      );
+      deps.models = async () => await cache.read(directory);
+      deps.defaultAccounts = async () =>
+        providerDefaultAccounts(
+          parseProviderAccountStyles({
+            codex: { default: { isDefault: true } },
+            claude: { work: { isDefault: false }, personal: { isDefault: true } },
+          }),
+        );
+      expect(await call("agents.options")).toMatchObject({
+        maxEffort: "high",
+        subagents: expect.arrayContaining([
+          expect.objectContaining({ ref: "codex:fixture@default", available: true }),
+          expect.objectContaining({ ref: "claude:fixture@personal", available: true }),
+        ]),
+      });
+    } finally {
+      await desktop.closeAsync();
+      db.close();
+    }
+  });
   it("resolves the live catalog and rejects models outside it", async () => {
     setup();
     const session = host.entries.get("parent")!.session;

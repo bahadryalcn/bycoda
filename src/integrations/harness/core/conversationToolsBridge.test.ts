@@ -209,7 +209,7 @@ describe("Provider conversation tool bridge", () => {
     expect(Object.keys(config.mcpServers)).toEqual(["bycoda-conversation", "arc"]);
     expect(config.mcpServers.arc.url).toBe("http://127.0.0.1:4555/mcp/ext/arc");
     const codex = conversationToolsSpawnArgs("codex", ["app-server"], withHub);
-    expect(codex.slice(0, 2)).toEqual(["-c", "mcp_servers.rea={enabled=false}"]);
+    expect(codex).not.toContain("mcp_servers.rea={enabled=false}");
     expect(codex.at(-1)).toBe("app-server");
     const isolated = [
       "--print",

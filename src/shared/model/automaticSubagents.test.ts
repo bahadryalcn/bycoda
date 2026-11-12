@@ -1,11 +1,37 @@
 import { expect, it } from "vitest";
-import { resolveSubagents, subagentTier, SUBAGENT_TIERS } from "./automaticSubagents";
+import {
+  resolveSubagents,
+  subagentTier,
+  SUBAGENT_TIERS,
+  subagentCatalogModels,
+  automaticSubagentEmptyReason,
+} from "./automaticSubagents";
 import {
   carryCrossDelegation,
   decodeSubagentSelection,
   encodeSubagents,
   providerModelSettings,
 } from "./host-contracts/delegation";
+
+it("uses the catalog provider key even for absent or inconsistent harness fields", () => {
+  const models = subagentCatalogModels({
+    codex: [{ id: "codex:one" }, { id: "codex:two", harness: "claude" }],
+  });
+  expect(models.map((model) => model.harness)).toEqual(["codex", "codex"]);
+  expect(resolveSubagents("auto", { harness: "codex", models, providers: ["codex"] })).toHaveLength(
+    2,
+  );
+});
+
+it("explains disabled models without mistaking them for signed-out accounts", () => {
+  expect(
+    automaticSubagentEmptyReason({
+      harness: "codex",
+      models: [{ id: "codex:one", harness: "codex", enabled: false }],
+      providers: ["codex"],
+    }),
+  ).toBe("no enabled models");
+});
 
 it("round trips Automatic and carries the ceiling without exposing either to providers", () => {
   expect(decodeSubagentSelection("auto")).toBe("auto");

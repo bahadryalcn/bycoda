@@ -544,6 +544,12 @@ const CONNECTION_REFUSED: &str =
 fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
     const GIT_MUTATION: std::time::Duration = std::time::Duration::from_secs(450);
     match method {
+        // A reviewed page can publish 500 files, including Windows permission-preserving replacements.
+        "workspace.run"
+            if params.get("command").and_then(Value::as_str) == Some("replace_project") =>
+        {
+            std::time::Duration::from_secs(1800)
+        }
         // The isolated assistant reply adapter permits a 90 s model turn.
         // Keep its durable request identity through that bounded operation.
         "assistant.request" if params.get("op").and_then(Value::as_str) == Some("threads.send") => {
@@ -906,6 +912,7 @@ fn rpc_operation(method: &str, params: &Value) -> String {
                     | "git_worktrees"
                     | "list_claude_commands"
                     | "list_dir"
+                    | "replace_project"
                     | "list_project_files"
                     | "list_skills"
                     | "move_path"
@@ -3400,6 +3407,24 @@ mod recovery_ws_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn search_replace_rpc_deadline_outlasts_per_file_publication() {
+        assert_eq!(
+            super::rpc_timeout(
+                "workspace.run",
+                &serde_json::json!({"command":"replace_project"})
+            ),
+            std::time::Duration::from_secs(1800),
+        );
+        assert_eq!(
+            super::rpc_operation(
+                "workspace.run",
+                &serde_json::json!({"command":"replace_project"})
+            ),
+            "workspace.run:replace_project",
+        );
+    }
+
     #[test]
     fn public_device_reply_retirement_preserves_post_effect_unknown_classification() {
         use crate::host_ws::tests::{accept, hello, next, result, Server};

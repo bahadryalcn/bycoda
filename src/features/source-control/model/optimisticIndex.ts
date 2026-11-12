@@ -25,6 +25,17 @@ export function applyCommit(index: GitDiffIndex, all: boolean): GitDiffIndex {
 }
 
 /**
+ * The index as it reads once a push, publish or sync has succeeded: nothing
+ * left to send or receive. Commits a pull brought in wait for the reload.
+ */
+export function applySync(index: GitDiffIndex): GitDiffIndex {
+  const upstream =
+    index.upstream ??
+    (index.remote && index.branch ? `${index.remote}/${index.branch}` : index.upstream);
+  return { ...index, upstream, ahead: 0, behind: 0, headPushed: true };
+}
+
+/**
  * The index as it will read once `action` has run on one file (`relative`) or
  * on every file it applies to. The Changes panel shows this at once and lets
  * the reload that follows the git command confirm or correct it.

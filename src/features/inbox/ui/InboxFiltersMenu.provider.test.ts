@@ -5,7 +5,9 @@ import { expect, it, vi } from "vitest";
 import { InboxFiltersMenu } from "./InboxFiltersMenu";
 import { DEFAULT_INBOX_FILTERS } from "../model/inboxFilters";
 vi.mock("../../../shared/ui/Popover", async () => ({
-  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>("../../../shared/ui/Popover")),
+  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>(
+    "../../../shared/ui/Popover",
+  )),
   Popover: ({ children }: { children: ReactNode }) => children,
 }));
 it("shows Jira assignment and workflow selectors and clears every persisted filter", async () => {

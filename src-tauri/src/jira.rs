@@ -2,6 +2,7 @@ use crate::integrations::http::string_field;
 pub mod board;
 pub mod comments;
 pub mod filters;
+mod mention_search;
 pub(crate) mod room_inbox;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -186,7 +187,29 @@ pub async fn jira_list_issues(
             return Ok(Vec::new());
         };
         let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 100);
-        let jql = filters.unwrap_or_default().jql(assigned_to_me, &state, &project_ids)?;
+        let filters = filters.unwrap_or_default();
+        mention_search::validate_projects(&project_ids)?;
+        if filters.exact_key {
+            let key = require_issue_key(&filters.search)?;
+            let data = jira_get(
+                &config,
+                &format!("/rest/api/3/issue/{key}?fields={}", ISSUE_FIELDS.join(",")),
+            )?;
+            let mut issues = parse_jira_issues(&json!({ "issues": [data] }), &config.site)?;
+            issues.retain(|issue| project_ids.is_empty() || project_ids.contains(&issue.team_id));
+            return Ok(issues);
+        }
+        if filters.issue_picker {
+            return mention_search::picker_issues(
+                &config,
+                &filters,
+                assigned_to_me,
+                &state,
+                &project_ids,
+                limit,
+            );
+        }
+        let jql = filters.jql(assigned_to_me, &state, &project_ids)?;
         let data = jira_post(
             &config,
             "/rest/api/3/search/jql",
@@ -1216,7 +1239,10 @@ mod tests {
             "avatarUrls": { "48x48": " ", "32x32": " https://avatar.example/ada.png " } });
         assert_eq!(
             person_fields(Some(&person)),
-            (Some("account-42".into()), "https://avatar.example/ada.png".into())
+            (
+                Some("account-42".into()),
+                "https://avatar.example/ada.png".into()
+            )
         );
         assert_eq!(person_fields(None), (None, String::new()));
     }

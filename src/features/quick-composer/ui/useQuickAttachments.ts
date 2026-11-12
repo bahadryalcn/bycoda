@@ -325,11 +325,7 @@ export function useQuickAttachments(
       const chosen = paths.slice(0, MAX_ATTACHMENTS);
       const files = await attachmentsFromPaths(chosen);
       if (!files.length)
-        throw new Error(
-          t(
-            "Nothing to attach from that path — the file may have been moved, renamed, or deleted.",
-          ),
-        );
+        throw new Error(t("Nothing to attach. The file may have been moved, renamed, or deleted."));
       return {
         files,
         ...(chosen.length < paths.length

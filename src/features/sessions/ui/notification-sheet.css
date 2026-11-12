@@ -19,6 +19,15 @@
   flex-direction: column;
   gap: 4px;
 }
+/* A floating request popup is a card on the shared floating surface, the same
+   roles as a toast. Colour only: the ActionHost paints hover and press above it
+   as background images. */
+.notification-request {
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-popup);
+  background-color: var(--ui-surface-floating);
+  box-shadow: var(--ui-elevation-floating);
+}
 /* Pending and History rows share one flat anatomy inside the sheet: title,
    short content, secondary source/time. Floating popups keep their own card
    surface outside the sheet. */

@@ -1,6 +1,7 @@
 import { createClassicRenderer } from "./canvas-paired-classic";
 import { createWalkerRenderer } from "./canvas-paired-worker";
 import { compareSequence, type PairedRenderer } from "./paired-proof";
+import { CLASSIC_SIGN_REGION } from "./classic-sign-parity";
 import {
   createPacingRoute,
   GESTURE_SECONDS,
@@ -16,8 +17,10 @@ export type ProofOptions =
       count: number;
       renderer: "auto" | "canvas";
       path?: "main" | "worker";
-      scenario?: "growth" | "arrivals";
+      scenario?: "growth" | "arrivals" | "color";
       signFailed?: boolean;
+      color?: boolean;
+      context?: number;
     }
   | { kind: "dots"; dark: boolean };
 type Frame = { time: number; stand: number; presence: number };
@@ -163,6 +166,7 @@ async function runPairedProof(options: ProofOptions) {
         sequence(options),
         reference.width,
         reference.height,
+        options.kind === "crew" && !options.signFailed ? CLASSIC_SIGN_REGION : undefined,
       )),
       gpu: [reference.gpu, candidate.gpu],
       backend: [reference.backend, candidate.backend],
@@ -183,7 +187,27 @@ async function checkPairedHarness() {
     capture: () => new Uint8ClampedArray([candidate && acknowledged === 0 ? 1 : 0, 0, 0, 255]),
     png: () => "data:image/png;base64,",
   });
-  return compareSequence(renderer(false), renderer(true), [0, 1], 1, 1);
+  const exact = await compareSequence(renderer(false), renderer(true), [0, 1], 1, 1);
+  const regionalRenderer = (candidate: boolean): PairedRenderer<number> => ({
+    draw(frame) {
+      acknowledged = frame;
+    },
+    capture() {
+      const pixels = new Uint8ClampedArray(16);
+      if (candidate) pixels[acknowledged * 4] = 1;
+      return pixels;
+    },
+    png: () => "data:image/png;base64,",
+  });
+  const regional = await compareSequence(
+    regionalRenderer(false),
+    regionalRenderer(true),
+    [0, 1, 2, 3, 1],
+    4,
+    1,
+    { x: 1, y: 0, width: 2, height: 1 },
+  );
+  return { ...exact, regional };
 }
 window.runPairedProof = runPairedProof;
 window.checkPairedHarness = checkPairedHarness;

@@ -53,7 +53,6 @@ import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
 import { ModelPanel } from "./ModelPanel";
 import { Popover, popupListClassName } from "../../../shared/ui/Popover";
-import { MOD } from "../../../platform/tauri/platform";
 import { keybindingPressed } from "../../settings/public/settings";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import "./ModelPicker.css";
@@ -223,9 +222,8 @@ export function ModelPicker({
   const search = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   const openRef = useRef(open);
-  const recentOpenRef = useRef(recentMenu != null);
   const currentRef = useRef<AgentModel | null>(null);
-  const lastHotkey = useRef(0);
+  const lastHotkey = useRef(-Infinity);
 
   const current = source.resolve(harness, model);
   const field = presentation === "field";
@@ -390,9 +388,6 @@ export function ModelPicker({
   }, [recentMenu, pickerHarnesses, catalogVersion]);
   const recentOpen = recentMenu != null && recentModels.length > 0;
   const recentIndex = clampActiveIndex(recentActive, recentModels.length);
-  useLayoutEffect(() => {
-    recentOpenRef.current = recentOpen;
-  }, [recentOpen]);
 
   const visibleModels = useMemo(
     () =>
@@ -449,7 +444,10 @@ export function ModelPicker({
     setOpen(false);
     setRecentMenu(null);
     setAccountListOpen(false);
-    if (restore) onCloseRef.current?.();
+    if (restore) {
+      button.current?.focus({ preventScroll: true });
+      onCloseRef.current?.();
+    }
   };
 
   // Every open starts from the current provider with a fresh list, search and favorites.
@@ -486,15 +484,6 @@ export function ModelPicker({
     setRecentMenu({ models });
   };
 
-  const toggleRecentMenu = () => {
-    if (recentOpenRef.current) {
-      setRecentMenu(null);
-      onCloseRef.current?.();
-    } else {
-      openRecentMenu();
-    }
-  };
-
   // A bumped request opens the picker from outside (also on mount).
   if (openRequest !== seenOpenRequest) {
     setSeenOpenRequest(openRequest);
@@ -505,10 +494,11 @@ export function ModelPicker({
   }
 
   const toggleFromHotkey = () => {
+    // Native menu accelerators can arrive alongside the webview key event.
     const now = performance.now();
     if (now - lastHotkey.current < 80) return;
     lastHotkey.current = now;
-    toggleRecentMenu();
+    togglePicker();
   };
 
   // Source object/catalog updates must not reset a live menu or refresh the remote catalog in a loop.
@@ -534,10 +524,9 @@ export function ModelPicker({
     };
 
     const onKey = (event: KeyboardEvent) => {
-      if (event.isComposing) return;
+      if (event.isComposing || event.repeat) return;
       const mod = event.metaKey || event.ctrlKey;
-      const defaultSwitch =
-        mod && !event.altKey && !event.shiftKey && (event.key === "." || event.code === "Period");
+      const defaultSwitch = mod && !event.altKey && event.shiftKey && event.code === "Period";
       if (hotkeys && keybindingPressed("App: Switch Model", event, defaultSwitch)) {
         if (!openRef.current && inBlockingUi(event.target)) return;
         event.preventDefault();
@@ -675,11 +664,7 @@ export function ModelPicker({
 
         shortcut={hotkeys ? switchShortcut : null}
 
-        label={t("{p0} · Recent models: right-click or {p1}.", {
-          p0: triggerTitle,
-
-          p1: MOD,
-        })}
+        label={triggerTitle}
       >
         <Trigger
           {...(field
@@ -688,6 +673,7 @@ export function ModelPicker({
           className={field ? "bycoda-arc-select" : "w-auto max-w-full min-w-0 shrink-0"}
           data-model-picker-presentation={presentation}
           ref={button}
+          motion="none"
           type="button"
           aria-label={
             inheritSelected

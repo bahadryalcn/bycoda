@@ -21,6 +21,8 @@ const saveGeneratedImage = vi.hoisted(() =>
   })),
 );
 const deleteGeneratedImages = vi.hoisted(() => vi.fn(async () => undefined));
+const mcpBridge = vi.hoisted(() => vi.fn(async (): Promise<unknown> => null));
+vi.mock("../../core/conversationToolsBridge", () => ({ conversationToolsBridge: mcpBridge }));
 
 beforeEach(() => processConstructions.reset());
 vi.mock("../../core/child", () =>
@@ -123,6 +125,8 @@ async function startTurn(
     model?: string;
     resolvedModel?: string;
     skillPolicy?: { disabledNames: string[]; disabledPaths: string[] };
+    modelSettings?: Record<string, string>;
+    mcpConfig?: Record<string, unknown>;
   } = {},
 ) {
   const events: HarnessEvent[] = [];
@@ -136,7 +140,7 @@ async function startTurn(
     sessionId,
     cwd: "/repo",
     model: options.model ?? "codex:gpt-5.4",
-    modelSettings: {},
+    modelSettings: options.modelSettings ?? {},
     skillPolicy: options.skillPolicy,
     providerAccountId: options.providerAccountId,
     runtimeMode: options.runtimeMode ?? "supervised",
@@ -153,6 +157,12 @@ async function startTurn(
 
   await waitFor(() => parse().some((m) => m.method === "initialize"), "initialize");
   reply(parse().find((m) => m.method === "initialize")!.id as number, {});
+  if (options.mcpConfig) {
+    await waitFor(() => parse().some((m) => m.method === "config/read"), "MCP configuration");
+    const request = parse().find((m) => m.method === "config/read")!;
+    expect(request.params).toEqual({ includeLayers: false, cwd: "/repo" });
+    reply(request.id as number, { config: options.mcpConfig });
+  }
   if (options.skillPolicy) {
     await waitFor(() => parse().some((m) => m.method === "config/read"), "skill configuration");
     reply(parse().find((m) => m.method === "config/read")!.id as number, {
@@ -213,6 +223,62 @@ async function startTurn(
 }
 
 describe("codex live turn sequence", () => {
+  it.each([false, true])("disables only loaded MCP tables (project loaded: %s)", async (loaded) => {
+    mcpBridge.mockResolvedValueOnce({
+      externalMcp: { servers: [], disable: { codex: ["shadcn", "openaiDeveloperDocs"] } },
+    });
+    const { turn } = await startTurn("codex-mcp-config", {
+      mcpConfig: loaded
+        ? {
+            mcp_servers: {
+              shadcn: { command: "npx", args: ["-y", "shadcn@latest", "mcp"] },
+              openaiDeveloperDocs: { url: "https://developers.openai.com/mcp" },
+            },
+          }
+        : {},
+    });
+    const config = (
+      parse().find((entry) => entry.method === "thread/start")?.params as { config?: unknown }
+    )?.config;
+    expect(config).toEqual(
+      loaded
+        ? {
+            "mcp_servers.shadcn.enabled": false,
+            "mcp_servers.openaiDeveloperDocs.enabled": false,
+          }
+        : {},
+    );
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await turn;
+    await stopCodexSession("codex-mcp-config");
+  });
+  it("restarts and resumes when native subagent policy changes", async () => {
+    const sessionId = "codex-native-policy";
+    for (const [index, policy] of ["on", "off", "on"].entries()) {
+      sent.length = 0;
+      const { turn } = await startTurn(sessionId, {
+        expectResume: index > 0,
+        modelSettings: { nativeSubagents: policy },
+      });
+      const request = parse().find(
+        (entry) => entry.method === (index ? "thread/resume" : "thread/start"),
+      );
+      expect(request?.params).toMatchObject({
+        config: {
+          "agents.enabled": policy === "on",
+          "features.multi_agent": policy === "on",
+          "features.multi_agent_v2": false,
+        },
+      });
+      expect(processConstructions.created.filter((p) => p.sessionId === sessionId)).toHaveLength(
+        index + 1,
+      );
+      notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+      await turn;
+    }
+    await stopCodexSession(sessionId);
+  });
+
   // Real provider + real RPC multiplexer, explicit protocol process/writer
   // fixture. It does not claim Native/Host control receipt or provider ACK proof.
   it("keeps one warm process with distinct A/B writer scopes and refuses stale A control after B closes", async () => {

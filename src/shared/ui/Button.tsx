@@ -35,6 +35,8 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   tone?: ButtonTone | "error";
   size?: ButtonSize;
   shape?: ButtonShape;
+  /** Fill the parent row height, including a disclosure rail beside multiple input rows. */
+  stretch?: boolean;
   /** Visual selection only. The owning interaction supplies its appropriate ARIA state. */
   selected?: boolean;
   loading?: boolean;
@@ -160,6 +162,7 @@ const isTrue = (value: unknown) => value === true || value === "true";
  */
 export function Button({
   variant = "secondary",
+  stretch = false,
   tone,
   size = "sm",
   shape = "default",
@@ -308,6 +311,7 @@ export function Button({
     styles.control,
     styles[hierarchy],
     iconOnly ? styles.iconOnly : "",
+    stretch ? styles.stretch : "",
     inset ? styles.inset : "",
     insetText ? styles.insetText : "",
     fullWidth ? styles.fullWidth : "",

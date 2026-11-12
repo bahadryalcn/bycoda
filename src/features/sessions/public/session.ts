@@ -12,3 +12,5 @@ export {
   sessionWorkCwd,
 } from "../model/session";
 export type { RuntimeMode, Session, HarnessId } from "../model/session";
+
+export { HARNESSES } from "../model/session";

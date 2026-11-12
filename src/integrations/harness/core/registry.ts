@@ -14,7 +14,11 @@ import {
   withRuntimeHint,
 } from "./runtimeGuidance";
 import { providerInput, providerInputCopy, providerTurnInput } from "./providerInput";
-import { conversationDelegationReady, delegationFallback } from "./delegationReadiness";
+import {
+  conversationDelegationReady,
+  delegationFallback,
+  delegationNotice,
+} from "./delegationReadiness";
 import type { GeneratedSessionTitle } from "../../../features/sessions/model/sessionTitle";
 import type { PrContent } from "../../../features/source-control/model/gitText";
 import {
@@ -50,6 +54,7 @@ import {
 import { drainRetirementsForWriter, retireProviderOwner } from "./providerRetirement";
 import { beginHandoffPhase } from "./handoffPhase";
 import { formatDuration } from "../../../shared/i18n/format";
+import { t } from "../../../shared/i18n/core";
 import { TurnNotReadyError } from "./types";
 import { retireProviderEpoch, retireProviderOwnerAndCommands } from "./providerEpoch";
 import { releaseOwnedOpenCodeForCapability } from "../providers/opencode/opencodeService";
@@ -715,7 +720,11 @@ export function sendHarnessTurn(
           [runtime, fallback].filter(Boolean).join("\n"),
         );
         if (fallback)
-          input.onEvent({ type: "status", key: "delegation-unavailable", text: fallback });
+          input.onEvent({
+            type: "status",
+            key: "delegation-unavailable",
+            text: t(delegationNotice(fallback)),
+          });
         const text =
           input.harness === "codex" ? input.text : withRuntimeHint(input.harness, input.text, hint);
         const deliversHint = turnCarriesRuntimeHint(input.harness, input.text, text, hint);
@@ -1045,7 +1054,7 @@ function createTurnWatchdog(
       timer = undefined;
       warned = true;
       notify(
-        `${harness} has not sent anything for ${formatDuration(warnAfterMs)}. It may still be working; Stop ends the turn.`,
+        `No response from ${harness} in ${formatDuration(warnAfterMs)}. It may still be working. Press Stop to end the turn.`,
       );
     }, warnAfterMs);
   };

@@ -7,6 +7,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
+mod mention_search;
 
 const LINEAR_API: &str = "https://api.linear.app/graphql";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -142,13 +143,21 @@ pub async fn linear_list_issues(
     state: String,
     team_ids: Vec<String>,
     limit: Option<u32>,
+    search: Option<String>,
+    exact: Option<bool>,
 ) -> Result<Vec<LinearIssue>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let Some(token) = read_token(&app)? else {
             return Ok(Vec::new());
         };
         let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 100);
-        let filter = issue_filter(assigned_to_me, &state, &team_ids);
+        let mut filter = issue_filter(assigned_to_me, &state, &team_ids);
+        if let Some(search) = search.filter(|s| !s.trim().is_empty()) {
+            filter["and"] = json!([mention_search::search_filter(
+                &search,
+                exact.unwrap_or(false)
+            )?]);
+        }
         let data = graphql_with_token(
             &token,
             ISSUES_QUERY,

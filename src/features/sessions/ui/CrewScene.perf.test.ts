@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CrewScene } from "./CrewScene";
+import { createCodeArtPainter } from "./crewCodeArt";
 
 const state = vi.hoisted(() => ({ enabled: true, paint: vi.fn(), dispose: vi.fn() }));
 vi.mock("../../settings/model/decorativeMotion", () => ({
@@ -16,7 +17,7 @@ vi.mock("./crewCodeArt", () => ({
   SIGN_HEIGHT: 58,
   CREW_TOP: 0,
   loadCrewSignLogo: () => Promise.resolve(),
-  createCodeArtPainter: () => Object.assign(state.paint, { dispose: state.dispose }),
+  createCodeArtPainter: vi.fn(() => Object.assign(state.paint, { dispose: state.dispose })),
 }));
 
 let root: Root;
@@ -29,6 +30,8 @@ beforeEach(() => {
   });
   state.enabled = true;
   state.paint.mockClear();
+  vi.mocked(createCodeArtPainter).mockClear();
+  state.dispose.mockClear();
   localStorage.clear();
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(900);
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
@@ -81,6 +84,35 @@ const enter = () =>
 const settle = (ms = 5_000) => act(() => vi.advanceTimersByTime(ms));
 
 describe("crew scene background loop", () => {
+  it("starts the existing wall clock when an initially paused scene becomes visible", () => {
+    show(3, true);
+    enter();
+    settle(6_000);
+    show(3, false);
+    expect(state.paint.mock.calls.at(-1)?.[3]).toBe(6_000);
+  });
+  it("retains painter and last frame across pause toggles on the existing wall clock", () => {
+    show(3);
+    enter();
+    settle(1_000);
+    const creations = vi.mocked(createCodeArtPainter).mock.calls.length;
+    const paints = state.paint.mock.calls.length;
+    const disposals = state.dispose.mock.calls.length;
+    show(3, true);
+    expect(createCodeArtPainter).toHaveBeenCalledTimes(creations);
+    expect(state.dispose).toHaveBeenCalledTimes(disposals);
+    expect(state.paint).toHaveBeenCalledTimes(paints);
+    expect(vi.getTimerCount()).toBe(0);
+    settle(5_000);
+    show(3, false);
+    expect(createCodeArtPainter).toHaveBeenCalledTimes(creations);
+    expect(state.dispose).toHaveBeenCalledTimes(disposals);
+    expect(state.paint.mock.calls.at(-1)?.[3]).toBe(6_000);
+    expect(vi.getTimerCount()).toBe(1);
+    show(3, true);
+    expect(createCodeArtPainter).toHaveBeenCalledTimes(creations);
+    expect(vi.getTimerCount()).toBe(0);
+  });
   // perf P6: no repaint timer for a crew that is not working.
   it("keeps no repeating timer while no agent is working", () => {
     show(0);

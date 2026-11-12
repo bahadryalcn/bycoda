@@ -1,3 +1,5 @@
+pub mod replace;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -135,7 +137,10 @@ fn search_project_sync(
         });
     }
 
-    if let Some(result) = git_grep(root, options, query, cancel) {
+    if let Some(result) = (!options.regex)
+        .then(|| git_grep(root, options, query, cancel))
+        .flatten()
+    {
         return Ok(result);
     }
 
@@ -290,9 +295,7 @@ fn scan_files(
             truncated: false,
         });
     }
-    if options.regex {
-        return Err("Regex search could not run. Check the expression and Git availability, or turn off regex search.".into());
-    }
+    let pattern = replace::pattern(options)?;
 
     let files = list_project_files_sync_cancellable(&root.to_string_lossy(), Some(cancel))?;
     if cancel.load(Ordering::Acquire) {
@@ -340,7 +343,14 @@ fn scan_files(
         };
 
         for (index, line) in content.lines().enumerate() {
-            if let Some(column) = find_on_line(line, &needle, options) {
+            if let Some(column) = if options.regex {
+                pattern
+                    .find_iter(line)
+                    .find(|m| !options.whole_word || is_word_boundary(line, m.start(), m.len()))
+                    .map(|m| (line[..m.start()].encode_utf16().count() + 1) as u32)
+            } else {
+                find_on_line(line, &needle, options)
+            } {
                 matches.push(SearchMatch {
                     path: file.path.clone(),
                     relative: file.relative.clone(),
@@ -625,13 +635,17 @@ mod tests {
     }
 
     #[test]
-    fn regex_fallback_reports_unavailability_instead_of_false_empty_results() {
-        let mut options = options(Path::new("."), "item.*");
+    fn regex_fallback_supports_captures_and_reports_invalid_patterns() {
+        let project = tmp("regex-fallback");
+        std::fs::write(project.0.join("a.txt"), "prefix item12").unwrap();
+        let mut options = options(&project.0, "item([[:digit:]]+)");
         options.regex = true;
         let cancel = AtomicBool::new(false);
-        assert!(scan_files(Path::new("."), &options, "item.*", &cancel)
-            .unwrap_err()
-            .contains("Regex search could not run"));
+        let result = scan_files(&project.0, &options, &options.query, &cancel).unwrap();
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].column, 8);
+        options.query = "(".into();
+        assert!(scan_files(&project.0, &options, &options.query, &cancel).is_err());
     }
 
     #[test]

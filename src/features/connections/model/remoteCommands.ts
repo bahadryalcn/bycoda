@@ -103,6 +103,7 @@ export const HOST_COMMANDS = new Set([
   "git_worktrees",
   "git_submodules",
   "search_project",
+  "replace_project",
   "cancel_project_search",
   "list_skills",
   "skill_policy_get",

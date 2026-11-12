@@ -366,7 +366,7 @@ function EmailCopyButton({ text }: { text: string }) {
   const t = useT();
   const [copied, setCopied] = useTransientFlag(1500);
   const [failed, setFailed] = useState(false);
-  const label = failed ? t("Copy failed — try again") : copied ? t("Copied") : t("Copy");
+  const label = failed ? t("Copy failed. Try again.") : copied ? t("Copied") : t("Copy");
   return (
     <Button
       motion="none"
@@ -641,8 +641,8 @@ function CodeCopyButton({
       variant="ghost"
       className={`markdown-code-copy${copied ? " is-copied" : ""}${failed ? " is-failed" : ""} ${className}`}
       type="button"
-      tooltip={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
-      aria-label={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
+      tooltip={failed ? t("Copy failed. Try again.") : copied ? t("Copied") : label}
+      aria-label={failed ? t("Copy failed. Try again.") : copied ? t("Copied") : label}
 
       onClick={() => {
         copy(() => copyText(getText ? getText() : code.replace(/\r?\n$/, "")));

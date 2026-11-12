@@ -183,7 +183,7 @@
     "src/features/assistant/ui/room/Jobs.module.css": {
       "interaction-state": 1,
       "spacing-step": 4,
-      "surface-style": 5
+      "surface-style": 3
     },
     "src/features/assistant/ui/room/NotesTab.module.css": {
       "interaction-state": 1,
@@ -290,9 +290,6 @@
     "src/features/connections/ui/TermiusImportDialog.tsx": {
       "surface-style": 2
     },
-    "src/features/crews/ui/CrewAppearancePicker.tsx": {
-      "fixed-control-size": 1
-    },
     "src/features/crews/ui/CrewDialogs.tsx": {
       "surface-style": 1
     },
@@ -371,10 +368,6 @@
     "src/features/files/ui/FilePicker.tsx": {
       "surface-style": 2
     },
-    "src/features/files/ui/FilePickerLists.tsx": {
-      "fixed-control-size": 2,
-      "portal-outside-shared": 2
-    },
     "src/features/files/ui/FilePreview.tsx": {
       "interaction-state": 1,
       "surface-style": 1
@@ -383,10 +376,8 @@
       "surface-style": 2
     },
     "src/features/files/ui/FileTree.tsx": {
-      "fixed-control-size": 1,
       "inline-style-property": 4,
-      "spacing-step": 2,
-      "surface-style": 1
+      "spacing-step": 2
     },
     "src/features/files/ui/HtmlPreview.tsx": {
       "native-title": 1
@@ -563,12 +554,10 @@
       "surface-style": 1
     },
     "src/features/projects/ui/FolderPicker.tsx": {
-      "fixed-control-size": 1,
-      "interaction-state": 3,
       "native-title": 1,
       "portal-outside-shared": 1,
       "spacing-step": 1,
-      "surface-style": 9
+      "surface-style": 8
     },
     "src/features/projects/ui/NewSessionProjectDialog.tsx": {
       "surface-style": 1
@@ -597,8 +586,7 @@
       "surface-style": 1
     },
     "src/features/projects/ui/SearchableProjectPicker.tsx": {
-      "fixed-control-size": 2,
-      "surface-style": 4
+      "surface-style": 1
     },
     "src/features/providers/ui/AccountColorDot.tsx": {
       "inline-style-property": 1
@@ -618,10 +606,6 @@
     },
     "src/features/quick-composer/ui/QuickGitPopup.tsx": {
       "ui-wrapper-import": 1
-    },
-    "src/features/quick-composer/ui/QuickModelSelector.tsx": {
-      "portal-outside-shared": 1,
-      "surface-style": 4
     },
     "src/features/quick-composer/ui/QuickPermissions.tsx": {
       "surface-style": 2
@@ -692,11 +676,6 @@
     "src/features/sessions/ui/DocumentImage.tsx": {
       "inline-style-property": 1
     },
-    "src/features/sessions/ui/FileMentionPicker.tsx": {
-      "portal-outside-shared": 1,
-      "spacing-step": 1,
-      "surface-style": 1
-    },
     "src/features/sessions/ui/HandoffMiniCard.tsx": {
       "surface-style": 2
     },
@@ -723,10 +702,7 @@
       "surface-style": 1
     },
     "src/features/sessions/ui/ModelBrowser.tsx": {
-      "fixed-control-size": 1,
-      "inline-style-property": 1,
-      "portal-outside-shared": 1,
-      "surface-style": 2
+      "inline-style-property": 1
     },
     "src/features/sessions/ui/ModelExtras.tsx": {
       "spacing-step": 2,
@@ -752,8 +728,7 @@
       "spacing-step": 1
     },
     "src/features/sessions/ui/NotificationRequestCard.tsx": {
-      "spacing-step": 1,
-      "surface-style": 2
+      "spacing-step": 1
     },
     "src/features/sessions/ui/PlanPreview.tsx": {
       "spacing-step": 4
@@ -767,9 +742,8 @@
     },
     "src/features/sessions/ui/QuestionForm.module.css": {
       "fixed-control-size": 1,
-      "interaction-state": 2,
       "spacing-step": 3,
-      "surface-style": 4
+      "surface-style": 1
     },
     "src/features/sessions/ui/ReminderNotices.tsx": {
       "surface-style": 2
@@ -1076,10 +1050,6 @@
       "interaction-state": 2,
       "surface-style": 9
     },
-    "src/features/social/ui/accounts/accounts.css": {
-      "interaction-state": 2,
-      "surface-style": 3
-    },
     "src/features/social/ui/audience/audience.css": {
       "spacing-step": 3,
       "surface-style": 10
@@ -1096,7 +1066,7 @@
     },
     "src/features/social/ui/common/activity-row.css": {
       "spacing-step": 1,
-      "surface-style": 7
+      "surface-style": 6
     },
     "src/features/social/ui/common/common.css": {
       "spacing-step": 2,
@@ -1110,7 +1080,7 @@
     },
     "src/features/social/ui/content/content.css": {
       "spacing-step": 4,
-      "surface-style": 14
+      "surface-style": 11
     },
     "src/features/social/ui/inbox/inbox.css": {
       "spacing-step": 5,
@@ -1123,8 +1093,7 @@
       "surface-style": 4
     },
     "src/features/source-control/ui/ChangeRow.tsx": {
-      "fixed-control-size": 2,
-      "interaction-state": 1
+      "fixed-control-size": 2
     },
     "src/features/source-control/ui/CheckoutHeader.module.css": {
       "spacing-step": 1,
@@ -1190,11 +1159,6 @@
     "src/features/source-control/ui/GitStashSection.tsx": {
       "fixed-control-size": 1
     },
-    "src/features/source-control/ui/SidebarWorktreeSwitcher.tsx": {
-      "fixed-control-size": 1,
-      "portal-outside-shared": 1,
-      "surface-style": 2
-    },
     "src/features/source-control/ui/SourceControl.tsx": {
       "spacing-step": 1,
       "surface-style": 2
@@ -1209,7 +1173,6 @@
       "spacing-step": 1
     },
     "src/features/source-control/ui/WorktreePicker.tsx": {
-      "portal-outside-shared": 1,
       "surface-style": 2
     },
     "src/features/source-control/ui/WorktreesPage.module.css": {
@@ -1234,26 +1197,21 @@
       "surface-style": 3
     },
     "src/features/tasks/ui/task-board.css": {
-      "interaction-state": 3,
+      "interaction-state": 2,
       "spacing-step": 1,
-      "surface-style": 13
+      "surface-style": 10
     },
     "src/features/tasks/ui/task-detail.css": {
       "spacing-step": 1,
       "surface-style": 1
     },
     "src/features/tasks/ui/task-form.css": {
-      "interaction-state": 1,
       "spacing-step": 1,
       "surface-style": 1
     },
     "src/features/tasks/ui/task-goals.css": {
       "spacing-step": 2,
-      "surface-style": 5
-    },
-    "src/features/tasks/ui/task-list.css": {
-      "interaction-state": 1,
-      "surface-style": 2
+      "surface-style": 3
     },
     "src/features/tasks/ui/task-ops.css": {
       "spacing-step": 2,
@@ -1264,7 +1222,6 @@
       "surface-style": 1
     },
     "src/features/tasks/ui/tasks.css": {
-      "interaction-state": 1,
       "surface-style": 5
     },
     "src/features/terminal/model/terminalRenderingPolicy.ts": {
@@ -1273,15 +1230,9 @@
     "src/features/terminal/runtime/terminalTheme.ts": {
       "theme-palette-literal": 37
     },
-    "src/features/terminal/ui/LocalTerminalSuggestions.tsx": {
-      "portal-outside-shared": 1
-    },
     "src/features/terminal/ui/ProjectTerminalDock.tsx": {
       "inline-style-property": 2,
       "surface-style": 5
-    },
-    "src/features/terminal/ui/RemoteShellSuggestions.tsx": {
-      "portal-outside-shared": 1
     },
     "src/features/terminal/ui/TerminalTools.module.css": {
       "interaction-state": 4,
@@ -1384,9 +1335,6 @@
     "src/shared/ui/ActionHost.tsx": {
       "component-family-choice": 1
     },
-    "src/shared/ui/Alert.tsx": {
-      "component-metadata": 5
-    },
     "src/shared/ui/AnsiText.tsx": {
       "component-family-choice": 1
     },
@@ -1398,12 +1346,6 @@
     },
     "src/shared/ui/CapabilityStatus.tsx": {
       "component-orphan": 1
-    },
-    "src/shared/ui/ConfirmDialog.tsx": {
-      "component-metadata": 4
-    },
-    "src/shared/ui/ConfirmMorph.tsx": {
-      "component-metadata": 5
     },
     "src/shared/ui/ContinuousList.tsx": {
       "component-family-choice": 2
@@ -1428,9 +1370,6 @@
     "src/shared/ui/ExpandingSearch.tsx": {
       "component-family-choice": 1
     },
-    "src/shared/ui/FailureState.tsx": {
-      "component-metadata": 1
-    },
     "src/shared/ui/Field.tsx": {
       "component-family-choice": 1,
       "component-metadata": 1
@@ -1442,7 +1381,6 @@
       "component-family-choice": 1
     },
     "src/shared/ui/HoverCard.tsx": {
-      "component-metadata": 9,
       "component-orphan": 1
     },
     "src/shared/ui/ImageCompare.tsx": {
@@ -1454,9 +1392,6 @@
     },
     "src/shared/ui/Link.tsx": {
       "component-family-choice": 1
-    },
-    "src/shared/ui/LoadingCard.tsx": {
-      "component-metadata": 3
     },
     "src/shared/ui/MatchText.tsx": {
       "component-family-choice": 1
@@ -1471,9 +1406,6 @@
       "component-family-choice": 1,
       "component-metadata": 1,
       "portal-outside-shared": 3
-    },
-    "src/shared/ui/MorphSelect.tsx": {
-      "component-orphan": 1
     },
     "src/shared/ui/Motion.tsx": {
       "component-orphan": 1
@@ -1515,10 +1447,6 @@
     "src/shared/ui/Sheet.tsx": {
       "portal-outside-shared": 1
     },
-    "src/shared/ui/Shimmer.tsx": {
-      "component-metadata": 3,
-      "component-orphan": 1
-    },
     "src/shared/ui/ShortcutRecorder.tsx": {
       "component-family-choice": 1
     },
@@ -1529,16 +1457,10 @@
     "src/shared/ui/Timestamp.tsx": {
       "component-family-choice": 1
     },
-    "src/shared/ui/ToastCard.tsx": {
-      "component-family-choice": 1,
-      "component-metadata": 1
-    },
     "src/shared/ui/ToastRegion.tsx": {
-      "component-metadata": 4,
       "portal-outside-shared": 2
     },
     "src/shared/ui/TransientNotice.tsx": {
-      "component-metadata": 4,
       "portal-outside-shared": 1
     },
     "src/shared/ui/TreeRow.tsx": {

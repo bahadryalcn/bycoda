@@ -26,8 +26,9 @@ vi.mock("../../../integrations/harness/core/registry", () => ({
 }));
 
 vi.mock("../../../shared/ui/Popover", async () => ({
-  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>("../../../shared/ui/Popover")),
-  popupListClassName: "shared-popup-list",
+  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>(
+    "../../../shared/ui/Popover",
+  )),
   Popover: ({
     children,
     role,
@@ -54,7 +55,7 @@ vi.mock("../../../shared/ui/Popover", async () => ({
     createElement(
       "div",
       {
-        role: role ?? (kind === "menu" ? "menu" : undefined),
+        role: role ?? (kind === "menu" ? "menu" : kind === "dialog" ? "dialog" : undefined),
         className,
         tabIndex,
         onKeyDown,
@@ -1032,14 +1033,15 @@ describe("model picker", () => {
           key: ".",
           code: "Period",
           metaKey: true,
+          shiftKey: true,
           bubbles: true,
         }),
       );
     });
+    expect(container.querySelector('[role="menu"][aria-label="Recently used models"]')).toBeNull();
     expect(
-      container.querySelector('[role="menu"][aria-label="Recently used models"]'),
+      container.querySelector('[role="dialog"][aria-label="Model and settings"]'),
     ).not.toBeNull();
-    expect(container.querySelector('[role="menu"][aria-label="Model and settings"]')).toBeNull();
   });
 });
 

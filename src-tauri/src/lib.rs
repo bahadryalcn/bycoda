@@ -38,6 +38,7 @@ mod git_conflicts;
 mod git_submodules;
 mod git_watch;
 mod github_cli;
+mod github_mentions;
 mod github_review;
 mod gitlab;
 mod handoff_history;
@@ -795,6 +796,7 @@ pub fn run() {
             fs::git_github_work_item_thread,
             fs::git_github_work_item_comment,
             github_review::git_github_pr_review_context,
+            github_mentions::github_mention_prefix,
             github_review::git_github_pr_review,
             desktop_inbox_review::desktop_inbox_review,
             fs::git_github_pr_action,
@@ -959,6 +961,7 @@ pub fn run() {
             skills::skill_import,
             claude_commands::list_claude_commands,
             search::search_project,
+            search::replace::replace_project,
             search::cancel_project_search,
             cursor_store::cursor_tool_calls,
             cursor_store::cursor_subagent_runs,
@@ -1026,6 +1029,7 @@ pub fn run() {
             pi_usage::fetch_pi_usage,
             rate_limits::fetch_claude_usage,
             rate_limits::fetch_claude_usage_once,
+            rate_limits::consume_claude_limit_reset,
             rate_limits::fetch_opencode_go_usage,
             provider_usage::provider_usage_report,
             session_store::usage::session_usage_report,

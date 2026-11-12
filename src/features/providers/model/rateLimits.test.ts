@@ -159,14 +159,29 @@ describe("parseClaudeOAuthUsage", () => {
               ends_at: "2026-12-10T22:00:00+00:00",
               usable_now: true,
             },
-            { id: "two-left", label: "Fable reset", resets_left: 2, usable_now: false },
+            {
+              id: "two-left",
+              label: "Fable reset",
+              resets_left: 2,
+              usable_now: false,
+              type: "weekly",
+              gives_back_weekly: true,
+            },
+            { id: "by-clears", label: "Session", resets_left: 1, clears: ["five_hour"] },
             { id: "spent", label: "Spent", resets_left: 0 },
           ],
         },
       }),
     );
     expect(limits.session).toBeNull();
-    expect(limits.resetCredits?.availableCount).toBe(3);
+    expect(limits.resetCredits?.availableCount).toBe(4);
+    // The kind names the row: Fable give-back wins over the declared type.
+    expect(limits.resetCredits?.credits?.map((credit) => credit.kind)).toEqual([
+      "full",
+      "fable",
+      "fable",
+      "session",
+    ]);
     expect(limits.resetCredits?.credits?.[0]).toMatchObject({
       id: "full-reset-2611:0",
       status: "available",

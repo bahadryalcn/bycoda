@@ -107,19 +107,22 @@ export function useGitResource<T>(
       if (!quiet || !completed.has(key))
         setSnapshot((previous) => ({ ...previous, loading: true }));
       try {
-        let flight = flights.get(key) as Promise<T> | undefined;
+        // An explicit refresh follows a change: a read already running may
+        // predate it, so it is replaced, and its late answer is not kept.
+        let flight = force ? undefined : (flights.get(key) as Promise<T> | undefined);
         if (!flight) {
           const startedGeneration = generation;
+          const current = () => startedGeneration === generation && flights.get(key) === flight;
           flight = read()
             .then((data) => {
-              if (startedGeneration === generation) {
+              if (current()) {
                 writeCached(key, data);
                 completed.set(key, { at: Date.now(), error: null });
               }
               return data;
             })
             .catch((error) => {
-              if (startedGeneration === generation)
+              if (current())
                 completed.set(key, {
                   at: Date.now(),
                   error: error instanceof Error ? error.message : String(error),

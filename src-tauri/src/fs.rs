@@ -4298,17 +4298,18 @@ fn git_pr_status_for(root: &Path) -> Result<Option<GitPr>, String> {
         return Ok(None);
     };
     let repo = git_github_repo_for(root)?;
-    let head =
-        github_pr_head_filter(&repo, &branch).ok_or("Could not resolve pull request owner")?;
+    let (owner, _) = split_github_repo(&repo)?;
+    // `gh pr list --head` takes a bare branch name: "owner:branch" matches
+    // nothing. The head owner is checked on the returned rows instead.
     let json = gh_checked(
         root,
         &[
             "pr",
             "list",
             "--head",
-            &head,
+            &branch,
             "--json",
-            "number,title,url,state",
+            "number,title,url,state,headRepositoryOwner",
             "--limit",
             "20",
             "--state",
@@ -4316,12 +4317,7 @@ fn git_pr_status_for(root: &Path) -> Result<Option<GitPr>, String> {
         ],
     )?;
     let _: Vec<GitPr> = serde_json::from_str(&json).map_err(|error| error.to_string())?;
-    Ok(parse_gh_pr_list(&json))
-}
-
-fn github_pr_head_filter(repo: &str, branch: &str) -> Option<String> {
-    let (owner, _) = split_github_repo(repo).ok()?;
-    Some(format!("{owner}:{branch}"))
+    Ok(parse_gh_pr_list(&json, &owner))
 }
 
 fn git_github_repo_for(root: &Path) -> Result<String, String> {
@@ -5936,17 +5932,33 @@ fn parse_github_work_item(json: &str, kind: &str, repo: &str) -> Result<GitHubWo
         .ok_or_else(|| "GitHub did not return a work item".into())
 }
 
-fn parse_gh_pr_list(json: &str) -> Option<GitPr> {
+/// The open pull request, else the latest one, whose head branch lives in a
+/// repository of `owner`: a fork's branch of the same name is someone else's.
+// shortcut: the head owner is the repository owner; upgrade when a fork
+// checkout must find its own pull request against the parent.
+fn parse_gh_pr_list(json: &str, owner: &str) -> Option<GitPr> {
+    #[derive(Deserialize)]
+    struct Owner {
+        login: String,
+    }
     #[derive(Deserialize)]
     struct Row {
         number: i64,
         title: String,
         url: String,
         state: String,
+        #[serde(rename = "headRepositoryOwner", default)]
+        head_owner: Option<Owner>,
     }
     let rows: Vec<Row> = serde_json::from_str(json).ok()?;
     let mut best: Option<GitPr> = None;
     for row in rows {
+        if !row
+            .head_owner
+            .is_some_and(|head| head.login.eq_ignore_ascii_case(owner))
+        {
+            continue;
+        }
         let pr = GitPr {
             number: row.number,
             title: row.title,
@@ -8944,6 +8956,14 @@ pub async fn write_text_file(
 }
 
 pub(crate) fn write_text_file_sync(path: &str, content: &str) -> Result<(), String> {
+    write_text_file_sync_checked(path, content, || Ok(()))
+}
+
+pub(crate) fn write_text_file_sync_checked(
+    path: &str,
+    content: &str,
+    validate: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
     if content.len() as u64 > MAX_TEXT_FILE_BYTES {
         return Err(format!(
             "File is too large to save (maximum {} MB).",
@@ -9004,6 +9024,7 @@ pub(crate) fn write_text_file_sync(path: &str, content: &str) -> Result<(), Stri
                 .map_err(|e| e.to_string())?;
         }
         drop(file);
+        validate()?;
         rename_atomic_with_retry(&temporary_path, &destination).map_err(|e| e.to_string())?;
         if let Ok(dir) = std::fs::File::open(parent) {
             let _ = dir.sync_all();
@@ -12174,19 +12195,18 @@ mod tests {
 
     #[test]
     fn parse_gh_pr_list_prefers_open() {
-        let json = r#"[{"number":2,"title":"Old","url":"https://example.com/2","state":"MERGED"},{"number":3,"title":"Now","url":"https://example.com/3","state":"OPEN"}]"#;
-        let pr = parse_gh_pr_list(json).unwrap();
+        let json = r#"[{"number":2,"title":"Old","url":"https://example.com/2","state":"MERGED","headRepositoryOwner":{"login":"Acme"}},{"number":3,"title":"Now","url":"https://example.com/3","state":"OPEN","headRepositoryOwner":{"login":"acme"}}]"#;
+        let pr = parse_gh_pr_list(json, "acme").unwrap();
         assert_eq!(pr.number, 3);
         assert_eq!(pr.state, "open");
         assert_eq!(pr.title, "Now");
     }
 
     #[test]
-    fn pr_head_filter_qualifies_branch_with_repo_owner() {
-        assert_eq!(
-            github_pr_head_filter("bahadryalcn/bycoda", "main").as_deref(),
-            Some("bahadryalcn:main")
-        );
+    fn parse_gh_pr_list_skips_another_owners_branch_of_the_same_name() {
+        let json = r#"[{"number":9,"title":"Fork","url":"https://example.com/9","state":"OPEN","headRepositoryOwner":{"login":"someone"}},{"number":4,"title":"Ours","url":"https://example.com/4","state":"MERGED","headRepositoryOwner":{"login":"acme"}},{"number":5,"title":"Gone","url":"https://example.com/5","state":"OPEN","headRepositoryOwner":null}]"#;
+        assert_eq!(parse_gh_pr_list(json, "acme").unwrap().number, 4);
+        assert!(parse_gh_pr_list(json, "nobody").is_none());
     }
 
     #[test]

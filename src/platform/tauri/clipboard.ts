@@ -260,9 +260,9 @@ export async function nativeClipboardAttachments(text: string): Promise<NativeCl
     const { files, consumed } = await attachmentsFromClipboardPaths(paths);
     if (!files.length)
       throw new Error(
-        `Nothing to attach from ${
-          paths.length === 1 ? "that path" : "those paths"
-        } — the file may have been moved, renamed, or deleted.`,
+        `Nothing to attach. The ${
+          paths.length === 1 ? "file" : "files"
+        } may have been moved, renamed, or deleted.`,
       );
     return {
       files,

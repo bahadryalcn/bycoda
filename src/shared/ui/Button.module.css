@@ -36,6 +36,11 @@
     block-size: var(--control-height-lg);
     min-block-size: var(--control-height-lg);
   }
+  .control.iconOnly.stretch {
+    block-size: auto;
+    align-self: stretch;
+    aspect-ratio: auto;
+  }
   .control.link {
     padding-inline: var(--space-1);
   }

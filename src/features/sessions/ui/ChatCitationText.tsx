@@ -8,10 +8,41 @@ import { BlockQuote, Copy, Info, X } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { chatCitationPreview, chatCitationToken, type ChatCitation } from "../model/chatCitation";
+import { SkillTokenText } from "./SkillTokenText";
 import { tokenLabel } from "../model/attachmentTokens";
 import { findCitationTokens } from "../model/citationTokens";
 import { highlightChatCitation } from "../model/chatCitationHighlight";
 import styles from "./ChatCitationText.module.css";
+import { providerForAlias } from "../../inbox/public/workItemMentions";
+
+/** Display every tracker token, including repeats beyond the context lookup limit. */
+export function workItemMentionParts(text: string): { text: string; workItem?: true }[] {
+  const parts: { text: string; workItem?: true }[] = [];
+  const tokens = /(^|[\s([{])(@([a-z]+):[a-z0-9](?:[a-z0-9_./#!-]*[a-z0-9])?)/gi;
+  let end = 0;
+  for (const match of text.matchAll(tokens)) {
+    if (!providerForAlias(match[3])) continue;
+    const start = match.index + match[1].length;
+    if (start > end) parts.push({ text: text.slice(end, start) });
+    parts.push({ text: match[2], workItem: true });
+    end = start + match[2].length;
+  }
+  if (end < text.length) parts.push({ text: text.slice(end) });
+  return parts;
+}
+
+/** Tracker refs lack a persisted URL; preserve literal, selectable text without a guessed link. */
+export function WorkItemMentionText({ text }: { text: string }) {
+  return workItemMentionParts(text).map((part, index) =>
+    part.workItem ? (
+      <Text key={index} size="inherit" tone="accent" data-work-item-mention="">
+        {part.text}
+      </Text>
+    ) : (
+      <SkillTokenText key={index} text={part.text} />
+    ),
+  );
+}
 
 /** An inline `[quoteN]` in sent text: hover highlights the source, click jumps to it. */
 export function CitationTokenPill({ token, citation }: { token: string; citation: ChatCitation }) {

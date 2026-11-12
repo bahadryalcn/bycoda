@@ -8,9 +8,11 @@ import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SkillsPage } from "./SkillsPage";
+import { createSkillGroup, listSkillGroups } from "../index";
 import { SettingsView } from "../../settings/ui/SettingsView";
 import type { DiscoveredSkill } from "../../../platform/tauri/fs";
 import { loadDisabledSkillPaths, saveDisabledSkillPaths } from "../model/skills";
+import { clearMachineSkillsCache } from "../model/machineSkills";
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
@@ -91,6 +93,44 @@ async function render() {
   await act(async () => root.render(createElement(SkillsPage, { cwd: "D:/repo" })));
 }
 
+it("keeps Advanced controls outside the single skill scroller", async () => {
+  await render();
+  const scroller = container.querySelector("[data-skill-list]")!;
+  expect(container.querySelectorAll("[data-skill-list]")).toHaveLength(1);
+  expect(scroller.querySelector("[data-continuous-list]")).toBeNull();
+  expect(scroller.textContent).not.toContain("Advanced: skill controls and folders");
+  await click("Advanced: skill controls and folders");
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("Disabled skills stay on disk.");
+  expect(scroller.contains(dialog)).toBe(false);
+  expect(button("Personal guide")).toBeDefined();
+});
+
+it("collapses skill groups without creating another scroll owner", async () => {
+  await render();
+  const personal = container.querySelector<HTMLButtonElement>(
+    "[data-section-label] button[aria-controls]",
+  )!;
+  const group = document.getElementById(personal.getAttribute("aria-controls")!)!;
+  expect(group.hidden).toBe(false);
+  await act(async () => personal.click());
+  expect(group.hidden).toBe(true);
+  await act(async () => personal.click());
+  expect(group.hidden).toBe(false);
+});
+
+it("retains the shared list scroll position across navigation", async () => {
+  await render();
+  const list = container.querySelector<HTMLElement>("[data-skill-list]")!;
+  await act(async () => {
+    list.scrollTop = 420;
+    list.dispatchEvent(new Event("scroll"));
+  });
+  await act(async () => root.render(null));
+  await render();
+  expect(container.querySelector<HTMLElement>("[data-skill-list]")!.scrollTop).toBe(420);
+});
+
 it("opens New skill as a dialog without copying the search text into the name", async () => {
   await render();
   const filter = container.querySelector<HTMLInputElement>('[aria-label="Filter skills"]')!;
@@ -111,9 +151,7 @@ it("opens New skill as a dialog without copying the search text into the name", 
 it("keeps policy explanations collapsed without changing owner restrictions", async () => {
   saveDisabledSkillPaths([skills[0].path]);
   await render();
-  const target = container.querySelector<HTMLElement>('[data-setting-id="skill-folders"]')!;
-  const disclosure = target.closest("details")!;
-  expect(disclosure.open).toBe(false);
+  expect(document.querySelector('[data-setting-id="skill-folders"]')).toBeNull();
   expect(button("Project guide").closest("[data-off]")).not.toBeNull();
   await click("Project guide");
   expect(
@@ -121,8 +159,10 @@ it("keeps policy explanations collapsed without changing owner restrictions", as
       .querySelector('[role="switch"][aria-label="Enable Project guide in bycoda"]')
       ?.getAttribute("aria-checked"),
   ).toBe("false");
-  await act(async () => disclosure.querySelector("summary")!.click());
-  expect(disclosure.open).toBe(true);
+  await click("Advanced: skill controls and folders");
+  expect(
+    document.querySelector('[role="dialog"] [data-setting-id="skill-folders"]'),
+  ).not.toBeNull();
   expect(vi.mocked(invoke).mock.calls.some(([method]) => method === "skill_policy_set")).toBe(
     false,
   );
@@ -140,6 +180,7 @@ function deferred<T>() {
 
 beforeEach(() => {
   resetRetainedState();
+  clearMachineSkillsCache();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   vi.mocked(invoke).mockReset();
@@ -830,7 +871,7 @@ describe("Skills on connected machines", () => {
     expect(text).toContain("kit:plan");
     expect(text).toContain("Personal guide");
     // All three are personal skills: one group, one list.
-    expect(container.querySelectorAll("[data-continuous-list]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-skill-list]")).toHaveLength(1);
     expect(text).not.toContain("Notes from the Mac");
     // One column per machine, headed by its name; each cell shows ✓ or a copy action.
     expect(container.textContent).toContain("This PC");
@@ -1016,4 +1057,32 @@ it("disables and re-enables a skill from its row actions without opening it", as
   await click("Actions for personal-guide");
   await click("Enable personal-guide");
   expect(button("personal-guide").closest("[data-off]")).toBeNull();
+});
+
+it("opens the shared actions on right click and adds a skill to a group", async () => {
+  const group = createSkillGroup({ name: "Writing", skillNames: [] });
+  await render();
+  await act(async () =>
+    button("Project guide").dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(button("New group with this skill…")).toBeDefined();
+  await click("Add to group");
+  await click("Writing");
+  expect(listSkillGroups().find((item) => item.id === group.id)?.skillNames).toEqual([
+    "Project guide",
+  ]);
+});
+
+it("renders saved groups, missing members, search and a source removal action", async () => {
+  const group = createSkillGroup({ name: "Writing", skillNames: ["Project guide", "Gone"] });
+  await render();
+  await click("Groups");
+  expect(container.textContent).toContain("Writing");
+  expect(container.textContent).toContain("1 missing skills");
+  expect(container.textContent).toContain("Ungrouped");
+  await click("Actions for Project guide");
+  await click("Remove from Writing");
+  expect(listSkillGroups().find((item) => item.id === group.id)?.skillNames).toEqual(["Gone"]);
 });

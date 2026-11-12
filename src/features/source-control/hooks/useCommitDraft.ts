@@ -41,7 +41,15 @@ export function useCommitDraft({
   // Generation and staging may outlive/remount the visible panel; the checkout
   // runtime owns both the observed identity and synchronous mutation revision.
   const generationMutation = runtime.generationIndex;
-  generationMutation.identity = JSON.stringify([index?.branch, index?.head, index?.files]);
+  // Generation reads only the staged diff, so unstaged edits (an agent writing
+  // files meanwhile) must not invalidate its result. Line counts mix staged and
+  // unstaged lines, so only the staged paths and statuses take part; staging
+  // from the panel bumps `version` separately.
+  generationMutation.identity = JSON.stringify([
+    index?.branch,
+    index?.head,
+    index?.files.filter((file) => file.staged).map((file) => [file.relative, file.status]),
+  ]);
   // Generating reads the changes without touching the index, so it does not
   // take `busy` and files can be staged while it runs.
   const [generating, setGenerating] = useGitPanelState(cwd, "generating");

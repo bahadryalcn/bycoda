@@ -628,6 +628,39 @@ describe("UsageProviderChip", () => {
     expect(document.body.textContent).toContain("Codex usage was reset.");
   });
 
+  it("names Claude resets by kind and spends one from its own Use reset action", async () => {
+    const limits = codexLimits();
+    limits.provider = "claude";
+    limits.resetCredits!.credits = [
+      {
+        ...limits.resetCredits!.credits![0]!,
+        id: "full-reset-2611:0",
+        kind: "full",
+        title: "One full limit reset (November 2026)",
+      },
+      {
+        ...limits.resetCredits!.credits![1]!,
+        id: "fable-launch:0",
+        kind: "fable",
+        title: "New model launch: one Fable reset for Max, Team and Enterprise",
+      },
+    ];
+    const onConsumeReset = vi.fn(async () => "reset" as const);
+    act(() => root.render(createElement(UsageProviderChip, { limits, now, onConsumeReset })));
+
+    await act(async () => button("Claude Code usage details").click());
+    const items = [...document.querySelectorAll('[aria-label="Available banked resets"] article')];
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Full limit resetExpires in 12dUse reset",
+      "Fable limit resetExpires in 18dUse reset",
+    ]);
+    expect(document.body.textContent).not.toContain("New model launch");
+    act(() => items[1]?.querySelector("button")?.click());
+    await act(async () => button("Confirm").click());
+    expect(onConsumeReset).toHaveBeenCalledWith("fable-launch:0");
+    expect(document.body.textContent).toContain("Claude usage was reset.");
+  });
+
   it("keeps each credit's own expiry beside its Use reset action and hides a repeated title", async () => {
     const limits = codexLimits();
     limits.resetCredits!.credits = limits.resetCredits!.credits!.map((credit) => ({

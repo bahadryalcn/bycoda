@@ -156,7 +156,9 @@ it("composites with a private WebGL draw and copies a transparent frame to the v
   draw(["idle", "idle", "idle", "idle", "idle", "idle"]);
   draw(["idle", "idle", "idle", "idle", "idle", "idle"]);
   expect(gl.drawArrays).toHaveBeenCalledTimes(2);
-  const upload = (gl.texSubImage2D as ReturnType<typeof vi.fn>).mock.calls[0];
+  const upload = (gl.texSubImage2D as ReturnType<typeof vi.fn>).mock.calls.find(
+    (call) => call[6] instanceof HTMLCanvasElement,
+  )!;
   expect(upload[6]).toBeInstanceOf(HTMLCanvasElement);
   expect(mask.getImageData).not.toHaveBeenCalled();
   expect(destination.drawImage).toHaveBeenCalledTimes(2);
@@ -359,4 +361,15 @@ it("paints babies, children and adults, seated, standing and mid-growth, inside 
       topEdge(6, (id) => ({ role: roleOf(id), age: { stage, growth: 0, from: 3, change: 0.5 } })),
     ).toBeGreaterThanOrEqual(0);
   }
+});
+
+it("color mode rasterizes geometry once per frame", () => {
+  const { surface, mask } = canvases(null);
+  const draw = createCodeArtPainter(surface, { renderer: "canvas" });
+  draw(
+    Array(6).fill("idle"),
+    Array.from({ length: 6 }, () => ({ stand: 0, talk: 0, charge: 0.5 })),
+  );
+  expect(mask.clearRect).toHaveBeenCalledTimes(1);
+  expect(mask.getImageData).toHaveBeenCalledTimes(1);
 });

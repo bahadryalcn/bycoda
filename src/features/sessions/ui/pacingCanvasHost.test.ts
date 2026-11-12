@@ -43,7 +43,7 @@ beforeEach(() => {
       contexts.set(this, context);
     }
     return context;
-  } as typeof HTMLCanvasElement.prototype.getContext);
+  });
   vi.stubGlobal("Worker", FakeWorker);
   Object.defineProperty(HTMLCanvasElement.prototype, "transferControlToOffscreen", {
     configurable: true,

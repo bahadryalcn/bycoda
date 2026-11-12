@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, type CSSProperties, type ReactNode } from "react";
+import { act, createElement, useState, type CSSProperties, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,11 +16,13 @@ vi.mock("../../../integrations/harness/core/registry", () => ({
 }));
 
 vi.mock("../../../shared/ui/Popover", async () => ({
-  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>("../../../shared/ui/Popover")),
-  popupListClassName: "shared-popup-list",
+  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>(
+    "../../../shared/ui/Popover",
+  )),
   Popover: ({
     children,
     role,
+    kind,
     className,
     tabIndex,
     onKeyDown,
@@ -28,6 +30,7 @@ vi.mock("../../../shared/ui/Popover", async () => ({
   }: {
     children: ReactNode;
     role?: string;
+    kind?: string;
     className?: string;
     tabIndex?: number;
     onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
@@ -40,7 +43,7 @@ vi.mock("../../../shared/ui/Popover", async () => ({
     createElement(
       "div",
       {
-        role,
+        role: kind === "dialog" ? "dialog" : role,
         className,
         tabIndex,
         onKeyDown,
@@ -57,6 +60,11 @@ vi.mock("../../../shared/ui/Popover", async () => ({
 import { ModelPicker, preloadModelPicker } from "./ModelPicker";
 import { renameProviderAccount, saveProviderAccount } from "../../providers/model/providerAccounts";
 import { resetDisabledModels, resetHarnessModelOverlays, setHarnessModels } from "../model/models";
+import { KEYBINDINGS, saveKeybindingOverride } from "../../settings/model/settings";
+import { ModelSettingsColumn } from "./ModelSettingsColumn";
+import type { ModelSetting } from "../model/models";
+import { delegationNextValue } from "../model/crossDelegation";
+import { encodeAdvisor } from "../../../shared/model/host-contracts/delegation";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -107,6 +115,14 @@ async function click(element: Element) {
   await act(async () => (element as HTMLElement).click());
 }
 
+async function key(element: EventTarget, value: string) {
+  await act(async () => {
+    element.dispatchEvent(
+      new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true }),
+    );
+  });
+}
+
 async function movePointer(element: Element) {
   await act(async () => {
     element.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, movementX: 1 }));
@@ -154,6 +170,90 @@ const columnLabels = () =>
   );
 
 describe("model panel", () => {
+  it("honours rebound, disabled, repeat and inactive shortcuts", async () => {
+    saveKeybindingOverride("App: Switch Model", { shortcut: "Control+KeyM" });
+    await render({ harness: "claude", model: "claude:opus-5", hotkeys: false });
+    const press = async (repeat = false) =>
+      act(async () => {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "m",
+            code: "KeyM",
+            ctrlKey: true,
+            bubbles: true,
+            repeat,
+          }),
+        );
+      });
+    await press();
+    expect(panel()).toBeNull();
+    await render({ harness: "claude", model: "claude:opus-5", hotkeys: true });
+    await press(true);
+    expect(panel()).toBeNull();
+    await press();
+    expect(panel()).not.toBeNull();
+    await key(window, "Escape");
+    expect(document.activeElement).toBe(trigger());
+    saveKeybindingOverride("App: Switch Model", { disabled: true });
+    await press();
+    expect(panel()).toBeNull();
+  });
+
+  it("opens with semantic click, filters and selects models with search keys", async () => {
+    setHarnessModels("cursor", [
+      { id: "cursor:one", nativeId: "one", harness: "cursor", name: "One" },
+      { id: "cursor:two", nativeId: "two", harness: "cursor", name: "Two" },
+    ]);
+    const onChange = vi.fn();
+    await render({ harness: "cursor", model: "cursor:one", onChange });
+    // HTMLElement.click() carries no pointerdown/mousedown and detail is zero, as with Invoke.
+    await openPanel();
+    expect(trigger().tagName).toBe("BUTTON");
+    expect(trigger().type).toBe("button");
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    const search = document.activeElement as HTMLInputElement;
+    await key(search, "ArrowDown");
+    await key(search, "Enter");
+    expect(onChange).toHaveBeenLastCalledWith("cursor", "cursor:two");
+    await inputText(search, "One");
+    expect(listbox().querySelectorAll('[role="option"]')).toHaveLength(1);
+    await key(search, "ArrowUp");
+    await key(search, "Enter");
+    expect(onChange).toHaveBeenLastCalledWith("cursor", "cursor:one");
+    await key(window, "Escape");
+    expect(panel()).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  });
+  it("toggles the full panel with the registered shortcut and returns focus", async () => {
+    const binding = KEYBINDINGS.find((row) => row.command === "App: Switch Model")!;
+    expect(KEYBINDINGS.filter((row) => row.keys === binding.keys)).toHaveLength(1);
+    await render({ harness: "claude", model: "claude:opus-5", hotkeys: true });
+    const press = async () =>
+      act(async () => {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: ">",
+            code: "Period",
+            ctrlKey: true,
+            shiftKey: true,
+            bubbles: true,
+          }),
+        );
+      });
+    await press();
+    expect(panel()).not.toBeNull();
+    await act(async () => {
+      window.dispatchEvent(new Event("open_model_picker"));
+    });
+    expect(panel()).not.toBeNull();
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Search models");
+    await new Promise((resolve) => setTimeout(resolve, 85));
+    await press();
+    expect(panel()).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  });
+
   it.each([
     ["subagentModel", "default", "subagentPolicy"],
     ["autoCompact", "off", "autoCompactWindow"],
@@ -270,7 +370,7 @@ describe("model panel", () => {
     ]);
     await render({ harness: "cursor", model: "cursor:focus" });
     await openPanel();
-    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
     const search = container.querySelector<HTMLInputElement>('input[aria-label="Search models"]');
     expect(search).not.toBeNull();
     expect(document.activeElement).toBe(search);
@@ -482,6 +582,79 @@ describe("model panel", () => {
 });
 
 describe("model panel settings column", () => {
+  it("operates Subagents modes, Custom search, Done, chips and Add with keyboard focus", async () => {
+    const choice = encodeAdvisor({ harness: "codex", model: "codex:one" })!;
+    const setting: ModelSetting = {
+      id: "crossSubagents",
+      label: "Subagents",
+      kind: "select",
+      value: "auto",
+      options: [
+        { value: "auto", label: "Automatic" },
+        { value: "", label: "Off" },
+        { value: choice, label: "Codex · One" },
+      ],
+    };
+    function ControlledColumn() {
+      const [values, setValues] = useState<Record<string, string>>({});
+      return createElement(ModelSettingsColumn, {
+        current: { id: "codex:one", harness: "codex", name: "One" },
+        settings: [setting],
+        values,
+        locked: () => false,
+        onExplain: vi.fn(),
+        onChoose: (selected, value) =>
+          setValues({
+            [selected.id]: delegationNextValue(selected, values, value) || "[]",
+          }),
+      });
+    }
+    await act(async () => root.render(createElement(ControlledColumn)));
+    const radio = (text: string) => optionByText(container, "radio", text);
+    const picker = () => container.querySelector("[data-model-setting-picker]");
+    await act(async () => radio("Automatic").focus());
+    await key(radio("Automatic"), "End");
+    expect(radio("Off").getAttribute("aria-checked")).toBe("true");
+    await key(radio("Off"), "Home");
+    expect(radio("Automatic").getAttribute("aria-checked")).toBe("true");
+    await key(radio("Automatic"), "ArrowRight");
+    expect(picker()).not.toBeNull();
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    const search = document.activeElement as HTMLInputElement;
+    expect(search.getAttribute("aria-label")).toBe("Search models");
+    await inputText(search, "One");
+    await key(search, "Enter");
+    expect(picker()!.querySelector('[role="option"]')?.getAttribute("aria-selected")).toBe("true");
+    const done = [...picker()!.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => item.textContent === "Done",
+    )!;
+    await act(async () => done.focus());
+    // Semantic button activation, without pointer events.
+    await click(done);
+    expect(picker()).toBeNull();
+    expect(document.activeElement).toBe(radio("Custom"));
+    const remove = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Remove Codex · One"]',
+    )!;
+    expect(remove.disabled).toBe(false);
+    await act(async () => remove.focus());
+    await click(remove);
+    expect(radio("Off").getAttribute("aria-checked")).toBe("true");
+    await key(radio("Off"), "ArrowLeft");
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    await inputText(document.activeElement as HTMLInputElement, "One");
+    await key(document.activeElement!, "Enter");
+    await click(
+      [...picker()!.querySelectorAll<HTMLButtonElement>("button")].find(
+        (item) => item.textContent === "Done",
+      )!,
+    );
+    const add = container.querySelector<HTMLButtonElement>("[data-model-setting-add]")!;
+    await act(async () => add.focus());
+    await click(add);
+    expect(picker()).not.toBeNull();
+  });
+
   const sel = (id: string, label: string, value: string, options: string[]) => ({
     id,
     label,
@@ -527,6 +700,32 @@ describe("model panel settings column", () => {
     return openPanel();
   }
 
+  it("switches Settings/Agents and provider tabs with arrows and explains focused controls", async () => {
+    await openOrdered({});
+    const settingTab = container.querySelector<HTMLElement>('[data-model-settings] [role="tab"]')!;
+    await act(async () => settingTab.focus());
+    await key(settingTab, "ArrowRight");
+    expect(document.activeElement?.textContent).toBe("Agents");
+    expect(columnLabels()).toContain("Subagents");
+    await key(document.activeElement!, "ArrowLeft");
+    expect(document.activeElement?.textContent).toBe("Settings");
+    const effort = container.querySelector<HTMLElement>(
+      '[data-setting-id="effort"] [role="radio"]',
+    )!;
+    await act(async () => effort.focus());
+    const help = () => container.querySelector("[data-model-setting-help]")!.textContent;
+    expect(help()).toContain("How long the model thinks");
+    await act(async () => effort.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
+    expect(help()).toContain("How long the model thinks");
+    await key(effort, "ArrowRight");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("high");
+    const rail = providerTab("Cursor");
+    await act(async () => rail.focus());
+    await key(rail, "Home");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Favorites");
+    expect(help()).not.toContain("How long the model thinks");
+  });
+
   it("lists model and context settings under Settings and delegation under Agents", async () => {
     await openOrdered({});
     const tabs = [...container.querySelectorAll('[data-model-settings] [role="tab"]')];
@@ -534,7 +733,7 @@ describe("model panel settings column", () => {
     // Reasoning leads; a dependent setting follows its parent.
     expect(columnLabels()).toEqual(["Reasoning", "Fast", "Auto-compact", "Auto-compact window"]);
     await click(tabs[1]);
-    expect(columnLabels()).toEqual(["Advisor", "Image models", "Subagents"]);
+    expect(columnLabels()).toEqual(["Advisor", "Image models", "Subagent max effort", "Subagents"]);
   });
 
   it("toggles Fast with its switch and shows it in the trigger", async () => {

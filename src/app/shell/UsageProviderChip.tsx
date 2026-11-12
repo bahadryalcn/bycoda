@@ -35,6 +35,7 @@ import type { CodexRateLimitResetOutcome } from "../../features/providers/model/
 import {
   FULL_DATE_TIME,
   isResetOutcome,
+  resetKindLabel,
   resetOutcomeLabel,
   type ResetActionState,
 } from "./usageResetModel";
@@ -525,10 +526,7 @@ function UsageProviderDetails({
                   setResetAction("idle");
                 }}
                 onUse={useReset}
-                // Claude resets are spent with /limit-reset in Claude Code, not from here.
-                canUse={
-                  limits.provider === "codex" && !viewingOtherAccount && Boolean(onConsumeReset)
-                }
+                canUse={!viewingOtherAccount && Boolean(onConsumeReset)}
               />
             ) : null}
           </>
@@ -1034,6 +1032,7 @@ function BankedResets({
               <BankedResetRow
                 key={rowKey}
                 credit={credit}
+                provider={limits.provider}
                 showTitle={showTitles}
                 now={now}
                 action={selected ? action : "idle"}
@@ -1076,6 +1075,7 @@ function BankedResetMascot({
 }
 function BankedResetRow({
   credit,
+  provider,
   showTitle,
   now,
   action,
@@ -1087,6 +1087,7 @@ function BankedResetRow({
   onUse,
 }: {
   credit: RateLimitResetCredit | null;
+  provider: ProviderRateLimits["provider"];
   showTitle: boolean;
   now: number;
   action: ResetActionState;
@@ -1101,9 +1102,11 @@ function BankedResetRow({
   const format = useFormat();
   const outcome = isResetOutcome(action) || action === "error";
   const retryable = action === "error";
+  // A Claude reset is named by what it refills, even when every row is the same kind.
+  const title = credit?.kind ? resetKindLabel(credit.kind, t) : showTitle ? credit?.title : null;
   return (
     <article role="listitem" className="px-1 py-0.5">
-      {showTitle && credit?.title ? <SectionLabel as="h4">{credit.title}</SectionLabel> : null}
+      {title ? <SectionLabel as="h4">{title}</SectionLabel> : null}
       <div className="flex min-h-6 items-center justify-between gap-2">
         <Tooltip
           label={
@@ -1150,7 +1153,7 @@ function BankedResetRow({
           className="mt-0.5 break-words"
           role="status"
         >
-          {action === "error" ? error : resetOutcomeLabel(action, t)}
+          {action === "error" ? error : resetOutcomeLabel(action, t, provider)}
         </Text>
       ) : null}
       {action === "confirming" ? (

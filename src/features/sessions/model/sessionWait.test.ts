@@ -9,6 +9,7 @@ import {
   sessionWaitReason,
   sessionWaitReasonWith,
   sessionWaitsEqual,
+  sessionWorkingNow,
 } from "./sessionWait";
 import { applyBackgroundUpdate } from "../../../integrations/harness/core/backgroundWait";
 import { stopStreaming } from "../../../integrations/harness/core/apply";
@@ -152,5 +153,26 @@ describe("background wait clock", () => {
     expect(cleared.backgroundSince).toBeUndefined();
     expect(cleared.backgroundTasks).toBeUndefined();
     expect(stopStreaming(next).backgroundSince).toBeUndefined();
+  });
+});
+
+describe("sessionWorkingNow", () => {
+  it("is true only while the agent itself works", () => {
+    expect(sessionWorkingNow(session({ busy: true }))).toBe(true);
+    expect(sessionWorkingNow(session())).toBe(false);
+    expect(
+      sessionWorkingNow(session({ busy: true, backgroundTasks: ["dev"], backgroundAgents: 0 })),
+    ).toBe(false);
+    expect(
+      sessionWorkingNow(
+        session({
+          busy: true,
+          blocks: [
+            { id: "a", role: "tool", text: "Run", approval: { id: "x", decided: false } } as never,
+          ],
+        }),
+      ),
+    ).toBe(false);
+    expect(sessionWorkingNow(session({ busy: true, worktreeRemoved: true }))).toBe(false);
   });
 });

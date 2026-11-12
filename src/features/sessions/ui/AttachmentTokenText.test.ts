@@ -42,6 +42,16 @@ function render(text: string, attachments: Attachment[] | undefined) {
 }
 
 describe("AttachmentTokenText", () => {
+  it("renders tracker refs as non-clickable emphasis with literal copy text", () => {
+    const text =
+      "Review (@jira:PROJ-123), @github:owner/repo#142 and @jira:PROJ-123. @unknown:1 person@jira:PROJ-123";
+    render(text, undefined);
+    expect(container.textContent).toBe(text);
+    expect(
+      [...container.querySelectorAll("[data-work-item-mention]")].map((node) => node.textContent),
+    ).toEqual(["@jira:PROJ-123", "@github:owner/repo#142", "@jira:PROJ-123"]);
+    expect(container.querySelector("a, button, [role=link]")).toBeNull();
+  });
   it.each([image.previewUrl, undefined])(
     "retries decoding through the owning Host (%s)",
     async (previewUrl) => {

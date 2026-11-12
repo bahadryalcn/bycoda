@@ -1,11 +1,9 @@
-/** Codex's native multi-agent features; names verified against the installed 0.166.0 config. */
-const NATIVE_SUBAGENT_FEATURES = ["multi_agent", "multi_agent_v2"] as const;
-
 /**
  * Thread config for thread/start and thread/resume. Codex's native subagents
  * inherit the main model, so they cannot be held to the owner's subagent
  * selection: `nativeSubagents: "off"` removes them and selected models run
- * through the Host agents tools, which enforce the selection.
+ * through the Host agents tools, which enforce the selection. 0.167.2 removes the
+ * agent tools with `agents.enabled`; 0.166.x needs the feature flags too.
  */
 export function codexThreadConfig(
   base: Record<string, unknown> | undefined,
@@ -15,8 +13,9 @@ export function codexThreadConfig(
   if (policy !== "off" && policy !== "on") return base;
   return {
     ...base,
-    ...Object.fromEntries(
-      NATIVE_SUBAGENT_FEATURES.map((name) => [`features.${name}`, policy === "on"]),
-    ),
+    "agents.enabled": policy === "on",
+    "features.multi_agent": policy === "on",
+    // Off by default in Codex: "on" restores the default tools, it never opts into v2.
+    "features.multi_agent_v2": false,
   };
 }

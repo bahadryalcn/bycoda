@@ -131,7 +131,7 @@ export function ModelSettingPicker({
       {multi ? (
         // Stays under the scrolling list, so Done never needs a scroll back up.
         <PickerFooter align="between">
-          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+          <Text tone="secondary" truncate className="min-w-0 flex-1">
             {t("{p0} selected", { p0: picked })}
           </Text>
           <Button variant="primary" size="sm" type="button" onClick={onClose}>

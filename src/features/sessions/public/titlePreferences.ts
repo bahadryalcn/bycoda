@@ -5,3 +5,5 @@ export {
   useDefaultTitleChoice,
 } from "../model/titlePreferences";
 export type { TitleGenerationChoice } from "../model/titlePreferences";
+
+export { titleGenerationChoice } from "../model/titlePreferences";

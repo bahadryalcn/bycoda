@@ -314,7 +314,7 @@ export function steerBusySubmit(
       // floor here, so a follow-up sent mid-turn just vanished. Say so.
       showSubmitNotice(
         sessionId,
-        `${running.harness} cannot take a follow-up mid-turn — wait for this turn to finish, or stop it first.`,
+        `${running.harness} cannot take a follow-up while a turn is running. Wait for it to finish or stop it first.`,
       );
       return false;
     }

@@ -54,6 +54,7 @@ export function SkillRow({
   nameRef,
   onOpen,
   onActions,
+  onDragStart,
   copy,
 }: {
   entry: SkillEntry;
@@ -69,6 +70,7 @@ export function SkillRow({
   nameRef: (button: HTMLButtonElement | null) => void;
   onOpen: () => void;
   onActions: (anchor: HTMLElement) => void;
+  onDragStart?: React.DragEventHandler<HTMLDivElement>;
   /** A missing cell offers a copy only when the skill can be transferred. */
   copy: {
     transferable: boolean;
@@ -83,38 +85,56 @@ export function SkillRow({
   return (
     <div
       className={styles.row}
+      draggable={!!onDragStart}
+      onDragStart={onDragStart}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onActions(event.currentTarget);
+      }}
       data-selected={selected || undefined}
       data-off={off || undefined}
       aria-busy={busy}
     >
-      <Button
-        variant="item"
-        selected={selected}
-        className={styles.name}
-        aria-label={entry.name}
-        ref={nameRef}
-        aria-controls={previewOpen ? previewId : undefined}
-        aria-expanded={selected}
-        tooltip={skill.description || entry.name}
-        tooltipWhen={skill.description && skill.description !== entry.name ? "always" : "overflow"}
-        disabled={disabled}
-        onClick={onOpen}
+      <Tooltip
+        label={skill.description || entry.name}
+        when={skill.description && skill.description !== entry.name ? "always" : "overflow"}
+        side="right"
+        asChild
       >
-        <Text
-          as="span"
-          size="inherit"
-          tone={off ? "secondary" : "inherit"}
-          truncate
-          className={styles.skillName}
+        <Button
+          variant="item"
+          selected={selected}
+          className={styles.name}
+          aria-label={entry.name}
+          ref={nameRef}
+          aria-controls={previewOpen ? previewId : undefined}
+          aria-expanded={selected}
+          tooltip=""
+          disabled={disabled}
+          onKeyDown={(event) => {
+            if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+              event.preventDefault();
+              onActions(event.currentTarget);
+            }
+          }}
+          onClick={onOpen}
         >
-          {entry.name}
-        </Text>
-        {modified ? (
-          <Tooltip label={t("Draft")} asChild>
-            <span>·</span>
-          </Tooltip>
-        ) : null}
-      </Button>
+          <Text
+            as="span"
+            size="inherit"
+            tone={off ? "secondary" : "inherit"}
+            truncate
+            className={styles.skillName}
+          >
+            {entry.name}
+          </Text>
+          {modified ? (
+            <Tooltip label={t("Draft")} asChild>
+              <span>·</span>
+            </Tooltip>
+          ) : null}
+        </Button>
+      </Tooltip>
       {off ? (
         <Text size="caption" tone="secondary" leading="inherit" className={styles.offLabel}>
           {t("Off")}
@@ -125,7 +145,7 @@ export function SkillRow({
         if (cell.state === "missing" && copy.transferable) {
           const label = t("Copy {p0} to {p1}", { p0: entry.name, p1: cell.name });
           return (
-            <span key={key} className={styles.cell}>
+            <span key={key} data-no-drag="" className={styles.cell}>
               <Button
                 variant="ghost"
                 iconOnly
@@ -168,6 +188,7 @@ export function SkillRow({
         variant="ghost"
         iconOnly
         size="sm"
+        data-no-drag=""
         className={styles.rowMenu}
         label={t("Actions for {p0}", { p0: entry.name })}
         aria-haspopup="menu"

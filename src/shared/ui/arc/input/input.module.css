@@ -147,3 +147,8 @@
 .field[data-field-appearance="quiet"] .input:hover:not(:focus-visible, :disabled) {
   background: var(--ui-surface-hover);
 }
+
+/* The adornment frame owns the border; its inner editor must leave room for it. */
+.field[data-variant] [data-field-control] .input {
+  min-block-size: calc(var(--field-slot-height) - 2px);
+}

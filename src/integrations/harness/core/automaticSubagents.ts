@@ -1,4 +1,4 @@
-import { resolveSubagents } from "../../../shared/model/automaticSubagents";
+import { resolveSubagents, subagentCatalogModels } from "../../../shared/model/automaticSubagents";
 import { AUTOMATIC_SUBAGENTS } from "../../../shared/model/host-contracts/delegation";
 import { HARNESSES, type HarnessId } from "../../../shared/model/harnessIdentity";
 import { modelsFor, isModelEnabled } from "../../../features/sessions/model/models";
@@ -15,7 +15,11 @@ export function runtimeAutomaticSubagents(thread?: {
     harness: (thread?.harness ?? "claude") as HarnessId,
     providerAccountId: thread?.providerAccountId,
     providers,
-    models: providers.flatMap((id) => modelsFor(id).filter((model) => isModelEnabled(model.id))),
+    models: subagentCatalogModels(
+      Object.fromEntries(
+        providers.map((id) => [id, modelsFor(id).filter((model) => isModelEnabled(model.id))]),
+      ),
+    ),
     defaultAccounts: {
       claude: defaultProviderAccountId("claude"),
       codex: defaultProviderAccountId("codex"),

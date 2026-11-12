@@ -2,7 +2,12 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { loadCrewTheme, saveCrewSceneEnabled, saveCrewTheme } from "../../../model/settings";
+import {
+  loadCrewTheme,
+  saveCrewGrowthEnabled,
+  saveCrewSceneEnabled,
+  saveCrewTheme,
+} from "../../../model/settings";
 import { saveDecorativeMotionEnabled } from "../../../model/decorativeMotion";
 import { CrewStageCard } from "./CrewStageCard";
 
@@ -141,5 +146,38 @@ it("keeps the stage reachable but dimmed while the crew is off", async () => {
     await act(async () => root.unmount());
     host.remove();
     saveCrewSceneEnabled(true);
+  }
+});
+
+it("previews classic context color while preserving working seats", async () => {
+  saveCrewGrowthEnabled(false);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(CrewStageCard)));
+    const labels = [...host.querySelectorAll(".crew-scene__label")];
+    expect(labels.map((label) => label.getAttribute("data-charge"))).toEqual([
+      "15",
+      "35",
+      "50",
+      "70",
+      "90",
+      "100",
+    ]);
+    expect(
+      labels
+        .filter((label) => label.getAttribute("data-working") === "true")
+        .map((label) => labels.indexOf(label)),
+    ).toEqual([0, 2, 3]);
+    expect(labels.every((label) => label.getAttribute("data-age") === "3")).toBe(true);
+    const toggle = host.querySelector<HTMLButtonElement>(
+      '[role="switch"][aria-label="Grow with context"]',
+    );
+    await act(async () => toggle!.click());
+    expect(host.querySelectorAll("[data-charge]")).toHaveLength(0);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
   }
 });

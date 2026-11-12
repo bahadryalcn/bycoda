@@ -12,10 +12,13 @@ export async function compareSequence<Frame>(
   frames: readonly Frame[],
   width: number,
   height: number,
+  allowedRegion?: { x: number; y: number; width: number; height: number },
 ) {
   let differingPixels = 0;
   let maxChannelDelta = 0;
   let nonemptyFrames = 0;
+  let outsideRegionPixels = 0;
+  let maxRegionPixelsPerFrame = 0;
   let firstFailure:
     | { sequence: number; reference: string; candidate: string; diff: string }
     | undefined;
@@ -29,6 +32,7 @@ export async function compareSequence<Frame>(
         throw new Error(`Invalid RGBA capture length at sequence ${sequence}`);
       const diff = new Uint8ClampedArray(a.length);
       let changed = 0;
+      let inside = 0;
       let nonempty = false;
       for (let offset = 0; offset < a.length; offset += 4) {
         let different = false;
@@ -41,11 +45,23 @@ export async function compareSequence<Frame>(
         }
         if (different) {
           changed++;
+          const x = (offset / 4) % width;
+          const y = Math.floor(offset / 4 / width);
+          if (
+            allowedRegion &&
+            x >= allowedRegion.x &&
+            x < allowedRegion.x + allowedRegion.width &&
+            y >= allowedRegion.y &&
+            y < allowedRegion.y + allowedRegion.height
+          )
+            inside++;
+          else outsideRegionPixels++;
           diff[offset + 3] = 255;
         }
       }
       if (nonempty) nonemptyFrames++;
       differingPixels += changed;
+      maxRegionPixelsPerFrame = Math.max(maxRegionPixelsPerFrame, inside);
       if (changed && !firstFailure) {
         const canvas = document.createElement("canvas");
         canvas.width = width;
@@ -64,6 +80,8 @@ export async function compareSequence<Frame>(
       differingPixels,
       maxChannelDelta,
       nonemptyFrames,
+      outsideRegionPixels,
+      maxRegionPixelsPerFrame,
       firstFailure,
     };
   } finally {

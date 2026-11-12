@@ -1,0 +1,27 @@
+/* Different job: classic code-art labels share the narrow gap beneath the sign.
+   Keep context information on one line, preserving the original label height. */
+.crew-scene[data-theme="classic"] .crew-scene__label[data-charge] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  column-gap: min(0.35em, 0.5cqi);
+}
+.crew-scene[data-theme="classic"] .crew-scene__label[data-charge] .crew-scene__name {
+  min-inline-size: 0;
+}
+.crew-scene[data-theme="classic"] .crew-scene__label[data-charge] .crew-scene__charge {
+  flex: none;
+}
+.crew-scene[data-theme="classic"] .crew-scene__label[data-charge] .crew-scene__meter {
+  flex: 0 0 1.25em;
+  inline-size: 1.25em;
+  margin: 0;
+}
+/* Light code art needs readable idle captions, like the rigged themes. */
+.theme-light
+  .crew-scene[data-theme="classic"]
+  .crew-scene__label[data-charge][data-working="false"] {
+  /* ui-drift-ignore: feature-typography -- Bespoke scene captions use the existing semantic text role. */
+  color: var(--ui-text-secondary);
+  opacity: 1;
+}

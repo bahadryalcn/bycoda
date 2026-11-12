@@ -479,7 +479,9 @@ describe("FileTree render isolation", () => {
     expect(row("second.ts")).not.toBeNull();
     const syncStatus = container.querySelector<HTMLElement>('[data-remote-data-state="ready"]')!;
     await act(async () => {
-      syncStatus.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+      syncStatus.dispatchEvent(
+        new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }),
+      );
       await new Promise((resolve) => setTimeout(resolve, 500));
     });
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(

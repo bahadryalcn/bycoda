@@ -2,18 +2,25 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { SkillActionsMenu } from "./SkillActionsMenu";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { useSkillGroups } from "../index";
+import { SkillGroupsList } from "./SkillGroupsList";
+import { SkillGroupDialogs, type GroupEdit } from "./SkillGroupDialogs";
+import { AutoGroupDialog } from "./AutoGroupDialog";
+import { useSkillGroupView, startSkillDrag } from "./useSkillGroupView";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { Modal } from "../../../shared/ui/Modal";
+import { SkillList } from "./SkillList";
 import { TextField } from "../../../shared/ui/TextField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
-import { ContinuousList, CollectionFooter } from "../../../shared/ui/ContinuousList";
+import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { Badge } from "../../../shared/ui/Badge";
-import { SkillMachineColumns, SkillRow } from "./SkillRow";
+import { SkillRow } from "./SkillRow";
 import { SkillMachinesPanel, type MachineListState } from "./SkillMachinesPanel";
 import { CreateSkillDialog } from "./CreateSkillDialog";
 import { Tabs, TabList, Tab } from "../../../shared/ui/Tabs";
@@ -24,11 +31,10 @@ import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Copy, Eye, EyeOff, FolderOpen, RefreshCw, Trash2, X } from "../../../shared/ui/icons";
+import { RefreshCw, X } from "../../../shared/ui/icons";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { confirmNative } from "../../source-control/model/gitConfirmation";
 import { canTransferSkill, SkillExistsError, transferSkill } from "../model/transferSkill";
-import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
 import { MarkdownSource } from "../../sessions/ui/AgentMarkdown";
 import { cachedLocalSkills, loadLocalSkills } from "../model/localSkillsCache";
@@ -56,7 +62,7 @@ import { remoteProjectFor } from "../../connections/model/remoteProjects";
 import { knownRemoteMachine, useRemoteMachines } from "../../connections/model/connections";
 import { remoteProjectMachines } from "../../connections/model/localSync";
 import { machineFailure } from "../model/skillMachineFailure";
-import { listMachineSkills } from "../model/machineSkills";
+import { cachedMachineSkills, listMachineSkills } from "../model/machineSkills";
 import { canDeleteSkill } from "../model/deleteSkill";
 import { Segmented, Toggle } from "../../settings/ui/settingsControls";
 import { cacheSkillPolicy, cachedSkillPolicy } from "../model/skillPreferences";
@@ -79,7 +85,11 @@ import {
 
 export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode }): ReactNode {
   useLocale();
-  const lockOverscroll = useLockOverscroll<HTMLDivElement>();
+  const skillGroups = useSkillGroups();
+  const groupView = useSkillGroupView();
+  const [groupEdit, setGroupEdit] = useState<GroupEdit | null>(null);
+  const [groupError, setGroupError] = useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const previewId = useId();
   const previewOpener = useRef<string | null>(null);
   const previewButtons = useRef(new Map<string, HTMLButtonElement>());
@@ -129,6 +139,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     skill: DiscoveredSkill;
     machine: Machine | null;
     anchor: HTMLElement;
+    groupId?: string;
   } | null>(null);
   const [creating, setCreating] = useState(false);
   const [showRecommended, setShowRecommended] = useState(false);
@@ -352,7 +363,10 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       setMachineLists((current) => ({
         ...current,
         [machine.environmentId]: {
-          skills: changedScope ? null : (current[machine.environmentId]?.skills ?? null),
+          skills: changedScope
+            ? cachedMachineSkills(machine.environmentId, machine.cwd)
+            : (current[machine.environmentId]?.skills ??
+              cachedMachineSkills(machine.environmentId, machine.cwd)),
           error: null,
           loading: true,
         },
@@ -364,7 +378,11 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             [machine.environmentId]: { ...value, loading: false },
           }));
       };
-      listMachineSkills(machine.environmentId, machine.cwd)
+      // Opening reuses the remembered inventory; an explicit reload forces a fresh read.
+      const refresh =
+        reload > 0 &&
+        (refreshScope.current === "all" || refreshScope.current === machine.environmentId);
+      listMachineSkills(machine.environmentId, machine.cwd, { refresh })
         .then((skills) => settle({ skills, error: null }))
         .catch((err: unknown) => {
           if (!cancelled)
@@ -698,7 +716,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     }
   };
 
-  const renderRow = (entry: (typeof shownEntries)[number]) => {
+  const renderRow = (entry: (typeof shownEntries)[number], groupId?: string) => {
     const { skill, machine } = entry.primary;
     const machineId = machine?.environmentId ?? "local";
     const selected = previewSkill?.path === skill.path;
@@ -725,7 +743,8 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         actionsOpen={actionsMenu?.skill.path === skill.path}
         nameRef={registerPreviewButton(`name:${skill.path}`)}
         onOpen={() => onPreview(skill, machine)}
-        onActions={(anchor) => setActionsMenu({ skill, machine, anchor })}
+        onActions={(anchor) => setActionsMenu({ skill, machine, anchor, groupId })}
+        onDragStart={(event) => startSkillDrag(event, entry.name, groupId)}
         copy={{
           transferable: canTransferSkill(skill),
           blocked:
@@ -742,9 +761,6 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       />
     );
   };
-
-  const groupLabel = (scope: "project" | "user" | "builtin") =>
-    scope === "project" ? t("Project") : scope === "user" ? t("Personal") : t("Managed");
 
   const machineAlerts = lists.flatMap((list) => {
     const id = list.machine?.environmentId ?? "local";
@@ -887,7 +903,52 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             </Button>
           </Text>
         </header>
-        <div ref={lockOverscroll} className={styles.list} aria-busy={localLoading}>
+        <div className="flex flex-col gap-2 p-2">
+          <SegmentedControl
+            label={t("Skill view")}
+            size="sm"
+            value={groupView.view}
+            onValueChange={groupView.setView}
+            options={[
+              { value: "all", label: t("All skills") },
+              { value: "groups", label: t("Groups") },
+            ]}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={() => setGroupEdit({ kind: "create", skillNames: [] })}>
+              {t("New group")}
+            </Button>
+            <AutoGroupDialog
+              cwd={cwd}
+              skills={entries.map((entry) => ({
+                name: entry.name,
+                description: entry.primary.skill.description,
+              }))}
+            />
+          </div>
+          {groupError ? <Alert tone="danger">{groupError}</Alert> : null}
+        </div>
+        <SkillList
+          groupedContent={
+            groupView.view === "groups" ? (
+              <SkillGroupsList
+                groups={skillGroups}
+                entries={entries}
+                shownEntries={shownEntries}
+                collapsed={groupView.collapsed}
+                toggle={groupView.toggle}
+                renderRow={renderRow}
+                onEdit={setGroupEdit}
+                onError={setGroupError}
+              />
+            ) : undefined
+          }
+          cwd={cwd}
+          groups={groups}
+          machineNames={machines.length ? machineNames : []}
+          renderRow={renderRow}
+          loading={localLoading}
+        >
           {machineAlerts}
           {libraryLoading ? <LoadingText>{t("Loading skills…")}</LoadingText> : null}
           {skills === null && error ? (
@@ -913,62 +974,49 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                 description={t("No skills yet. New skill creates a starter SKILL.md.")}
               />
             ) : null)}
-          {machines.length && groups.length ? <SkillMachineColumns names={machineNames} /> : null}
-          {groups.map((group) => (
-            <Disclosure
-              defaultOpen
-              key={group.scope}
-              variant="row"
-              size="sm"
-              summary={groupLabel(group.scope)}
-              count={group.entries.length}
-            >
-              <ContinuousList
-                className={styles.continuousSkills}
-                items={group.entries}
-                itemKey={(entry) => entry.key}
-                renderItem={renderRow}
-                stateKey={`skills:${pathKey(cwd)}:${group.scope}`}
-                requiredKey={
-                  group.entries.find((entry) => entry.primary.skill.path === previewSkill?.path)
-                    ?.key ?? null
-                }
-                estimateSize={32}
-              />
-            </Disclosure>
-          ))}
-          <Disclosure size="sm" summary={t("Advanced: skill controls and folders")}>
-            <Text
-              as="p"
-              size="secondary"
-              leading="relaxed"
-              id="setting-skill-folders"
-              data-setting-id="skill-folders"
-              tabIndex={-1}
-              className={styles.message}
-            >
-              {t(
-                "Disabled skills stay on disk. {p0} blocks their names across all sources on the selected machine, including search, reads and explicit invocations. Project skills live in {p1}, personal skills in {p2}; harness folders are also included.",
-                {
-                  p0: PRODUCT_IDENTITY.displayName,
-                  p1: ".agents/skills",
-                  p2: "~/.agents/skills",
-                },
-              )}
-            </Text>
-            <Text as="p" size="secondary" leading="relaxed" className={styles.message}>
-              {t(
-                "Changes apply to subsequent turns. Running turns and previously loaded context cannot be erased. Enabling in bycoda does not override provider restrictions.",
-              )}
-            </Text>
-            <Text as="p" size="secondary" leading="relaxed" className={styles.message}>
-              {t(
-                "Native skill controls: Codex, Claude, OpenCode, Pi and OMP. Cursor, Grok, FX, Hermes, Antigravity and generic ACP receive current restrictions as instructions; their native skill loading cannot be controlled individually through the connected protocol.",
-              )}
-            </Text>
-          </Disclosure>
-        </div>
+        </SkillList>
+        <footer className={styles.libraryFooter}>
+          <Button variant="ghost" size="sm" onClick={() => setAdvancedOpen(true)}>
+            {t("Advanced: skill controls and folders")}
+          </Button>
+        </footer>
       </section>
+      {advancedOpen ? (
+        <Modal
+          title={t("Advanced: skill controls and folders")}
+          size="md"
+          onClose={() => setAdvancedOpen(false)}
+        >
+          <Text
+            as="p"
+            size="secondary"
+            leading="relaxed"
+            id="setting-skill-folders"
+            data-setting-id="skill-folders"
+            tabIndex={-1}
+            className={styles.message}
+          >
+            {t(
+              "Disabled skills stay on disk. {p0} blocks their names across all sources on the selected machine, including search, reads and explicit invocations. Project skills live in {p1}, personal skills in {p2}; harness folders are also included.",
+              {
+                p0: PRODUCT_IDENTITY.displayName,
+                p1: ".agents/skills",
+                p2: "~/.agents/skills",
+              },
+            )}
+          </Text>
+          <Text as="p" size="secondary" leading="relaxed" className={styles.message}>
+            {t(
+              "Changes apply to subsequent turns. Running turns and previously loaded context cannot be erased. Enabling in bycoda does not override provider restrictions.",
+            )}
+          </Text>
+          <Text as="p" size="secondary" leading="relaxed" className={styles.message}>
+            {t(
+              "Native skill controls: Codex, Claude, OpenCode, Pi and OMP. Cursor, Grok, FX, Hermes, Antigravity and generic ACP receive current restrictions as instructions; their native skill loading cannot be controlled individually through the connected protocol.",
+            )}
+          </Text>
+        </Modal>
+      ) : null}
       <div className={styles.workspace}>
         {previewSkill && shownCopy ? (
           <aside id={previewId} aria-label={t("Skill preview")} className={styles.detail}>
@@ -1243,71 +1291,21 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         )}
         {actionFeedback}
       </div>
+      {groupEdit ? <SkillGroupDialogs edit={groupEdit} onClose={() => setGroupEdit(null)} /> : null}
       {actionsMenu ? (
-        <DropdownMenu
-          anchor={actionsMenu.anchor}
-          label={t("Actions for {p0}", { p0: actionsMenu.skill.name })}
-          align="end"
+        <SkillActionsMenu
+          target={actionsMenu}
+          policyAvailable={!!policies[actionsMenu.machine?.environmentId ?? "local"]}
+          off={isOff({ skill: actionsMenu.skill, machine: actionsMenu.machine })}
+          policySaving={policySaving}
+          deleteBlocked={deleting !== null || transferring !== null || saving}
           onClose={() => setActionsMenu(null)}
-          onPick={(id) => {
-            const { skill, machine } = actionsMenu;
-            if (id === "enable" || id === "disable") void onToggle(skill, id === "enable", machine);
-            else if (id === "copy") onCopyPath(skill.path);
-            else if (id === "reveal") onReveal(skill.path);
-            else if (id === "delete") void onDelete(skill, machine);
-          }}
-          items={[
-            ...(policies[actionsMenu.machine?.environmentId ?? "local"]
-              ? [
-                  isOff({ skill: actionsMenu.skill, machine: actionsMenu.machine })
-                    ? {
-                        kind: "item" as const,
-                        id: "enable",
-                        label: t("Enable {p0}", { p0: actionsMenu.skill.name }),
-                        disabled: policySaving,
-                        icon: <Eye className="icon-sm" />,
-                      }
-                    : {
-                        kind: "item" as const,
-                        id: "disable",
-                        label: t("Disable {p0}", { p0: actionsMenu.skill.name }),
-                        disabled: policySaving,
-                        icon: <EyeOff className="icon-sm" />,
-                      },
-                ]
-              : []),
-            {
-              kind: "item",
-              id: "copy",
-              label: t("Copy path of {p0}", { p0: actionsMenu.skill.name }),
-              icon: <Copy className="icon-sm" />,
-            },
-            ...(!actionsMenu.machine
-              ? [
-                  {
-                    kind: "item" as const,
-                    id: "reveal",
-                    label: t("Reveal {p0} in file explorer", {
-                      p0: actionsMenu.skill.name,
-                    }),
-                    icon: <FolderOpen className="icon-sm" />,
-                  },
-                ]
-              : []),
-            ...(canDeleteSkill(actionsMenu.skill)
-              ? [
-                  {
-                    kind: "item" as const,
-                    id: "delete",
-                    label: t("Delete {p0}", { p0: actionsMenu.skill.name }),
-                    title: t("Delete skill permanently"),
-                    danger: true,
-                    disabled: deleting !== null || transferring !== null || saving,
-                    icon: <Trash2 className="icon-sm" />,
-                  },
-                ]
-              : []),
-          ]}
+          onToggle={onToggle}
+          onCopyPath={onCopyPath}
+          onReveal={onReveal}
+          onDelete={onDelete}
+          onEdit={setGroupEdit}
+          onError={setGroupError}
         />
       ) : null}
     </Text>

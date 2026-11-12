@@ -410,7 +410,10 @@ export class McpHttp {
         ),
       );
       const current = allowed.filter((group) => identities.get(group));
-      if (!current.length) return reject(401, "MCP credential is invalid or revoked.");
+      if (!current.length) {
+        response.setHeader("X-Bycoda-Auth-Stage", "before-dispatch");
+        return reject(401, "MCP credential is invalid or revoked.");
+      }
       if (message.id === undefined) {
         // Notifications never dispatch tools or mutations.
         response.writeHead(202).end();

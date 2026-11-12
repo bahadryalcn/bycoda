@@ -61,6 +61,15 @@ available while the original result is checked.
 
 Before a turn disables native subagents, bycoda checks whether Conversation Tools can initialize for that session. If this bounded check fails, Automatic without an effort ceiling uses the provider's built-in subagents for that turn. Explicit model selections and effort ceilings remain enforced; bycoda tells the model and shows a non-blocking conversation status when delegation is unavailable. Off stays Off. A successful check cannot guarantee that a provider's later MCP connection will succeed.
 
+For Codex, bycoda sets `agents.enabled=false` in thread start/resume config to
+disable native agent tools (Codex 0.167.2). Legacy `features.multi_agent` and
+`features.multi_agent_v2` overrides remain for 0.166.x compatibility; those flags
+alone do not remove tools in 0.167.2. Native fallback sets all three overrides to
+`true`. A changed native-agent policy restarts the conversation's CLI process and
+resumes its thread so a warm process cannot retain the previous tool policy.
+Resumed Codex histories can contain old tool declarations followed by namespace
+removal updates; an old declaration alone does not prove current tool access.
+
 The assistant can search bycoda's tools by purpose and inspect the full contract
 only for the tools it needs. Existing tool names remain available. Finding a tool
 does not mean its machine, device or provider is connected or ready.
@@ -242,14 +251,20 @@ When no choice has been saved, every account starts with product defaults:
 - Every provider: **Automatic** subagents.
 
 Automatic resolves enabled models from connected providers at use time, up to 24
-references. Its preview groups models as Best, Strong, Medium, Light and Unranked;
-unknown families remain available. Claude Fable/Mythos, Opus, Sonnet and Haiku are
+references, ranked as Best, Strong, Medium, Light and Unranked for the agent; the
+settings use an Automatic / Custom / Off segmented control. Custom opens the
+model list picker; unset defaults follow inherited choices, then Automatic.
+Subagent max effort sets a
+separate ceiling without changing the main effort. Unknown families remain available. Claude Fable/Mythos, Opus, Sonnet and Haiku are
 ordered in those four tiers. Other known families use the shared family anchors;
 these tiers are guidance, not measured capability scores. The agent picks the
 lowest tier that can do the part well, using higher tiers for hard parts:
 usefulness first, then cost. Provider and tier representation survives trimming.
 The conversation's provider uses its own account; other providers use their default
 account. Known signed-out accounts are excluded. `agents.options` is authoritative.
+Runtime model lists are catalog previews; the agent checks `agents.options` before
+delegating. If Automatic returns no models, its `automatic.reason` distinguishes
+an empty catalog, no enabled models, no connected providers, and signed-out accounts.
 
 **Automatic**, **Off** and explicit model lists are separate choices. Adding a model
 switches to an explicit list; Automatic restores live resolution without saving a
@@ -270,9 +285,18 @@ leaves unset follow the provider's defaults, and project defaults still win. New
 conversations use the default account's values. Switching a conversation that has
 not sent anything yet to another account applies that account's defaults.
 
-The model panel opens from the model button. It lists providers on the left, the
+The model panel opens from the model button (click, Enter or Space), **Switch Model**
+in the app menu, or **Ctrl+Shift+.** on Windows / **Command+Shift+.** on macOS.
+Change or disable this binding in Settings > Keybindings. The shortcut toggles the
+panel; right-click the model button for recent models. Search receives focus on
+open: type to filter, use Up/Down and Enter to select. Escape closes and returns
+focus to the composer or model button. Tab / Shift+Tab move through the provider
+rail, search, model actions and settings; arrow keys move within provider tabs,
+Settings/Agents tabs, effort bars and Automatic/Custom/Off. Custom opens a searchable
+picker; Enter toggles its active choice, Done returns to the setting, and chip
+remove buttons and Add are reachable with Tab. It lists providers on the left, the
 provider's models in the middle and the selected model's options on the right, with
-a short explanation of the option under the pointer at the bottom. This help area
+a short explanation of the focused or pointed-at option at the bottom. This help area
 keeps its height as the pointer moves, so the options stay in place. The account
 control beside the provider name depends on how many accounts it has: one is shown
 by name, two switch with one click, three or more open a list with each account's

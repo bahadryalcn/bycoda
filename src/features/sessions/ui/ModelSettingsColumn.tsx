@@ -1,8 +1,13 @@
-import { Badge } from "../../../shared/ui/Badge";
-import { AutomaticSubagentModels } from "./AutomaticSubagentModels";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { useState, type FocusEvent, type MouseEvent, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
@@ -11,7 +16,7 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Switch } from "../../../shared/ui/Switch";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
-import { ChevronDown, CircleHelp, Plus, X, WandSparkles, Zap } from "../../../shared/ui/icons";
+import { ChevronDown, CircleHelp, Plus, X, Zap } from "../../../shared/ui/icons";
 import {
   delegationOptionSelected,
   delegationShortLabel,
@@ -66,7 +71,8 @@ export function ModelSettingHelp({
       className="flex shrink-0 items-start gap-2 border-t border-(--ui-frosted-divider) px-3 py-1.5 ui-caption-text"
     >
       <CircleHelp className="icon-xs mt-0.5 shrink-0" aria-hidden />
-      <ClampText as="p" lines={3} expandable={false} className="min-w-0 flex-1">
+      {/* Two lines are always reserved, so pointing at a setting never resizes the panel. */}
+      <ClampText as="p" lines={2} expandable={false} className="min-h-[2lh] min-w-0 flex-1">
         {setting && help ? (
           <>
             <Text size="inherit" tone="neutral" weight="medium">
@@ -109,6 +115,21 @@ export function ModelSettingsColumn({
   const [tab, setTab] = useState<PanelTab>("settings");
   const [explainedId, setExplainedId] = useState<string | null>(null);
   const [pickingId, setPickingId] = useState<string | null>(null);
+  const column = useRef<HTMLDivElement>(null);
+  const returnSetting = useRef<string | null>(null);
+  const focusedSetting = useRef<ModelSetting | null>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync DOM focus with the remounted setting after its column picker closes.
+  useLayoutEffect(() => {
+    if (pickingId || !returnSetting.current) return;
+    const row = column.current?.querySelector<HTMLElement>(
+      `[data-setting-id="${returnSetting.current}"]`,
+    );
+    returnSetting.current = null;
+    (
+      row?.querySelector<HTMLElement>('[aria-checked="true"]') ??
+      row?.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled])")
+    )?.focus({ preventScroll: true });
+  }, [pickingId]);
   const shownTab: PanelTab = agents.length === 0 ? "settings" : model.length === 0 ? "agents" : tab;
   const shown = shownTab === "settings" ? model : agents;
   const setExplained = (next: ModelSetting | null) => {
@@ -131,13 +152,23 @@ export function ModelSettingsColumn({
   const explain = (event: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
     const id = (event.target as HTMLElement).closest<HTMLElement>("[data-setting-id]")?.dataset
       .settingId;
-    const next = shown.find((setting) => setting.id === id) ?? null;
-    if ((next?.id ?? null) !== explainedId) setExplained(next);
+    const next = shown.find((setting) => setting.id === (id ?? pickingId)) ?? null;
+    if (event.type === "focus") focusedSetting.current = next;
+    const explained = focusedSetting.current ?? next;
+    if ((explained?.id ?? null) !== explainedId) setExplained(explained);
   };
 
   return (
     <div
+      ref={column}
       data-model-settings
+      onFocus={explain}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          focusedSetting.current = null;
+          setExplained(null);
+        }
+      }}
       className="flex min-h-0 w-60 shrink-0 flex-col border-l border-(--ui-tone-neutral-border) @max-[32rem]/model-panel:h-1/2 @max-[32rem]/model-panel:w-full @max-[32rem]/model-panel:border-t @max-[32rem]/model-panel:border-l-0"
     >
       {agents.length > 0 && model.length > 0 ? (
@@ -149,6 +180,7 @@ export function ModelSettingsColumn({
           }}
           size="sm"
           fill
+          panels="none"
         >
           <TabList label={t("Model options")} className="shrink-0 px-2 pt-1.5">
             <Tab value="settings">{t("Settings")}</Tab>
@@ -170,8 +202,7 @@ export function ModelSettingsColumn({
         <div
           className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none px-1.5 pt-1 pb-2"
           onMouseOver={explain}
-          onFocus={explain}
-          onMouseLeave={() => setExplained(null)}
+          onMouseLeave={() => setExplained(focusedSetting.current)}
         >
           {shown.length === 0 ? (
             <p className="px-1.5 py-2 ui-caption-text">
@@ -185,7 +216,10 @@ export function ModelSettingsColumn({
                 values={values}
                 disabled={locked(setting)}
                 onChoose={(value) => onChoose(setting, value)}
-                onPick={() => setPickingId(setting.id)}
+                onPick={() => {
+                  returnSetting.current = setting.id;
+                  setPickingId(setting.id);
+                }}
               />
             ))
           )}
@@ -329,47 +363,39 @@ function SettingRow({
         delegationOptionSelected(setting, values, option.value),
     );
     if (isMultiSetting(setting)) {
+      // Subagents pick a mode first: Automatic, a custom list or Off. Custom opens the picker.
+      const subagents = isSubagentSetting(setting);
+      const mode = value === "auto" ? "auto" : picked.length ? "custom" : "";
       // Picked subagents read as chips; the full list opens only to add more.
       // Last in the column, the list shrinks and scrolls on its own so the rows above stay put.
       return (
         <div data-setting-id={setting.id} className="flex min-h-0 shrink-0 flex-col pb-1">
           {heading(
-            isSubagentSetting(setting) && value === "auto" ? (
-              <Badge size="xs" tone="accent" icon={<WandSparkles className="icon-xs" />}>
-                {t("Automatic")}
-              </Badge>
-            ) : (
+            picked.length || !subagents ? (
               <Text size="caption" tone="secondary">
-                {picked.length
-                  ? formatNumber(picked.length)
-                  : t(isSubagentSetting(setting) ? "Off" : "Automatic")}
+                {picked.length ? formatNumber(picked.length) : t("Automatic")}
               </Text>
-            ),
+            ) : null,
           )}
-          {isSubagentSetting(setting) && value === "auto" ? (
-            <AutomaticSubagentModels setting={setting} />
+          {subagents ? (
+            <div className="px-1.5 pb-1.5">
+              <SegmentedControl
+                label={label}
+                value={mode}
+                onValueChange={(next) => (next === "custom" ? onPick() : onChoose(next))}
+                options={[
+                  { value: "auto", label: t("Automatic"), disabled },
+                  { value: "custom", label: t("Custom"), disabled },
+                  { value: "", label: t("Off"), disabled },
+                ]}
+              />
+            </div>
           ) : null}
           <div
             className="flex min-h-0 flex-wrap content-start gap-1 overflow-y-auto overscroll-none px-1.5"
             role="group"
             aria-label={label}
           >
-            {isSubagentSetting(setting) ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={disabled}
-                  onClick={() => onChoose("auto")}
-                >
-                  <WandSparkles className="icon-xs" />
-                  {t("Automatic")}
-                </Button>
-                <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onChoose("")}>
-                  {t("Off")}
-                </Button>
-              </>
-            ) : null}
             {picked.map((option) => (
               <Text
                 as="span"
@@ -401,20 +427,22 @@ function SettingRow({
                 </Button>
               </Text>
             ))}
-            <Button
-              size="sm"
-              variant="ghost"
-              shape="pill"
-              type="button"
-              disabled={disabled}
-              aria-describedby={describedBy}
-              data-model-setting-add
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={onPick}
-            >
-              <Plus className="icon-xs" />
-              {t("Add")}
-            </Button>
+            {subagents && mode !== "custom" ? null : (
+              <Button
+                size="sm"
+                variant="ghost"
+                shape="pill"
+                type="button"
+                disabled={disabled}
+                aria-describedby={describedBy}
+                data-model-setting-add
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={onPick}
+              >
+                <Plus className="icon-xs" />
+                {t("Add")}
+              </Button>
+            )}
           </div>
           {hiddenHelp}
         </div>

@@ -21,7 +21,8 @@ export function rankSkills(skills: Skill[], query: string, limit = MAX_PICKER): 
   // one "Templates" group.
   const templatesLast = (ranked: Skill[]) => [
     ...ranked.filter((skill) => skill.kind !== "template"),
-    ...ranked.filter((skill) => skill.kind === "template"),
+    ...ranked.filter((skill) => skill.kind === "template" && "groupId" in skill),
+    ...ranked.filter((skill) => skill.kind === "template" && !("groupId" in skill)),
   ];
   if (!needle) {
     return templatesLast(

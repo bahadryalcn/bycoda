@@ -1,11 +1,13 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { X } from "../../../shared/ui/icons";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { createNote } from "../../notes";
 import { requestAddToChat } from "../../sessions/public/quoteDraft";
@@ -72,10 +74,13 @@ function GitFeedbackContent({
       inline
       className="mx-2 my-0.5 min-w-0 shrink-0"
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <Text as="div" size="inherit" tone="primary">
-          {title}
-        </Text>
+      {/* One row: the title truncates so its actions never wrap below it. */}
+      <div className="flex min-w-0 items-center gap-x-2">
+        <OverflowTooltip label={title}>
+          <Text as="div" size="inherit" tone="primary" truncate className="min-w-0 flex-1">
+            {title}
+          </Text>
+        </OverflowTooltip>
         {detail ? (
           <Button
             variant="link"
@@ -92,8 +97,15 @@ function GitFeedbackContent({
           </Button>
         ) : null}
         {onDismiss ? (
-          <Button variant="ghost" size="sm" onClick={onDismiss}>
-            {t("Dismiss")}
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            className="shrink-0"
+            label={t("Dismiss")}
+            onClick={onDismiss}
+          >
+            <X width={16} height={16} strokeWidth={1.75} aria-hidden="true" />
           </Button>
         ) : null}
       </div>

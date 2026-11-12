@@ -264,7 +264,7 @@ export function surfaceTabPresentation(
       label: name,
       iconName: "AGENT",
       get tooltip() {
-        return translate("{p0} — orchestration agent", { p0: name });
+        return translate("{p0} · orchestration agent", { p0: name });
       },
     };
   }

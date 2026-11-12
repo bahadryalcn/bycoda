@@ -1,5 +1,7 @@
 # Inspect chat output and connected-machine files
 
+When Host delegation is unavailable for a turn, the conversation notice uses your app language. Automatic without an effort ceiling permits built-in subagents; otherwise subagents remain limited to your selected models and effort ceiling. Model-facing fallback guidance stays in English.
+
 Tool rows keep the conversation compact. Use **Changes** beside an edit or the output chevron beside a command to inspect its saved code, patch, or result. Expanded text can be selected and copied. A failed call shows its error before any earlier output.
 
 Subagent rows show the latest status, elapsed time and step counts beside the name, before the disclosure arrow. Previous status labels and counter values are replaced immediately. Completed runs use the success color, failed runs use the danger color, interrupted or stopped runs use the warning color, and running agents use the accent color. Failed-step counts appear in red; a failed step does not mean the entire run failed.
@@ -152,3 +154,40 @@ The HTTP bridge accepts fixed-length request bodies; streaming/chunked request b
 ## Notes with question choices
 
 For ordinary questions that accept custom text, select a suggested answer and add an optional note below the choices. The note stays separate from the selected option, survives navigation and remounts with the question draft, and is sent with the answer. Notes do not answer an unselected question. Typed forms and providers that require exact option values keep their original inputs. Answered question actions appear below the answer so Copy and other actions do not cover another question.
+
+## Reference tracker work items
+
+Type `@alias:ref` in a chat message to include a connected tracker item as reference
+context. Tokens stay plain text while editing and receive emphasis in the draft and
+sent message. Sent tokens are selectable text; they do not open a tracker item.
+
+Supported aliases and examples:
+
+- Jira: `@jira:PROJ-123`, `@jr:PROJ-123`, `@j:PROJ-1`.
+- GitHub: `@gh:142`, `@github:owner/repo#142`.
+- Linear: `@linear:ENG-42`, `@lin:ENG-42`, `@ln:ENG-42`.
+- GitLab: `@gl:group/proj!57`, `@gitlab:group/proj#57`.
+- Azure DevOps: `@ado:12`, `@azure:12`, `@az:12`.
+
+The picker searches connected trackers as you type, across all assignees including
+unassigned items. Cached matches stay visible during the 225 ms search delay and
+provider reads. Each row shows assignee, state and repository or team. Both scoped
+and unscoped suggestions show at most ten rows; crew suggestions still precede
+tracker rows and file suggestions follow them. Open items come first. Identifiers
+match without case sensitivity: exact identifiers precede shorter numeric prefixes,
+then title-word matches. For example, `@jira:proj-9` prefers `PROJ-9`, then `PROJ-90`
+through `PROJ-99`, before `PROJ-900`. `@jira:9` searches the number across projects.
+
+Searches are bounded rather than an exhaustive download: Jira, GitHub and GitLab
+probe up to 100 closest numeric key candidates. GitHub, GitLab and Azure DevOps use
+the current repository unless the reference names another one. Jira and Linear
+search their connected account. Azure DevOps PR title matches use the first 100
+active PRs; Boards title search runs on the provider. Exact GitHub, Jira and Azure
+DevOps PR reads can also return closed items, after open matches. Provider failures
+leave cached and file suggestions available.
+
+Connect the tracker in Settings first. Short numeric references use the project's
+repository context; use a qualified reference when needed. Sending resolves up to five
+unique references. Unavailable items leave the message intact, and native slash
+commands retain their literal arguments. Text saved inside a chat citation is not
+expanded as a tracker reference.

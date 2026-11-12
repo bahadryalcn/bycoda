@@ -23,7 +23,6 @@ export type ModelSetting = {
   value: string;
   options: ModelSettingChoice[];
   description?: string;
-  resolvedSubagents?: import("../../../shared/model/automaticSubagents").RankedSubagent[];
 };
 
 export type AgentModel = {

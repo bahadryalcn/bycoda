@@ -36,7 +36,7 @@ it("keeps controlled bounded keyboard values, formatted accessibility and commit
   const commit = vi.fn();
   function Consumer() {
     const [value, setValue] = useState(40);
-    return createElement(Slider, {
+    return createElement(Slider<number>, {
       label: "Opacity",
       value,
       min: 0,
@@ -63,7 +63,7 @@ it("clamps pointer gestures beyond both ends and commits released values", async
   const commit = vi.fn();
   function Consumer() {
     const [value, setValue] = useState(50);
-    return createElement(Slider, {
+    return createElement(Slider<number>, {
       label: "Blur",
       value,
       min: 0,
@@ -123,7 +123,7 @@ it("keeps disabled values unchanged and excludes disabled values from named subm
       createElement(
         "form",
         null,
-        createElement(Slider, {
+        createElement(Slider<number>, {
           label: "Opacity",
           value: 35,
           name: "opacity",

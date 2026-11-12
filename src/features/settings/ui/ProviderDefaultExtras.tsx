@@ -20,6 +20,7 @@ import {
 import type { ProviderSessionDefaults } from "../../sessions/public/projectProviders";
 import { mergeProviderExtras } from "../../sessions/public/providerSessionDefaults";
 import { Row } from "./settingsControls";
+import { ProviderDefaultSubagents } from "./ProviderDefaultSubagents";
 
 /** Label of the "follow the scope above" choice, naming the value it inherits. */
 export function inheritedChoiceLabel(inherited: string | undefined, valid: boolean): string {
@@ -77,6 +78,7 @@ export function ProviderDefaultExtras({
           <Row
             key={setting.id}
             label={t(setting.label)}
+            description={setting.description ? t(setting.description) : undefined}
             modified={saved != null || legacy != null}
             onReset={() => {
               const nextExtras = { ...scopeDefaults.extras };
@@ -106,6 +108,16 @@ export function ProviderDefaultExtras({
                   if (next) nextExtras[setting.id] = next;
                   else delete nextExtras[setting.id];
                   onSessionDefaultsChange({ ...scopeDefaults, extras: nextExtras });
+                }}
+              />
+            ) : setting.id === CROSS_SUBAGENTS_KEY ? (
+              <ProviderDefaultSubagents
+                setting={setting}
+                value={effectiveValues[setting.id]}
+                onChange={(next) => {
+                  const extras = { ...scopeDefaults.extras, [setting.id]: next };
+                  delete extras.subagentModel;
+                  onSessionDefaultsChange({ ...scopeDefaults, extras });
                 }}
               />
             ) : isMultiSetting(setting) ? (

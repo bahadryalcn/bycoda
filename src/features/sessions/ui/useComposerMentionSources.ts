@@ -16,6 +16,7 @@ import {
   type NoteSummary,
 } from "../../notes";
 import { useComposerCrewMentions } from "./useComposerCrewMentions";
+import { useComposerWorkItemMentions } from "./useComposerWorkItemMentions";
 
 type ScopedProjectFiles = { cwd: string; files: ProjectFile[] };
 
@@ -113,6 +114,11 @@ export function useComposerMentionSources(input: {
     retry: retryFiles,
   } = useComposerProjectFiles({ cwd: executionCwd, remote, mentionOpen });
   const notes = useComposerNotes(!remote && mentionOpen && notesEnabled);
+  const workItems = useComposerWorkItemMentions({
+    cwd: executionCwd,
+    active: mentionOpen,
+    query: mentionQuery,
+  });
   const crewHits = useComposerCrewMentions({
     cwd: executionCwd,
     active: mentionOpen,
@@ -123,12 +129,18 @@ export function useComposerMentionSources(input: {
   const deferredMentionQuery = useDeferredValue(mentionQuery);
   const rankedFiles = useMemo(() => {
     if (!mentionOpen) return [];
+    if (workItems.scoped) return workItems.rows;
     const fileHits = looksLikeProject(executionCwd)
       ? rankMentionFiles(files, deferredMentionQuery, recentOpenedFiles(executionCwd))
       : [];
     const noteHits = !remote && notesEnabled ? rankNoteFiles(notes, deferredMentionQuery) : [];
     const seen = new Set(noteHits.map((file) => file.path));
-    return [...crewHits, ...noteHits, ...fileHits.filter((file) => !seen.has(file.path))];
+    return [
+      ...crewHits,
+      ...workItems.rows,
+      ...noteHits,
+      ...fileHits.filter((file) => !seen.has(file.path)),
+    ];
   }, [
     crewHits,
     executionCwd,
@@ -138,6 +150,16 @@ export function useComposerMentionSources(input: {
     notes,
     notesEnabled,
     remote,
+    workItems.rows,
+    workItems.scoped,
   ]);
-  return { mentionIndex, rankedFiles, filesFailed, retryFiles };
+  return {
+    mentionIndex,
+    rankedFiles,
+    filesFailed: !workItems.scoped && filesFailed,
+    retryFiles,
+    workItemsLoading: workItems.loading,
+    workItemsScoped: workItems.scoped,
+    workItemsAvailable: workItems.available,
+  };
 }

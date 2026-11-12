@@ -51,7 +51,7 @@ import { GitOperationBanner } from "./GitOperationBanner";
 import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
 import { BranchPicker } from "./BranchPicker";
-import { applyCommit, applyIndexAction } from "../model/optimisticIndex";
+import { applyCommit, applyIndexAction, applySync } from "../model/optimisticIndex";
 import { ACTION_LABEL, busyLabel } from "../model/gitBusyLabel";
 import { AUTO_FETCH_MS, loadAutoFetch, saveAutoFetch } from "../model/autoFetch";
 import {
@@ -1127,12 +1127,12 @@ function ChangedFiles({
           await gitPush(cwd);
           pushed = true;
           recordPrActivity();
+          if (index) showOptimistic(applySync(applyCommit(index, stageAll)));
         }
         onMutated();
         if (createPr) {
           setPending("Creating pull request…");
           await openCreatedPr();
-          reloadPr();
         }
       } catch (error) {
         if (committed)
@@ -1172,6 +1172,9 @@ function ChangedFiles({
       try {
         await gitSync(cwd);
         if (pushesCommits) recordPrActivity();
+        // The counts are settled now: the action must not offer the same push
+        // again while the reload reads.
+        showOptimistic(applySync(index));
         onMutated();
         reloadPr();
       } catch (error) {
@@ -1269,11 +1272,11 @@ function ChangedFiles({
           setPending("Pushing…");
           await gitPush(cwd);
           pushed = true;
+          if (index) showOptimistic(applySync(index));
         }
         setPending("Creating pull request…");
         await openCreatedPr();
         onMutated();
-        reloadPr();
       } catch (error) {
         setGitFeedback(cwd, {
           kind: pushed ? "warning" : "error",

@@ -78,7 +78,7 @@ export function summarizeProgramSuggestion(
         timeZone: value.schedule.timeZone,
       }).format(at);
     } catch {
-      return t("Invalid date or time zone — review the schedule.");
+      return t("Invalid date or time zone. Check the schedule.");
     }
   };
   const accountNames = (ids: string[]) =>

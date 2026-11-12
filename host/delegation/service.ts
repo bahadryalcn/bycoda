@@ -1,4 +1,9 @@
-import { resolveSubagents, subagentTier } from "../../src/shared/model/automaticSubagents";
+import {
+  resolveSubagents,
+  subagentTier,
+  subagentCatalogModels,
+  automaticSubagentEmptyReason,
+} from "../../src/shared/model/automaticSubagents";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   HostModelCatalog,
@@ -139,15 +144,20 @@ export class ConversationDelegation {
         }),
       );
     }
+    const input = {
+      harness: session.harness,
+      providerAccountId: session.providerAccountId,
+      models: subagentCatalogModels(catalog.models),
+      providers: this.deps.providers,
+      signedOutAccounts,
+      defaultAccounts,
+    };
+    const subagents = resolveSubagents(session.modelSettings[CROSS_SUBAGENTS_KEY], input);
     return {
-      subagents: resolveSubagents(session.modelSettings[CROSS_SUBAGENTS_KEY], {
-        harness: session.harness,
-        providerAccountId: session.providerAccountId,
-        models: Object.values(catalog.models).flat(),
-        providers: this.deps.providers,
-        signedOutAccounts,
-        defaultAccounts,
-      }),
+      subagents,
+      ...(session.modelSettings[CROSS_SUBAGENTS_KEY] === AUTOMATIC_SUBAGENTS && !subagents.length
+        ? { automatic: { reason: automaticSubagentEmptyReason(input) } }
+        : {}),
       advisor: decodeAdvisor(session.modelSettings[CROSS_ADVISOR_KEY]),
     };
   }
@@ -172,7 +182,7 @@ export class ConversationDelegation {
   private async options(caller: AgentsCaller) {
     const own = await this.caller(caller);
     const catalog = await this.deps.models(caller.projectId);
-    const { subagents, advisor } = await this.selected(own.session, catalog);
+    const { subagents, advisor, automatic } = await this.selected(own.session, catalog);
     const running = await this.runningCounts(caller.sessionId);
     const describe = (ref: DelegateModelRef) => {
       const model = this.resolve(ref, catalog);
@@ -189,6 +199,7 @@ export class ConversationDelegation {
     };
     return {
       subagents: subagents.map((ref) => ({ ...describe(ref), tier: subagentTier(ref.model) })),
+      ...(automatic ? { automatic } : {}),
       ...(own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY]
         ? { maxEffort: own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY] }
         : {}),

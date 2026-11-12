@@ -1,3 +1,4 @@
+import { classicAccent } from "./crewCodeColor";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   canvasWorkerEnabled,
@@ -27,6 +28,7 @@ import {
   SIGN_HEIGHT,
   SIGN_TOP,
   type TeaPose,
+  type CodeArtPainter,
 } from "./crewCodeArt";
 import {
   loadCrewGrowthEnabled,
@@ -37,6 +39,7 @@ import {
 import { crewCharge } from "./starWarsCrew";
 import { riggedCrewTheme } from "./crewThemes";
 import "./CrewScene.css";
+import "./crewClassicColor.css";
 import { useShellSessions } from "../model/sessionsStore";
 import type { Session } from "../model/session";
 import { crewAge, crewSeats, previewCrewSeats, type CrewSeat } from "../model/crewActivity";
@@ -159,12 +162,13 @@ function CrewStage({
     loadCrewGrowthEnabled,
     loadCrewGrowthEnabled,
   );
+  const showCharge = rigged ? growthEnabled : !growthEnabled;
   const ageOf = (seat: CrewSeat | undefined) =>
     growthEnabled ? crewAge(seat?.context) : crewAge(undefined);
   const crewKey = crew
     .map((seat) => {
       const age = ageOf(seat);
-      return `${seat.role}/${seat.working}/${age.stage}/${Math.round(age.growth * 20)}/${rigged ? crewCharge(seat.context, growthEnabled)?.toFixed(2) : ""}`;
+      return `${seat.role}/${seat.working}/${age.stage}/${Math.round(age.growth * 20)}/${showCharge ? crewCharge(seat.context)?.toFixed(2) : ""}`;
     })
     .join(";");
   const crewRef = useRef(crew);
@@ -202,6 +206,7 @@ function CrewStage({
   const [labels, setLabels] = useState<SeatLabel[]>([]);
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const painter = useRef<{ draw: CodeArtPainter; painted: boolean } | null>(null);
   const startedAt = useRef<number | null>(null);
   const enabled = useDecorativeMotionEnabled();
   const focused = useWindowHasFocus();
@@ -256,6 +261,7 @@ function CrewStage({
       window.removeEventListener("resize", update);
     };
   }, [enabled, focused]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns painter resources across streaming pause changes; retains other existing reset boundaries
   useEffect(() => {
     const surface = canvas.current;
     if (!surface) return;
@@ -264,6 +270,17 @@ function CrewStage({
       : workerEnabled && CLASSIC_CREW_WORKER_QUALIFIED
         ? createCrewCanvasHost(surface)
         : createCodeArtPainter(surface);
+    painter.current = { draw, painted: false };
+    return () => {
+      draw.dispose?.();
+      painter.current = null;
+    };
+  }, [running, crewKey, frame, artStatus, rigged, growthEnabled, variant, workerEnabled]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- schedules the retained painter from the existing motion gates and wall clock
+  useEffect(() => {
+    const instance = painter.current;
+    if (!instance || (paused && instance.painted)) return;
+    const { draw } = instance;
     let previous: number | undefined;
     let previousLabels: number | undefined;
     let lastFrame = performance.now();
@@ -327,7 +344,11 @@ function CrewStage({
           arrival: arrivals.current[id],
           role: seats[id]?.role ?? ("subagent" as CrewRole),
           working: !!target,
-          charge: rigged ? crewCharge(seats[id]?.context, growthEnabled) : undefined,
+          charge: rigged
+            ? crewCharge(seats[id]?.context, growthEnabled)
+            : !growthEnabled
+              ? crewCharge(seats[id]?.context)
+              : undefined,
           age,
         };
       });
@@ -392,11 +413,12 @@ function CrewStage({
       if (signature === previous) return settled;
       previous = signature;
       draw(actions, activity, viewportWidth.current, steamTime);
+      instance.painted = true;
       return settled;
     };
     if (!running) {
       paint(0);
-      return () => draw.dispose?.();
+      return;
     }
     startedAt.current = startedAt.current ?? performance.now();
     const start = startedAt.current;
@@ -417,7 +439,6 @@ function CrewStage({
     tick();
     return () => {
       if (timer !== undefined) clearTimeout(timer);
-      draw.dispose?.();
     };
   }, [running, crewKey, frame, artStatus, rigged, growthEnabled, variant, paused, workerEnabled]);
   return (
@@ -447,10 +468,15 @@ function CrewStage({
                     "Matrix crew: Neo leads and Morpheus advises. {p0} crew members, {p1} working. Meters show context usage, not task progress.",
                     { p0: crew.length, p1: workingCount },
                   )
-                : t(
-                    "{p0} crew members beneath the bycoda sign: the main agent, the advisor and subagents; {p1} working and standing. Monochrome binary code art.",
-                    { p0: crew.length, p1: workingCount },
-                  )
+                : !growthEnabled
+                  ? t(
+                      "{p0} crew members beneath the bycoda sign; {p1} working. Binary code art with color and meters showing context usage, not task progress.",
+                      { p0: crew.length, p1: workingCount },
+                    )
+                  : t(
+                      "{p0} crew members beneath the bycoda sign: the main agent, the advisor and subagents; {p1} working and standing. Monochrome binary code art.",
+                      { p0: crew.length, p1: workingCount },
+                    )
           : undefined
       }
       aria-hidden={variant === "background" ? true : undefined}
@@ -487,7 +513,7 @@ function CrewStage({
         <div className="crew-scene__labels" aria-hidden="true">
           {labels.map((label) => {
             const character = rigged?.character(label.id, label.role);
-            const charge = crewCharge(crew[label.id]?.context, growthEnabled);
+            const charge = crewCharge(crew[label.id]?.context, rigged ? growthEnabled : true);
             const percent = charge === undefined ? undefined : Math.round(charge * 100);
             const displayName =
               crew[label.id]?.name || (character ? character.name : roleText(label.role, t));
@@ -497,7 +523,9 @@ function CrewStage({
                 label={
                   character
                     ? `${displayName} · ${character.name} · ${roleText(label.role, t)}${growthEnabled ? ` · ${percent === undefined ? t("Context unknown") : t("Context: {p0}%", { p0: percent })}` : ""}`
-                    : displayName
+                    : showCharge
+                      ? `${displayName} · ${percent === undefined ? t("Context unknown") : t("Context: {p0}%", { p0: percent })}`
+                      : displayName
                 }
                 asChild
               >
@@ -508,7 +536,7 @@ function CrewStage({
                   data-working={label.working ? "true" : "false"}
                   data-age={ageOf(crew[label.id]).stage}
                   data-character={character?.id}
-                  data-charge={rigged && growthEnabled ? (percent ?? "unknown") : undefined}
+                  data-charge={showCharge ? (percent ?? "unknown") : undefined}
 
                   style={{
                     insetInlineStart: `${(label.x / CODE_WIDTH) * 100}%`,
@@ -518,19 +546,26 @@ function CrewStage({
                     inlineSize: `${(label.width / CODE_WIDTH) * 100}%`,
                   }}
                 >
-                  {character ? (
+                  {character || showCharge ? (
                     <>
                       <span className="crew-scene__name">{displayName}</span>
-                      <span className="crew-scene__detail">
-                        {roleText(label.role, t)}
-                        {growthEnabled ? ` · ${percent === undefined ? "—" : `${percent}%`}` : ""}
-                      </span>
-                      {growthEnabled && (
+                      {!character && showCharge && (
+                        <span className="crew-scene__charge">
+                          {percent === undefined ? "—" : `${percent}%`}
+                        </span>
+                      )}
+                      {character && (
+                        <span className="crew-scene__detail">
+                          {roleText(label.role, t)}
+                          {showCharge ? ` · ${percent === undefined ? "—" : `${percent}%`}` : ""}
+                        </span>
+                      )}
+                      {showCharge && (
                         <span className="crew-scene__meter">
                           <span
                             style={{
                               inlineSize: `${percent ?? 0}%`,
-                              backgroundColor: character.accent,
+                              backgroundColor: character?.accent ?? classicAccent(label.id),
                             }}
                           />
                         </span>

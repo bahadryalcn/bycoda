@@ -61,3 +61,15 @@ Installation progress and errors appear next to the skill. If completion is
 uncertain, use **Check status**; bycoda checks the original operation instead of
 automatically downloading again. Confirmed failures can be dismissed before another
 attempt. Reopen Discover skills to inspect the same window's retained operation.
+
+## Skill groups in chat
+
+Skill groups reference installed skills by name. In the composer, choose a group from the **Skill groups** section to insert its available skills together as ordinary skill tokens. Missing, disabled and non-user-invocable skills are skipped. Groups retain missing names so reinstalling a skill restores membership. Group insertion refreshes the current machine policy and preserves the draft if that refresh fails.
+
+AI grouping uses the selected skill grouping provider and model, falling back to the title-generation utility choice. Only skill names and descriptions are sent. Generation returns a proposal; existing groups change only when that proposal is explicitly applied.
+
+## Organize installed skills
+
+Switch between **All skills** and **Groups** in the Skills library. Create groups from the toolbar or a skill’s actions menu. Right-click a skill to open the same actions, add it to several groups, or remove it from the current group. Drag a skill onto a group header to move it from its source group; drop onto **Ungrouped** to remove that source membership. Group headers offer rename, delete and collapse actions. Deleting a group keeps its skills installed. View and collapse preferences are remembered locally. Missing group members remain saved and appear in the header count.
+
+Choose a model beside **Group with AI**. Generation can be canceled. Review the proposed names and skills, then explicitly choose **Replace my groups** or **Add as new groups**. Cancel leaves existing groups unchanged.

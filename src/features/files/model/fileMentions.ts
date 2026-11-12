@@ -53,9 +53,14 @@ export function mentionTokenAt(text: string, cursor: number): MentionToken | nul
   return { start, end, query: typed };
 }
 
-export function replaceMentionToken(text: string, token: MentionToken, label: string): string {
+export function replaceMentionToken(
+  text: string,
+  token: MentionToken,
+  label: string,
+  trailingSpace = true,
+): string {
   const rest = text.slice(token.end);
-  const spacer = rest.startsWith(" ") ? "" : " ";
+  const spacer = !trailingSpace || rest.startsWith(" ") ? "" : " ";
   return `${text.slice(0, token.start)}@${label}${spacer}${rest}`;
 }
 

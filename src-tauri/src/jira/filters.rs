@@ -7,6 +7,9 @@ pub struct JiraIssueFilters {
     pub assignee_ids: Vec<String>,
     pub unassigned: bool,
     pub statuses: Vec<String>,
+    pub search: String,
+    pub issue_picker: bool,
+    pub exact_key: bool,
 }
 
 impl JiraIssueFilters {
@@ -44,6 +47,9 @@ impl JiraIssueFilters {
             assignees.push(format!("assignee in ({})", ids.join(", ")));
         }
         let mut clauses = Vec::new();
+        if !self.issue_picker && !self.search.trim().is_empty() {
+            clauses.push(super::mention_search::search_clause(&self.search)?);
+        }
         if !assignees.is_empty() {
             clauses.push(format!("({})", assignees.join(" OR ")));
         }
@@ -77,6 +83,7 @@ mod tests {
             assignee_ids: vec!["account-1".into()],
             unassigned: true,
             statuses: vec!["Development in progress".into(), "Test approved".into()],
+            ..Default::default()
         };
         assert_eq!(filters.jql(true, "open", &["10000".into()]).unwrap(),
             "(assignee = currentUser() OR assignee is EMPTY OR assignee in (\"account-1\")) AND status in (\"Development in progress\", \"Test approved\") AND project in (10000) AND statusCategory != Done ORDER BY updated DESC");

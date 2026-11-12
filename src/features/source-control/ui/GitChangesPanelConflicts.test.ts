@@ -204,10 +204,15 @@ describe("Merge Conflicts section", () => {
     expect(container.textContent).toContain("Merge in progress · 2 conflicts");
     expect(row("a.ts").textContent).toContain("UU");
     expect(row("sub/gone.ts").textContent).toContain("DU");
-    for (const [path, detail] of [["a.ts", "Both modified"], ["sub/gone.ts", "Deleted by us"]]) {
-      const badge = row(path!).querySelector<HTMLElement>("[data-tooltip-owner][aria-label]")!;
+    for (const [path, detail] of [
+      ["a.ts", "Both modified"],
+      ["sub/gone.ts", "Deleted by us"],
+    ]) {
+      const badge = row(path!).querySelector<HTMLElement>("span[data-tooltip-owner][aria-label]")!;
       await act(async () => {
-        badge.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+        badge.dispatchEvent(
+          new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }),
+        );
         await new Promise((resolve) => setTimeout(resolve, 500));
       });
       expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(detail);

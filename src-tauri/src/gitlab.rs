@@ -11,6 +11,7 @@ use tauri::{AppHandle, Manager};
 const DEFAULT_GITLAB_URL: &str = "https://gitlab.com";
 const DEFAULT_LIMIT: u32 = 40;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+mod mention_search;
 const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024;
 const USER_AGENT: &str = "Bycoda";
 
@@ -174,10 +175,24 @@ pub async fn gitlab_list_work_items(
     assigned_to_me: bool,
     state: String,
     limit: Option<u32>,
+    search: Option<String>,
+    repo: Option<String>,
 ) -> Result<Vec<GitlabWorkItem>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let config = require_config(&app)?;
-        let repo = gitlab_repo_for(&expand_home(&cwd), &config.url)?;
+        let repo = match repo {
+            Some(repo) => validate_repo(&repo)?,
+            None => gitlab_repo_for(&expand_home(&cwd), &config.url)?,
+        };
+        if let Some(search) = search.filter(|s| !s.trim().is_empty()) {
+            return mention_search::search_items(
+                &config,
+                &repo,
+                &kind,
+                &search,
+                limit.unwrap_or(DEFAULT_LIMIT),
+            );
+        }
         gitlab_list_work_items_for(
             &config,
             &repo,

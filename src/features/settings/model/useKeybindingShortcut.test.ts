@@ -3,12 +3,13 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { Button } from "../../../shared/ui/Button";
-import { MOD } from "../../../platform/tauri/platform";
+import { MOD, SHIFT } from "../../../platform/tauri/platform";
 import { saveKeybindingOverride } from "./settings";
 import { useKeybindingShortcut } from "./useKeybindingShortcut";
 
 /** The modifier as its key cap reads in the tooltip (`Ctrl+` renders as the cap `Ctrl`). */
 const MOD_CAP = MOD.replace(/\+$/, "");
+const SHIFT_CAP = SHIFT.replace(/\+$/, "");
 
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
 async function tooltipText(element: HTMLElement): Promise<string> {
@@ -53,7 +54,7 @@ it("updates native and Arc tooltips immediately after rebind, disable, reset and
       await act(async () => root.render(createElement(Action, { command, native })));
       const button = () => container.querySelector("button")!;
       expect(button().getAttribute("title")).toBeNull();
-      expect(await tooltipText(button())).toBe(`Choose a model${MOD_CAP}.`);
+      expect(await tooltipText(button())).toBe(`Choose a model${MOD_CAP}${SHIFT_CAP}.`);
       expect(button().getAttribute("aria-label")).toBe("Switch model");
       await act(async () => {
         saveKeybindingOverride(command, { shortcut: "Control+Shift+KeyM" });
@@ -68,7 +69,7 @@ it("updates native and Arc tooltips immediately after rebind, disable, reset and
       await act(async () => {
         saveKeybindingOverride(command, {});
       });
-      expect(await tooltipText(button())).toBe(`Choose a model${MOD_CAP}.`);
+      expect(await tooltipText(button())).toBe(`Choose a model${MOD_CAP}${SHIFT_CAP}.`);
       await act(async () => {
         localStorage.setItem(
           "bycoda.keybindingOverrides",

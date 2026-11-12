@@ -21,6 +21,7 @@ vi.mock("../../../shared/ui/Popover", () => ({
   Popover: ({
     children,
     role,
+    kind,
     className,
     tabIndex,
     onKeyDown,
@@ -28,6 +29,7 @@ vi.mock("../../../shared/ui/Popover", () => ({
   }: {
     children: ReactNode;
     role?: string;
+    kind?: string;
     className?: string;
     tabIndex?: number;
     onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
@@ -42,7 +44,7 @@ vi.mock("../../../shared/ui/Popover", () => ({
     createElement(
       "div",
       {
-        role,
+        role: kind === "dialog" ? "dialog" : role,
         className,
         tabIndex,
         onKeyDown,
@@ -161,7 +163,11 @@ describe("cross-provider delegation rows", () => {
       const block = column.querySelector<HTMLElement>(`[data-setting-id="${id}"]`)!;
       const open =
         block.querySelector<HTMLButtonElement>("[data-model-setting-add]") ??
-        block.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+        block.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]') ??
+        // Subagents without a list: the Custom segment opens the picker.
+        [...block.querySelectorAll<HTMLElement>("button, [role=radio], [role=tab]")].find(
+          (item) => item.textContent === "Custom",
+        )!;
       await act(async () => open.click());
     }
     const picker = column.querySelector<HTMLElement>(`[data-model-setting-picker="${id}"]`)!;
@@ -205,7 +211,7 @@ describe("cross-provider delegation rows", () => {
     // The panel stays open after a subagent pick: re-render with the saved value and add another.
     const picked = encodeSubagents([
       { harness: "codex", model: codexModel.id, providerAccountId: "default" },
-    ]);
+    ])!;
     await act(async () =>
       root.render(
         createElement(ModelPicker, {
@@ -239,7 +245,7 @@ describe("cross-provider delegation rows", () => {
     seedCatalogs();
     const picked = encodeSubagents([
       { harness: "codex", model: codexModel.id, providerAccountId: "default" },
-    ]);
+    ])!;
     const onSettingsChange = vi.fn();
     const column = await openPanel(
       "cursor",

@@ -4,11 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProjectSearch } from "./ProjectSearch";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
+import { replaceProject } from "../../search/model/search";
 import type { ProjectSearchResult } from "../../search/model/search";
 
 vi.mock("../../search/model/search", () => ({
   cancelProjectSearch: vi.fn(async () => {}),
   searchProject: vi.fn(),
+  replaceProject: vi.fn(),
 }));
 let root: Root;
 let host: HTMLDivElement;
@@ -78,22 +80,23 @@ it("keeps option toggles inside the query frame and shares inline details contro
     expect(toggle.getAttribute("data-button-selected")).toBe("true");
   }
   const controls = host.querySelectorAll<HTMLButtonElement>('[aria-label="Toggle Search Details"]');
-  expect(controls).toHaveLength(2);
+  expect(controls).toHaveLength(1);
+  const replace = host.querySelector<HTMLButtonElement>('[aria-label="Toggle Replace"]')!;
+  expect(replace).not.toBeNull();
+  act(() => replace.click());
+  expect(input("Replace")).not.toBeNull();
   const details = document.getElementById(controls[0].getAttribute("aria-controls")!)!;
   expect(details.hidden).toBe(true);
   act(() => controls[0].click());
   expect(details.hidden).toBe(false);
-  expect([...controls].map((button) => button.getAttribute("aria-expanded"))).toEqual([
-    "true",
-    "true",
-  ]);
+  expect([...controls].map((button) => button.getAttribute("aria-expanded"))).toEqual(["true"]);
   for (const label of ["files to include", "files to exclude"]) {
     const field = input(label);
     expect(details.contains(field)).toBe(true);
     expect(host.querySelector(`label[for="${field.id}"]`)?.textContent).toBe(label);
   }
   type("files to include", "src/**");
-  act(() => controls[1].click());
+  act(() => controls[0].click());
   expect(details.hidden).toBe(true);
   expect(input("files to include").value).toBe("src/**");
   expect(host.querySelector('[role="dialog"]')).toBeNull();
@@ -275,4 +278,58 @@ it("labels a result's line number as a line gutter", async () => {
   type("Search", "needle");
   await act(async () => vi.advanceTimersByTime(210));
   expect(host.querySelector('[aria-label="Line 64"]')?.textContent).toBe("64");
+});
+
+it("previews counts, confirms replacement, then refreshes results", async () => {
+  search.mockResolvedValueOnce(found("old"));
+  vi.mocked(replaceProject).mockResolvedValue({
+    filesChanged: 1,
+    replacements: 3,
+    failures: [],
+    revisions: { "old.ts": "hash" },
+  });
+  render();
+  type("Search", "old");
+  await act(async () => vi.advanceTimersByTime(210));
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle Replace"]')!.click());
+  type("Replace", "new");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Replace All"]')!.click(),
+  );
+  expect(replaceProject).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ query: "old", replacement: "new", dryRun: true }),
+  );
+  expect(document.body.textContent).toContain("Replace 3 occurrences across 1 files with 'new'?");
+  const dialog = document.querySelector('[role="dialog"]')!;
+  await act(async () =>
+    [...dialog.querySelectorAll("button")]
+      .find((button) => button.textContent === "Replace All")!
+      .click(),
+  );
+  expect(replaceProject).toHaveBeenLastCalledWith(
+    expect.objectContaining({ dryRun: false, revisions: { "old.ts": "hash" } }),
+  );
+  await act(async () => vi.advanceTimersByTime(210));
+  expect(search).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("Replaced 3 occurrences in 1 files");
+});
+
+it("cancel leaves files untouched and empty results disable replacement", async () => {
+  vi.mocked(replaceProject).mockClear();
+  render();
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle Replace"]')!.click());
+  const replace = host.querySelector<HTMLButtonElement>('[aria-label="Replace All"]')!;
+  expect(replace.disabled || replace.getAttribute("aria-disabled") === "true").toBe(true);
+  search.mockResolvedValueOnce(found("old"));
+  type("Search", "old");
+  await act(async () => vi.advanceTimersByTime(210));
+  await act(async () => replace.click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  await act(async () =>
+    [...dialog.querySelectorAll("button")]
+      .find((button) => button.textContent === "Cancel")!
+      .click(),
+  );
+  expect(replaceProject).toHaveBeenCalledTimes(1);
+  expect(replaceProject).toHaveBeenLastCalledWith(expect.objectContaining({ dryRun: true }));
 });

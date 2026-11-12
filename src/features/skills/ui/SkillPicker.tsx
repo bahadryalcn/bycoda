@@ -1,3 +1,4 @@
+import { isSkillGroupPickerItem } from "../model/skillGroupPicker";
 import { Text } from "../../../shared/ui/Text";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
@@ -182,8 +183,17 @@ function SkillList({
       {skills.map((skill, index) => {
         const highlighted = index === active;
         return (
-          <Fragment key={`${skill.kind}:${skill.source}:${skill.invocation}`}>
-            {skill.kind === "template" && skills[index - 1]?.kind !== "template" ? (
+          <Fragment
+            key={
+              isSkillGroupPickerItem(skill)
+                ? `group:${skill.groupId}`
+                : `${skill.kind}:${skill.source}:${skill.invocation}`
+            }
+          >
+            {skill.kind === "template" &&
+            (skills[index - 1]?.kind !== "template" ||
+              isSkillGroupPickerItem(skill) !==
+                (skills[index - 1] ? isSkillGroupPickerItem(skills[index - 1]) : false)) ? (
               <Text
                 as="p"
                 size="caption"
@@ -191,7 +201,7 @@ function SkillList({
                 weight="medium"
                 className="px-2 pb-0.5 pt-1.5"
               >
-                {t("Templates")}
+                {isSkillGroupPickerItem(skill) ? t("Skill groups") : t("Templates")}
               </Text>
             ) : null}
             <Button
@@ -213,7 +223,7 @@ function SkillList({
                   {skill.invocation}
                 </Text>
                 <Text size="caption" tone="secondary" className="shrink-0">
-                  {scopeLabel(skill)}
+                  {isSkillGroupPickerItem(skill) ? skill.description : scopeLabel(skill)}
                 </Text>
               </span>
               {!compact && skill.description ? (

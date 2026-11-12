@@ -45,6 +45,20 @@ export function sessionWait(
   );
 }
 
+/**
+ * The agent itself is mid-turn: busy, not waiting on the user and not only held
+ * open by background work. Spinners read this so a turn parked on approval or a
+ * long-running command does not look like endless loading.
+ */
+export function sessionWorkingNow(session: Session): boolean {
+  return (
+    !!session.busy &&
+    !session.worktreeRemoved &&
+    !sessionNeedsInput(session) &&
+    !backgroundWait(session)
+  );
+}
+
 /** One line for tooltips and screen readers: what the wait is on. */
 export function sessionWaitReason(wait: SessionWait): string {
   return sessionWaitReasonWith(t, wait);

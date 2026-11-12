@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { cancelProjectSearch, searchProject } from "./search";
+import { cancelProjectSearch, searchProject, replaceProject } from "./search";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
 import {
   cancelSessionSearch,
@@ -107,4 +107,33 @@ describe("project search cancellation", () => {
     });
     expect(invoke).not.toHaveBeenCalled();
   });
+});
+
+it("routes replacement preview and reviewed writes to each owning machine", async () => {
+  const options = {
+    cwd: "/repo",
+    query: "old",
+    searchId: "replace-1",
+    replacement: "$1",
+    dryRun: true,
+  };
+  await replaceProject(options);
+  expect(invoke).toHaveBeenLastCalledWith("replace_project", { options });
+  const remote = vi
+    .fn()
+    .mockResolvedValue({
+      filesChanged: 1,
+      replacements: 2,
+      failures: [],
+      revisions: { "a.txt": "hash" },
+    });
+  setRemoteCommandRunner(remote);
+  const reviewed = {
+    ...options,
+    cwd: "remote://env/repo",
+    dryRun: false,
+    revisions: { "a.txt": "hash" },
+  };
+  await replaceProject(reviewed);
+  expect(remote).toHaveBeenLastCalledWith("replace_project", { options: reviewed });
 });

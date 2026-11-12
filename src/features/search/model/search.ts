@@ -65,3 +65,21 @@ export function searchProject(options: ProjectSearchOptions): Promise<ProjectSea
 export function cancelProjectSearch(cwd: string, searchId: string): Promise<void> {
   return invokeWorkspace<void>("cancel_project_search", { cwd, searchId });
 }
+
+export type ProjectReplaceResult = {
+  filesChanged: number;
+  replacements: number;
+  failures: string[];
+  revisions: Record<string, string>;
+};
+
+/** Preview counts and hashes first; only reviewed file revisions may be written. */
+export function replaceProject(
+  options: ProjectSearchOptions & {
+    replacement: string;
+    dryRun: boolean;
+    revisions?: Record<string, string>;
+  },
+): Promise<ProjectReplaceResult> {
+  return invokeWorkspace<ProjectReplaceResult>("replace_project", { options });
+}
