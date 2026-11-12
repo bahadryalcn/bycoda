@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer, defaultRangeExtractor } from "@tanstack/react-virtual";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
@@ -13,7 +14,7 @@ import { selectTreePaths, type TreeSelectionModifiers } from "../../files/public
 
 import type { ChangesView } from "../../settings";
 import { basename, type GitChangedFile, type GitFileDiffKind } from "../../../platform/tauri/fs";
-import { ChangeRow, ChangeSelectionCtx, statusColor } from "./ChangeRow";
+import { ChangeRow, ChangeSelectionCtx, statusTone } from "./ChangeRow";
 
 const ROW_HEIGHT_FALLBACK = 28;
 
@@ -266,9 +267,9 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
     <ChangeSelectionCtx.Provider value={context}>
       <li className="list-none">
         {selectedFiles.length > 1 ? (
-          <p role="status" className="px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+          <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-1">
             {t("{p0} selected entries", { p0: selectedFiles.length })}
-          </p>
+          </Text>
         ) : null}
         <ul
           ref={listRef}
@@ -358,7 +359,7 @@ function ChangeDirRow({
     <li style={style}>
       <ActionHost
         style={{ "--git-row-depth": depth } as CSSProperties}
-        className="flex h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 pl-[calc(0.5rem+var(--git-row-depth)*0.75rem)] leading-none text-content"
+        className="flex h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 pl-[calc(0.5rem+var(--git-row-depth)*0.75rem)]"
       >
         <Button
           size="sm"
@@ -370,17 +371,25 @@ function ChangeDirRow({
           onClick={() => onToggle(dir.path)}
           className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
         >
-          <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
+          <Text size="inherit" tone="secondary" className="grid size-4 shrink-0 place-items-center">
             {open ? (
               <ChevronDown className="icon-sm" strokeWidth={1.75} />
             ) : (
               <ChevronRight className="icon-sm" strokeWidth={1.75} />
             )}
-          </span>
+          </Text>
           <FileTypeIcon name={dir.name} isDir isOpen={open} />
-          <MiddleTruncate mode="path" className="min-w-0 flex-1 text-ui-body font-medium">
-            {dir.name}
-          </MiddleTruncate>
+          <Text
+            as="span"
+            size="inherit"
+            tone="inherit"
+            weight="medium"
+            className="flex min-w-0 flex-1"
+          >
+            <MiddleTruncate mode="path" size="body" tone="primary" className="min-w-0 flex-1">
+              {dir.name}
+            </MiddleTruncate>
+          </Text>
         </Button>
         <div className="flex shrink-0 items-center">
           <InlineAction
@@ -397,14 +406,14 @@ function ChangeDirRow({
             )}
           </InlineAction>
         </div>
-        <span
-          className={`grid w-3.5 shrink-0 place-items-center ${
-            dir.status ? statusColor(dir.status) : "text-[var(--ui-text-muted)]"
-          }`}
+        <Text
+          size="inherit"
+          tone={dir.status ? statusTone(dir.status) : "muted"}
+          className="grid w-3.5 shrink-0 place-items-center"
           aria-hidden
         >
           <span className="size-1.5 rounded-full bg-current" />
-        </span>
+        </Text>
       </ActionHost>
     </li>
   );

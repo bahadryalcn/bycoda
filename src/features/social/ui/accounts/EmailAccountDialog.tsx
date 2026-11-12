@@ -145,6 +145,8 @@ export function EmailAccountDialog({ client, onClose, onCreated }: EmailAccountD
               checked={draft.secure}
               onChange={(event) => update({ secure: event.target.checked })}
               label={t("Use TLS")}
+              size="secondary"
+              leading="inherit"
               className="social-check"
             />
           </>

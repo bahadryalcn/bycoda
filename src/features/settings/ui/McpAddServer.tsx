@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t, useLocale } from "../../../shared/i18n";
@@ -178,16 +179,16 @@ export function AddServerModal({
             onChange={setScope}
           />
         </div>
-        <p className="break-all text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary" className="break-all">
           {scope === "user"
             ? t("Available to all projects.")
             : t("Selected project: {p0}", { p0: cwd })}
           {scope === "local" ? (
-            <span className="mt-1 block text-(--ui-text-muted)">
+            <Text size="inherit" tone="muted" className="mt-1 block">
               {t("Only this project, in your personal settings.")}
-            </span>
+            </Text>
           ) : null}
-        </p>
+        </Text>
         <TextField
           label={t("Name")}
           description={t("(optional for an mcpServers block)")}
@@ -212,12 +213,12 @@ export function AddServerModal({
           placeholder={'{"mcpServers":{"my-server":{"command":"npx","args":["-y","example-mcp"]}}}'}
         />
 
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" size="caption" tone="muted">
           {t("Paste an mcpServers block or a server object.")}
-        </p>
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        </Text>
+        <Text as="p" size="caption" tone="muted">
           {t("Saves configuration. Refresh to check status.")}
-        </p>
+        </Text>
         {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       </form>
     </Modal>

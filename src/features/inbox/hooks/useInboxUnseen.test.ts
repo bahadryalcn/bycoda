@@ -134,6 +134,17 @@ afterEach(() => {
 });
 
 describe("Inbox activity polling", () => {
+  it("retains activity identities on an unchanged poll", async () => {
+    vi.useFakeTimers();
+    listInboxItems.mockImplementation(async () => ({ items: [{ ...remote }], errors: {} }));
+    await mount();
+    const previous = activity;
+    await act(async () => vi.advanceTimersByTimeAsync(POLL_MS));
+    expect(listInboxItems).toHaveBeenCalledTimes(2);
+    expect(activity).toBe(previous);
+    expect(activity.linkedSessionUpdates).toBe(previous.linkedSessionUpdates);
+    expect(activity.linkedSessionUpdateIds).toBe(previous.linkedSessionUpdateIds);
+  });
   it("updates Inbox and linked-session indicators on category changes without consuming unread activity", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-14T12:00:00Z"));

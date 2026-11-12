@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
@@ -318,9 +319,9 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             />
           ) : null}
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <span className="text-ui-caption text-(--ui-text-muted)">
+            <Text tone="muted">
               {machines.length === 1 ? t("1 machine") : t("{p0} machines", { p0: machines.length })}
-            </span>
+            </Text>
             <div className="flex items-center gap-2">
               <Button
                 stableWidth
@@ -375,9 +376,9 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               role="status"
               ref={progress}
             >
-              <div className="break-all text-ui-secondary font-medium text-content">
+              <Text as="div" size="secondary" tone="primary" weight="medium" className="break-all">
                 {connectionName}
-              </div>
+              </Text>
               <LoadingText delay={false}>{job?.message ?? t("Starting connection…")}</LoadingText>
               {job?.prompt && (
                 <SshSetupPromptForm key={job.prompt.id} prompt={job.prompt} onRespond={respond} />
@@ -398,9 +399,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           {error && !adding && !removing && <Alert tone="danger">{error}</Alert>}
           {error && !adding && !busy && retryMachine ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-ui-caption text-(--ui-text-muted)">
-                {t("Remote target: {p0}", { p0: retryMachine.name })}
-              </span>
+              <Text tone="muted">{t("Remote target: {p0}", { p0: retryMachine.name })}</Text>
               <Button
                 stableWidth
                 variant="secondary"

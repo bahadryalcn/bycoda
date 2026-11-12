@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SettingsFeedback, Toggle } from "./settingsControls";
 import { InboxScopeCollection } from "./InboxScopeCollection";
@@ -273,12 +274,12 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
             <LoadingText>{t("Checking Jira connection…")}</LoadingText>
           ) : status?.connected && !editing ? (
             <div className="inbox-account-summary">
-              <div className="min-w-0 text-ui-caption text-(--ui-text-secondary)">
+              <Text as="div" size="caption" tone="secondary" className="min-w-0">
                 <p className="break-all">{status.site}</p>
                 <p className="flex min-w-0">
                   <PrivateEmail key={status.email} email={status.email} />
                 </p>
-              </div>
+              </Text>
               <Button
                 stableWidth
                 disabled={busy}

@@ -180,8 +180,8 @@ describe("tool output inspection", () => {
     expect(container.querySelector("[data-tool-inspection]")?.textContent).toContain(
       "output-marker",
     );
-    expect(container.querySelector("[data-tool-inspection] pre")?.className).toContain(
-      "select-text",
+    expect(container.querySelector("[data-tool-inspection] pre")?.getAttribute("data-face")).toBe(
+      "mono",
     );
     act(() => trigger?.click());
     expect(container.querySelector("[data-tool-inspection]")).toBeNull();

@@ -19,8 +19,6 @@
   --menu-row-radius: calc(var(--ui-radius-popup) - 0.25rem - 1px);
   --menu-row-hover: var(--ui-surface-hover);
   --menu-row-pressed: var(--ui-surface-pressed);
-  --menu-row-danger-hover: var(--ui-tone-danger-hover);
-  --menu-row-danger-pressed: var(--ui-tone-danger-pressed);
 }
 @layer components {
   .item {
@@ -164,43 +162,19 @@
   font-weight: 500;
 }
 
-/* States. Hover has a visible inset edge; keyboard focus, checked rows and open branches
-   use the selected fill. Pointer hover only applies where hover exists. Keyboard focus draws the shared focus ring,
-   inset so the menu's scroll clip never cuts it. */
 .item[data-highlighted="true"],
 .item[aria-expanded="true"],
 .item[aria-checked="true"] {
   background: var(--ui-surface-selected);
-  box-shadow: inset 0 0 0 1px var(--ui-field-border);
 }
 button.item.item:focus-visible {
   background: var(--ui-surface-selected);
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: calc(var(--ui-focus-width) * -1);
-}
-/* Controllers that keep focus on the menu and mark the active row (aria-activedescendant)
-   show the same inset ring, but only while the menu itself shows keyboard focus. */
-:global([role="menu"]:focus-visible) .item[data-highlighted="true"] {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: calc(var(--ui-focus-width) * -1);
+  outline: none !important;
+  box-shadow: none !important;
 }
 @media (hover: hover) and (pointer: fine) {
   .item:hover:not(:disabled, [aria-disabled="true"]) {
     background: var(--menu-row-hover);
-    box-shadow: inset 0 0 0 1px var(--ui-field-border-hover);
-  }
-}
-.item:is(.destructive, [data-danger="true"]):is(
-    [data-highlighted="true"],
-    [aria-expanded="true"],
-    [aria-checked="true"]
-  ),
-button.item.item:is(.destructive, [data-danger="true"]):focus-visible {
-  background: var(--menu-row-danger-hover);
-}
-@media (hover: hover) and (pointer: fine) {
-  .item:is(.destructive, [data-danger="true"]):hover:not(:disabled, [aria-disabled="true"]) {
-    background: var(--menu-row-danger-hover);
   }
 }
 /* The leading glyph steps up to primary ink with the row, a cue that does not depend on the fill. */
@@ -218,9 +192,6 @@ button.item.item:is(.destructive, [data-danger="true"]):focus-visible {
 /* Pressed comes last so it outranks hover and focus for both tones. */
 .item.item:active:not(:disabled, [aria-disabled="true"]) {
   background: var(--menu-row-pressed);
-}
-.item.item:is(.destructive, [data-danger="true"]):active:not(:disabled, [aria-disabled="true"]) {
-  background: var(--menu-row-danger-pressed);
 }
 /* Disabled rows are inert: no hover, no pressed fill, and no pointer cursor. */
 .item:disabled,
@@ -263,9 +234,6 @@ button.item.item:is(.destructive, [data-danger="true"]):focus-visible {
   opacity: 0;
   pointer-events: none;
   transition: background-color var(--motion-feedback-duration) var(--motion-ease-out);
-}
-.highlight[data-tone="danger"] {
-  background: var(--ui-tone-danger-hover);
 }
 .menu .item:is(:hover, [data-highlighted="true"]):not(:disabled, :active),
 .menu button.item.item:focus-visible:not(:active) {

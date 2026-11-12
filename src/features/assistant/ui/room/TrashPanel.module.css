@@ -7,8 +7,6 @@
 .hint,
 .empty {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .empty {
   padding-block: 16px;
@@ -17,8 +15,6 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 .row {
   gap: 8px;
@@ -36,8 +32,6 @@
   min-inline-size: 0;
 }
 .text > strong {
-  font-size: var(--ui-font-body);
-  font-weight: 500;
   overflow-wrap: anywhere;
 }
 .meta {
@@ -45,13 +39,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .error {
   margin: 0;
-  color: var(--ui-tone-danger-fg);
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
 }

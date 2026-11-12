@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { Code } from "../../../shared/ui/Code";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -167,7 +169,9 @@ export function OnboardingAgents({
           <Heading size="page" level={3}>
             {t("Connect your agents")}
           </Heading>
-          <p>{t("Use the providers found on this computer, or add one from another location.")}</p>
+          <Text as="p" size="inherit" tone="muted" leading="normal">
+            {t("Use the providers found on this computer, or add one from another location.")}
+          </Text>
         </div>
         <Button
           iconOnly
@@ -182,7 +186,9 @@ export function OnboardingAgents({
       <div className="onboarding-scroll">
         {checking && listed.length === 0 ? (
           <>
-            <p role="status">{t("Scanning this computer…")}</p>
+            <Text as="p" size="inherit" tone="muted" leading="normal" role="status">
+              {t("Scanning this computer…")}
+            </Text>
             <div className="onboarding-agent-skeleton" aria-hidden="true">
               {[0, 1, 2].map((row) => (
                 <Skeleton key={row} aria-hidden className="h-9 w-full" />
@@ -192,10 +198,12 @@ export function OnboardingAgents({
         ) : null}
         {!checking && listed.length === 0 ? (
           <div className="onboarding-provider-empty" role="status">
-            <strong>{t("No providers found")}</strong>
-            <p>
+            <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
+              {t("No providers found")}
+            </Text>
+            <Text as="p" size="caption" tone="secondary" leading="normal">
               {t("Already installed one? Choose its executable, or install it and scan again.")}
-            </p>
+            </Text>
           </div>
         ) : null}
         <div className="onboarding-agent-list">
@@ -292,11 +300,28 @@ export function OnboardingAgents({
                 <div className="onboarding-agent-identity">
                   <HarnessIcon harness={provider} className="size-5 shrink-0" />
                   <div>
-                    <strong>{title}</strong>
-                    <small role="status" className="onboarding-agent-status">
+                    <Text
+                      as="strong"
+                      size="secondary"
+                      tone="inherit"
+                      weight="medium"
+                      leading="inherit"
+                    >
+                      {title}
+                    </Text>
+                    <Text
+                      as="small"
+                      role="status"
+                      size="caption"
+                      tone="secondary"
+                      leading="normal"
+                      className="onboarding-agent-status"
+                    >
                       {busy ? <Spinner size="xs" /> : null}
-                      <span>{status}</span>
-                    </small>
+                      <Text as="span" size="inherit" tone="inherit" truncate>
+                        {status}
+                      </Text>
+                    </Text>
                   </div>
                 </div>
                 <div className="onboarding-agent-controls">
@@ -370,7 +395,9 @@ export function OnboardingAgents({
         <Modal title={t("Add provider")} size="sm" onClose={closeAdd}>
           <div className="onboarding-provider-add">
             <div className="onboarding-provider-select">
-              <span>{t("Provider")}</span>
+              <Text as="span" size="caption" tone="secondary">
+                {t("Provider")}
+              </Text>
               <SearchableSelect
                 hideLabel
                 label={t("Provider")}
@@ -416,7 +443,9 @@ export function OnboardingAgents({
                 {t("Configure")}
               </Button>
             ) : (
-              <p>{t("Choose a provider, then select its CLI executable or enter its path.")}</p>
+              <Text as="p" size="caption" tone="secondary" leading="normal">
+                {t("Choose a provider, then select its CLI executable or enter its path.")}
+              </Text>
             )}
           </div>
         </Modal>
@@ -432,7 +461,7 @@ export function OnboardingAgents({
               "Run this in a terminal on the computer running your sessions, then refresh agent status.",
             )}
           </p>
-          <code className="select-text break-words">{SETUP_COMMANDS[setup]}</code>
+          <Code className="select-text break-words">{SETUP_COMMANDS[setup]}</Code>
           <p>
             {t(
               "Your provider manages its own credentials. Existing accounts are reused when you start a conversation.",

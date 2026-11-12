@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -183,7 +184,9 @@ export function QuickWorkspaceControls({
         className="-ml-1.5 flex min-w-0 max-w-48 items-center gap-1.5"
       >
         <Icon className="size-3.5 shrink-0" />
-        <span className="truncate">{label}</span>
+        <Text size="inherit" tone="inherit" truncate>
+          {label}
+        </Text>
       </Button>
       <GitPickerTrigger
         label={

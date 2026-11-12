@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { formatBytes } from "../../../shared/i18n/format";
@@ -181,11 +182,11 @@ export function LocalInstallWizard({
               <Progress label={t("Checking this computer…")} />
             ) : null}
             {loaded ? (
-              <ul className="text-ui-caption flex min-w-0 flex-col gap-1 text-(--ui-text-secondary)">
+              <Text as="ul" className="flex min-w-0 flex-col gap-1">
                 {formatHardware(loaded.hardware).map((line) => (
                   <li key={line}>{line}</li>
                 ))}
-              </ul>
+              </Text>
             ) : null}
           </div>
         ) : null}
@@ -194,9 +195,9 @@ export function LocalInstallWizard({
             <p>{recommendationText(loaded.recommendation.tier)}</p>
             {offer === "install" ? (
               <>
-                <p className="text-ui-caption text-(--ui-text-secondary)">
+                <Text as="p" size="caption" tone="secondary">
                   {t("Model: {p1}", { p1: modelName })}
-                </p>
+                </Text>
                 {planError !== null ? <ErrorNotice error={planError} /> : null}
                 {plan !== null && !plan.installable ? (
                   <InlineMessage tone="warning">

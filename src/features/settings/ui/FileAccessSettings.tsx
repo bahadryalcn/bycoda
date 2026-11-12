@@ -8,6 +8,7 @@ import {
 } from "../../../platform/tauri/fileAccess";
 import { Group, Row } from "./settingsControls";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RefreshCw } from "../../../shared/ui/icons";
@@ -104,7 +105,9 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
         scope={
           <>
             <LiveText
-              className="privacy-file-access-status"
+              size="caption"
+              tone="secondary"
+              leading="inherit"
               text={
                 statusUnavailable
                   ? t("Status unavailable")
@@ -116,10 +119,10 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
               }
             />
             {statusUnavailable && mode !== null ? (
-              <span className="privacy-file-access-status">
+              <Text as="span" size="caption" tone="secondary" leading="inherit">
                 {" · "}
                 {t("Last known access: {p0}", { p0: modeLabel })}
-              </span>
+              </Text>
             ) : null}
           </>
         }

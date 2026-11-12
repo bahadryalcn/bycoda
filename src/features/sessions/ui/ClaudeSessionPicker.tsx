@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -71,13 +73,15 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
                 className="w-full flex-col text-left"
                 onClick={() => onPick(session)}
               >
-                <span className="line-clamp-2 text-ui-body">{session.title}</span>
-                <span className="text-ui-caption opacity-60">
+                <ClampText as="span" lines={2} expandable={false} size="body">
+                  {session.title}
+                </ClampText>
+                <Text size="caption" tone="inherit" className="opacity-60">
                   {formatWhen(session.updatedAt)} ·{" "}
                   {session.messageCount === 1
                     ? t("1 message")
                     : t("{p0} messages", { p0: session.messageCount })}
-                </span>
+                </Text>
               </Button>
             </li>
           ))}

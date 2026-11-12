@@ -7,6 +7,7 @@ import {
 } from "./arc/badge/badge";
 import { Check, CircleAlert, CircleX, Clock, RotateCcw } from "./icons";
 import { Spinner } from "./Spinner";
+import { textAttributes, type TextLeading } from "./Text";
 import styles from "./Badge.module.css";
 
 export type { BadgeTone, BadgeVariant, BadgeAppearance } from "./arc/badge/badge";
@@ -17,6 +18,15 @@ export type BadgeSize = "xs" | "sm" | "md";
 export type BadgeProps = Omit<ArcBadgeProps, "size"> & {
   size?: BadgeSize;
   minWidth?: CSSProperties["minInlineSize"];
+  /** One-line text label: text that does not fit ends in an ellipsis and the badge shrinks
+   *  inside its row (it needs a bounded width: a flex or grid item, or `max-w-*`). Applies to
+   *  string and number children of a label or dot badge; a capped count never truncates.
+   *  Replaces `className="truncate"`. */
+  truncate?: boolean;
+  /** Line height of the badge; unset keeps its own. `none` 1, `tight` 1.25, `snug` 1.375,
+   *  `normal` 1.5, `relaxed` 1.625, `inherit` the surrounding line height. Replaces
+   *  `leading-*` classes. */
+  leading?: TextLeading;
 };
 
 /** Default cap of a `count`: larger numbers render as `99+` and keep the real number as the accessible name. */
@@ -38,6 +48,9 @@ export function Badge({
   max,
   variant,
   tone,
+  truncate = false,
+  leading,
+  children,
   ...props
 }: BadgeProps) {
   const badgeTone =
@@ -52,9 +65,21 @@ export function Badge({
       data-size={size}
       data-tone={badgeTone}
       data-variant={variant ?? "label"}
+      data-leading={leading}
       style={{ ...style, minInlineSize: minWidth ?? style?.minInlineSize }}
-      className={["bycoda-arc", size === "xs" && styles.xs, className].filter(Boolean).join(" ")}
-    />
+      className={["bycoda-arc", size === "xs" && styles.xs, leading && styles.leading, className]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {truncate &&
+      variant !== "count" &&
+      (typeof children === "string" || typeof children === "number") ? (
+        // The clip sits on the text, a flex item inside the badge, so the ellipsis can render.
+        <span {...textAttributes({ truncate: true })}>{children}</span>
+      ) : (
+        children
+      )}
+    </ArcBadge>
   );
 }
 

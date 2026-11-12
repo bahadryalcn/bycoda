@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -219,9 +220,9 @@ export function ChatFolderBrowser({
           >
             <ArrowUp className="icon-md" />
           </Button>
-          <span className="min-w-0 break-all font-mono text-ui-caption text-[var(--ui-text-secondary)]">
+          <Text size="caption" tone="secondary" className="min-w-0 break-all font-mono">
             {directory}
-          </span>
+          </Text>
         </div>
         <div className="flex flex-wrap gap-2 py-2">
           <Button
@@ -254,60 +255,62 @@ export function ChatFolderBrowser({
             {t("Shared folder settings")}
           </Button>
         </div>
-        <p className="text-ui-caption text-[var(--ui-text-secondary)]">
+        <Text as="p" size="caption" tone="secondary">
           {t(
             "Live folders show the connected computer’s current files. Remote changes are visible; writing is disabled.",
           )}
-        </p>
-        <p className="text-ui-caption text-[var(--ui-text-secondary)]">
+        </Text>
+        <Text as="p" size="caption" tone="secondary">
           {t("Local copies do not sync changes back to the connected machine.")}
-        </p>
+        </Text>
         {editingMapping ? (
-          <form
-            id={mappingFormId}
-            className="grid gap-2 border-b border-stroke pb-3 text-ui-body"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveMapping();
-            }}
-          >
-            <p>
-              {t(
-                "Enter the shared folder path you can open on this computer. This mapping also applies to its files and subfolders.",
-              )}
-            </p>
-            <TextField
-              label={t("Folder on connected machine")}
-              className="font-mono"
-              value={remoteRoot}
-              onChange={(event) => setRemoteRoot(event.target.value)}
-              required
-            />
-            <TextField
-              label={t("Same folder on this computer")}
-              className="font-mono"
-              placeholder={IS_WIN ? t("\\\\MacBook\\share\\projects") : "/Volumes/share/projects"}
-              value={localRoot}
-              onChange={(event) => setLocalRoot(event.target.value)}
-              required
-            />
-            <Button
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy}
-              loading={pendingAction === "choose"}
-              className="justify-self-start"
-              onClick={() => {
-                void runAction("choose", async () => {
-                  const paths = await pickNativeFolders(t("Same folder on this computer"), false);
-                  if (paths[0]) setLocalRoot(paths[0]);
-                });
+          <Text as="div" size="body" tone="inherit">
+            <form
+              id={mappingFormId}
+              className="grid gap-2 border-b border-stroke pb-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveMapping();
               }}
             >
-              {t("Choose folder…")}
-            </Button>
-          </form>
+              <p>
+                {t(
+                  "Enter the shared folder path you can open on this computer. This mapping also applies to its files and subfolders.",
+                )}
+              </p>
+              <TextField
+                label={t("Folder on connected machine")}
+                className="font-mono"
+                value={remoteRoot}
+                onChange={(event) => setRemoteRoot(event.target.value)}
+                required
+              />
+              <TextField
+                label={t("Same folder on this computer")}
+                className="font-mono"
+                placeholder={IS_WIN ? t("\\\\MacBook\\share\\projects") : "/Volumes/share/projects"}
+                value={localRoot}
+                onChange={(event) => setLocalRoot(event.target.value)}
+                required
+              />
+              <Button
+                variant="ghost"
+                motion="none"
+                type="button"
+                disabled={busy}
+                loading={pendingAction === "choose"}
+                className="justify-self-start"
+                onClick={() => {
+                  void runAction("choose", async () => {
+                    const paths = await pickNativeFolders(t("Same folder on this computer"), false);
+                    if (paths[0]) setLocalRoot(paths[0]);
+                  });
+                }}
+              >
+                {t("Choose folder…")}
+              </Button>
+            </form>
+          </Text>
         ) : null}
         {copyProgress ? (
           <LoadingText className="py-2">
@@ -331,11 +334,11 @@ export function ChatFolderBrowser({
         ) : (
           <>
             {!listing?.canOpenFiles ? (
-              <p className="py-2 text-ui-body text-[var(--ui-text-secondary)]">
+              <Text as="p" size="body" tone="secondary" className="py-2">
                 {t(
                   "This folder is outside registered projects. To access its files, open a shared folder in your file manager.",
                 )}
-              </p>
+              </Text>
             ) : null}
             <ul aria-label={t("Folder contents")} className="max-h-80 overflow-auto py-2">
               {[...entries]
@@ -361,12 +364,15 @@ export function ChatFolderBrowser({
                       ) : (
                         <FileTypeIcon name={entry.name} isDir={false} size="md" />
                       )}
-                      <span
-                        className="min-w-0 truncate text-ui-body"
+                      <Text
+                        truncate
+                        size="body"
+                        tone="inherit"
+                        className="min-w-0"
                         title={displayPath(entry.path, directory)}
                       >
                         {entry.name}
-                      </span>
+                      </Text>
                     </Button>
                     {!entry.isDir && listing?.canOpenFiles ? (
                       <Button

@@ -2,7 +2,9 @@ import type { ReactNode } from "react";
 import { t } from "../../shared/i18n";
 import { formatInteger } from "../../shared/lib/numbers";
 import { Badge } from "../../shared/ui/Badge";
+import { DiffStat } from "../../shared/ui/DiffStat";
 import { GitBranch } from "../../shared/ui/icons";
+import { Text } from "../../shared/ui/Text";
 
 /** The checkout the Changes tab totals follow, split for display. */
 export type ChangeScope = {
@@ -38,9 +40,13 @@ export function changesTooltipDetails({
     lines.push(
       <span className="flex min-w-0 items-center gap-1.5">
         {scope.branch ? <GitBranch aria-hidden className="icon-xs shrink-0" /> : null}
-        <span className="min-w-0 truncate font-medium text-content">{scope.title}</span>
+        <Text truncate size="inherit" tone="primary" weight="medium">
+          {scope.title}
+        </Text>
         {scope.folder && scope.folder !== scope.title ? (
-          <span className="min-w-0 truncate">{scope.folder}</span>
+          <Text truncate size="inherit" tone="inherit">
+            {scope.folder}
+          </Text>
         ) : null}
         {scope.session ? (
           <Badge size="xs" tone="accent" appearance="subtle" className="shrink-0">
@@ -55,12 +61,7 @@ export function changesTooltipDetails({
         {files > 0 ? (
           <span>{t(files === 1 ? "{p0} file" : "{p0} files", { p0: formatInteger(files) })}</span>
         ) : null}
-        {additions > 0 ? (
-          <span className="font-medium text-diff-add-fg">+{formatInteger(additions)}</span>
-        ) : null}
-        {deletions > 0 ? (
-          <span className="font-medium text-diff-del-fg">−{formatInteger(deletions)}</span>
-        ) : null}
+        <DiffStat additions={additions} deletions={deletions} weight="medium" />
       </span>,
     );
   return lines;

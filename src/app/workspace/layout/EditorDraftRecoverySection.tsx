@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
@@ -81,7 +82,7 @@ export function EditorDraftRecoverySection({
           <RefreshCw className="icon-sm" strokeWidth={1.75} />
         </Button>
       </div>
-      <div role="status" className="recovery-status text-ui-caption text-(--ui-text-secondary)">
+      <Text role="status" as="div" size="caption" tone="secondary" className="recovery-status">
         <span>
           {t("{p0} unsaved drafts · {p1} copies", { p0: unsaved.length, p1: candidates.length })}
         </span>
@@ -100,7 +101,7 @@ export function EditorDraftRecoverySection({
             </Button>
           </>
         ) : null}
-      </div>
+      </Text>
       {recovery.error ? (
         <Alert tone="danger">
           <span>
@@ -130,22 +131,37 @@ export function EditorDraftRecoverySection({
               return (
                 <li key={key} className="flex flex-wrap items-start gap-2 py-2">
                   <div className="min-w-0 basis-48 flex-1">
-                    <p className="break-words text-ui-secondary font-medium">
+                    <Text
+                      as="p"
+                      size="secondary"
+                      tone="inherit"
+                      weight="medium"
+                      className="break-words"
+                    >
                       {basename(row.path)}
-                    </p>
-                    <p className="select-text text-ui-caption text-(--ui-text-secondary) [overflow-wrap:anywhere]">
+                    </Text>
+                    <Text
+                      as="p"
+                      size="caption"
+                      tone="secondary"
+                      className="select-text [overflow-wrap:anywhere]"
+                    >
                       {row.path}
-                    </p>
-                    <p className="text-ui-caption text-(--ui-text-secondary)">
-                      <span className={isUnsaved ? "font-medium text-warning" : ""}>
+                    </Text>
+                    <Text as="p" size="caption" tone="secondary">
+                      <Text
+                        size="inherit"
+                        tone={isUnsaved ? "warning" : "inherit"}
+                        weight={isUnsaved ? "medium" : undefined}
+                      >
                         {row.state === "save-reported"
                           ? t("Save reported")
                           : row.serializedTextDigest === row.baselineDigest
                             ? t("Matches captured disk baseline")
                             : t("Unsaved draft")}
-                      </span>{" "}
+                      </Text>{" "}
                       · {row.windowLabel} · {formatRelative(row.updatedAt, now)}
-                    </p>
+                    </Text>
                     {failed ? (
                       <InlineError>
                         {t(
@@ -167,9 +183,9 @@ export function EditorDraftRecoverySection({
             })}
           </ul>
         ) : recovery.loading ? (
-          <p role="status" className="py-3 text-ui-secondary text-(--ui-text-secondary)">
+          <Text role="status" as="p" size="secondary" tone="secondary" className="py-3">
             {t("Checking file recovery copies…")}
-          </p>
+          </Text>
         ) : query ? (
           <EmptyState
             context="panel"
@@ -213,11 +229,11 @@ export function EditorDraftRecoverySection({
         )}
       </div>
       <div className="recovery-footer border-t border-stroke">
-        <p className="text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary">
           {t(
             "Open a separate unsaved file tab. The original recovery copy stays available; files are not written until you save.",
           )}
-        </p>
+        </Text>
       </div>
     </section>
   );

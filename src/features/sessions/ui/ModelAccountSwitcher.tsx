@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -90,7 +92,7 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
 function AccountDot({ account }: { account: PanelAccount }) {
   return account.local ? (
     <span
-      className="size-2 shrink-0 rounded-full"
+      {...surfaceAttributes({ radius: "pill" }, "size-2 shrink-0 ")}
       style={{ background: providerAccountColorValue(account.local) }}
       aria-hidden
     />
@@ -109,7 +111,7 @@ function Percent({ value }: { value: number | null }) {
 
 /** Marks the account new conversations start on. */
 function DefaultMark() {
-  return <Home className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />;
+  return <Home className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />;
 }
 
 /** The control beside the provider title: label, two-way switch or a button for the list. */
@@ -139,7 +141,9 @@ export function ModelAccountControl({
     return (
       <span data-model-account-label className="flex min-w-0 items-center gap-1.5 ui-caption-text">
         <AccountDot account={only} />
-        <span className="min-w-0 truncate">{only.label}</span>
+        <Text size="inherit" tone="inherit" truncate className="min-w-0">
+          {only.label}
+        </Text>
         <Percent value={only.usedPercent} />
       </span>
     );
@@ -189,7 +193,9 @@ export function ModelAccountControl({
       onClick={onToggleList}
     >
       {current ? <AccountDot account={current} /> : null}
-      <span className="min-w-0 truncate">{label}</span>
+      <Text size="inherit" tone="inherit" truncate className="min-w-0">
+        {label}
+      </Text>
       <Percent value={current?.usedPercent ?? null} />
       {current && current.id === defaultAccountId ? <DefaultMark /> : null}
       <span className="flex shrink-0 items-center gap-1 border-l border-(--ui-tone-neutral-border) pl-1.5 ui-caption-text">
@@ -197,7 +203,8 @@ export function ModelAccountControl({
         {elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
       </span>
       <ChevronDown
-        className={`icon-xs shrink-0 text-(--ui-text-secondary) ${listOpen ? "rotate-180" : ""}`}
+        className={`icon-xs shrink-0 ${listOpen ? "rotate-180" : ""}`}
+        tone="secondary"
         strokeWidth={1.75}
       />
     </Button>
@@ -265,28 +272,38 @@ export function ModelAccountList({
                 <>
                   <AccountDot account={account} />
                   <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 items-center gap-1 leading-4">
-                      <span className="min-w-0 truncate">{account.label}</span>
+                    <Text
+                      as="span"
+                      size="inherit"
+                      tone="inherit"
+                      leading="snug"
+                      className="flex min-w-0 items-center gap-1"
+                    >
+                      <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                        {account.label}
+                      </Text>
                       {account.id === defaultAccountId ? (
-                        <span
+                        <Text
                           data-model-default-account
-                          className="flex shrink-0 items-center gap-0.5 text-ui-micro text-(--ui-text-secondary)"
+                          size="micro"
+                          tone="secondary"
+                          className="flex shrink-0 items-center gap-0.5"
                         >
                           <DefaultMark />
                           {t("Default")}
-                        </span>
+                        </Text>
                       ) : null}
-                    </span>
+                    </Text>
                     {detail ? (
-                      <span
-                        className={`block truncate text-ui-micro leading-4 ${
-                          (account.usedPercent ?? 0) >= USAGE_DANGER
-                            ? "text-(--ui-tone-danger-fg)"
-                            : "text-(--ui-text-secondary)"
-                        }`}
+                      <Text
+                        as="span"
+                        size="micro"
+                        tone={(account.usedPercent ?? 0) >= USAGE_DANGER ? "danger" : "secondary"}
+                        truncate
+                        className="block"
                       >
                         {detail}
-                      </span>
+                      </Text>
                     ) : null}
                   </span>
                   {account.usedPercent != null ? (
@@ -303,10 +320,7 @@ export function ModelAccountList({
                     </span>
                   ) : null}
                   {selected ? (
-                    <Check
-                      className="icon-sm shrink-0 text-(--ui-text-secondary)"
-                      strokeWidth={2}
-                    />
+                    <Check className="icon-sm shrink-0" tone="secondary" strokeWidth={2} />
                   ) : (
                     <span className="size-3.5 shrink-0" aria-hidden />
                   )}

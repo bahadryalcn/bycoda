@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { SettingsFeedback } from "./settingsControls";
 
 import { TextField } from "../../../shared/ui/TextField";
@@ -55,6 +56,7 @@ export function binaryInspectionError(
 export function ProviderBinaryControl({
   provider,
   showLabel = false,
+  missing = false,
   onPathSaved,
   inline = false,
   onCancel,
@@ -64,6 +66,8 @@ export function ProviderBinaryControl({
   /** Look of the trigger button; a settings row uses `secondary`. */
   triggerVariant?: "ghost" | "secondary";
   showLabel?: boolean;
+  /** Missing CLIs use the setup action label in the inventory. */
+  missing?: boolean;
   onPathSaved?: () => void;
   /** Embed the existing validated path form in an add-provider dialog. Fixed for the mounted control. */
   inline?: boolean;
@@ -283,10 +287,10 @@ export function ProviderBinaryControl({
         }}
       />
       {inline ? <div className="mt-2">{chooseExecutable}</div> : null}
-      <p className="mt-1.5 text-ui-caption text-(--ui-text-secondary)">
+      <Text as="p" size="caption" tone="secondary" className="mt-1.5">
         {t("Enter the absolute path to the CLI executable. Changes apply after restarting ")}
         {PRODUCT_IDENTITY.displayName}.
-      </p>
+      </Text>
       {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       {inline ? <ModalFooter>{pathActions}</ModalFooter> : null}
     </form>
@@ -330,7 +334,9 @@ export function ProviderBinaryControl({
         }}
       >
         <FolderOpen className="icon-sm" strokeWidth={1.75} />
-        {showLabel ? t("CLI setup") : null}
+        {showLabel
+          ? t(missing ? (provider === "acp" ? "Add provider" : "Set up") : "CLI setup")
+          : null}
       </Button>
       {open ? (
         <Modal
@@ -363,14 +369,22 @@ export function ProviderBinaryControl({
             ) : (
               <>
                 <Surface variant="inset" padding="sm" className="mt-2">
-                  <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-ui-caption text-(--ui-text-secondary)">
+                  <Text
+                    size="caption"
+                    tone="secondary"
+                    className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono"
+                  >
                     {inspection?.path ??
                       (error ? t("CLI could not be resolved") : t("Checking the selected CLI…"))}
-                  </span>
-                  <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+                  </Text>
+                  <Text
+                    size="caption"
+                    tone="secondary"
+                    className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words"
+                  >
                     {inspection?.version ??
                       (error ? t("Retry to check this CLI") : t("Checking version…"))}
-                  </span>
+                  </Text>
                 </Surface>
                 {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
                 {revealError ? (

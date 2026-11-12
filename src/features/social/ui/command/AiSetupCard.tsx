@@ -1,7 +1,8 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Heading } from "../../../../shared/ui/Heading";
-import { Surface } from "../../../../shared/ui/Surface";
+import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
 import { Sparkles } from "../../../../shared/ui/icons";
 import {
   REMOTE_PROVIDERS,
@@ -33,16 +34,20 @@ export function AiSetupCard({ busy, onSave }: AiSetupCardProps) {
       className="command-frame command-setup"
       aria-label={t("Choose an AI model")}
     >
-      <span className="command-card-icon">
+      <Text
+        size="inherit"
+        tone="secondary"
+        {...surfaceAttributes({ radius: "card", variant: "fill-subtle" }, "command-card-icon")}
+      >
         <Sparkles className="icon-sm" strokeWidth={1.75} aria-hidden />
-      </span>
+      </Text>
       <div className="command-setup-text">
         <Heading size="section">{t("Choose an AI model")}</Heading>
-        <p className="command-muted">
+        <Text as="p" size="caption" tone="muted" leading="inherit" className="command-muted">
           {t(
             "AI needs a model before it can plan or write reports. You can change it later in Accounts.",
           )}
-        </p>
+        </Text>
       </div>
       <div className="command-setup-picker">
         <ModelPicker

@@ -9,14 +9,9 @@
   flex: 1 1 auto;
   min-inline-size: 0;
   margin: 0;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
 }
 .toolbar h2 span {
   margin-inline-start: 6px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-weight: 400;
 }
 .page > .toolbar > :nth-child(2) {
   flex: 0 1 240px;
@@ -38,8 +33,6 @@
 }
 .savedTitle {
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
 }
 
@@ -48,8 +41,4 @@
   flex-direction: column;
   gap: 16px;
   min-inline-size: 0;
-}
-.editorHint {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }

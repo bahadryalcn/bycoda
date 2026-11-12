@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ComponentProps } from "react";
+import { Text } from "../../../shared/ui/Text";
 import { readProjectImage } from "../../../platform/tauri/fs";
 import { sniffDocumentImageMime } from "../../files/public/filePreviewMetadata";
 
@@ -25,13 +26,16 @@ export function ImageAltText({ alt, title }: { alt?: string; title?: string }) {
   const text = alt?.trim();
   if (!text) return null;
   return (
-    <span
+    <Text
+      as="em"
+      size="inherit"
+      tone="secondary"
       data-image-alt=""
       title={title}
-      className="text-[0.92em] italic text-(--ui-text-secondary)"
+      className="text-[0.92em]"
     >
       {text}
-    </span>
+    </Text>
   );
 }
 

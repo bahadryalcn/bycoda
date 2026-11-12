@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
@@ -692,7 +693,8 @@ function PaneTreeComponent({
                         value={id}
                         type="button"
                         data-pane-tab-id={id}
-                        className={`relative max-w-48 shrink-0 truncate `}
+                        truncate
+                        className={`relative max-w-48 shrink-0 `}
                         onClick={(event) => {
                           event.preventDefault();
                           onFocus(id);
@@ -728,7 +730,10 @@ function PaneTreeComponent({
                         {drop?.overId === id && drop.tabPosition ? (
                           <span
                             data-pane-tab-drop={drop.tabPosition}
-                            className={`pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) rounded-full ${drop.tabPosition === "before" ? "start-0" : "end-0"} ${drop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`}
+                            {...surfaceAttributes(
+                              { radius: "pill" },
+                              `pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) ${drop.tabPosition === "before" ? "start-0" : "end-0"} ${drop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`,
+                            )}
                           />
                         ) : null}
                       </Tab>

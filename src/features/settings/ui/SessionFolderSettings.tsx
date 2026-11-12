@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -68,9 +69,9 @@ export function SessionFolderGroup() {
         )}
         feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
       >
-        <span className="min-w-0 truncate text-ui-caption text-(--ui-text-secondary)">
+        <Text size="caption" tone="secondary" truncate>
           {folder?.chosen ?? folder?.home ?? ""}
-        </span>
+        </Text>
         <Button className="shrink-0" onClick={() => choose().catch(setErrorFrom)} disabled={busy}>
           {t("Choose folder…")}
         </Button>

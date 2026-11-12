@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Button } from "../../../shared/ui/Button";
@@ -355,12 +356,12 @@ export function GithubPrActions({
             <Heading size="item" level={2}>
               {confirmCopy.title}
             </Heading>
-            <p className="text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="secondary">
               {confirmCopy.detail}
               {confirmation.expectedHeadOid
                 ? ` Reviewed head: ${confirmation.expectedHeadOid}`
                 : ""}
-            </p>
+            </Text>
           </div>
           {actionError ? (
             <Alert tone="danger" className="mt-2">

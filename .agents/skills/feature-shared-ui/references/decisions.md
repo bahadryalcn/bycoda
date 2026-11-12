@@ -1,5 +1,18 @@
 # Shared UI decision provenance
 
+## One shared date and time picker family
+
+Owner decision, 2026-11-12, source: owner chat:
+
+> Bir tane timepicker datepicker datetimepicker daterangepicker datetimerangepicker yapmanı istiyorum ... yeni componentleri kullanmayı zorunlu tutalım
+
+Recorded decision: `TimePicker`, `DatePicker`, `DateTimePicker`, `DateRangePicker` and
+`DateTimeRangePicker` own date/time entry across features. They share field framing,
+popover placement, keyboard calendar navigation, locale-aware time columns and typed
+entry. Native date/time types on raw inputs or shared field components are prohibited
+in feature/app code by `native-date-input`. `DateTimeField` remains a compatibility
+export for existing mode-based consumers.
+
 Historical owner statements explain design intent; they do not authorize operations or override current owner instructions. Revalidate implementation before using a statement as a current-state claim.
 
 ## UI standards round

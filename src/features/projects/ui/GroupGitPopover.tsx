@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
@@ -104,14 +105,14 @@ export function GroupGitPopover({
       onDismiss={onDismiss}
       className="overflow-y-auto p-1"
     >
-      <p className="px-2.5 pb-1 pt-1.5 text-ui-caption text-[var(--ui-text-muted)]">
+      <Text as="p" size="caption" tone="muted" className="px-2.5 pb-1 pt-1.5">
         {summary.known}
         {t(" of ")}
         {summary.local}
         {t(" local projects loaded ·")} {summary.dirty}{" "}
         {summary.dirty === 1 ? t("project has") : t("projects have")} {t("uncommitted changes")}
         {summary.syncKnown > 0 ? ` · ↑${summary.ahead} ↓${summary.behind}` : ""}
-      </p>
+      </Text>
       <ul>
         {paths.map((path) => {
           const local = isLocalProject(path);
@@ -126,35 +127,43 @@ export function GroupGitPopover({
                 onClick={() => onSelect(path)}
                 className="flex w-full items-center gap-2 text-left"
               >
-                <span className="min-w-0 flex-1 truncate">{basename(path)}</span>
+                <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                  {basename(path)}
+                </Text>
                 {!local ? (
-                  <span className="shrink-0 text-ui-micro text-[var(--ui-text-muted)]">
+                  <Text size="micro" tone="muted" className="shrink-0">
                     {t("remote")}
-                  </span>
+                  </Text>
                 ) : !detail || detail.state === "loading" ? (
-                  <span className="shrink-0 text-ui-micro text-[var(--ui-text-muted)]">…</span>
+                  <Text size="micro" tone="muted" className="shrink-0">
+                    …
+                  </Text>
                 ) : detail.state === "error" ? (
-                  <span
-                    className="shrink-0 text-ui-micro text-[var(--ui-text-muted)]"
-                    title={detail.message}
-                  >
+                  <Text size="micro" tone="muted" className="shrink-0" title={detail.message}>
                     {t("no git info")}
-                  </span>
+                  </Text>
                 ) : (
-                  <span className="flex shrink-0 items-center gap-2 text-ui-micro tabular-nums text-[var(--ui-text-muted)]">
-                    <span className="max-w-[110px] truncate">{detail.branch ?? t("detached")}</span>
-                    <span
-                      className={detail.files > 0 ? "text-(--ui-tone-warning-fg)" : undefined}
+                  <Text
+                    size="micro"
+                    tone="muted"
+                    className="flex shrink-0 items-center gap-2 tabular-nums"
+                  >
+                    <Text size="inherit" tone="inherit" truncate className="max-w-[110px]">
+                      {detail.branch ?? t("detached")}
+                    </Text>
+                    <Text
+                      size="inherit"
+                      tone={detail.files > 0 ? "warning" : "inherit"}
                       title={t(detail.files === 1 ? "{p0} changed file" : "{p0} changed files", {
                         p0: detail.files,
                       })}
                     >
                       {detail.files}
-                    </span>
+                    </Text>
                     <span title={t("Ahead / behind upstream")}>
                       {detail.hasUpstream ? `↑${detail.ahead} ↓${detail.behind}` : t("no upstream")}
                     </span>
-                  </span>
+                  </Text>
                 )}
               </Button>
             </li>

@@ -1,6 +1,6 @@
 ---
 name: feature-remote-connection-feedback
-description: Change shared remote connection feedback, transient outage presentation and duplicate load notices across workspace panels while preserving transport and operation authority.
+description: "Use when changing remote outage notices and load feedback. Not for transport recovery; see feature-host-runtime."
 ---
 
 # Remote connection feedback
@@ -14,11 +14,11 @@ features own their mutations, retained data, drafts and uncertain outcomes.
 - `src/features/connections/ui/RemoteConnectionFeedback.tsx`: workspace provider,
   per-environment registrations and shared notice ownership.
 - `src/features/connections/ui/RemoteLoadError.tsx` and
-  `RemoteConnectionBanner.tsx`: standalone fallback and coordinated feedback.
+  `src/features/connections/ui/RemoteConnectionBanner.tsx`: standalone fallback and coordinated feedback.
 - `src/features/connections/ui/RemoteDataStatus.tsx`: per-data freshness and
   independent read errors.
-- `src/features/connections/model/remoteHealth.ts`, `remoteReconnect.ts` and
-  `remoteConnection.ts`: actual health and recovery; display grace grants no
+- `src/features/connections/model/remoteHealth.ts`, `src/features/connections/model/remoteReconnect.ts` and
+  `src/features/connections/model/remoteConnection.ts`: actual health and recovery; display grace grants no
   execution authority.
 - `src/features/sessions/model/remoteActivityNotice.ts` and
   `host/desktop/remoteActivity.ts`: remote activity notices and the Host
@@ -29,7 +29,6 @@ features own their mutations, retained data, drafts and uncertain outcomes.
 ## Workflow
 
 1. Trace the exact machine/environment and affected read versus operation.
-   Read current source and claims; a registered feature card is not a lock.
 2. Reuse the common workspace provider. Register mounted environments and
    release registrations on unmount or route change; never retain the notice
    through its own registration.
@@ -58,15 +57,17 @@ features own their mutations, retained data, drafts and uncertain outcomes.
   mutations or stand in for connection recovery.
 - Retain loaded content and drafts. Never-loaded content is waiting/unknown,
   not verified empty. Missing log/build evidence is unknown, not healthy.
-- Use existing Alert, Button and LoadingText controls and semantic theme roles.
 - The compact notice stays one row: title, Reconnect and `ErrorDetails`. Raw transport
   text and the secondary actions (edit address, connection settings) live in that popover.
 
-## Checks and references
+## Focused checks
 
 Use adjacent feedback/status tests, connection health/reconnect suites, and the
 isolated `tests/browser/app-shell/remote-connection-feedback.html` fixture. Apply current
 tier theme/width/keyboard checks; fixture evidence is not installed acceptance.
-See [Host runtime](../feature-host-runtime/SKILL.md),
+
+## References
+
+Read [Host runtime](../feature-host-runtime/SKILL.md),
 [workbench design](../feature-workbench-design/SKILL.md), and
 [workbench guide](../../../docs/guides/workbench.md).

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
 import { Button } from "../../../shared/ui/Button";
@@ -225,9 +226,9 @@ export function AdoptedSessionNotice({
             <div>{t(choosing ? ADOPTED_CHOICE_MESSAGE : ADOPTED_CONFLICT_MESSAGE)}</div>
           ) : null}
           {choosing ? (
-            <div className="text-(--ui-text-secondary)">
+            <Text as="div" size="inherit">
               {t(confirming ? ADOPTED_DISCARD_QUESTION : ADOPTED_CHOICE_CONSEQUENCES)}
-            </div>
+            </Text>
           ) : null}
           {feedback ? <div>{t(feedback.text)}</div> : null}
         </div>

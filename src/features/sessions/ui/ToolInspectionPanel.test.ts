@@ -92,14 +92,14 @@ it("wraps plain output by default and keeps the choice after Wrap lines is toggl
   };
   await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
   const pre = container.querySelector("pre")!;
-  expect(pre.className).toContain("whitespace-pre-wrap");
+  expect(pre.getAttribute("data-wrap")).toBeNull();
   const wrapButton = container.querySelector<HTMLButtonElement>('button[aria-label="Wrap lines"]')!;
   expect(wrapButton.getAttribute("aria-pressed")).toBe("true");
   await act(async () => wrapButton.click());
-  expect(container.querySelector("pre")!.className).not.toContain("whitespace-pre-wrap");
+  expect(container.querySelector("pre")!.getAttribute("data-wrap")).toBe("false");
   expect(localStorage.getItem("bycoda.toolOutputWrap")).toBe("0");
   await act(async () => wrapButton.click());
-  expect(container.querySelector("pre")!.className).toContain("whitespace-pre-wrap");
+  expect(container.querySelector("pre")!.getAttribute("data-wrap")).toBeNull();
 });
 
 afterEach(async () => {

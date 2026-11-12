@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import type { CrewAgent, CrewCandidate } from "../model/crew";
@@ -26,24 +27,24 @@ export function CrewModelTag({
   if (!shown) {
     const count = agent?.candidates.length ?? 0;
     return (
-      <span className={`truncate text-ui-caption text-(--ui-text-secondary) ${className}`}>
+      <Text truncate className={className}>
         {!count
           ? t("No model")
           : count === 1
             ? t("Automatic: 1 candidate")
             : t("Automatic: {p0} candidates", { p0: count })}
-      </span>
+      </Text>
     );
   }
   const full = { modelSettings: {}, capabilities: {}, id: "", ...shown } as CrewCandidate;
   const effort = candidateEffortLabel(catalog, full);
   return (
-    <span
-      className={`inline-flex min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary) ${className}`}
-    >
+    <Text className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}>
       <HarnessIcon harness={shown.harness} size="xs" />
-      <span className="truncate">{candidateLabel(catalog, full)}</span>
+      <Text size="inherit" tone="inherit" truncate>
+        {candidateLabel(catalog, full)}
+      </Text>
       {effort ? <span className="shrink-0">· {effort}</span> : null}
-    </span>
+    </Text>
   );
 }

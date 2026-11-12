@@ -8,7 +8,6 @@
   flex-shrink: 0;
   padding: 6px;
   --chip-ink: var(--ui-attachment-ink, var(--ui-tone-accent-fg));
-  border-radius: var(--ui-radius-card);
   background: color-mix(in srgb, var(--chip-ink) 14%, transparent);
   color: var(--chip-ink);
 }
@@ -43,7 +42,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
+  gap: 0;
   padding-inline: 6px;
   text-align: center;
 }
@@ -59,28 +58,17 @@
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-ui-caption);
-  font-weight: 500;
-  line-height: 1rem;
   color: var(--chip-ink);
 }
 .metadata {
   display: block;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: var(--text-ui-caption);
-  line-height: 1rem;
-  color: var(--ui-text-secondary);
-  white-space: nowrap;
 }
 /* Insert and remove stay out of the way until the card is hovered or holds focus;
    touch input has no hover, so it always shows them. */
 .action {
   opacity: 0;
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .card:is(:hover, :focus-within) .action {
   opacity: 1;
@@ -88,10 +76,5 @@
 @media (hover: none), (pointer: coarse) {
   .action {
     opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .action {
-    transition: none;
   }
 }

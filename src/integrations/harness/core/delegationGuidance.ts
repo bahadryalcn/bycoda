@@ -43,13 +43,15 @@ export function delegationGuidance(
     lines.push(
       "Subagents run as child sessions in this project folder with no conversation context; they see only the brief you write and cannot commit, push or install. Give each file one writer.",
     );
-  // Owner decision 2026-11-07: no routing. The model chooses whether to delegate
-  // and which selected model fits, by usefulness first and cost second.
+  // Owner decisions 2026-11-07 and 2026-11-12: no routing between the selected
+  // models, but splittable work is delegated without the owner asking for it.
   lines.push(
-    "Delegating is optional. When it helps, choose whichever selected model best fits the task: usefulness first, then cost.",
+    subagents.length
+      ? "Delegate without being asked when a request splits into independent parts (separate areas to research or audit, unrelated files to change, independent verification): run them in parallel. Do small, sequential or single-file work yourself. Choose whichever selected model best fits each part: usefulness first, then cost."
+      : "Consulting is optional: ask when a second opinion is worth its cost.",
   );
   lines.push(
-    "agents.delegate and agents.consult start runs and agents.wait reads them; agents.options lists availability and limits. Each run spends its own account's quota.",
+    "agents.delegate and agents.consult start runs and agents.wait reads them; agents.options lists availability and limits. Each run spends its own account's quota. Answer a child's question with agents.reply in the same session instead of starting a new child.",
   );
   // Mirrors providerTurnInput: Claude's native Agent tool exists only when it is
   // forced onto the one same-account Claude selection; every other provider's

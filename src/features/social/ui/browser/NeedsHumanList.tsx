@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -96,7 +97,9 @@ export function NeedsHumanList({ client, active = true, onCountChange }: NeedsHu
   return (
     <div className="needs-human">
       {failed ? (
-        <p className="needs-human-note">{t("Waiting items could not be refreshed.")}</p>
+        <Text as="p" size="caption" tone="muted" leading="inherit" className="needs-human-note">
+          {t("Waiting items could not be refreshed.")}
+        </Text>
       ) : null}
       {doneFailed ? <InlineError>{t("Could not mark this as done.")}</InlineError> : null}
       <ul className="needs-human-list">
@@ -104,8 +107,18 @@ export function NeedsHumanList({ client, active = true, onCountChange }: NeedsHu
           <li key={item.id} className="needs-human-row">
             <PlatformMark platform={item.platform} size="md" />
             <div className="needs-human-text">
-              <span className="needs-human-reason">{reasonLabel(item.reason)}</span>
-              <span className="needs-human-platform">{SOCIAL_PLATFORM_NAMES[item.platform]}</span>
+              <Text
+                size="body"
+                tone="primary"
+                leading="inherit"
+                weight="medium"
+                className="needs-human-reason"
+              >
+                {reasonLabel(item.reason)}
+              </Text>
+              <Text size="caption" tone="muted" leading="inherit" className="needs-human-platform">
+                {SOCIAL_PLATFORM_NAMES[item.platform]}
+              </Text>
             </div>
             <div className="needs-human-actions">
               <Button size="sm" variant="secondary" onClick={() => setOpenAccount(item.accountId)}>

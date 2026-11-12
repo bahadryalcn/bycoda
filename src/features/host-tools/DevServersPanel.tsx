@@ -1,3 +1,4 @@
+import { Code } from "../../shared/ui/Code";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Surface } from "../../shared/ui/Surface";
 import { Heading } from "../../shared/ui/Heading";
@@ -8,6 +9,7 @@ import { BadgeList } from "../../shared/ui/BadgeList";
 import { Alert } from "../../shared/ui/Alert";
 import { NumberField } from "../../shared/ui/NumberField";
 import { TextField } from "../../shared/ui/TextField";
+import { Text } from "../../shared/ui/Text";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { SearchInput } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
@@ -539,16 +541,30 @@ function ProjectDevServersPanel({
         onClick={() => choose(server)}
       >
         <StateBadge state={server.state} />
-        <strong className="dev-server-name">{server.name}</strong>
-        <code className="dev-server-ports">
+        <Text
+          size="inherit"
+          tone="inherit"
+          weight="medium"
+          leading="inherit"
+          as="strong"
+          className="dev-server-name"
+        >
+          {server.name}
+        </Text>
+        <Code className="dev-server-ports">
           {[...new Set(server.endpoints.map((item) => `:${item.port}`))].join(" ") ||
             t("No listening ports")}
-        </code>
-        <span className="host-tool-muted dev-server-meta">
+        </Code>
+        <Text
+          size="micro"
+          tone="inherit"
+          leading="inherit"
+          className="host-tool-muted dev-server-meta"
+        >
           {server.process ? `PID ${server.process.pid}` : t("Process not started")}
           {" · "}
           {server.managed ? t("Managed") : t("External")}
-        </span>
+        </Text>
       </Button>
     </li>
   );
@@ -737,7 +753,7 @@ function ProjectDevServersPanel({
           : (server.projectName ?? server.projectId ?? t("Current project"))}
       </p>
       {server.endpoints.length > 1 && endpoint ? (
-        <div className="host-tool-field">
+        <Text size="caption" tone="inherit" leading="inherit" as="div" className="host-tool-field">
           <span>{t("Address")}</span>
           <SearchableSelect
             hideLabel
@@ -750,9 +766,9 @@ function ProjectDevServersPanel({
               label: item.url,
             }))}
           />
-        </div>
+        </Text>
       ) : endpoint ? (
-        <code className="dev-server-url">{endpoint.url}</code>
+        <Code className="dev-server-url">{endpoint.url}</Code>
       ) : null}
       <div className="dev-server-actions" role="group" aria-label={t("Actions")}>
         <Button
@@ -870,10 +886,18 @@ function ProjectDevServersPanel({
       {(server.command ?? server.process?.command ?? server.cwd ?? server.process?.cwd) ? (
         <div className="dev-server-context">
           {(server.command ?? server.process?.command) ? (
-            <code className="dev-server-command">{server.command ?? server.process?.command}</code>
+            <Code className="dev-server-command">{server.command ?? server.process?.command}</Code>
           ) : null}
           {(server.cwd ?? server.process?.cwd) ? (
-            <p className="host-tool-location">{server.cwd ?? server.process?.cwd}</p>
+            <Text
+              size="caption"
+              tone="inherit"
+              leading="inherit"
+              as="p"
+              className="host-tool-location"
+            >
+              {server.cwd ?? server.process?.cwd}
+            </Text>
           ) : null}
         </div>
       ) : null}
@@ -964,7 +988,15 @@ function ProjectDevServersPanel({
           </Button>
         </div>
       </header>
-      <div className="dev-servers-status" role="status" data-paused={autoRefresh ? undefined : ""}>
+      <Text
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        as="div"
+        className="dev-servers-status"
+        role="status"
+        data-paused={autoRefresh ? undefined : ""}
+      >
         <span className="dev-servers-count">
           {scanning && !scan
             ? t("Scanning servers…")
@@ -973,15 +1005,22 @@ function ProjectDevServersPanel({
               : t("{p0} servers", { p0: visibleServers.length })}
         </span>
         {autoRefresh ? null : (
-          <span className="dev-servers-paused">
+          <Text size="inherit" tone="primary" weight="medium" className="dev-servers-paused">
             <Pause className="icon-sm" aria-hidden />
             {t("Paused")}
-          </span>
+          </Text>
         )}
         <OverflowTooltip label={cwd}>
-          <span className="host-tool-location dev-servers-location">{cwd}</span>
+          <Text
+            size="caption"
+            tone="inherit"
+            leading="inherit"
+            className="host-tool-location dev-servers-location"
+          >
+            {cwd}
+          </Text>
         </OverflowTooltip>
-      </div>
+      </Text>
       {scanError ? (
         <Alert tone="danger">
           <strong>{t("Could not refresh servers.")}</strong>

@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import {
   Facebook02Icon,
   InstagramIcon,
@@ -14,6 +15,7 @@ import {
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { t } from "../../../../shared/i18n";
 import { Tooltip } from "../../../../shared/ui/Tooltip";
+import { Text } from "../../../../shared/ui/Text";
 import { SOCIAL_PLATFORM_NAMES, type SocialPlatform } from "../../model/social";
 import "./common.css";
 
@@ -82,8 +84,15 @@ export function PlatformMark({
 }) {
   const name = channelName(platform);
   const mark = (
-    <span className="social-platform-mark" data-size={size} role="img" aria-label={name}>
-      <PlatformIcon platform={platform} className="social-platform-mark-glyph" />
+    <span
+      {...surfaceAttributes({ radius: "control", variant: "fill-subtle" }, "social-platform-mark")}
+      data-size={size}
+      role="img"
+      aria-label={name}
+    >
+      <Text size="inherit" tone="primary" className="inline-grid place-items-center">
+        <PlatformIcon platform={platform} className="social-platform-mark-glyph" />
+      </Text>
     </span>
   );
   return tooltip ? (

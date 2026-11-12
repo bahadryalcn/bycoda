@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { pathKey, prettyCwd, isEqualOrInside } from "../../../shared/lib/paths";
@@ -121,7 +122,7 @@ export function QuickDeleteWorktreeDialog({
         </ModalActions>
       }
     >
-      <div className="flex min-w-0 flex-col gap-3 text-ui-caption">
+      <Text as="div" size="caption" tone="inherit" className="flex min-w-0 flex-col gap-3">
         {!request.deletePath && trees ? (
           <SearchableSelect
             label={t("Worktree")}
@@ -139,9 +140,9 @@ export function QuickDeleteWorktreeDialog({
           />
         ) : null}
         {tree ? (
-          <p className="break-all text-(--ui-text-secondary)">
+          <Text as="p" size="inherit" tone="secondary" className="break-all">
             {tree.branch} · {prettyCwd(tree.path)}
-          </p>
+          </Text>
         ) : null}
         {(!trees && !error) || (tree && !tree.missing && !index && !error) ? (
           <GitLoading text={t("Loading worktrees…")} />
@@ -187,7 +188,7 @@ export function QuickDeleteWorktreeDialog({
             onRetry={!busy ? () => setRevision((value) => value + 1) : undefined}
           />
         ) : null}
-      </div>
+      </Text>
     </Modal>
   );
 }

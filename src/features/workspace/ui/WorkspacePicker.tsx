@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Button } from "../../../shared/ui/Button";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -153,13 +154,18 @@ export function WorkspaceIdentity({ worktree }: { worktree: boolean }) {
   const label = worktree ? "Worktree" : "Current checkout";
   return (
     <Tooltip label={t(label)} when="overflow">
-      <div
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
         aria-label={t("Workspace {p0}", { p0: label })}
-        className="flex h-6 min-w-0 shrink-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)"
+        className="flex h-6 min-w-0 shrink-0 items-center gap-1.5"
       >
         <Icon className="icon-sm shrink-0" />
-        <span className="truncate">{t(label)}</span>
-      </div>
+        <Text size="inherit" tone="inherit" truncate>
+          {t(label)}
+        </Text>
+      </Text>
     </Tooltip>
   );
 }
@@ -368,8 +374,10 @@ function WorkspaceModePicker({
           className="-ml-1.5 flex min-w-0 max-w-48 items-center gap-1.5"
         >
           <Icon className="icon-sm shrink-0" />
-          <span className="truncate">{label}</span>
-          <ChevronDown className="icon-xs shrink-0 text-(--ui-text-secondary)" />
+          <Text size="inherit" tone="inherit" truncate>
+            {label}
+          </Text>
+          <ChevronDown className="icon-xs shrink-0" tone="secondary" />
         </Button>
       ) : null}
       <PickerPopover

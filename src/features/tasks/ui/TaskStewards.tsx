@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
@@ -82,16 +84,25 @@ function StewardsPanel({
   return (
     <section
       aria-label={t("Stewards")}
-      className={`task-ops-panel ${draft ? "max-h-[80%]" : "max-h-[45%]"}`}
+      {...surfaceAttributes(
+        { frame: "pane", edge: "block-end" },
+        `task-ops-panel ${draft ? "max-h-[80%]" : "max-h-[45%]"}`,
+      )}
     >
       <div className="task-ops-head">
         <div className="task-ops-head-text">
           <SectionLabel count={stewards.length}>{t("Stewards")}</SectionLabel>
-          <p className="task-ops-caption">
+          <Text
+            as="p"
+            size="caption"
+            tone="secondary"
+            leading="inherit"
+            className="task-ops-caption"
+          >
             {t(
               "A steward reads its project on a schedule and suggests the next work as To do items. Nothing runs until you start it.",
             )}
-          </p>
+          </Text>
         </div>
         <Button
           variant="secondary"

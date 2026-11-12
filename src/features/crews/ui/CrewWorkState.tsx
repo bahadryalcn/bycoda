@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useLocale } from "../../../shared/i18n";
 import { Badge, type BadgeSize, type BadgeTone } from "../../../shared/ui/Badge";
 import { Clock } from "../../../shared/ui/icons";
@@ -92,9 +93,9 @@ export function crewQuietProgress(run: CrewRunView) {
 /** Last change of the work record; the full date stays in the tooltip. */
 export function CrewWorkUpdated({ value }: { value: number }) {
   return (
-    <span className="inline-flex items-center gap-1 text-ui-caption text-(--ui-text-muted)">
+    <Text tone="muted" className="inline-flex items-center gap-1">
       <Clock aria-hidden="true" className="icon-xs shrink-0" />
       <Timestamp value={value} />
-    </span>
+    </Text>
   );
 }

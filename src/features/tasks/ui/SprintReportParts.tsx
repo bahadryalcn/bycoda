@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { Surface } from "../../../shared/ui/Surface";
 import { Meter, type MeterTone } from "../../../shared/ui/Meter";
@@ -18,8 +19,19 @@ export function SprintKpi({
 }) {
   return (
     <Surface variant="card" padding="md" className="sprint-kpi">
-      <span className="sprint-kpi-label">{label}</span>
-      <span className="sprint-kpi-value">{value}</span>
+      <Text tone="secondary" size="caption" leading="inherit" className="sprint-kpi-label">
+        {label}
+      </Text>
+      <Text
+        as="span"
+        size="heading"
+        tone="inherit"
+        weight="medium"
+        leading="tight"
+        className="sprint-kpi-value"
+      >
+        {value}
+      </Text>
       {meter && meter.max > 0 ? (
         <Meter
           label={label}
@@ -29,7 +41,11 @@ export function SprintKpi({
           valueText={meter.valueText}
         />
       ) : null}
-      {detail ? <span className="sprint-kpi-detail">{detail}</span> : null}
+      {detail ? (
+        <Text tone="danger" size="caption" leading="inherit" className="sprint-kpi-detail">
+          {detail}
+        </Text>
+      ) : null}
     </Surface>
   );
 }

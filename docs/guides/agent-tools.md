@@ -260,7 +260,7 @@ conversation.
 Account labels include sign-in status when known; a saved choice does not itself
 verify that the account can run.
 
-Select up to eight subagent models; the advisor takes exactly one model. bycoda does
+Select up to 24 subagent models; the advisor takes exactly one model. bycoda does
 not route work to a particular model or tool. The main model decides whether
 delegating helps and picks whichever selected model fits the task best, usefulness
 first and cost second. A run with no model named uses the only selected one.
@@ -296,10 +296,16 @@ it has finished, the message starts a new turn in that child session. Cancelling
 the parent turn stops its running children. A stopped child keeps the work it has
 already done, so check its files before continuing.
 
-Each child uses its model's own settings, with the reasoning level matched to the
-main model's (for example Low), or the closest level the child's model offers.
+Subagents use their model's default effort unless the assistant explicitly chooses
+an effort. Advisors match the main model's reasoning level, or the closest offered
+level. The assistant answers a finished child's question with `agents.reply`, keeping
+the same conversation context. Follow-ups can update earlier task instructions;
+advisor read-only access and child authority limits still apply. Approvals still
+need your answer in the child panel.
+The assistant can wait for up to 16 runs together: up to 240 seconds for Claude,
+Codex and Grok, or 50 seconds for other providers.
 
-Limits: eight subagents can run at once, and one advisor at a time. A subagent
+Limits: 16 subagents can run at once, and one advisor at a time. A subagent
 cannot start its own subagents or advisor, so delegation does not nest.
 
 ## Terminal log capture

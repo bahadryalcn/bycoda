@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
+import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
@@ -546,10 +548,16 @@ const MemoMenuBar = memo(function MenuBar({
   ];
 
   return (
-    <div
+    <Text
       ref={barRef}
       data-workspace-menubar
-      className="flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-0.5 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-2 text-ui-caption"
+      as="div"
+      size="caption"
+      tone="inherit"
+      {...surfaceAttributes(
+        { frame: "pane", edge: "bottom" },
+        "flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-0.5 bg-(--ui-surface-panel) px-2",
+      )}
       data-tauri-drag-region="deep"
     >
       {MENUS.map(({ key, label }) => {
@@ -593,7 +601,7 @@ const MemoMenuBar = memo(function MenuBar({
           onClose={closeMenu}
         />
       ) : null}
-    </div>
+    </Text>
   );
 });
 

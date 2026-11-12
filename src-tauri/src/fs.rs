@@ -25,12 +25,14 @@ use cross_volume_move::move_path_outcome;
 use cross_volume_move::move_path_sync;
 #[cfg(test)]
 mod buffer_actor_tests;
+mod project_index;
 mod text_admission;
 use crate::git_conflicts::{
     find_git_dir, git_unmerged_checked_for, git_unmerged_for, side_stage, stage_has_side,
     unmerged_message, unmerged_stages_for, GitConflictFile,
 };
 pub use attachment_reads::AttachmentChunk;
+use project_index::git_ls_files_inner;
 
 pub(crate) const MAX_TEXT_FILE_BYTES: u64 = 8 * 1024 * 1024;
 pub(crate) const MAX_ATTACHMENT_EMBED_BYTES: u64 = 20 * 1024 * 1024;
@@ -1130,62 +1132,6 @@ const MAX_LS_FILES_BYTES: usize = 8 * 1024 * 1024;
 #[cfg(test)]
 fn git_ls_files(root: &Path, cancel: Option<&AtomicBool>) -> Option<Vec<ProjectFile>> {
     git_ls_files_inner(root, cancel, &AtomicBool::new(false))
-}
-
-fn git_ls_files_inner(
-    root: &Path,
-    cancel: Option<&AtomicBool>,
-    incomplete: &AtomicBool,
-) -> Option<Vec<ProjectFile>> {
-    // Routed through the bounded reader rather than `Command::output()`: this
-    // is the path a cancelled search actually takes, because a repository with
-    // a git index never reaches the walk. `output()` buffers the whole listing
-    // before anything can look at it, so on a large monorepo it held ~100 MB
-    // and ran to completion with no way to interrupt it — the exact cost the
-    // walk's cancel check was added to avoid, one function earlier.
-    let (raw, truncated) = git_output_capped(
-        root,
-        &["ls-files", "-co", "--exclude-standard", "-z"],
-        MAX_LS_FILES_BYTES,
-        cancel,
-    )?;
-    if truncated {
-        incomplete.store(true, Ordering::Relaxed);
-        // A partial listing would silently hide files from search. Fall back to
-        // the walk, which is bounded by its own budget.
-        return None;
-    }
-
-    let mut files = Vec::new();
-    for rel in raw.split(|b| *b == 0) {
-        if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
-            return Some(Vec::new());
-        }
-        if rel.is_empty() {
-            continue;
-        }
-        let relative = path_to_js(Path::new(String::from_utf8_lossy(rel).as_ref()));
-        if relative.ends_with('/') || path_has_skipped_dir(&relative) {
-            continue;
-        }
-        let path = root.join(&relative);
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        if name == ".DS_Store" {
-            continue;
-        }
-        files.push(ProjectFile {
-            name: name.to_string(),
-            path: path_to_js(&path),
-            relative,
-        });
-        if files.len() >= MAX_PROJECT_FILES {
-            incomplete.store(true, Ordering::Relaxed);
-            break;
-        }
-    }
-    Some(files)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -10608,6 +10554,43 @@ mod tests {
         let mut ignored = ignored_names(&list_dir_sync(&dir.0).unwrap());
         ignored.sort_unstable();
         assert_eq!(ignored, vec!["a.log", "secret.txt"]);
+    }
+
+    #[test]
+    fn project_index_includes_nested_repositories_and_submodules() {
+        let dir = tmp("index-nested-repositories");
+        assert!(git(&dir.0, &["init"]));
+        std::fs::write(dir.0.join("root.ts"), "root").unwrap();
+        std::fs::create_dir_all(dir.0.join("packages/app")).unwrap();
+        std::fs::write(dir.0.join("packages/app/package.ts"), "package").unwrap();
+        for name in ["workspace", "submodule"] {
+            let child = dir.0.join(name);
+            std::fs::create_dir(&child).unwrap();
+            assert!(git(&child, &["init"]));
+            std::fs::write(child.join("app.ts"), "app").unwrap();
+            std::fs::write(child.join(".gitignore"), "ignored.ts\n").unwrap();
+            std::fs::write(child.join("ignored.ts"), "ignored").unwrap();
+            assert!(git(&child, &["add", "app.ts", ".gitignore"]));
+            assert!(git(&child, &["commit", "-m", "fixture"]));
+            std::fs::write(child.join("loose.ts"), "loose").unwrap();
+        }
+        assert!(git(&dir.0, &["add", "root.ts", "submodule"]));
+        assert!(git(&dir.0, &["commit", "-m", "root fixture"]));
+        assert!(git(
+            &dir.0,
+            &["worktree", "add", "-b", "linked-fixture", "linked"]
+        ));
+        let files = list_project_files_sync(&dir.0.to_string_lossy()).unwrap();
+        let paths = relative_paths(&files);
+        assert!(paths.contains(&"packages/app/package.ts"));
+        assert!(paths.contains(&"linked/root.ts"));
+        assert!(!paths.contains(&"linked"));
+        for name in ["workspace", "submodule"] {
+            assert!(paths.contains(&format!("{name}/app.ts").as_str()));
+            assert!(paths.contains(&format!("{name}/loose.ts").as_str()));
+            assert!(!paths.contains(&format!("{name}/ignored.ts").as_str()));
+            assert!(!paths.contains(&name));
+        }
     }
 
     #[test]

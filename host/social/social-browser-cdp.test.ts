@@ -148,3 +148,79 @@ it.each(["missing endpoint", "CDP connection"])(
     }
   },
 );
+
+it.each([
+  { background: true, visibility: "hidden" as const, hidden: true },
+  { background: true, visibility: "visible" as const, hidden: false },
+  { background: false, visibility: "hidden" as const, hidden: false },
+])(
+  "launches with desktop visibility $visibility (background $background)",
+  async ({ background, visibility, hidden }) => {
+    const profile = await mkdtemp(join(tmpdir(), "social-hidden-target-"));
+    const capsule = {
+      profile,
+      exit: new Promise<void>(() => {}),
+      failed: false,
+      start: vi.fn(async (_executable: string, _args: string[]) => {
+        await writeFile(
+          join(profile, "DevToolsActivePort"),
+          "9333\n/devtools/browser/original-id\n",
+        );
+      }),
+      startupFailed: vi.fn(async () => {}),
+      markEstablished: vi.fn(),
+    };
+    const send = vi.fn(async (method: string, _params?: Record<string, unknown>) => {
+      if (method === "Target.getTargets")
+        return { targetInfos: [{ targetId: "restored-page", type: "page" }] };
+      if (method === "Target.createTarget") {
+        return { targetId: "hidden-page" };
+      }
+      if (method === "Target.attachToTarget") return { sessionId: "own-session" };
+      return {};
+    });
+    const cdp = {
+      send,
+      close: vi.fn(),
+      on: vi.fn(),
+      closed: new Promise<void>(() => {}),
+    };
+    const reserve = vi.spyOn(SocialBrowserLaunch, "reserve").mockResolvedValue(capsule as never);
+    const connect = vi.spyOn(Cdp, "connect").mockResolvedValue(cdp as unknown as Cdp);
+    try {
+      const pending = systemBrowserLauncher("browser")!(profile, background, visibility);
+      await pending;
+      expect(send).toHaveBeenCalledWith("Target.attachToTarget", {
+        targetId: "restored-page",
+        flatten: true,
+      });
+      expect(capsule.markEstablished).toHaveBeenCalledOnce();
+      const args = capsule.start.mock.calls[0][1];
+      expect(args.includes("--headless=new")).toBe(hidden);
+      expect(args.includes("about:blank")).toBe(true);
+      if (hidden)
+        expect(send).toHaveBeenCalledWith(
+          "Emulation.setDeviceMetricsOverride",
+          {
+            width: 1100,
+            height: 860,
+            deviceScaleFactor: 1,
+            mobile: false,
+          },
+          "own-session",
+        );
+      else
+        expect(
+          send.mock.calls.some(([method]) => method === "Emulation.setDeviceMetricsOverride"),
+        ).toBe(false);
+      expect(send.mock.calls.some(([method]) => method === "Target.createTarget")).toBe(false);
+      expect(send.mock.calls.some(([method]) => method === "SystemInfo.getProcessInfo")).toBe(
+        false,
+      );
+    } finally {
+      reserve.mockRestore();
+      connect.mockRestore();
+      await rm(profile, { recursive: true, force: true });
+    }
+  },
+);

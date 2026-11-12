@@ -15,6 +15,12 @@ type Options = {
   defaultWidth: number;
   initial: number;
   onCommit?: (width: number) => void;
+  /**
+   * Pointer drags released with the unclamped width below `collapseBelow` call `onCollapse`
+   * instead of committing; the pane keeps its pre-drag width. Keyboard resizing only clamps.
+   */
+  collapseBelow?: number;
+  onCollapse?: () => void;
 };
 
 function clampTo(value: number, min: number, max: number) {
@@ -47,6 +53,8 @@ export function useDragResize({
   defaultWidth,
   initial,
   onCommit,
+  collapseBelow,
+  onCollapse,
 }: Options) {
   const minRef = useRef(min);
   minRef.current = min;
@@ -54,6 +62,10 @@ export function useDragResize({
   maxRef.current = max;
   const onCommitRef = useRef(onCommit);
   onCommitRef.current = onCommit;
+  const collapseBelowRef = useRef(collapseBelow);
+  collapseBelowRef.current = collapseBelow;
+  const onCollapseRef = useRef(onCollapse);
+  onCollapseRef.current = onCollapse;
   const defaultRef = useRef(defaultWidth);
   defaultRef.current = defaultWidth;
   // A temporary viewport constraint must not overwrite the owner's pane size.
@@ -103,12 +115,20 @@ export function useDragResize({
     const base = sashStart.current ?? widthRef.current;
     apply(clamp(base + delta * sign));
   };
-  const onResizeEnd = (_delta: number, info: SashEndInfo) => {
+  const onResizeEnd = (delta: number, info: SashEndInfo) => {
     const base = sashStart.current;
     sashStart.current = null;
     if (info.cancelled) {
       if (base !== null) apply(base);
       return;
+    }
+    const threshold = collapseBelowRef.current;
+    if (!info.keyboard && base !== null && threshold !== undefined && onCollapseRef.current) {
+      if (base + delta * sign < threshold) {
+        apply(base);
+        onCollapseRef.current();
+        return;
+      }
     }
     commit(widthRef.current);
   };

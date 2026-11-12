@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { CSSProperties } from "react";
 import { Badge } from "../../../shared/ui/Badge";
 import { resolveTeamAvatars } from "../model/memberAvatarTraits";
@@ -73,7 +74,10 @@ export function CrewFaces({
           <span
             key={member.id}
             aria-hidden
-            className="relative grid place-items-center overflow-hidden rounded-full bg-(--ui-surface-raised) ring-2 ring-(--ui-surface-panel)"
+            {...surfaceAttributes(
+              { radius: "pill", variant: "raised" },
+              "relative grid place-items-center overflow-hidden ring-2 ring-(--ui-surface-panel)",
+            )}
             style={faceStyle(index)}
           >
             <MemberAvatar
@@ -90,7 +94,8 @@ export function CrewFaces({
           aria-hidden
           size="xs"
           appearance="subtle"
-          className="relative justify-center p-0 leading-none whitespace-nowrap ring-2 ring-(--ui-surface-panel)"
+          className="relative justify-center p-0 whitespace-nowrap ring-2 ring-(--ui-surface-panel)"
+          leading="none"
           minWidth={size}
           style={faceStyle(shown.length)}
         >

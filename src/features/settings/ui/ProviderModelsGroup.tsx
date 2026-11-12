@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import "./ProviderDefaults.css";
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -74,15 +77,10 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
       action={
         models.length > 1 ? (
           <div className="provider-models-actions">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={enableAll}
-              disabled={enabledCount === models.length}
-            >
+            <Button size="sm" variant="ghost" onClick={enableAll}>
               {t("Enable all")}
             </Button>
-            <Button size="sm" variant="ghost" onClick={onlyDefault} disabled={enabledCount <= 1}>
+            <Button size="sm" variant="ghost" onClick={onlyDefault}>
               {t("Only default")}
             </Button>
           </div>
@@ -90,7 +88,12 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
       }
     >
       {models.length > 5 ? (
-        <div className="provider-models-search">
+        <div
+          {...surfaceAttributes(
+            { variant: "base", frame: "settings", edge: "block-end" },
+            "provider-models-search",
+          )}
+        >
           <SearchInput
             aria-label={t("Search models…")}
             appearance="field"
@@ -100,47 +103,54 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
           />
         </div>
       ) : null}
-      {models.length === 0 ? (
-        <Row
-          label={
-            isHarnessAvailable(harness) ? t("Loading models…") : t("Available after CLI setup")
-          }
-        />
-      ) : filtered.length === 0 ? (
-        <Row label={t("No matching models")} />
-      ) : (
-        filtered.map((model) => {
-          const on = isModelEnabled(model.id);
-          const last = on && enabledCount <= 1;
-          return (
-            <Row
-              key={model.id}
-              label={
-                <span className="provider-model-name">
-                  <span className="truncate">{model.name}</span>
-                  {model.id === defaultId ? (
-                    <Badge size="sm" className="shrink-0">
-                      {t("Default")}
-                    </Badge>
-                  ) : null}
-                </span>
-              }
-              description={modelMeta(model)}
-              disabled={last}
-              disabledReason={guard}
-            >
-              <Toggle
-                label={t("Use {p0}", { p0: model.name })}
-                on={on}
-                onChange={(next) => saveModelEnabled(model.id, next)}
-                // The last model stays on so the provider keeps a default.
+      <div {...surfaceAttributes({ frame: "settings", edge: "block" }, "provider-models-list")}>
+        {models.length === 0 ? (
+          <Row
+            label={
+              isHarnessAvailable(harness) ? t("Loading models…") : t("Available after CLI setup")
+            }
+          />
+        ) : filtered.length === 0 ? (
+          <Row label={t("No matching models")} />
+        ) : (
+          filtered.map((model) => {
+            const on = isModelEnabled(model.id);
+            const last = on && enabledCount <= 1;
+            return (
+              <Row
+                key={model.id}
+                label={
+                  <span className="provider-model-name">
+                    <Text size="inherit" tone="inherit" truncate>
+                      {model.name}
+                    </Text>
+                    {model.id === defaultId ? (
+                      <Badge size="sm" className="shrink-0">
+                        {t("Default")}
+                      </Badge>
+                    ) : null}
+                  </span>
+                }
+                description={modelMeta(model)}
+                descriptionVisible={false}
                 disabled={last}
-              />
-            </Row>
-          );
-        })
-      )}
-      <div className="provider-models-source">
+                disabledReason={guard}
+              >
+                <Toggle
+                  label={t("Use {p0}", { p0: model.name })}
+                  on={on}
+                  onChange={(next) => saveModelEnabled(model.id, next)}
+                  // The last model stays on so the provider keeps a default.
+                  disabled={last}
+                />
+              </Row>
+            );
+          })
+        )}
+      </div>
+      <div
+        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "provider-models-source")}
+      >
         <CatalogReceiptStatus harness={harness} available={isHarnessAvailable(harness)} />
       </div>
     </Group>

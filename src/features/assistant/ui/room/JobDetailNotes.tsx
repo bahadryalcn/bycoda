@@ -1,5 +1,6 @@
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Text } from "../../../../shared/ui/Text";
 import type {
   AssistantJob,
   AssistantNote,
@@ -37,16 +38,27 @@ export function JobDetailNotes({
   onOpenNote: (note: AssistantNote) => void;
 }) {
   const hits = jobNoteHits(job, notes);
-  if (!hits.length) return <p className={styles.muted}>{t("No notes mention this job yet.")}</p>;
+  if (!hits.length)
+    return (
+      <Text as="p" leading="inherit" className={styles.muted}>
+        {t("No notes mention this job yet.")}
+      </Text>
+    );
   return (
     <div className={styles.block}>
       {hits.map(({ note, lines }) => (
-        <section key={note.id} className={styles.noteHit}>
+        <Text
+          as="section"
+          key={note.id}
+          tone="inherit"
+          leading="inherit"
+          className={styles.noteHit}
+        >
           <Button variant="link" onClick={() => onOpenNote(note)}>
             {note.title}
           </Button>
           <AgentMarkdown text={lines.join("\n\n")} />
-        </section>
+        </Text>
       ))}
     </div>
   );

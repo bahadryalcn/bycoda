@@ -174,6 +174,7 @@ const CANCELLATIONS: Record<string, string[]> = {
   "tasks.review.recheck": ["tasks.stop"],
   "agents.delegate": ["agents.cancel"],
   "agents.consult": ["agents.cancel"],
+  "agents.reply": ["agents.cancel"],
   "browser.claim": ["browser.release"],
   "browser.recording.start": ["browser.recording.stop"],
   "browser.open": ["browser.release"],
@@ -277,7 +278,7 @@ function effectFor(group: ManagedToolGroup, action: string, read: boolean): Tool
   if (action === "commands.run.cancel") return ["execution", "local-state"];
   if (/^inbox\.(comment|review|prAction)$/.test(action)) return ["external-write"];
   if (
-    /^(agents\.(delegate|consult|cancel)|devServers\.(start|stop|restart|kill)|images\.generate|terminals\.(write|interrupt|close|create)|devices\.(start|boot|action|preview)|tasks\.(start|retry|stop|review\.recheck)|crews\.(start|assign|member\.ask|respond|answer|stop)|automations\.(runNow|stopRun)|stewards\.(runNow|stopRun)|logs\.monitors\.(start|stop)|goals\.(create|replan|cancel)|browser\.recording\.(start|stop))$/.test(
+    /^(agents\.(delegate|consult|reply|cancel)|devServers\.(start|stop|restart|kill)|images\.generate|terminals\.(write|interrupt|close|create)|devices\.(start|boot|action|preview)|tasks\.(start|retry|stop|review\.recheck)|crews\.(start|assign|member\.ask|respond|answer|stop)|automations\.(runNow|stopRun)|stewards\.(runNow|stopRun)|logs\.monitors\.(start|stop)|goals\.(create|replan|cancel)|browser\.recording\.(start|stop))$/.test(
       action,
     )
   )
@@ -330,7 +331,7 @@ export function createManagedToolCatalog(
         requestFields.length &&
         (/^crews\.(start|assign|member\.ask|request|resolve|respond|answer)$/.test(action) ||
           action.startsWith("inbox.") ||
-          /^agents\.(delegate|consult)$/.test(action) ||
+          /^agents\.(delegate|consult|reply)$/.test(action) ||
           action === "devices.preview" ||
           action === "terminals.create" ||
           action === "servers.ssh.execute" ||

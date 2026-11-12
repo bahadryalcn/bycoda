@@ -1,6 +1,6 @@
 ---
 name: feature-decision-models
-description: "Change the Host decision gateway (decide requests, contract adapters, provider catalog, routing, confidence and evaluation); the settings UI, local runtime install and discovery, and the saved config and owner RPC belong to their own owners."
+description: Use when changing Host decision routing, adapters, confidence and catalog. Not for provider sign-in; see feature-providers.
 ---
 
 # Decision models
@@ -39,9 +39,9 @@ Owns the Host side of decision models in `host/decision-models/`: the `decide` g
 
 ## Focused checks
 
-`pnpm exec vitest run --config host/vitest.config.ts host/decision-models host/server/rpc-decision-models.test.ts`. Listing a command here is not a passing result.
+`pnpm exec vitest run --config host/vitest.config.ts host/decision-models host/server/rpc-decision-models.test.ts`.
 
-## Read when needed
+## References
 
 - [Decision models](../../../docs/integrations/decision-models.md) for the request and answer contract, routing, the verification rule for catalog entries and the owner RPC list.
 - [Social integration](../../../docs/integrations/social.md) for the Social browser decision layer, the main caller.

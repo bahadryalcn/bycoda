@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { ScrollArea, scrollAreaAttributes } from "../../../shared/ui/ScrollArea";
 import { SettingsFeedback } from "./settingsControls";
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
@@ -72,8 +74,12 @@ export function PoliciesSettings() {
           setActivePolicy(POLICIES.find((policy) => policy.id === id) ?? activePolicy);
         }}
       >
-        <aside className="policy-sidebar">
-          <div
+        <ScrollArea as="aside" gutter="stable" className="policy-sidebar">
+          <Text
+            as="div"
+            size="secondary"
+            tone="muted"
+            leading="inherit"
             className="policy-toolbar"
             data-setting-id="policy-language"
             id={settingDomId("policy-language")}
@@ -89,10 +95,10 @@ export function PoliciesSettings() {
               ]}
               onChange={setLanguageOverride}
             />
-          </div>
-          <p className="policy-context">
+          </Text>
+          <Text as="p" size="caption" tone="muted" leading="relaxed" className="policy-context">
             {t("Document language only; your app language and permissions stay unchanged.")}
-          </p>
+          </Text>
           <TabList className="policy-navigation" label={t("Policy documents")}>
             {POLICIES.map((policy) => (
               <Tab
@@ -105,14 +111,20 @@ export function PoliciesSettings() {
               </Tab>
             ))}
           </TabList>
-        </aside>
+        </ScrollArea>
         <TabPanel
           ref={reader}
-          className="policy-reader"
+          {...scrollAreaAttributes({ gutter: "stable" }, "policy-reader")}
           labelledBy={settingDomId(activePolicy.id)}
           key={activePolicy.id}
         >
-          <div className="policy-reader-context">
+          <Text
+            as="div"
+            size="caption"
+            tone="muted"
+            leading="relaxed"
+            className="policy-reader-context"
+          >
             <p>
               {t(
                 "Documents are bundled for offline reading. Other interface languages use the English text.",
@@ -142,19 +154,23 @@ export function PoliciesSettings() {
                 }}
               />
             ) : null}
-          </div>
+          </Text>
           {contactError ? (
             <SettingsFeedback state="error">
               {t("Could not open your email app. Copy info@bycoda.codes into your email app.")}
             </SettingsFeedback>
           ) : null}
-          <article
+          <Text
+            as="article"
+            size="body"
+            tone="inherit"
+            leading="relaxed"
             className="policy-document"
             lang={turkish && activePolicy.id !== "software-license" ? "tr" : "en"}
             aria-label={turkish ? activePolicy.trTitle : activePolicy.title}
           >
             <AgentMarkdown text={body} />
-          </article>
+          </Text>
         </TabPanel>
       </Tabs>
     </div>

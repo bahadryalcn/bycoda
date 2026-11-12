@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { ChevronRight } from "./icons";
+import { optionalTextAttributes, type TextSize, type TextTone, type TextRoles } from "./Text";
 import styles from "./Disclosure.module.css";
 
 const NATIVE_ACTIVATABLE = 'a[href],button,input,label,select,textarea,[role="button"]';
@@ -31,6 +32,13 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   /** `plain` inline text-level, `row` list-row height, `card` framed like `Surface variant="outline"`. */
   variant?: "plain" | "row" | "card";
   size?: "sm" | "md";
+  /** Summary text size; independent of row size. */
+  textSize?: TextSize;
+  /** Summary ink and weight; unset preserves existing styling. */
+  tone?: TextTone;
+  weight?: TextRoles["weight"];
+  /** Line height role; `inherit` keeps the surrounding line height. */
+  leading?: TextRoles["leading"];
   /** Side of the summary row that carries the chevron. */
   chevron?: "start" | "end";
   /** Shared `name` makes sibling disclosures exclusive (native accordion). */
@@ -60,6 +68,10 @@ export function Disclosure({
   onOpenChange,
   variant = "plain",
   size = "md",
+  textSize,
+  tone,
+  weight,
+  leading,
   chevron = "start",
   name,
   className,
@@ -122,7 +134,14 @@ export function Disclosure({
     >
       <summary className={styles.summary} onClick={guardActions}>
         {chevron === "start" ? mark : null}
-        <span className={styles.label}>{summary}</span>
+        <span
+          {...optionalTextAttributes(
+            { size: textSize ?? (weight ? "inherit" : undefined), tone, weight, leading },
+            styles.label,
+          )}
+        >
+          {summary}
+        </span>
         {hasCount ? (
           <span className={styles.count}>
             {countLabel ? (

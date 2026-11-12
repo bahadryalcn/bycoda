@@ -4,7 +4,6 @@
   gap: var(--space-1);
 }
 .usage-provider-legend [aria-pressed="false"] {
-  color: var(--ui-text-secondary);
   text-decoration: line-through;
 }
 .usage-provider-shares {

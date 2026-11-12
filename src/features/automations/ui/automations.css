@@ -92,7 +92,6 @@
   container: automation-editor / size;
 }
 .automation-editor-header {
-  border-block-end: 1px solid var(--ui-tone-neutral-border);
 }
 .automation-editor-grid {
   display: grid;

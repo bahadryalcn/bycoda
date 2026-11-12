@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/git";
 import { GitBranch } from "../../../shared/ui/icons";
 import type { GitDiffIndex } from "../../../platform/tauri/fs";
@@ -23,15 +24,24 @@ export function CheckoutIdentity({
   const reference = branch ?? (head ? `${t("Detached")} · ${head.slice(0, 7)}` : undefined);
   return (
     <span className={styles.identity}>
-      <span className={styles.name}>{name}</span>
+      <Text
+        size="caption"
+        leading="inherit"
+        tone="primary"
+        weight="medium"
+        truncate
+        className={styles.name}
+      >
+        {name}
+      </Text>
       {showReference && reference ? (
-        <span className={styles.path} title={cwd}>
+        <Text size="caption" leading="inherit" tone="secondary" className={styles.path} title={cwd}>
           <GitBranch aria-hidden className="icon-xs shrink-0" />
-          <span className={styles.reference}>
+          <Text as="span" size="inherit" tone="inherit" truncate className={styles.reference}>
             {checkout ? `${t(checkout.isMain ? "Main working copy" : "Worktree")} · ` : ""}
             {reference}
-          </span>
-        </span>
+          </Text>
+        </Text>
       ) : null}
     </span>
   );

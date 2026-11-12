@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type {
   NotificationChannel,
   NotificationEventKey,
@@ -8,7 +9,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Switch } from "../../../shared/ui/Switch";
-import { TextField } from "../../../shared/ui/TextField";
+import { TimePicker } from "../../../shared/ui/TimePicker";
 import { localTimeZone, useNotificationSettings } from "../hooks/useAccountData";
 import {
   NOTIFICATION_CHANNELS,
@@ -18,12 +19,12 @@ import {
   isLocked,
   setChannel,
   setDailySummaryTime,
-  setEmailDigest,
   setPushDetails,
   setQuietHours,
   userNotificationEvents,
 } from "../model/notificationSettingsModel";
 import styles from "./account.module.css";
+import layout from "./accountNotifications.module.css";
 
 function channelLabel(channel: NotificationChannel): string {
   switch (channel) {
@@ -71,7 +72,7 @@ function QuietHoursControls({
   const quiet = settings.quietHours;
   const zone = quiet?.timeZone ?? localTimeZone();
   return (
-    <div className={styles.quiet}>
+    <div className={layout.setting}>
       <Switch
         label={t("Quiet hours")}
         description={t("Hold non-urgent notifications during these hours.")}
@@ -81,26 +82,22 @@ function QuietHoursControls({
         }
       />
       {quiet ? (
-        <>
-          <TextField
+        <div className={layout.times}>
+          <TimePicker
             label={t("From")}
-            type="time"
             value={quiet.start}
-            onChange={(event) =>
-              event.target.value &&
-              onChange((s) => setQuietHours(s, { ...quiet, start: event.target.value }))
+            onChange={(value) =>
+              value && onChange((s) => setQuietHours(s, { ...quiet, start: value }))
             }
           />
-          <TextField
+          <TimePicker
             label={t("Until")}
-            type="time"
             value={quiet.end}
-            onChange={(event) =>
-              event.target.value &&
-              onChange((s) => setQuietHours(s, { ...quiet, end: event.target.value }))
+            onChange={(value) =>
+              value && onChange((s) => setQuietHours(s, { ...quiet, end: value }))
             }
           />
-        </>
+        </div>
       ) : null}
     </div>
   );
@@ -113,22 +110,18 @@ function DailySummaryControls({
   settings: NotificationSettings;
   onChange: ChangeHandler;
 }) {
+  if (!settings.emailDigest) return null;
   return (
-    <div className={styles.quiet}>
-      <Switch
-        label={t("E-mail me a daily summary")}
-        description={t("One e-mail a day with your activity, sent at the time you choose.")}
-        checked={settings.emailDigest}
-        onCheckedChange={(on) => onChange((s) => setEmailDigest(s, on))}
+    <div className={layout.setting}>
+      <Text size="secondary" tone="secondary">
+        {t("One e-mail a day with your activity, sent at the time you choose.")}
+      </Text>
+      <TimePicker
+        className={layout.time}
+        label={t("Send at")}
+        value={settings.dailySummaryTime ?? ""}
+        onChange={(value) => onChange((s) => setDailySummaryTime(s, value))}
       />
-      {settings.emailDigest ? (
-        <TextField
-          label={t("Send at")}
-          type="time"
-          value={settings.dailySummaryTime ?? ""}
-          onChange={(event) => onChange((s) => setDailySummaryTime(s, event.target.value))}
-        />
-      ) : null}
     </div>
   );
 }
@@ -145,7 +138,9 @@ function EventRow({
   const locked = isLocked(event);
   return (
     <>
-      <span>{eventLabel(event)}</span>
+      <Text size="secondary" tone="primary">
+        {eventLabel(event)}
+      </Text>
       {NOTIFICATION_CHANNELS.map((channel) =>
         isChannelApplicable(event, channel) ? (
           <span key={channel} className={styles.cell}>
@@ -181,25 +176,35 @@ export function AccountNotifications() {
       ) : null}
       {settings ? (
         <>
-          <div
-            className={styles.grid}
-            role="group"
-            aria-label={t("Notifications by event and channel")}
-          >
-            <span className={styles.gridHead}>{t("Event")}</span>
-            {NOTIFICATION_CHANNELS.map((channel) => (
-              <span key={channel} className={styles.gridHead}>
-                {channelLabel(channel)}
-              </span>
-            ))}
-            {userNotificationEvents().map((event) => (
-              <EventRow key={event.key} event={event.key} settings={settings} onChange={update} />
-            ))}
+          <div className={layout.matrixScroll}>
+            <div
+              className={layout.matrix}
+              role="group"
+              aria-label={t("Notifications by event and channel")}
+            >
+              <Text size="caption" tone="secondary" leading="inherit" className={styles.gridHead}>
+                {t("Event")}
+              </Text>
+              {NOTIFICATION_CHANNELS.map((channel) => (
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  key={channel}
+                  className={styles.gridHead}
+                >
+                  {channelLabel(channel)}
+                </Text>
+              ))}
+              {userNotificationEvents().map((event) => (
+                <EventRow key={event.key} event={event.key} settings={settings} onChange={update} />
+              ))}
+            </div>
           </div>
-          <DailySummaryControls settings={settings} onChange={update} />
-          <p className={styles.meta}>
+          <Text as="p" size="caption" tone="secondary" leading="inherit">
             {t("Sign-ins from a new device always notify you, so they cannot be switched off.")}
-          </p>
+          </Text>
+          <DailySummaryControls settings={settings} onChange={update} />
           <QuietHoursControls settings={settings} onChange={update} />
           <Switch
             label={t("Show details in phone notifications")}

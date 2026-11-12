@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Badge } from "../../../shared/ui/Badge";
@@ -119,17 +121,14 @@ export function LiveAgentsPreview({
     summary.headline === "attention" ? (
       <CircleAlert
         aria-hidden
-        className={`icon-sm shrink-0 ${attentionTone === "danger" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-tone-warning-fg)"}`}
+        className="icon-sm shrink-0"
+        tone={attentionTone}
         strokeWidth={1.75}
       />
     ) : summary.headline === "finished" ? (
-      <Check aria-hidden className="icon-sm shrink-0 text-(--ui-tone-success-fg)" strokeWidth={2} />
+      <Check aria-hidden className="icon-sm shrink-0" tone="success" strokeWidth={2} />
     ) : summary.headline === "waiting" ? (
-      <Clock
-        aria-hidden
-        className="icon-sm shrink-0 text-(--ui-text-secondary)"
-        strokeWidth={1.75}
-      />
+      <Clock aria-hidden className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
     ) : (
       <span aria-hidden className="grid icon-sm shrink-0 place-items-center">
         <StatusDot label={t("Working")} aria-hidden />
@@ -205,11 +204,12 @@ export function LiveAgentsPreview({
       {/* On the rail the header is the shared 28px section row: one line with status mark,
           title, summary counts and the collapse control. */}
       <div
-        className={
+        {...surfaceAttributes(
+          { radius: collapsible ? undefined : "card" },
           collapsible
             ? ""
-            : "overflow-hidden rounded-lg border border-(--ui-tone-accent-border) bg-(--ui-tone-accent-subtle)"
-        }
+            : "overflow-hidden  border border-(--ui-tone-accent-border) bg-(--ui-tone-accent-subtle)",
+        )}
       >
         {collapsible ? (
           <RailSectionHeader
@@ -223,9 +223,15 @@ export function LiveAgentsPreview({
         ) : (
           <div className="flex w-full min-w-0 items-center gap-2 px-2.5 py-2 text-start">
             {statusMark}
-            <span className="min-w-0 flex-1 truncate text-ui-caption font-medium text-(--ui-text-secondary)">
+            <Text
+              size="caption"
+              tone="secondary"
+              weight="medium"
+              truncate
+              className="min-w-0 flex-1"
+            >
               {title}
-            </span>
+            </Text>
             <span className="shrink-0">{countText}</span>
           </div>
         )}
@@ -233,18 +239,29 @@ export function LiveAgentsPreview({
         <div id={listId} hidden={collapsed} className="px-2 pb-1">
           {projectWorkingCount > 0 ? (
             // Same columns as a row: status mark under the row icons, text under the titles.
-            <p className="flex min-w-0 items-center gap-1.5 border border-transparent px-2.5 py-1 text-ui-caption text-(--ui-text-secondary)">
+            <Text
+              as="p"
+              size="caption"
+              tone="secondary"
+              className="flex min-w-0 items-center gap-1.5 border border-transparent px-2.5 py-1"
+            >
               <span aria-hidden className="grid icon-sm shrink-0 place-items-center">
                 <StatusDot label={t("Working")} aria-hidden />
               </span>
-              <span data-live-agents-project-summary className="min-w-0 flex-1 truncate">
+              <Text
+                data-live-agents-project-summary
+                size="inherit"
+                tone="inherit"
+                truncate
+                className="min-w-0 flex-1"
+              >
                 {t("{p0} working in this project", { p0: projectWorkingCount })}
-              </span>
-            </p>
+              </Text>
+            </Text>
           ) : null}
           <div
             ref={lockList}
-            className={`flex flex-col gap-px ${
+            className={`flex flex-col gap-0 ${
               collapsible
                 ? "max-h-[min(18rem,30vh)] overflow-y-auto overscroll-none"
                 : expanded
@@ -424,21 +441,26 @@ function LiveAgentCard({
     >
       <span className="flex min-w-0 flex-1 items-center gap-1.5" data-live-agent-title>
         <HarnessIcon harness={agent.harness} className="icon-sm shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-ui-secondary leading-snug">
+        <Text size="secondary" tone="inherit" leading="snug" truncate className="min-w-0 flex-1">
           {agent.title}
-        </span>
+        </Text>
         {elapsed ? (
-          <span
+          <Text
             data-live-agent-elapsed
-            className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary) @max-[200px]/rail:hidden"
+            size="caption"
+            tone="secondary"
+            className="shrink-0 tabular-nums @max-[200px]/rail:hidden"
           >
             {elapsed}
-          </span>
+          </Text>
         ) : null}
       </span>
       {/* Secondary line: where the work lives on the left, its real state on the right. */}
-      <span
-        className="flex min-w-0 items-center gap-1.5 ps-[calc(var(--ui-icon-sm)+0.375rem)] text-ui-caption leading-tight text-(--ui-text-secondary)"
+      <Text
+        size="caption"
+        tone="secondary"
+        leading="tight"
+        className="flex min-w-0 items-center gap-1.5 ps-[calc(var(--ui-icon-sm)+0.375rem)]"
         data-live-agent-details
       >
         <ProjectMascot
@@ -455,9 +477,15 @@ function LiveAgentCard({
             strokeWidth={1.75}
           />
         ) : null}
-        <span className="min-w-0 flex-1 truncate @max-[220px]/rail:sr-only" data-live-agent-project>
+        <Text
+          size="inherit"
+          tone="inherit"
+          truncate
+          className="min-w-0 flex-1 @max-[220px]/rail:sr-only"
+          data-live-agent-project
+        >
           {project}
-        </span>
+        </Text>
         <Badge
           size="xs"
           appearance="subtle"
@@ -474,9 +502,13 @@ function LiveAgentCard({
           ) : (
             <SessionWorkingStatus startedAt={agent.startedAt} showElapsed={false} />
           )}
-          {flagged ? <span className="min-w-0 truncate">{activity}</span> : null}
+          {flagged ? (
+            <Text size="inherit" tone="inherit" truncate className="min-w-0">
+              {activity}
+            </Text>
+          ) : null}
         </Badge>
-      </span>
+      </Text>
     </Button>
   );
 }

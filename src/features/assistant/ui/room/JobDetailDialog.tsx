@@ -1,3 +1,5 @@
+import { Code } from "../../../../shared/ui/Code";
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type {
   AssistantJob,
@@ -127,7 +129,11 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
         <ClampText key={job.id} lines={4}>
           <p>{job.request}</p>
         </ClampText>
-        {job.summary && <p className={styles.muted}>{job.summary}</p>}
+        {job.summary && (
+          <Text as="p" leading="inherit" className={styles.muted}>
+            {job.summary}
+          </Text>
+        )}
       </div>
       <DescriptionList size="sm">
         {job.kind !== "quick" && (
@@ -184,12 +190,12 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
             onChange={() => undefined}
           />
           {!job.quickResult?.automationId && job.quickIntent?.automationId && (
-            <p className={styles.muted}>
+            <Text as="p" leading="inherit" className={styles.muted}>
               {t(
                 "Automation creation is unconfirmed. Inspect its original target before retrying.",
               )}{" "}
-              <code>{job.quickIntent.automationId}</code>
-            </p>
+              <Code>{job.quickIntent.automationId}</Code>
+            </Text>
           )}
           {(job.quickResult?.automationId || job.quickIntent?.automationId) &&
             props.onOpenAutomation && (
@@ -230,11 +236,11 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
       )}
       {job.awaitingOwnerRestart && (
         <section className={styles.block}>
-          <p className={styles.muted}>
+          <Text as="p" leading="inherit" className={styles.muted}>
             {t(
               "Restoring keeps the goal and tasks stopped. Review them in the task board before restarting.",
             )}
-          </p>
+          </Text>
           {props.onReviewJobTasks && (
             <Button
               disabled={!!pending}

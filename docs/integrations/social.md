@@ -429,8 +429,10 @@ verification or suspicious-login screen. The decision layer treats these states 
 human-only, and the desktop layer refuses them. A challenge is recognized and reported only.
 
 **Visibility.** Browser windows are hidden by default (`visibility: hidden`), and the
-owner can switch an account to visible. A hidden window stays rendered off every display;
-on Windows it also has no taskbar or Alt+Tab entry. A live view streams frames while the
+owner can switch an account to visible. Hidden execution uses Chrome's modern headless
+mode with no desktop window, taskbar button or Alt+Tab entry. If the browser
+cannot start in hidden mode, the operation fails without opening a visible window.
+A live view streams frames while the
 owner has it open. It is capped in frame rate and size and stops after idle. Pointer and key input from
 the live view goes to the account's page.
 

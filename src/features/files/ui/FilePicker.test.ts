@@ -96,6 +96,17 @@ function inputText(input: HTMLInputElement, value: string) {
   });
 }
 
+it("names the project and keeps only the dialog close button when searching", () => {
+  const { onClose } = renderPicker("App");
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.querySelector("header")?.textContent).toContain("repo");
+  expect(dialog.querySelector("[data-search-clear]")).toBeNull();
+  const close = dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!;
+  expect(close).not.toBeNull();
+  act(() => close.click());
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
 it("reports a failed refresh without hiding cached files and retries without losing the query", async () => {
   loadProjectFiles.mockRejectedValueOnce(new Error("File index unavailable"));
   renderPicker();

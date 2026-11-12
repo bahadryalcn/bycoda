@@ -141,7 +141,7 @@ describe("GitHub work item link preview", () => {
     const chip = container.querySelector<HTMLAnchorElement>('[data-github-work-item-chip="pr"]')!;
 
     expect(chip.getAttribute("data-compact")).toBe("true");
-    expect(chip.className).toContain("text-ui-caption");
+    expect(chip.querySelector("span")?.getAttribute("data-size")).toBe("caption");
     expect(chip.className).toContain("align-middle");
     expect(chip.className).toContain("border-0");
     expect(chip.className).toContain("p-0");

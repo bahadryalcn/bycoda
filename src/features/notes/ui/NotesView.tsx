@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
@@ -13,6 +15,9 @@ import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { ClampText } from "../../../shared/ui/ClampText";
+import { NoteDeleteDescription } from "./NoteDeleteDescription";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Sash } from "../../../shared/ui/Sash";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -34,8 +39,8 @@ import {
   File,
   Trash2,
   SlidersHorizontal,
-  MessageSquarePlus,
   Check,
+  Save,
 } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
@@ -98,7 +103,9 @@ import {
 import { openReplacePanel } from "../../files/editor/editorSearch";
 import { NoteMarkdownEditor, NoteMarkdownToolbar } from "./NoteMarkdownEditor";
 import { NoteEditablePreview } from "./NoteEditablePreview";
-import { NoteSaveStatus } from "./NoteSaveStatus";
+import { NoteSaveStatus, noteSaveState } from "./NoteSaveStatus";
+import { NoteQuickTagFilters } from "./NoteQuickTagFilters";
+import { NoteChatAction } from "./NoteChatAction";
 import { NoteEditorPane } from "./NoteEditorPane";
 import { useNoteEditorMode } from "./useNoteEditorMode";
 import { useNoteInView } from "./useNoteInView";
@@ -648,8 +655,8 @@ export function NotesView({
     }
   };
 
-  const onAddToChat = (note: Note) => {
-    requestAddNoteToChat(note);
+  const onAddToChat = (note: Note, targetCwd?: string) => {
+    requestAddNoteToChat(note, targetCwd);
     onClose();
   };
 
@@ -836,11 +843,17 @@ export function NotesView({
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-transparent"
+      {...surfaceAttributes(
+        { frame: "pane", edge: "right", variant: "transparent" },
+        "note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col",
+      )}
     >
       <div className="flex min-h-9 shrink-0 items-center gap-1 px-2 pt-1">
         <LiveText
-          className="min-w-0 flex-1 truncate ps-1 text-ui-caption tabular-nums text-(--ui-text-secondary)"
+          size="caption"
+          tone="secondary"
+          truncate
+          className="min-w-0 flex-1 ps-1 tabular-nums"
           text={
             filtered
               ? t("{p0} of {p1} notes", { p0: visible.length, p1: notes.length })
@@ -878,7 +891,7 @@ export function NotesView({
       {notes.length > 0 || filtered || loading ? (
         <div className="flex shrink-0 items-center gap-1 px-2 py-1">
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-            <Search className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
+            <Search className="icon-xs shrink-0" tone="secondary" aria-hidden="true" />
             <SearchInput
               focusOwner="group"
               value={query}
@@ -914,6 +927,7 @@ export function NotesView({
           />
         </div>
       ) : null}
+      <NoteQuickTagFilters tags={allTags} selected={tagFilter} onSelect={setTagFilter} />
       {filtersOpen ? (
         <Popover
           anchor={filtersButton}
@@ -1005,7 +1019,7 @@ export function NotesView({
         </Popover>
       ) : null}
       {selectionMode ? (
-        <div className="note-bulk-actions">
+        <div {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "note-bulk-actions")}>
           <Checkbox
             aria-label={t("Select all filtered notes")}
             disabled={bulkDeleting || visible.length === 0}
@@ -1026,6 +1040,8 @@ export function NotesView({
               });
             }}
             label={t("{p0} selected", { p0: checkedIds.size })}
+            size="caption"
+            tone="secondary"
             className="note-select-all"
           />
           <Button
@@ -1234,13 +1250,16 @@ export function NotesView({
   );
 
   return (
-    <div
+    <Text
+      as="div"
+      size="inherit"
+      tone="primary"
       role="region"
       aria-label={t("Notes")}
       ref={workspaceRef}
       data-app-notes
       data-library-visible={mobileListVisible}
-      className="notes-workspace flex min-h-0 min-w-0 flex-1 flex-col text-content"
+      className="notes-workspace flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <PaneHeader
         dragRegion
@@ -1252,10 +1271,17 @@ export function NotesView({
         trailing={IS_MAC ? null : <WindowControls />}
       >
         <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
-            <File className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-            <span className="min-w-0 truncate text-content">{t("Notes")}</span>
-          </div>
+          <Text
+            as="div"
+            size="secondary"
+            tone="inherit"
+            className="flex min-w-0 flex-1 items-center gap-2 px-3"
+          >
+            <File className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
+            <Text size="inherit" tone="primary" truncate className="min-w-0">
+              {t("Notes")}
+            </Text>
+          </Text>
         </ToolHeader>
       </PaneHeader>
       <div className="note-mobile-navigation">
@@ -1277,15 +1303,25 @@ export function NotesView({
           className="notes-workspace-detail flex min-h-0 min-w-0 flex-1 flex-col"
         >
           {selectedSummary && !visible.some((note) => note.id === selectedSummary.id) ? (
-            <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-5 py-2 text-ui-caption text-(--ui-text-secondary)">
+            <Text
+              as="div"
+              size="caption"
+              tone="secondary"
+              className="flex flex-wrap items-center gap-2 border-b border-stroke px-5 py-2"
+            >
               {t("This note is outside the current filters.")}
               <Button variant="ghost" size="sm" type="button" onClick={clearFilters}>
                 {t("Clear filters")}
               </Button>
-            </div>
+            </Text>
           ) : null}
           {selected && deferredQuery.trim() ? (
-            <div className="flex flex-wrap items-center gap-2 px-4 py-1 text-ui-caption text-(--ui-text-secondary)">
+            <Text
+              as="div"
+              size="caption"
+              tone="secondary"
+              className="flex flex-wrap items-center gap-2 px-4 py-1"
+            >
               {t("Search in this note")}
               <Button
                 variant="link"
@@ -1299,7 +1335,7 @@ export function NotesView({
               >
                 {t("Find in note")}
               </Button>
-            </div>
+            </Text>
           ) : null}
           {detailError ? (
             <Alert tone="danger" className="">
@@ -1325,6 +1361,7 @@ export function NotesView({
               findRequest={findRequest}
               onFindHandled={completeFind}
               note={selected}
+              availableTags={allTags}
               recents={recents}
               activeCwd={cwd}
               onSaved={onSaved}
@@ -1342,35 +1379,7 @@ export function NotesView({
               deleteTargets.length === 1
                 ? t("Delete note permanently?")
                 : t("Delete {p0} notes permanently?", { p0: deleteTargets.length }),
-            message: (
-              <span className="note-delete-description">
-                <span className="block">
-                  {t(
-                    "This cannot be undone. Unsaved changes in the selected notes will also be deleted.",
-                  )}
-                </span>
-                <span className="block">
-                  {deleteTargets
-                    .slice(0, 5)
-                    .map((note) => note.title || t("Untitled"))
-                    .join(" · ")}
-                </span>
-                {deleteTargets.length > 5 ? (
-                  <span className="block">
-                    {t("And {p0} more", { p0: deleteTargets.length - 5 })}
-                  </span>
-                ) : null}
-                {deleteTargets.some((note) => !visible.some((item) => item.id === note.id)) ? (
-                  <span className="block">
-                    {t("{p0} of them are hidden by the current filters.", {
-                      p0: deleteTargets.filter(
-                        (note) => !visible.some((item) => item.id === note.id),
-                      ).length,
-                    })}
-                  </span>
-                ) : null}
-              </span>
-            ),
+            message: <NoteDeleteDescription targets={deleteTargets} visible={visible} />,
             confirmLabel: t("Confirm delete"),
             onConfirm: async () => {
               const problem = await deleteChecked();
@@ -1390,18 +1399,20 @@ export function NotesView({
           ariaLabel={t("Note actions")}
           width={236}
           header={
-            <div className="min-w-0 px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
-              <span className="block truncate font-medium text-content">
+            <Text as="div" size="caption" tone="secondary" className="min-w-0 px-2 py-1">
+              <Text size="inherit" tone="primary" weight="medium" truncate className="block">
                 {menu.target.kind === "note"
                   ? menuNote?.title || t("Untitled")
                   : menu.target.kind === "group"
                     ? menu.target.label
                     : t("Notes")}
-              </span>
+              </Text>
               {menu.target.kind === "note" && menuNote?.sourceCwd ? (
-                <span className="block truncate">{projectDisplayName(menuNote.sourceCwd)}</span>
+                <Text size="inherit" tone="inherit" truncate className="block">
+                  {projectDisplayName(menuNote.sourceCwd)}
+                </Text>
               ) : null}
-            </div>
+            </Text>
           }
           items={noteMenuItems(menu.target, {
             openId: selectedId,
@@ -1416,7 +1427,7 @@ export function NotesView({
           onClose={() => setMenu(null)}
         />
       ) : null}
-    </div>
+    </Text>
   );
 }
 
@@ -1456,7 +1467,9 @@ function NoteProjectMark({
           className="size-3 shrink-0"
         />
       )}
-      <span className="min-w-0 truncate">{project}</span>
+      <Text size="inherit" tone="inherit" truncate className="min-w-0">
+        {project}
+      </Text>
     </span>
   );
 }
@@ -1527,15 +1540,27 @@ function NoteCard({
           }}
           className="w-full min-w-0"
         >
-          <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-secondary font-medium">
+          <ClampText
+            as="span"
+            lines={2}
+            expandable={false}
+            size="secondary"
+            tone="inherit"
+            weight="medium"
+            className="min-w-0 wrap-anywhere"
+          >
             {note.title || t("Untitled")}
-          </span>
-          <span className="line-clamp-1 text-ui-caption text-(--ui-text-secondary)">
+          </ClampText>
+          <ClampText as="span" lines={1} expandable={false} size="caption" tone="secondary">
             {match === "content" ? t("Match in note") : note.preview || t("No preview")}
-          </span>
-          <span className="flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden text-ui-micro text-(--ui-text-secondary)">
+          </ClampText>
+          <Text
+            size="micro"
+            tone="secondary"
+            className="flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden"
+          >
             {grouping !== "project" && project && note.sourceCwd ? (
-              <span className="min-w-0 max-w-full truncate">
+              <Text size="inherit" tone="inherit" truncate className="min-w-0 max-w-full">
                 <NoteProjectMark
                   cwd={note.sourceCwd}
                   logos={logos}
@@ -1543,7 +1568,7 @@ function NoteCard({
                   colors={colors}
                   customColors={customColors}
                 />
-              </span>
+              </Text>
             ) : null}
             {time ? (
               <Timestamp
@@ -1558,7 +1583,7 @@ function NoteCard({
             {note.tags.length ? null : (
               <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
             )}
-          </span>
+          </Text>
           {note.tags.length ? <span aria-hidden="true" className="mt-1 block h-4" /> : null}
         </Button>
         {note.tags.length ? (
@@ -1660,6 +1685,7 @@ function NoteGroupHeading({
 
 function NoteDetail({
   note,
+  availableTags,
   recents,
   activeCwd,
   onSaved,
@@ -1669,11 +1695,12 @@ function NoteDetail({
   onFindHandled,
 }: {
   note: Note | null;
+  availableTags: string[];
   recents: RecentProject[];
   activeCwd?: string;
   onSaved: (note: Note) => void;
   onDelete: (id: string, expectedUpdatedAt?: number, parent?: NoteInputWork) => Promise<boolean>;
-  onAddToChat: (note: Note) => void;
+  onAddToChat: (note: Note, targetCwd?: string) => void;
   findRequest?: NoteFindRequest;
   onFindHandled?: (token: number) => void;
 }) {
@@ -1687,6 +1714,7 @@ function NoteDetail({
     <NoteEditor
       key={note.id}
       note={note}
+      availableTags={availableTags}
       recents={recents}
       activeCwd={activeCwd}
       onSaved={onSaved}
@@ -1700,6 +1728,7 @@ function NoteDetail({
 
 function NoteEditor({
   note,
+  availableTags,
   recents,
   activeCwd,
   onSaved,
@@ -1709,11 +1738,12 @@ function NoteEditor({
   onFindHandled,
 }: {
   note: Note;
+  availableTags: string[];
   recents: RecentProject[];
   activeCwd?: string;
   onSaved: (note: Note) => void;
   onDelete: (id: string, expectedUpdatedAt?: number, parent?: NoteInputWork) => Promise<boolean>;
-  onAddToChat: (note: Note) => void;
+  onAddToChat: (note: Note, targetCwd?: string) => void;
   findRequest?: NoteFindRequest;
   onFindHandled?: (token: number) => void;
 }) {
@@ -2119,6 +2149,8 @@ function NoteEditor({
           <div className="note-detail-titlerow">
             <TextField
               label={t("Note title")}
+              appearance="quiet"
+              fieldVariant="compact"
               error={titleError}
               hideLabel
               ref={titleFieldRef}
@@ -2156,8 +2188,10 @@ function NoteEditor({
               }}
               onKeyDown={onTitleKeyDown}
               readOnly={preparing}
-              aria-label={t("Note title")}
               fieldClassName="note-detail-title"
+              textSize="title"
+              weight="medium"
+              leading="snug"
               placeholder={t("Untitled")}
             />
             <div className="note-detail-actions">
@@ -2165,21 +2199,15 @@ function NoteEditor({
                 <span role="status">{t("Preparing checkpoint…")}</span>
               ) : (
                 <NoteSaveStatus
-                  state={
-                    deleting
-                      ? "deleting"
-                      : saveError
-                        ? "failed"
-                        : titleError
-                          ? "attention"
-                          : recovering
-                            ? "recovering"
-                            : saving || saveAction
-                              ? "saving"
-                              : dirty
-                                ? "unsaved"
-                                : "saved"
-                  }
+                  compact
+                  state={noteSaveState({
+                    deleting,
+                    saveError,
+                    titleError,
+                    recovering,
+                    saving: Boolean(saving || saveAction),
+                    dirty,
+                  })}
                 />
               )}
               <Button
@@ -2187,18 +2215,19 @@ function NoteEditor({
                 size="sm"
                 loading={saveAction === "save" || (saving && saveAction !== "retry")}
                 disabled={preparing || deleting || recovering || saveAction === "retry"}
+                iconOnly
+                label={t("Save")}
                 onClick={() => void saveFromAction("save")}
               >
-                {t("Save")}
+                <Save className="icon-sm" />
+                <span className="sr-only">{t("Save")}</span>
               </Button>
-              <Button
-                variant="ghost"
+              <NoteChatAction
+                projectCwd={sourceCwd ?? activeCwd}
+                recents={recents}
                 disabled={!canAddToChat}
-                onClick={() => onAddToChat(draft)}
-                startIcon={<MessageSquarePlus className="icon-sm" />}
-              >
-                {t("Add to chat")}
-              </Button>
+                onAdd={(targetCwd) => onAddToChat(draft, targetCwd)}
+              />
               <Button
                 variant="ghost"
                 iconOnly
@@ -2223,7 +2252,12 @@ function NoteEditor({
                   autoFocus
                   className="p-3"
                 >
-                  <div className="flex min-w-0 flex-col gap-2 text-ui-caption text-(--ui-text-secondary)">
+                  <Text
+                    as="div"
+                    size="caption"
+                    tone="secondary"
+                    className="flex min-w-0 flex-col gap-2"
+                  >
                     <span className="wrap-anywhere">{note.title}</span>
                     {note.slug ? (
                       <span className="wrap-anywhere">
@@ -2279,12 +2313,18 @@ function NoteEditor({
                         }}
                       />
                     </span>
-                  </div>
+                  </Text>
                 </Popover>
               ) : null}
             </div>
           </div>
-          <div className="note-detail-meta">
+          <Text
+            as="div"
+            size="caption"
+            tone="secondary"
+            leading="inherit"
+            className="note-detail-meta"
+          >
             <div className="flex min-w-0 items-center gap-1" aria-label={t("Note project")}>
               <SearchableProjectPicker
                 cwd={sourceCwd ?? "~"}
@@ -2304,6 +2344,7 @@ function NoteEditor({
             </div>
             <div className="note-detail-tags">
               <NoteTagsEditor
+                availableTags={availableTags}
                 inputObserver={inputOwner.observer("tags")}
                 inputPublication={
                   tagPublication?.value === tags
@@ -2312,15 +2353,16 @@ function NoteEditor({
                 }
                 tags={tags}
                 onChange={(next) => {
+                  if (!inputOwner.allowed()) return;
                   editNote({ tags: next });
                   scheduleSave();
                 }}
               />
             </div>
-            <span className="note-detail-words">
+            <Text size="caption" tone="muted" leading="inherit" className="note-detail-words">
               <NoteWordCount body={body} />
-            </span>
-          </div>
+            </Text>
+          </Text>
           {saveError ? (
             <Alert tone="danger" className="note-detail-error">
               <span>
@@ -2415,7 +2457,10 @@ function NoteEditor({
             tabIndex={undefined}
             data-external-drop-owner="note-images"
             aria-busy={imageBusy}
-            className="note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-card-border) transition-colors"
+            {...motionAttributes(
+              { transition: "colors", duration: "standard" },
+              "note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-card-border)",
+            )}
             {...dropZoneHandlers}
           >
             <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>

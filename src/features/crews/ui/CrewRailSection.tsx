@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
@@ -156,7 +157,7 @@ export function CrewRailSection({
         role="list"
         aria-label={label}
         hidden={drag.folded || collapsed}
-        className={`flex-col gap-px px-2 ${drag.folded || collapsed ? "hidden" : "flex"}`}
+        className={`flex-col gap-0 px-2 ${drag.folded || collapsed ? "hidden" : "flex"}`}
       >
         {data.definitions.length === 0 ? (
           <span className="@max-[140px]/rail:hidden">
@@ -248,9 +249,15 @@ export function CrewRailSection({
                     />
                   ) : null}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium @max-[140px]/rail:hidden">
+                <Text
+                  size="secondary"
+                  tone="inherit"
+                  weight="medium"
+                  truncate
+                  className="min-w-0 flex-1 @max-[140px]/rail:hidden"
+                >
                   {crew.name}
-                </span>
+                </Text>
                 {working ? (
                   <span className="shrink-0 @max-[140px]/rail:hidden">
                     <WorkingIndicator size="xs" />
@@ -267,7 +274,7 @@ export function CrewRailSection({
                   </Badge>
                 ) : null}
               </Button>
-              <span className="flex shrink-0 items-center gap-px @max-[140px]/rail:hidden!">
+              <span className="flex shrink-0 items-center gap-0 @max-[140px]/rail:hidden!">
                 {/* Start is the rail's frequent action, visible at rest as before; More reveals. */}
                 <InlineMoreAction
                   label={t("{p0} options", { p0: crew.name })}

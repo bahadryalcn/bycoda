@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Text } from "../../../../shared/ui/Text";
 import { isTauri } from "@tauri-apps/api/core";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -92,7 +94,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
   return (
     <div className={styles.layout}>
       <ConversationThreadList c={c} onFailure={reportFailure} />
-      <div className={styles.transcript}>
+      <div {...surfaceAttributes({ variant: "canvas-chat" }, styles.transcript)}>
         <ConversationHeader c={c} onFailure={reportFailure} />
         <div
           className={styles.messages}
@@ -179,9 +181,15 @@ export function ConversationPanel(props: ConversationPanelProps) {
         )}
         <ConversationComposer c={c} onFailure={reportFailure} />
         {!supported && (
-          <p className={styles.composerNote}>
+          <Text
+            as="p"
+            size="caption"
+            tone="secondary"
+            leading="inherit"
+            className={styles.composerNote}
+          >
             {t("Conversation replies are unavailable. Configure a model on this Host.")}
-          </p>
+          </Text>
         )}
         {draftRecovery &&
           selected.current === draftRecovery.threadId &&

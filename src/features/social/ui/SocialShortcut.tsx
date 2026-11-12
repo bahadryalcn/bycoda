@@ -3,6 +3,7 @@ import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { t, useLocale } from "../../../shared/i18n";
 import { Globe } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { useWorkspaceFeature } from "../../settings/model/workspaceFeatures";
 
 export const SOCIAL_PANEL_EVENT = "bycoda:open-social-panel";
@@ -43,9 +44,16 @@ export function SocialShortcut({
       >
         <Globe className="icon-md shrink-0" aria-hidden />
         {compact || rail ? null : (
-          <span className={`min-w-0 truncate ${responsiveRail ? "@max-[140px]/rail:hidden" : ""}`}>
+          <Text
+            as="span"
+            size="inherit"
+            tone="inherit"
+            leading="inherit"
+            truncate
+            className={`min-w-0 ${responsiveRail ? "@max-[140px]/rail:hidden" : ""}`}
+          >
             {t("Social Media")}
-          </span>
+          </Text>
         )}
       </span>
     </Button>

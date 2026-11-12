@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -77,7 +79,12 @@ export function OrchestrationSidebarAgents({
   // button rather than as another line of text.
   return (
     <div className="relative mt-1.5">
-      <div className="mb-0.5 px-0.5 flex items-center justify-between text-ui-micro text-(--ui-text-secondary)">
+      <Text
+        as="div"
+        size="micro"
+        tone="secondary"
+        className="mb-0.5 px-0.5 flex items-center justify-between"
+      >
         <span>
           {summary.tasks.length} {summary.tasks.length === 1 ? t("agent") : t("agents")}
         </span>
@@ -85,7 +92,7 @@ export function OrchestrationSidebarAgents({
           {done}/{summary.tasks.length}
           {t(" done")}
         </span>
-      </div>
+      </Text>
       {/*
         Offset by the rows' own padding so a chevron lands on the card's
         content edge, under the harness icon of the header above.
@@ -96,7 +103,7 @@ export function OrchestrationSidebarAgents({
       */}
       <div
         aria-label={t("Orchestrated agents")}
-        className="-mx-2 flex touch-pan-y flex-col gap-px"
+        className="-mx-2 flex touch-pan-y flex-col gap-0"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
@@ -114,7 +121,7 @@ export function OrchestrationSidebarAgents({
               key={task.sessionId}
               data-orchestration-agent={task.sessionId}
               // Expanding lights the whole row, header and detail together.
-              className={`rounded-md ${open ? "bg-selection" : ""}`}
+              {...surfaceAttributes({ radius: "row" }, `${open ? "bg-selection" : ""}`)}
             >
               <Button
                 variant="item"
@@ -127,31 +134,43 @@ export function OrchestrationSidebarAgents({
                 aria-expanded={open}
                 onClick={() => toggle(task.sessionId, open)}
               >
-                <span className="grid icon-sm shrink-0 place-items-center text-(--ui-text-secondary)">
+                <Text
+                  size="inherit"
+                  tone="secondary"
+                  className="grid icon-sm shrink-0 place-items-center"
+                >
                   {open ? (
                     <ChevronDown className="icon-xs" strokeWidth={1.75} />
                   ) : (
                     <ChevronRight className="icon-xs" strokeWidth={1.75} />
                   )}
-                </span>
+                </Text>
                 <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
-                <span className="min-w-0 flex-1 truncate text-ui-caption leading-snug text-(--ui-text-secondary)">
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="snug"
+                  truncate
+                  className="min-w-0 flex-1"
+                >
                   {task.title}
-                </span>
-                <span
-                  className={`flex shrink-0 items-center gap-1 text-ui-micro ${
+                </Text>
+                <Text
+                  size="micro"
+                  tone={
                     task.status === "failed"
-                      ? "text-(--ui-tone-danger-fg)"
+                      ? "danger"
                       : task.needsInput ||
                           task.status === "blocked" ||
                           task.status === "interrupted"
-                        ? "text-(--ui-tone-warning-fg)"
+                        ? "warning"
                         : working
-                          ? "text-(--ui-tone-accent-fg)"
+                          ? "accent"
                           : task.status === "completed"
-                            ? "text-(--ui-tone-success-fg)"
-                            : "text-(--ui-text-secondary)"
-                  }`}
+                            ? "success"
+                            : "secondary"
+                  }
+                  className="flex shrink-0 items-center gap-1"
                 >
                   {task.needsInput ||
                   task.status === "failed" ||
@@ -164,20 +183,27 @@ export function OrchestrationSidebarAgents({
                     <Check className="icon-xs" strokeWidth={2} />
                   ) : null}
                   <span>{label}</span>
-                </span>
+                </Text>
               </Button>
               {/* Indented to the title's column: the icon slot and its gap. */}
               {open && (
                 <div className="space-y-2 pb-3 pl-6.5 pr-2">
-                  <p
-                    className="flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)"
+                  <Text
+                    as="p"
+                    size="micro"
+                    tone="secondary"
+                    className="flex min-w-0 items-center gap-1.5"
                     title={`${model} · ${HARNESS_TITLE[task.harness]}`}
                   >
                     <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
-                    <span className="min-w-0 truncate">{model}</span>
-                  </p>
+                    <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                      {model}
+                    </Text>
+                  </Text>
                   {live?.error && (
-                    <p className="text-ui-micro text-(--ui-tone-danger-fg)">{live.error}</p>
+                    <Text as="p" size="micro" tone="danger">
+                      {live.error}
+                    </Text>
                   )}
                   <div className="flex flex-wrap items-center gap-1">
                     {workers.openDetails && (
@@ -225,9 +251,14 @@ export function OrchestrationSidebarAgents({
       {/* Stopping a run belongs to the composer, which stops the lead and its
           agents together. Resume has no other home, so it stays. */}
       {run?.status === "paused" && (
-        <div className="mt-1.5 space-y-1.5 border-t border-(--ui-tone-neutral-border) pt-1.5">
+        <div
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "top" },
+            "mt-1.5 space-y-1.5 border-(--ui-tone-neutral-border) pt-1.5",
+          )}
+        >
           {stopping || leadBusy ? (
-            <p className="px-0.5 text-ui-micro leading-relaxed text-(--ui-text-secondary)">
+            <Text as="p" size="micro" tone="secondary" leading="relaxed" className="px-0.5">
               {stopping
                 ? t("Stopping interrupted work before this run can resume.")
                 : leadBusy
@@ -237,13 +268,13 @@ export function OrchestrationSidebarAgents({
                   : t(
                       "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
                     )}
-            </p>
+            </Text>
           ) : null}
           {resumeBlocker && (
-            <p className="px-0.5 text-ui-micro leading-relaxed text-(--ui-tone-warning-fg)">
+            <Text as="p" size="micro" tone="warning" leading="relaxed" className="px-0.5">
               {resumeBlocker.title || t("Another conversation")}
               {t(" is still running in this project.")}
-            </p>
+            </Text>
           )}
           <div className="-mr-1.5 flex items-center justify-end gap-1">
             {!stopping && !leadBusy ? (

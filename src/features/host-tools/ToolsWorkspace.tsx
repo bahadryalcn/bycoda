@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
 import {
   readWorkspaceTransfer,
   restoreWorkspaceTransfer,
@@ -11,6 +12,7 @@ import {
 } from "./toolsTransferLedger";
 import { restoreBrowserDraftTransfer } from "./browserDraftTransfer";
 import { Alert } from "../../shared/ui/Alert";
+import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../shared/i18n/technical";
@@ -366,16 +368,19 @@ function ToolDock({
   return (
     <>
       <Sash {...resize.sashProps} label={t("Tool panels")} />
-      <aside
+      <Text
+        as="aside"
+        size="inherit"
+        tone="primary"
         ref={(element) => {
           dock.current = element;
           resize.setPaneRef(element);
         }}
-        className="tools-workspace-dock"
+        {...surfaceAttributes({ variant: "canvas" }, "tools-workspace-dock")}
         aria-label={t("Tool panels")}
       >
         {children}
-      </aside>
+      </Text>
     </>
   );
 }
@@ -907,7 +912,13 @@ export function ToolsWorkspace({
             {error ? <Alert tone="danger">{error}</Alert> : null}
             <div className="tools-workspace-panes">
               {roomPane && (
-                <section className="tools-workspace-pane" key={roomPane.id}>
+                <section
+                  {...surfaceAttributes(
+                    { frame: "stroke", edge: "block-end" },
+                    "tools-workspace-pane",
+                  )}
+                  key={roomPane.id}
+                >
                   <PaneHeader
                     as="header"
                     className="tools-workspace-toolbar"
@@ -943,7 +954,10 @@ export function ToolsWorkspace({
               )}
               {panes.map((pane) => (
                 <section
-                  className="tools-workspace-pane"
+                  {...surfaceAttributes(
+                    { frame: "stroke", edge: "block-end" },
+                    "tools-workspace-pane",
+                  )}
                   key={pane.id}
                   style={{ display: visiblePanes.includes(pane) ? undefined : "none" }}
                   aria-hidden={!visiblePanes.includes(pane)}

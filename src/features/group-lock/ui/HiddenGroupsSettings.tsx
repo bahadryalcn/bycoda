@@ -1,6 +1,8 @@
 import { recoverRoomPrivacyProjection } from "../model/roomPrivacyProjection";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
@@ -79,6 +81,7 @@ export function HiddenGroupsSettings({
         <EmptyState
           size="inline"
           className="settings-collection settings-collection-empty privacy-empty"
+          descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
           description={t("No hidden groups")}
         />
       ) : (
@@ -94,12 +97,17 @@ export function HiddenGroupsSettings({
               })}
             />
           ) : null}
-          <div className="settings-collection-list privacy-hidden-list" role="list">
+          <ScrollArea
+            gutter="stable"
+            className="settings-collection-list privacy-hidden-list"
+            role="list"
+          >
             {visibleGroups.length === 0 ? (
               <EmptyState
                 size="inline"
                 kind="filtered"
                 className="settings-collection-empty"
+                descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
                 description={t("No groups found")}
                 resetLabel={t("Clear search")}
                 onReset={() => setQuery("")}
@@ -108,14 +116,24 @@ export function HiddenGroupsSettings({
             {visibleGroups.map((group) => (
               <div key={group.id} role="listitem" className="settings-collection-row">
                 <div className="settings-collection-main">
-                  <p className="settings-collection-title">{group.name}</p>
-                  <p className="settings-collection-meta">
+                  <Text
+                    as="p"
+                    size="secondary"
+                    tone="primary"
+                    weight="medium"
+                    leading="normal"
+                    truncate
+                    className="settings-collection-title"
+                  >
+                    {group.name}
+                  </Text>
+                  <Text as="p" leading="normal" className="settings-collection-meta">
                     {pendingGroup === group.id
                       ? t("Updating...")
                       : privacy.hiddenGroupIds.has(group.id)
                         ? t("Hidden on this device")
                         : t("Visible until restart or Lock all groups")}
-                  </p>
+                  </Text>
                 </div>
                 <div className="settings-collection-actions">
                   {privacy.hiddenGroupIds.has(group.id) ? (
@@ -145,7 +163,7 @@ export function HiddenGroupsSettings({
                 </div>
               </div>
             ))}
-          </div>
+          </ScrollArea>
         </div>
       )}
       {error ? (

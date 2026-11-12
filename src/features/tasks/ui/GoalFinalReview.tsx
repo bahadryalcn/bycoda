@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { GOAL_FINAL_ACCEPTANCE_CRITERIA, goalPlanReviews } from "../model/hostGoals";
@@ -35,7 +36,9 @@ export function GoalFinalReview({
         )}
       </p>
       {goal.finalAcceptance?.note ? (
-        <p className="break-words text-(--ui-text-secondary)">{goal.finalAcceptance.note}</p>
+        <Text as="p" tone="secondary" size="inherit" className="break-words">
+          {goal.finalAcceptance.note}
+        </Text>
       ) : null}
       <div className="goal-card-buttons">
         {goal.finalAcceptance?.sessionId && onOpenFinal ? (

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert, type AlertTone } from "../../../shared/ui/Alert";
@@ -18,8 +19,12 @@ const ALERT_TONE: Record<TaskStatusTone, AlertTone> = {
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <p className="text-ui-micro text-(--ui-text-muted)">{label}</p>
-      <p className="whitespace-pre-wrap break-words text-(--ui-text-secondary)">{children}</p>
+      <Text as="p" size="micro" tone="muted">
+        {label}
+      </Text>
+      <Text as="p" tone="secondary" size="inherit" className="whitespace-pre-wrap break-words">
+        {children}
+      </Text>
     </div>
   );
 }
@@ -32,7 +37,7 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
   const stopped = task.status === "blocked" || status.kind === "delivery_blocked";
   if (!stopped) {
     // Running work stays calm: one muted line, no alarm.
-    return status.detail ? <TaskStatusText status={status} className="text-ui-caption" /> : null;
+    return status.detail ? <TaskStatusText status={status} /> : null;
   }
   const nextStep = taskRequiresInstructions(task)
     ? t(TASK_INPUT_REQUIRED)
@@ -76,11 +81,11 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
           <div className="space-y-1.5">
             {facts}
             {task.status === "blocked" ? (
-              <p className="text-ui-micro text-(--ui-text-muted)">
+              <Text as="p" size="micro" tone="muted">
                 {t(
                   "Dependent tasks stay queued until this task passes its checks and is delivered. Independent queued tasks can continue.",
                 )}
-              </p>
+              </Text>
             ) : null}
           </div>
         </div>

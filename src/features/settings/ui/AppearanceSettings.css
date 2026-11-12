@@ -23,7 +23,6 @@
   /* Pulls the panels up over the grid gap, leaving one even space below the divider. */
   margin-block-end: calc(-1 * var(--settings-group-gap, 28px) + 8px);
   border-block-end: 1px solid transparent;
-  background: var(--color-background-base);
   /* Covers the few pixels between the page bar and the stuck generator. */
   box-shadow: 0 -4px 0 0 var(--color-background-base);
   min-inline-size: 0;
@@ -147,19 +146,6 @@
   border-radius: 50%;
   background: var(--palette-accent);
 }
-.appearance-card-name {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-inline-size: 0;
-  padding-inline: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-}
-
 /* Accent: every swatch, the palette default first and the custom picker last, on one row at every
    density. The row widens the control column only as far as the swatches need, and a narrow group
    folds them into two even rows of four instead of leaving one swatch alone on a second line. */
@@ -223,7 +209,6 @@
    truncating every label. */
 .appearance-settings [role="tablist"] {
   overflow-x: auto;
-  scrollbar-width: none;
 }
 .appearance-settings [role="tablist"] > [role="tab"] {
   flex: none;

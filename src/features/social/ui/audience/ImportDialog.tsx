@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useMemo, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -199,19 +200,23 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
             void chooseFile(files[0]).catch((err: unknown) => setFileError(errorMessage(err)))
           }
         />
-        {reading ? <p className="audience-muted">{t("Reading the file…")}</p> : null}
+        {reading ? (
+          <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
+            {t("Reading the file…")}
+          </Text>
+        ) : null}
         {fileError ? <InlineError>{fileError}</InlineError> : null}
 
         {table ? (
           <>
-            <p className="audience-muted">
+            <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
               {t("{p0}: {p1} rows, {p2} ready", {
                 p0: fileName ?? "",
                 p1: formatNumber(table.rows.length),
                 p2: formatNumber(ready),
               })}
               {format === "xlsx" ? ` · ${t("First sheet only")}` : ""}
-            </p>
+            </Text>
             {tooMany ? (
               <InlineMessage tone="warning">
                 {t("Only the first {p0} rows are imported. Split the file to import the rest.", {
@@ -279,9 +284,15 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                   ))}
                 </ul>
                 {attention.length > REPORT_LIMIT ? (
-                  <p className="audience-muted">
+                  <Text
+                    as="p"
+                    size="caption"
+                    tone="muted"
+                    leading="inherit"
+                    className="audience-muted"
+                  >
                     {t("And {p0} more rows.", { p0: attention.length - REPORT_LIMIT })}
-                  </p>
+                  </Text>
                 ) : null}
               </section>
             ) : null}

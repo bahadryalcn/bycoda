@@ -4,6 +4,8 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Text } from "../../../shared/ui/Text";
 import { CollectionToolbar } from "./SettingsCollection";
 
 export type InboxScopeItem = {
@@ -101,7 +103,8 @@ export function InboxScopeCollection({
         </Button>
         {actions}
       </CollectionToolbar>
-      <div
+      <ScrollArea
+        gutter="stable"
         className="settings-collection-list"
         role="group"
         aria-label={label}
@@ -109,12 +112,20 @@ export function InboxScopeCollection({
       >
         {matching.length === 0 ? (
           loading ? (
-            <LoadingText className="settings-collection-empty">{t("Loading…")}</LoadingText>
+            <LoadingText
+              size="caption"
+              tone="secondary"
+              leading="normal"
+              className="settings-collection-empty"
+            >
+              {t("Loading…")}
+            </LoadingText>
           ) : (
             <EmptyState
               size="inline"
               kind={query ? "filtered" : "empty"}
               className="settings-collection-empty"
+              descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
               description={items.length === 0 ? emptyLabel : noMatchLabel}
               resetLabel={t("Clear search")}
               onReset={query ? () => setQuery("") : undefined}
@@ -129,8 +140,28 @@ export function InboxScopeCollection({
             label={
               <>
                 <span className="settings-collection-main">
-                  <span className="settings-collection-title">{item.title}</span>
-                  {item.meta ? <span className="settings-collection-meta">{item.meta}</span> : null}
+                  <Text
+                    as="span"
+                    size="secondary"
+                    tone="primary"
+                    weight="regular"
+                    leading="normal"
+                    truncate
+                    className="settings-collection-title"
+                  >
+                    {item.title}
+                  </Text>
+                  {item.meta ? (
+                    <Text
+                      as="span"
+                      size="caption"
+                      tone="muted"
+                      leading="normal"
+                      className="settings-collection-meta"
+                    >
+                      {item.meta}
+                    </Text>
+                  ) : null}
                 </span>
               </>
             }
@@ -138,7 +169,7 @@ export function InboxScopeCollection({
             className="settings-collection-row inbox-scope-row"
           />
         ))}
-      </div>
+      </ScrollArea>
     </div>
   );
 }

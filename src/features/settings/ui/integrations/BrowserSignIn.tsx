@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
@@ -167,9 +168,9 @@ export function BrowserSignIn({
   ) : null;
   const fallbackLine =
     fallback && phase.kind !== "failed" ? (
-      <p className="text-ui-caption text-(--ui-text-secondary)">
+      <Text as="p" size="caption" tone="secondary">
         {fallback.hint} {fallbackAction}
-      </p>
+      </Text>
     ) : null;
 
   if (phase.kind === "waiting") {

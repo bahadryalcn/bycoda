@@ -1,3 +1,4 @@
+import { optionalTextAttributes, Text, type TextRoles } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import {
@@ -28,19 +29,30 @@ const STATUS_TONE: Record<AccountStatusTone, BadgeTone> = {
 export function AccountStatusLabel({
   status,
   className = "",
+  size,
+  tone,
+  truncate,
 }: {
   status: AccountStatus;
   className?: string;
-}) {
+  /** Text roles of the line: `size` and `truncate` apply to the root, `tone` to the detail text (default muted); the badge keeps its own. */
+} & Pick<TextRoles, "size" | "tone" | "truncate">) {
   useLocale();
   return (
-    <span className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}>
+    <span
+      {...optionalTextAttributes(
+        { size, truncate },
+        `inline-flex min-w-0 items-center gap-1.5 ${className}`,
+      )}
+    >
       <Badge tone={STATUS_TONE[status.tone]} size="sm">
         {status.label}
       </Badge>
       {status.detail ? (
         <OverflowTooltip label={status.detail}>
-          <span className="min-w-0 truncate text-[var(--ui-text-muted)]">{status.detail}</span>
+          <Text size="inherit" tone={tone ?? "muted"} truncate className="min-w-0">
+            {status.detail}
+          </Text>
         </OverflowTooltip>
       ) : null}
     </span>
@@ -171,20 +183,24 @@ export function UsageMeter({
           : t("Resets {p0}", { p0: new Date(window.resetsAt).toLocaleString(getLocale()) })
       }
     >
-      <div className="flex items-baseline justify-between gap-2 text-ui-caption leading-4">
-        <span className="min-w-0 truncate text-[var(--ui-text-secondary)]">
+      <Text as="div" className="flex items-baseline justify-between gap-2">
+        <Text size="inherit" tone="secondary" truncate className="min-w-0">
           {title} · <span className="tabular-nums">{reset}</span>
-        </span>
-        <span
-          className={`shrink-0 tabular-nums ${full ? "font-medium text-danger" : "text-[var(--ui-text-secondary)]"}`}
+        </Text>
+        <Text
+          as="span"
+          size="inherit"
+          tone={full ? "danger" : "secondary"}
+          weight={full ? "medium" : undefined}
+          className="shrink-0 tabular-nums"
         >
           {showRemaining
             ? t("{p0} left", { p0: formatUsagePercent(remaining) })
             : full
               ? t("Full")
               : formatUsagePercent(pct)}
-        </span>
-      </div>
+        </Text>
+      </Text>
       <Progress
         compact
         tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}

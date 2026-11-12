@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
@@ -17,16 +19,24 @@ export function BrowserStartPage({
 }) {
   const [recents, setRecents] = useState(readBrowserRecents);
   return (
-    <div className="host-browser-start">
+    <div {...surfaceAttributes({ variant: "canvas-surface" }, "host-browser-start")}>
       <div className="host-browser-start-body">
-        <Globe className="host-browser-start-icon" aria-hidden />
-        <p className="host-browser-start-text">{description}</p>
+        <Globe className="host-browser-start-icon" tone="secondary" aria-hidden />
+        <Text
+          size="body"
+          tone="secondary"
+          leading="inherit"
+          as="p"
+          className="host-browser-start-text"
+        >
+          {description}
+        </Text>
         {recents.length ? (
           <section className="host-browser-recents" aria-label={t("Recent")}>
             <SectionLabel as="h4" className="host-browser-recents-title">
               {t("Recent")}
             </SectionLabel>
-            <ul>
+            <ul {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" })}>
               {recents.map((url) => (
                 <li key={url}>
                   <Button
@@ -36,7 +46,16 @@ export function BrowserStartPage({
                     aria-label={t("Open {p0}", { p0: url })}
                     onClick={() => onOpen(url)}
                   >
-                    <span className="host-browser-recent-url">{url}</span>
+                    <Text
+                      as="span"
+                      size="inherit"
+                      tone="inherit"
+                      leading="inherit"
+                      truncate
+                      className="host-browser-recent-url"
+                    >
+                      {url}
+                    </Text>
                   </Button>
                   <Button
                     variant="ghost"

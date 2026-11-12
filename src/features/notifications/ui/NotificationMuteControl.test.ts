@@ -38,6 +38,20 @@ function click(label: string) {
   act(() => button!.click());
 }
 
+const pickTime = (hour: number, minute: number) => {
+  for (const [label, index] of [
+    ["Hour", hour],
+    ["Minute", minute],
+  ] as const)
+    act(() =>
+      document
+        .querySelectorAll<HTMLButtonElement>(
+          `[role="listbox"][aria-label="${label}"] [role="option"]`,
+        )
+        [index].click(),
+    );
+};
+
 describe("NotificationMuteControl", () => {
   it("mutes selected projects for eight hours without replacing category choices", () => {
     updateNotificationPreferences(["private"], { disabled: ["issues"] });
@@ -83,26 +97,21 @@ describe("NotificationMuteControl", () => {
       document.querySelector('button[type="submit"]')?.getAttribute("data-button-hierarchy"),
     ).toBe("primary");
     act(() => document.querySelector<HTMLButtonElement>('button[data-date="2030-01-15"]')!.click());
-    const input = document.querySelector<HTMLInputElement>('input[placeholder="HH:mm"]');
-    expect(input).not.toBeNull();
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-    const type = (value: string) =>
-      act(() => {
-        setter.call(input, value);
-        input!.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-    type("08:00");
+    pickTime(8, 0);
     click("Mute until then");
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("future");
     expect(loadNotificationPreferences().private).toBeUndefined();
     act(() => document.querySelector<HTMLButtonElement>('button[data-date="2030-01-16"]')!.click());
-    type("17:00");
+    pickTime(17, 0);
     const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
       throw new Error("Storage full");
     });
     click("Mute until then");
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("Could not save");
-    expect(input!.value).toBe("17:00");
+    expect(
+      document.querySelector('[role="listbox"][aria-label="Hour"] [aria-selected="true"]')
+        ?.textContent,
+    ).toContain("5");
     write.mockRestore();
     click("Mute until then");
     expect(loadNotificationPreferences().private.mutedUntil).toBe(

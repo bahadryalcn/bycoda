@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { useCallback, useId, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import type {
@@ -301,7 +303,9 @@ export function AssistantSettings({
           void save();
         }}
       >
-        <div className={settingsStyles.navigation}>
+        <div
+          {...surfaceAttributes({ frame: "neutral", edge: "block-end" }, settingsStyles.navigation)}
+        >
           <TabStrip
             className={settingsStyles.tabs}
             label={t("Assistant settings")}
@@ -314,7 +318,8 @@ export function AssistantSettings({
             items={pages.map(([value, label]) => ({ value, label: t(label) }))}
           />
         </div>
-        <div
+        <ScrollArea
+          gutter="stable"
           id={formId + "-content"}
           ref={contentRef}
           className={settingsStyles.content}
@@ -482,7 +487,7 @@ export function AssistantSettings({
               </>,
             )}
           </ProfileRowsProvider>
-        </div>
+        </ScrollArea>
       </form>
       {builderOpen && (
         <AssistantBuilderDialog

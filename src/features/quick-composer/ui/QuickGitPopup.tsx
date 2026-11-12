@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
@@ -93,9 +95,15 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
   }, []);
 
   return (
-    <div
-      ref={setHost}
-      className="max-h-[520px] overflow-y-auto rounded-(--ui-radius-popup) border border-stroke bg-[color-mix(in_oklab,var(--color-background-base)_45%,transparent)] text-content"
+    <Text
+      as="div"
+      size="inherit"
+      tone="primary"
+      ref={(element: HTMLDivElement | null) => setHost(element)}
+      {...surfaceAttributes(
+        { variant: "translucent" },
+        "max-h-[520px] overflow-y-auto rounded-(--ui-radius-popup) border border-stroke",
+      )}
     >
       {error ? <InlineError className="px-3 py-2">{error}</InlineError> : null}
       {host && request ? (
@@ -103,7 +111,7 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
           <QuickGitPopupPicker key={request.id} request={request} onFinish={finish} />
         </NativePopupHost>
       ) : null}
-    </div>
+    </Text>
   );
 }
 
@@ -146,14 +154,14 @@ export function QuickGitPopupPicker({
   // Give the native window real content to measure while Git is loading.
   if (waiting)
     return (
-      <div className="flex items-center gap-3 px-3 py-3 text-ui-caption">
-        <p role="status" className="flex-1 text-(--ui-text-secondary)">
+      <Text as="div" size="caption" tone="inherit" className="flex items-center gap-3 px-3 py-3">
+        <Text as="p" size="inherit" tone="secondary" role="status" className="flex-1">
           {settled ? t("Couldn’t load branches for this project.") : t("Loading branches…")}
-        </p>
+        </Text>
         <Button variant="ghost" motion="none" type="button" className="" onClick={() => finish()}>
           {t("Close")}
         </Button>
-      </div>
+      </Text>
     );
   if (request.kind === "branch")
     return (

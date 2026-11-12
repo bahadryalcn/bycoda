@@ -157,7 +157,7 @@ describe("DecisionModelsSettings sources", () => {
   it("lists connected sources with their status", async () => {
     await renderSettings({ sources: [source()] });
     expect(bodyText()).toContain("Local Clef");
-    expect(bodyText()).toContain("Ready");
+    expect(bodyText()).toContain("Working");
   });
 
   it("offers a retry when the source list cannot load", async () => {
@@ -313,13 +313,14 @@ describe("DecisionModelsSettings found on this computer", () => {
 
 describe("DecisionModelsSettings add paths", () => {
   it.each([
-    ["From a file or address", "Use a model file on this computer"],
+    ["Local file path", "Use a model file on this computer"],
+    ["Local service", "Running address"],
     ["Install on this computer", "A local model runs on this computer"],
     ["API provider", "No providers are listed yet."],
     ["Custom endpoint", "Connect a service at an address you choose."],
   ])("opens the %s dialog from the Add menu", async (menuLabel, marker) => {
     await renderSettings({});
-    clickButton("Add");
+    clickButton("Add model");
     const item = Array.from(
       document.querySelectorAll<HTMLElement>("[role='menuitem'], button"),
     ).find((element) => element.textContent?.includes(menuLabel));
@@ -344,11 +345,11 @@ describe("DecisionModelsSettings privacy and routing", () => {
     expect(mocks.routingSet).toHaveBeenCalledWith({ localOnlyPersonalData: true });
   });
 
-  it("keeps routing save disabled until a route changes", async () => {
+  it("hides routing save until a route changes", async () => {
     await renderSettings({ sources: [source()] });
-    expect(buttonByText("Save routing")?.disabled).toBe(true);
-    const thresholds = document.querySelectorAll<HTMLInputElement>('input[type="number"]');
-    expect(thresholds.length).toBeGreaterThan(0);
+    expect(buttonByText("Save routing")).toBeUndefined();
+    const thresholds = document.querySelectorAll<HTMLInputElement>('input[inputmode="decimal"]');
+    expect(thresholds.length).toBe(0);
     expect(Array.from(thresholds).every((field) => field.disabled)).toBe(true);
   });
 
@@ -357,13 +358,12 @@ describe("DecisionModelsSettings privacy and routing", () => {
       sources: [source()],
       routing: { screen_state: { sourceIds: ["s1"], threshold: 0.9 } },
     });
-    const disclosure = Array.from(document.querySelectorAll("details")).find((item) =>
-      item.querySelector("summary")?.textContent?.includes("Customize task routing"),
-    );
-    expect(disclosure?.open).toBe(true);
-    const threshold = document.querySelector<HTMLInputElement>('input[type="number"]');
+    expect(document.querySelector('input[inputmode="decimal"]')).toBeNull();
+    clickButton("Customize");
+    await settleDecisionUi();
+    const threshold = document.querySelector<HTMLInputElement>('input[inputmode="decimal"]');
     expect(threshold?.disabled).toBe(false);
-    expect(threshold?.value).toBe("0.9");
+    expect(threshold?.value).toBe("0.90");
   });
 });
 
@@ -385,7 +385,7 @@ function menuItemByText(text: string): HTMLElement | undefined {
 describe("DecisionModelsSettings source row actions", () => {
   it("keeps only the connection test on the row and moves the rest into the overflow menu", async () => {
     await renderSettings({ sources: [source()] });
-    expect(buttonByText("Test connection")).toBeDefined();
+    expect(buttonByText("Test")).toBeDefined();
     expect(buttonByText("Measure accuracy")).toBeUndefined();
     expect(buttonByText("Stop")).toBeUndefined();
     expect(buttonByText("More")).toBeUndefined();
@@ -454,4 +454,24 @@ describe("DecisionModelsSettings scan settings", () => {
     );
     expect(folders).toBeDefined();
   });
+});
+
+it("sorts new discoveries first and offers no Add action on connected items", async () => {
+  await renderSettings({
+    sources: [{ ...source(), local: { modelPath: "C:/Models/connected.gguf" } }],
+    found: [
+      {
+        id: "old",
+        kind: "model_file",
+        label: "Connected file",
+        detail: "C:/Models/connected.gguf",
+      },
+      { id: "new", kind: "model_file", label: "New file", detail: "C:/Models/new.gguf" },
+    ],
+  });
+  const list = document.querySelector('ul[aria-label="Found on this computer"]')!;
+  const rows = list.querySelectorAll("li");
+  expect(rows[0].textContent).toContain("New file");
+  expect(rows[1].textContent).toContain("Connected");
+  expect(rows[1].querySelector("button")).toBeNull();
 });

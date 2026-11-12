@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import {
@@ -241,7 +243,7 @@ export function TerminalTools({
             >
               <ChevronDown className="icon-sm" />
             </Button>
-            <span role="status" className={styles.hint}>
+            <Text size="caption" tone="muted" role="status" className={styles.hint}>
               {query && !found
                 ? t("No matches")
                 : query && results && searchDecorations
@@ -251,7 +253,7 @@ export function TerminalTools({
                       ? `${results.resultIndex + 1} / ${results.resultCount}`
                       : t("{p0} matches", { p0: String(results.resultCount) })
                   : ""}
-            </span>
+            </Text>
           </>
         ) : null}
         {mode !== "search" && remoteShell ? (
@@ -405,7 +407,10 @@ export function TerminalTools({
     <>
       <div
         ref={overlayRef}
-        className={styles.overlay}
+        {...surfaceAttributes(
+          { frame: "pane", edge: "all", radius: "card", variant: "floating" },
+          styles.overlay,
+        )}
         data-open={mode === "search" || menuOpen || helpOpen || undefined}
         data-typing={typing || undefined}
         onMouseDown={(event) => event.stopPropagation()}
@@ -522,13 +527,16 @@ export function TerminalTools({
                             >
                               −
                             </Button>
-                            <span
+                            <Text
+                              size="caption"
+                              tone="secondary"
+                              leading="inherit"
                               className={styles.fontValue}
                               role="status"
                               aria-label={t("Terminal font size")}
                             >
                               {fontSize}px
-                            </span>
+                            </Text>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -583,7 +591,7 @@ export function TerminalTools({
           width={340}
           onDismiss={() => setHelpOpen(false)}
         >
-          <div className="p-3 text-ui-caption text-(--ui-text-muted)">
+          <Text as="div" size="caption" tone="muted" className="p-3">
             <p className="mbs-2">
               {t(
                 "Windows PowerShell suggestions require PowerShell 7+ and PSReadLine 2.4+. A new session starts with -NoProfile; custom profile key bindings and history settings are not loaded.",
@@ -594,7 +602,7 @@ export function TerminalTools({
                 "Accepting an app suggestion inserts one line only; press Enter to run. Raw multiline paste follows PowerShell behavior and can execute commands.",
               )}
             </p>
-          </div>
+          </Text>
         </Popover>
       ) : null}
       {ready && suggestionsAllowed && terminal ? (

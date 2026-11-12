@@ -1,6 +1,8 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
+import { Text } from "../../../../../shared/ui/Text";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { Pencil, RefreshCw, Trash2 } from "../../../../../shared/ui/icons";
 import { ACCENT_COLOR_DEFAULT, THEME_DARK_LIGHTNESS_DEFAULT } from "../../../model/appearance";
@@ -126,9 +128,20 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                   ))}
                   {image ? <img src={libraryImageSrc(image)} alt="" draggable={false} /> : null}
                 </span>
-                <span className="theme-palette-name">{theme.name}</span>
+                <Text
+                  as="span"
+                  size="secondary"
+                  tone="inherit"
+                  weight="medium"
+                  leading="inherit"
+                  truncate
+                >
+                  {theme.name}
+                </Text>
               </Button>
-              <span className="theme-saved-actions">
+              <span
+                {...surfaceAttributes({ radius: "row", variant: "base" }, "theme-saved-actions")}
+              >
                 <Button
                   iconOnly
                   size="sm"

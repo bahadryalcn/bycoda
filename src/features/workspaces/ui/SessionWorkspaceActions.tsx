@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -182,13 +183,19 @@ export function SessionWorkspaceActions({
       }[workspace.state]
     : "";
   return (
-    <section aria-label={t("Session workspace")} className="min-w-0 space-y-2 text-ui-body">
+    <Text
+      as="section"
+      size="body"
+      tone="inherit"
+      aria-label={t("Session workspace")}
+      className="min-w-0 space-y-2"
+    >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {workspace ? (
           <>
-            <span className="min-w-0 flex-1 break-all text-ui-caption text-(--ui-text-secondary)">
+            <Text size="caption" tone="secondary" className="min-w-0 flex-1 break-all">
               {workspace.branchRef.replace(/^refs\/heads\//, "")} · {lifecycleLabel}
-            </span>
+            </Text>
             {removed ? (
               <Button
                 loading={pending === "resume"}
@@ -241,14 +248,14 @@ export function SessionWorkspaceActions({
         ) : null}
       </div>
       {removed && (
-        <p className="text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary">
           {t("The directory was removed. Your conversation and branch are retained.")}
-        </p>
+        </Text>
       )}
       {workspace && !removed && !capabilities.includes("workspaces.delivery.v1") && (
-        <p className="text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary">
           {t("Update bycoda Host to review and deliver workspace changes.")}
-        </p>
+        </Text>
       )}
       {error && !connectionIssueHandled && (
         <InlineError
@@ -313,6 +320,6 @@ export function SessionWorkspaceActions({
           onWorkspaceChange={changed}
         />
       )}
-    </section>
+    </Text>
   );
 }

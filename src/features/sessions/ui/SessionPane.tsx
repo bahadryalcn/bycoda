@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Text } from "../../../shared/ui/Text";
 import { CrewManagedBar, useCrewManagedSession } from "../../crews/public/managed";
 import { AssistantManagedBadge } from "./AssistantManagedBadge";
 import { AssistantSessionControl } from "./AssistantSessionControl";
@@ -1544,22 +1547,23 @@ const LocalSessionPane = memo(function LocalSessionPane({
             className={`session-header-title flex min-w-0 items-center gap-1.5 ${workingBadge ? "" : "flex-1"}`}
           >
             {onPaneDragStart ? (
-              <GripVertical
-                className="icon-sm shrink-0 text-(--ui-text-secondary)"
-                strokeWidth={1.75}
-              />
+              <GripVertical className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
             ) : null}
             <span
-              className={`size-2 shrink-0 rounded-full ${focused ? "bg-(--ui-tone-accent-subtle)" : "bg-transparent"}`}
+              {...surfaceAttributes(
+                { radius: "pill", variant: focused ? undefined : "transparent" },
+                `size-2 shrink-0  ${focused ? "bg-(--ui-tone-accent-subtle)" : ""}`,
+              )}
             />
             <OverflowTooltip label={title}>
-              <span
-                className={`min-w-0 flex-1 truncate text-ui-caption ${
-                  focused ? "text-content" : "text-(--ui-text-secondary)"
-                }`}
+              <Text
+                size="caption"
+                tone={focused ? "primary" : "secondary"}
+                truncate
+                className={`min-w-0 flex-1   `}
               >
                 {title}
-              </span>
+              </Text>
             </OverflowTooltip>
           </div>
           {workingBadge}
@@ -1675,8 +1679,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
           ) : null}
           {fileRevertNotice ? (
             <Alert tone={fileRevertNotice.skipped.length ? "warning" : "info"}>
-              <div
-                className="flex max-h-48 min-w-0 flex-col gap-2 overflow-auto text-ui-body"
+              <Text
+                as="div"
+                size="body"
+                tone="inherit"
+                className="flex max-h-48 min-w-0 flex-col gap-2 overflow-auto"
                 data-session-files-revert-result
               >
                 <p>
@@ -1711,7 +1718,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     </ul>
                   </>
                 ) : null}
-              </div>
+              </Text>
             </Alert>
           ) : null}
           {session.rewindHistory?.length ? (
@@ -1724,9 +1731,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
             <LoadingText layout="fill">{t("Loading conversation…")}</LoadingText>
           ) : isEmpty ? (
             session.inboxAsk ? (
-              <div className="scrollbar-none h-full min-h-0 overflow-y-auto">
+              <ScrollArea scrollbar="hidden" className="h-full min-h-0">
                 <DiscussionEmpty message="Explore this item with your agent." />
-              </div>
+              </ScrollArea>
             ) : (
               <EmptySession
                 cwd={session.cwd}

@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import {
   registerVoiceGenerationRetirement,
   recordVoiceGenerationClosure,
@@ -19,6 +20,7 @@ import {
 import type { Session } from "../../sessions/public/session";
 import { sessionsRef as liveSessions, useSession } from "../../sessions/model/sessionsStore";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { useOverlay } from "../../../shared/ui/overlay";
 import { GripVertical } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
@@ -3081,10 +3083,14 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     </Button>
   );
   return (
-    <section
+    <Text
+      as="section"
+      size="caption"
+      tone="neutral"
+      leading="inherit"
       ref={panel}
       aria-label={t("Voice companion")}
-      className={styles.panel}
+      {...surfaceAttributes({ variant: shownError ? "danger-floating" : "floating" }, styles.panel)}
       data-compact={compact || undefined}
       data-detaching={detaching || undefined}
       data-voice-state={visualState}
@@ -3246,6 +3252,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         onFinish={() => client.current?.finishTurn()}
         onManualChange={setManualTurnEnd}
       />
-    </section>
+    </Text>
   );
 }

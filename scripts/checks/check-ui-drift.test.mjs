@@ -31,6 +31,31 @@ function rulesOf(file, text, extra = []) {
     .filter(notAppearance);
 }
 
+test("native date rule also rejects native picker types on shared field components", () => {
+  for (const type of ["date", "time", "datetime-local"]) {
+    for (const tag of ["input", "TextField", "Input", "Form.TextField"]) {
+      for (const attribute of [`type="${type}"`, `type={'${type}'}`, `type = { "${type}" }`]) {
+        const text = `<${tag} label={t("Time")} ${attribute} />`;
+        assert.ok(
+          rulesOf("src/features/demo/Pickers.tsx", text).includes("native-date-input"),
+          text,
+        );
+        assert.ok(!rulesOf("src/shared/ui/Pickers.tsx", text).includes("native-date-input"));
+      }
+    }
+  }
+  for (const text of [
+    '<TextField type="text" />',
+    '<TimePicker value="12:00" />',
+    "<DatePicker />",
+    "<DateTimePicker />",
+    "<DateRangePicker />",
+    "<DateTimeRangePicker />",
+  ]) {
+    assert.ok(!rulesOf("src/app/Pickers.tsx", text).includes("native-date-input"));
+  }
+});
+
 test("flags token drift but keeps defined, inline-set and Arc-rooted variables", () => {
   const tsx = [
     'import { X } from "../../shared/ui/icons";',

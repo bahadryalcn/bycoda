@@ -1,3 +1,5 @@
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -71,7 +73,9 @@ function GitFeedbackContent({
       className="mx-2 my-0.5 min-w-0 shrink-0"
     >
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <div className="text-(--color-content)">{title}</div>
+        <Text as="div" size="inherit" tone="primary">
+          {title}
+        </Text>
         {detail ? (
           <Button
             variant="link"
@@ -94,7 +98,9 @@ function GitFeedbackContent({
         ) : null}
       </div>
       {stale ? (
-        <p className="mt-1 text-[var(--ui-text-secondary)]">{t("Showing what was last loaded.")}</p>
+        <Text as="p" size="inherit" tone="secondary" className="mt-1">
+          {t("Showing what was last loaded.")}
+        </Text>
       ) : null}
       {open && detail ? (
         <Modal
@@ -159,25 +165,30 @@ function GitFeedbackContent({
           }
         >
           <div className="flex min-w-0 flex-col gap-3">
-            {cwd ? <p className="break-all text-(--ui-text-secondary)">{cwd}</p> : null}
+            {cwd ? (
+              <Text as="p" size="inherit" tone="secondary" className="break-all">
+                {cwd}
+              </Text>
+            ) : null}
             {branchInWorktree ? (
-              <p className="[margin-block-start:0.25rem] text-(--ui-text-secondary)">
+              <Text as="p" size="inherit" tone="secondary" className="[margin-block-start:0.25rem]">
                 {t(
                   "This branch is in use by a worktree. Delete the worktree first, then delete the branch.",
                 )}
-              </p>
+              </Text>
             ) : null}
-            <pre
+            <OutputBlock
+              tone="primary"
               tabIndex={0}
               aria-label={t("Output")}
-              className="max-h-[50dvh] min-w-0 overflow-auto whitespace-pre-wrap break-all select-text font-mono text-ui-caption text-content"
+              className="max-h-[50dvh] min-w-0 overflow-auto break-all"
             >
               {detail}
-            </pre>
+            </OutputBlock>
             {copied || saved ? (
-              <p role="status" className="text-(--ui-text-secondary)">
+              <Text role="status" as="p" size="inherit" tone="secondary">
                 {t(saved ? "Saved" : "Copied")}
-              </p>
+              </Text>
             ) : null}
             {copyError ? <InlineError>{copyError}</InlineError> : null}
             {branchInWorktree && cwd ? (

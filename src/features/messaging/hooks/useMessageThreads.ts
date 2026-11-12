@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorText } from "../../../shared/lib/errors";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { listMessageThreads } from "../model/messagingApi";
+import { useStableValue } from "../../../shared/hooks/useStableValue";
 import type { MessageThread, MessagingAccount } from "../model/messagingTypes";
 import {
   accountFailures,
@@ -17,6 +18,29 @@ export const MESSAGES_REFRESH_INTERVAL_MS = 60_000;
 // Last-good threads per account survive tab switches for this app run.
 const cache = new Map<string, AccountThreads>();
 let lastLoadedAt: number | null = null;
+
+function shareThreads(previous: MessageThread[], incoming: MessageThread[]): MessageThread[] {
+  const byId = new Map(previous.map((thread) => [thread.id, thread]));
+  const shared = incoming.map((thread) => {
+    const old = byId.get(thread.id);
+    return old &&
+      old.accountId === thread.accountId &&
+      old.provider === thread.provider &&
+      old.title === thread.title &&
+      old.preview === thread.preview &&
+      old.updatedAt === thread.updatedAt &&
+      old.unread === thread.unread &&
+      old.url === thread.url &&
+      old.participants.length === thread.participants.length &&
+      old.participants.every((participant, index) => participant === thread.participants[index])
+      ? old
+      : thread;
+  });
+  return previous.length === shared.length &&
+    shared.every((thread, index) => thread === previous[index])
+    ? previous
+    : shared;
+}
 
 function loadAccount(account: MessagingAccount): Promise<AccountThreadsResult> {
   return Promise.resolve()
@@ -51,9 +75,21 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
   /** `queueIfBusy` is for account changes; manual and timed refreshes never stack. */
   const refresh = useCallback((queueIfBusy = false) => {
     const settle = (account: MessagingAccount, result: AccountThreadsResult) => {
-      const next = applyAccountResult(cache.get(account.id), result);
+      const previous = cache.get(account.id);
+      const applied = applyAccountResult(previous, result);
+      const threads = previous ? shareThreads(previous.threads, applied.threads) : applied.threads;
+      const next =
+        previous &&
+        threads === previous.threads &&
+        applied.error === previous.error &&
+        applied.loaded === previous.loaded
+          ? previous
+          : { ...applied, threads };
       cache.set(account.id, next);
-      if (alive.current) setByAccount((previous) => ({ ...previous, [account.id]: next }));
+      if (alive.current)
+        setByAccount((previous) =>
+          previous[account.id] === next ? previous : { ...previous, [account.id]: next },
+        );
     };
     const run = (queue: boolean) => {
       if (inFlight.current) {
@@ -117,7 +153,12 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
     [],
   );
 
-  const threads = useMemo(() => mergeThreads(connected, byAccount), [connected, byAccount]);
+  const merged = useMemo(() => mergeThreads(connected, byAccount), [connected, byAccount]);
+  const threads = useStableValue(
+    merged,
+    (previous, next) =>
+      previous.length === next.length && previous.every((thread, index) => thread === next[index]),
+  );
   const failures = useMemo(() => accountFailures(connected, byAccount), [connected, byAccount]);
   const loaded = connected.every(
     (account) => byAccount[account.id]?.loaded || byAccount[account.id]?.error,

@@ -1,3 +1,5 @@
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Text } from "../../../shared/ui/Text";
 import { recoverRoomPrivacyProjection } from "../model/roomPrivacyProjection";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -298,6 +300,7 @@ export function GroupLockSettings({
           <EmptyState
             size="inline"
             className="settings-collection settings-collection-empty privacy-empty"
+            descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
             title={lock.groups.length === 0 ? t("No groups yet") : t("All groups are hidden")}
             description={
               lock.groups.length === 0
@@ -322,21 +325,41 @@ export function GroupLockSettings({
                 }
               />
             ) : (
-              <p className="privacy-group-summary" role="status">
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className="privacy-group-summary"
+                role="status"
+              >
                 {groupSummary}
-              </p>
+              </Text>
             )}
-            <div className="privacy-group-columns" aria-hidden="true">
+            <Text
+              as="div"
+              size="caption"
+              tone="secondary"
+              weight="medium"
+              leading="inherit"
+              className="privacy-group-columns"
+              aria-hidden="true"
+            >
               <span>{t("Group")}</span>
               <span>{t("Lock state")}</span>
               <span>{t("Requires password")}</span>
-            </div>
-            <div className="settings-collection-list privacy-group-list" role="list">
+            </Text>
+            <ScrollArea
+              gutter="stable"
+              className="settings-collection-list privacy-group-list"
+              role="list"
+            >
               {visibleGroups.length === 0 ? (
                 <EmptyState
                   size="inline"
                   kind="filtered"
                   className="settings-collection-empty"
+                  descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
                   description={t("No groups found")}
                   resetLabel={t("Clear search")}
                   onReset={() => setGroupQuery("")}
@@ -351,20 +374,39 @@ export function GroupLockSettings({
                     className="settings-collection-row privacy-group-row"
                   >
                     <span className="privacy-group-name">
-                      <span className="privacy-group-title">{group.name}</span>
+                      <Text
+                        as="span"
+                        size="secondary"
+                        tone="primary"
+                        weight="medium"
+                        leading="inherit"
+                        className="privacy-group-title"
+                      >
+                        {group.name}
+                      </Text>
                     </span>
                     {/* Only real states: locked now, unlocked, or (a dash) not protected at all. */}
                     {locked ? (
                       <Badge className="privacy-group-state">{t("Locked")}</Badge>
                     ) : group.lockable ? (
-                      <span className="privacy-group-state privacy-group-state-quiet">
+                      <Text
+                        size="caption"
+                        tone="secondary"
+                        leading="inherit"
+                        className="privacy-group-state privacy-group-state-quiet"
+                      >
                         {t("Unlocked")}
-                      </span>
+                      </Text>
                     ) : (
-                      <span className="privacy-group-state privacy-group-state-quiet">
+                      <Text
+                        size="caption"
+                        tone="secondary"
+                        leading="inherit"
+                        className="privacy-group-state privacy-group-state-quiet"
+                      >
                         <span aria-hidden>—</span>
                         <span className="sr-only">{t("Not protected")}</span>
-                      </span>
+                      </Text>
                     )}
                     <span className="privacy-group-toggle">
                       <Toggle
@@ -377,7 +419,7 @@ export function GroupLockSettings({
                   </div>
                 );
               })}
-            </div>
+            </ScrollArea>
           </div>
         )}
       </Group>

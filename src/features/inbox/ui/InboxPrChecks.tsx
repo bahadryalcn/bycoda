@@ -1,3 +1,7 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -109,7 +113,9 @@ export function PrChecksTab({ overall }: { overall: GithubPrChecksOverall }) {
   const label = `Checks: ${overall.description}`;
   return (
     <Tab value="checks" aria-label={label} tooltip={label}>
-      <span className="leading-none">{t("Checks")}</span>
+      <Text size="inherit" tone="inherit" leading="none">
+        {t("Checks")}
+      </Text>
       <MarkGlyph mark={mark} size="sm" />
       {overall.kind === "fail" ? (
         <Badge variant="count" size="xs">
@@ -266,24 +272,36 @@ function PrCheckRow({
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-w-0 items-baseline gap-2.5">
-          <span
+          <Text
             data-check-name
-            className={`min-w-0 ${expanded ? "break-all" : "truncate"} text-ui-secondary font-medium text-(--ui-tone-neutral-fg)`}
+            size="secondary"
+            weight="medium"
+            tone="neutral"
+            truncate={!expanded}
+            className={`min-w-0 ${expanded ? "break-all" : ""}`}
           >
             {check.name}
-          </span>
+          </Text>
           {workflow ? (
-            <span className="min-w-0 shrink-[2] truncate text-ui-micro text-(--ui-text-secondary) @max-[560px]/checks:hidden">
+            <Text
+              size="micro"
+              tone="secondary"
+              truncate
+              className="min-w-0 shrink-[2] @max-[560px]/checks:hidden"
+            >
               {workflow}
-            </span>
+            </Text>
           ) : null}
         </span>
         {(!repairItem || expanded) && (failureMessage || failedStep) ? (
-          <span
-            className={`mt-0.5 min-w-0 ${expanded ? "break-words" : "truncate"} text-ui-caption text-(--ui-text-secondary)`}
+          <Text
+            size="caption"
+            tone="secondary"
+            truncate={!expanded}
+            className={`mt-0.5 min-w-0 ${expanded ? "break-words" : ""}`}
           >
             {subtitle}
-          </span>
+          </Text>
         ) : null}
         <span className="sr-only">
           {meta}
@@ -306,9 +324,13 @@ function PrCheckRow({
     </span>
   );
   const durationCell = (
-    <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-ui-caption tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
+    <Text
+      size="caption"
+      tone="secondary"
+      className="mr-1 w-11 shrink-0 whitespace-nowrap text-right tabular-nums @max-[480px]/checks:hidden"
+    >
       {duration}
-    </span>
+    </Text>
   );
   const fixButton = onFix ? (
     <Button
@@ -348,9 +370,12 @@ function PrCheckRow({
     <span className="size-6 shrink-0" aria-hidden="true" />
   );
   const detailsBody = expanded ? (
-    <div
+    <Text
+      as="div"
+      size="caption"
+      tone="inherit"
       id={detailsId}
-      className="min-w-0 space-y-3 py-3 pl-10 pr-3 text-ui-caption @max-[420px]/checks:pl-3"
+      className="min-w-0 space-y-3 py-3 pl-10 pr-3 @max-[420px]/checks:pl-3"
     >
       {loading && !details && !error ? (
         <LoadingText className="px-2 py-1">{t("Loading steps…")}</LoadingText>
@@ -358,7 +383,9 @@ function PrCheckRow({
       {error ? (
         <Alert tone="danger">
           <p>{t("Could not load job details.")}</p>
-          <p className="break-words text-ui-micro">{error}</p>
+          <Text as="p" size="micro" tone="inherit" className="break-words">
+            {error}
+          </Text>
           <Button
             variant="ghost"
             type="button"
@@ -385,9 +412,9 @@ function PrCheckRow({
               summary={
                 <>
                   {t("View run steps")}{" "}
-                  <span className="text-ui-caption text-(--ui-text-secondary) @max-[420px]/checks:hidden">
+                  <Text size="caption" tone="secondary" className="@max-[420px]/checks:hidden">
                     {describeCheckCounts(countChecks(details.steps))}
-                  </span>
+                  </Text>
                 </>
               }
             >
@@ -397,16 +424,19 @@ function PrCheckRow({
                   return (
                     <li
                       key={index}
-                      className={`flex items-center gap-2 rounded px-2 py-1 ${step.state === "fail" ? "bg-(--ui-tone-danger-subtle)" : ""}`}
+                      {...surfaceAttributes(
+                        { radius: "sm" },
+                        `flex items-center gap-2 px-2 py-1 ${step.state === "fail" ? "bg-(--ui-tone-danger-subtle)" : ""}`,
+                      )}
                     >
                       <MarkGlyph mark={stepMark} size="md" />
-                      <span className="min-w-0 flex-1 break-words text-(--ui-text-secondary)">
+                      <Text size="inherit" tone="secondary" className="min-w-0 flex-1 break-words">
                         {step.name}
                         <span className="sr-only">: {checkStateLabel(step.state)}</span>
-                      </span>
-                      <span className="shrink-0 tabular-nums text-(--ui-text-secondary)">
+                      </Text>
+                      <Text size="inherit" tone="secondary" className="shrink-0 tabular-nums">
                         {checkDuration(step.startedAt, step.completedAt)}
-                      </span>
+                      </Text>
                     </li>
                   );
                 })}
@@ -428,19 +458,20 @@ function PrCheckRow({
           ) : null}
           {details.log ? (
             <Disclosure size="sm" className="mt-3" summary={t("View logs")}>
-              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-ui-micro">
+              <OutputBlock size="micro" tone="inherit" className="mt-2 max-h-72 overflow-auto">
                 {details.log}
-              </pre>
+              </OutputBlock>
             </Disclosure>
           ) : null}
           {/* Always mounted so a notice is announced when it first appears. */}
           <LiveText
-            className="mt-3 block text-(--ui-text-secondary) empty:hidden"
+            tone="secondary"
+            className="mt-3 block empty:hidden"
             text={details.notice ?? ""}
           />
         </>
       ) : null}
-    </div>
+    </Text>
   ) : null;
   return (
     <li
@@ -669,10 +700,10 @@ export function InboxPrChecks({
       className="@container/checks flex min-w-0 flex-col gap-2"
     >
       {checks?.pipelineOid && checks.pipelineOid !== checks.headOid ? (
-        <p className="px-2 text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary" className="px-2">
           {t("Pipeline commit")}: {checks.pipelineOid.slice(0, 12)} · {t("Source commit")}:{" "}
           {checks.headOid.slice(0, 12)}
-        </p>
+        </Text>
       ) : null}
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 px-2">
         <div className="min-w-0">
@@ -685,17 +716,15 @@ export function InboxPrChecks({
             ) : null}
           </div>
           {checks?.headOid ? (
-            <p className="mt-1 break-all text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="secondary" className="mt-1 break-all">
               {t("Checked commit")}:{" "}
-              <span className="font-mono" title={checks.headOid}>
-                {checks.headOid.slice(0, 12)}
-              </span>
-            </p>
+              <Code title={checks.headOid}>{checks.headOid.slice(0, 12)}</Code>
+            </Text>
           ) : null}
           {summary ? (
-            <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="secondary" className="mt-1">
               {summary.charAt(0).toUpperCase() + summary.slice(1)}.
-            </p>
+            </Text>
           ) : null}
           <span className="sr-only">{describeCheckCounts(counts)}</span>
         </div>
@@ -739,11 +768,17 @@ export function InboxPrChecks({
       </div>
       {stale ? (
         <Alert tone={error ? "danger" : "warning"}>
-          <p className="text-ui-caption font-medium">
+          <Text as="p" size="caption" tone="inherit" weight="medium">
             {t(error ? "Checks refresh failed" : "Checking the latest revision…")}
-          </p>
-          {error ? <p className="break-words text-ui-caption">{error}</p> : null}
-          <p className="break-words text-ui-caption">{t("Saved results may be out of date.")}</p>
+          </Text>
+          {error ? (
+            <Text as="p" size="caption" tone="inherit" className="break-words">
+              {error}
+            </Text>
+          ) : null}
+          <Text as="p" size="caption" tone="inherit" className="break-words">
+            {t("Saved results may be out of date.")}
+          </Text>
           {error ? (
             <Button variant="ghost" loading={refreshing} onClick={onRefresh}>
               {t("Retry loading checks")}
@@ -808,9 +843,9 @@ export function InboxPrChecks({
               },
             ]}
           />
-          <span className="text-ui-caption text-(--ui-text-secondary) @max-[420px]/checks:hidden">
+          <Text size="caption" tone="secondary" className="@max-[420px]/checks:hidden">
             {counts.fail ? t("Failures first") : ""}
-          </span>
+          </Text>
         </div>
       ) : null}
       {rows.length === 0 ? (

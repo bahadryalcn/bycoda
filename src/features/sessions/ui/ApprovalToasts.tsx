@@ -8,6 +8,7 @@ import { Divider } from "../../../shared/ui/Divider";
 import { Switch } from "../../../shared/ui/Switch";
 import { Text } from "../../../shared/ui/Text";
 import { Popover } from "../../../shared/ui/Popover";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Sheet } from "../../../shared/ui/Sheet";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -414,14 +415,19 @@ export function ApprovalToasts({
                   {t("All notification settings…")}
                 </Button>
               ) : null}
-              <p className="text-ui-caption leading-relaxed text-(--ui-text-secondary)">
+              <Text as="p" size="caption" tone="secondary" leading="relaxed">
                 {t("Only the latest {p0} notifications are kept on this device.", {
                   p0: MAX_NOTIFICATION_HISTORY,
                 })}
-              </p>
+              </Text>
             </Popover>
           ) : null}
-          <section aria-label={t("Notifications")} className="notification-sheet-list">
+          <ScrollArea
+            as="section"
+            gutter="stable"
+            aria-label={t("Notifications")}
+            className="notification-sheet-list"
+          >
             {historyUnavailable ? (
               <div className="notification-history-status">
                 <Alert tone="warning">
@@ -494,7 +500,7 @@ export function ApprovalToasts({
                 description={t("New notifications will appear here.")}
               />
             ) : null}
-          </section>
+          </ScrollArea>
         </Sheet>
       ) : popupsEnabled && (eligible.length > 0 || (hasLocked && !dismissed.has("locked"))) ? (
         <ToastSlot placement="top-end">
@@ -536,10 +542,10 @@ function LockedNotice({ onDismiss }: { onDismiss?: () => void }) {
       className="approval-toast pointer-events-auto flex items-center gap-2 rounded-(--ui-radius-popup) border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-3.5 py-3 shadow-(--ui-elevation-floating)"
       role="status"
     >
-      <CircleAlert className="icon-sm shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
-      <span className="flex-1 text-ui-secondary text-(--ui-tone-neutral-fg)">
+      <CircleAlert className="icon-sm shrink-0" tone="warning" strokeWidth={1.75} />
+      <Text size="secondary" tone="neutral" className="flex-1">
         {t(LOCKED_NOTIFICATION_TEXT)}
-      </span>
+      </Text>
       {onDismiss ? (
         <Button
           iconOnly

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState, useSyncExternalStore } from "react";
 import { Alert } from "../../../shared/ui/Alert";
 import { DeliveryReviewChoice } from "../../sessions/public/DeliveryReviewChoice";
@@ -63,9 +64,9 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
   };
   return (
     <Alert tone="warning" inline className="shrink-0">
-      <div className="text-ui-caption">
+      <Text as="div" tone="inherit">
         {t("Queued delivery is unknown. Sending is held for review.")}
-      </div>
+      </Text>
       <DeliveryReviewChoice
         text={state.recovery}
         working={working}
@@ -74,7 +75,9 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
         onChoose={(outcome) => void choose(outcome)}
       />
       {error ? (
-        <div className="mt-1 text-ui-caption text-(--ui-tone-danger-fg)">{error}</div>
+        <Text as="div" tone="danger" className="mt-1">
+          {error}
+        </Text>
       ) : null}
     </Alert>
   );

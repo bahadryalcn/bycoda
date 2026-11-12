@@ -9,18 +9,11 @@
 .group-privacy-controls {
   display: contents;
 }
-.privacy-file-access-status {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
-
 /* Group list: identity, current lock state and the protection preference are three
    readable columns with a quiet header. */
 .privacy-group-summary {
   margin: 0;
   padding: 8px 12px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .privacy-group-columns,
@@ -32,9 +25,6 @@
 }
 .privacy-group-columns {
   padding: 4px 12px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
 }
 .privacy-group-columns > :last-child,
 .privacy-group-toggle {
@@ -45,18 +35,11 @@
 }
 .privacy-group-title {
   overflow-wrap: anywhere;
-  color: var(--color-content);
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
 }
 .privacy-group-state {
   justify-self: start;
 }
 /* "Unlocked" and the not-protected dash are quiet text; only a lock that is on right now is a badge. */
-.privacy-group-state-quiet {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
 .privacy-empty {
   display: grid;
   gap: 2px;

@@ -328,7 +328,8 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Chat background");
     },
-    keywords: "wallpaper image picture opacity backdrop blur",
+    keywords:
+      "wallpaper image picture opacity backdrop blur layer katman veil overlay readability unveiled",
   },
   {
     id: "live-background",

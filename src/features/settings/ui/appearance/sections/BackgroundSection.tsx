@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { Text } from "../../../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../../../shared/lib/productIdentity";
@@ -40,7 +42,7 @@ import {
   useLiveBackgroundIntensity,
   type LiveBackground,
 } from "../../../model/liveBackground";
-import { Group, Row, Segmented, SettingsFeedback, Slider } from "../../settingsControls";
+import { Group, Row, Segmented, SettingsFeedback, Slider, Toggle } from "../../settingsControls";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "../../useAppearanceSettings";
 import { AppearanceSection } from "./AppearanceSection";
 import { LayerStack } from "../controls/LayerStack";
@@ -254,6 +256,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
   }, [src]);
   const imageState = decoded?.src === src ? decoded.state : "loading";
   const modified =
+    appearance.preferences.chatBackgroundLayer === false ||
     Math.round(appearance.chatBackgroundEmptyOpacity * 100) !==
       Math.round(CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT * 100) ||
     Math.round(appearance.chatBackgroundSessionOpacity * 100) !==
@@ -278,6 +281,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
         appearance.onChatBackgroundSessionOpacity(
           Math.round(CHAT_BACKGROUND_SESSION_OPACITY_DEFAULT * 100),
         );
+        appearance.onPreferences({ ...appearance.preferences, chatBackgroundLayer: true });
         appearance.onChatBackgroundScope(CHAT_BACKGROUND_SCOPE_DEFAULT);
         appearance.onChatBackgroundBlur(CHAT_BACKGROUND_BLUR_DEFAULT);
         appearance.onNewThreadBackgroundEffect(NEW_THREAD_BACKGROUND_EFFECT_DEFAULT);
@@ -304,12 +308,23 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                   className="relative flex h-full flex-col items-end justify-center gap-1 p-2"
                   aria-hidden
                 >
-                  <span className="max-w-[80%] rounded-sm bg-(--ui-surface-selected) px-2 py-0.5 text-ui-micro text-content">
+                  <Text
+                    size="micro"
+                    tone="primary"
+                    className="max-w-[80%] rounded-sm bg-(--ui-surface-selected) px-2 py-0.5"
+                  >
                     {t("Conversation")}
-                  </span>
-                  <span className="self-start rounded-sm bg-(--ui-surface) px-2 py-0.5 text-ui-micro text-(--ui-text-secondary)">
+                  </Text>
+                  <Text
+                    size="micro"
+                    tone="secondary"
+                    {...surfaceAttributes(
+                      { radius: "sm", variant: "plain" },
+                      "self-start px-2 py-0.5",
+                    )}
+                  >
                     {PRODUCT_IDENTITY.displayName}
-                  </span>
+                  </Text>
                 </div>
               ) : null}
             </div>
@@ -362,10 +377,30 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               max={CHAT_BACKGROUND_BLUR_MAX}
               onChange={appearance.onChatBackgroundBlur}
             />
-            <p className={imageStyles.hint}>{t("Applies to global and project images.")}</p>
+            <Text as="p" tone="muted" leading="inherit" className={imageStyles.hint}>
+              {t("Applies to global and project images.")}
+            </Text>
           </div>
         </div>
       </div>
+      <Row
+        label={t("Chat background layer")}
+        description={t(
+          "Adds a layer over the image for readability. Text may be harder to read without it.",
+        )}
+        modified={appearance.preferences.chatBackgroundLayer === false}
+        onReset={() =>
+          appearance.onPreferences({ ...appearance.preferences, chatBackgroundLayer: true })
+        }
+      >
+        <Toggle
+          label={t("Chat background layer")}
+          on={appearance.preferences.chatBackgroundLayer !== false}
+          onChange={(on) =>
+            appearance.onPreferences({ ...appearance.preferences, chatBackgroundLayer: on })
+          }
+        />
+      </Row>
       <BackgroundLibrary appearance={appearance} />
       {hasImage && imageState === "error" ? (
         <SettingsFeedback state="error">

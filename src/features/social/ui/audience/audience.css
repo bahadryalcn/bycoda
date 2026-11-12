@@ -69,9 +69,6 @@
 }
 
 .audience-list-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .audience-heading {
@@ -80,22 +77,16 @@
 
 .audience-muted {
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 .audience-warning {
   margin: 0;
-  color: var(--ui-tone-warning-fg);
-  font-size: var(--ui-font-secondary);
 }
 
 .audience-check {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  color: var(--color-content);
-  font-size: var(--ui-font-secondary);
 }
 
 .audience-nowrap,
@@ -109,21 +100,12 @@
 }
 
 .audience-ellipsis {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .audience-person-text > * {
   max-inline-size: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.audience-caption {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 .audience-person {
@@ -140,14 +122,9 @@
 }
 
 .audience-person-name {
-  color: var(--color-content);
-  font-size: var(--ui-font-body);
-  font-weight: 500;
 }
 
 .audience-strong {
-  color: var(--color-content);
-  font-weight: 500;
 }
 
 .audience-score {
@@ -168,13 +145,9 @@
   align-items: center;
   gap: 0.5rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--ui-pane-border);
 }
 
 .audience-bulk-count {
-  color: var(--color-content);
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
@@ -314,18 +287,14 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 .audience-pipeline li {
   padding: 0.125rem 0.5rem;
   border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-control);
 }
 
 .audience-pipeline li[data-current="true"] {
-  color: var(--ui-tone-accent-fg);
   border-color: var(--ui-tone-accent-border);
   background: var(--ui-tone-accent-subtle);
 }

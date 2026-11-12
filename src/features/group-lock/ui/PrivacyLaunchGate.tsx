@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -18,24 +19,29 @@ export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
   if (!concealed) return children;
 
   return (
-    <main className="flex h-dvh flex-col bg-background-base text-content">
+    <Text
+      as="main"
+      size="inherit"
+      tone="primary"
+      className="flex h-dvh flex-col bg-background-base"
+    >
       <div data-tauri-drag-region className="h-10 shrink-0" />
       <div className="flex flex-1 items-center justify-center px-6 pb-10">
         <section
           aria-labelledby="privacy-launch-title"
           className="flex w-full max-w-sm flex-col items-center gap-5 text-center"
         >
-          <Shield aria-hidden className="size-10 text-(--ui-text-muted)" strokeWidth={1.75} />
+          <Shield aria-hidden className="size-10" tone="muted" strokeWidth={1.75} />
           <div>
-            <p className="mb-2 text-ui-caption text-(--ui-text-muted)">
+            <Text as="p" size="caption" tone="muted" className="mb-2">
               {PRODUCT_IDENTITY.displayName}
-            </p>
+            </Text>
             <Heading size="page" id="privacy-launch-title">
               {t("Privacy mode")}
             </Heading>
-            <p className="mt-3 text-ui-body leading-relaxed text-(--ui-text-secondary)">
+            <Text as="p" size="body" tone="secondary" leading="relaxed" className="mt-3">
               {t("Your workspace is hidden. Continue when you are ready.")}
-            </p>
+            </Text>
           </div>
           <Button
             className="shrink-0"
@@ -64,6 +70,6 @@ export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
         />
       ) : null}
       {dialog === "recovery" ? <ForgotLockPasswordDialog onClose={() => setDialog(null)} /> : null}
-    </main>
+    </Text>
   );
 }

@@ -1,17 +1,13 @@
 ---
 name: feature-mcp
-description: "Change bycoda outgoing MCP configuration or incoming local-Host token management. Preserve provider/scope identity, health provenance, one-time secrets and uncertain-result recovery."
+description: "Use when changing MCP configuration and local Host access tokens. Not for tool navigation; see feature-conversation-tools."
 ---
 
 # MCP settings development
 
-All code paths below are repository-relative; linked skill resources are relative to this directory.
-
-## When to use
-
 Use for Settings MCP list/discovery/add/login/remove/config and External MCP access grants. Conversation Tools UI and protocol/runtime clients are separate scopes; read their feature skill only when those layers change.
 
-## Start here
+## Source starts
 
 - `src/features/settings/ui/McpSettings.tsx` and `ExternalMcpAccess.tsx` own outgoing configuration and incoming grants.
 - `src/features/settings/model/mcp.ts`, `mcpSettingsCache.ts`, native `src-tauri/src/mcp.rs` and Host `host/mcp/mcp-tokens.ts` own data/authority.
@@ -30,13 +26,17 @@ Use for Settings MCP list/discovery/add/login/remove/config and External MCP acc
 - Secrets appear once in guarded memory, are absent from list results and stored hashed by the Host. Preserve loopback/header/env-var examples and private error handling.
 - Unknown create outcome blocks blind resubmission until reconciled; revoke changes local state only on confirmed success. Retain expired/revoked history and last-good data after failed reads.
 
-## Workflow and checks
+## Workflow
 
 1. Trace the edited outgoing command or incoming RPC through its actual native/Host dispatcher; do not infer capability from a type or similarly named method.
 2. Use shared rows, overlays, stable async controls and local status/error provenance; keep both topic owners alive when switching views.
 3. Run focused cache/model/UI or token-service checks from the map; exercise auth/scope/remove cancellation, stale refresh, expiry, unknown create and revoke failure using isolated config/grants.
 
-## Read when needed
+## Focused checks
+
+Use the tests in the [surface map](references/surfaces.md) for the changed operation.
+
+## References
 
 - Read [surfaces](references/surfaces.md) for source and test maps.
 - Read [decision provenance](references/decisions.md) when changing continuous-list behavior; it does not authorize configuration or grant mutations.

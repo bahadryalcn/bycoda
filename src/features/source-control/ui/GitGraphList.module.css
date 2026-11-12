@@ -12,21 +12,13 @@
 
 .workspaceHeader {
   text-transform: none;
-  font-weight: 400;
-  font-size: var(--ui-font-caption);
-}
-
-.workspaceRow {
-  font-weight: 400;
 }
 
 .author {
   display: none;
   min-inline-size: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ui-text-secondary);
 }
 
 .subject {
@@ -37,9 +29,7 @@
 }
 
 .date {
-  color: var(--ui-text-secondary);
   font-variant-numeric: tabular-nums;
-  font-size: var(--ui-font-caption);
 }
 
 @container (min-width: 850px) {

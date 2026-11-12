@@ -1,18 +1,13 @@
 ---
 name: feature-inbox-github
-description: "Change GitHub Inbox collection, issue/PR details, code review, checks and actions with exact-record identity, retained drafts and provider approval gates."
+description: "Use when changing GitHub Inbox issues, pull requests, code review, checks and actions. Not for credentials; see feature-inbox-settings."
 ---
 
 # GitHub Inbox changes
 
-## When and scope
-
 Use for GitHub issues and pull requests inside Inbox, including compact cards and linked details. Connection setup belongs to Inbox settings; Git repository operations and shared diff rendering have separate contracts.
 
 ## Source starts
-
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
 
 - `src/features/inbox/ui/InboxView.tsx`, `InboxDetail.tsx`, `InboxPrDiff.tsx`, `InboxPrChecks.tsx`, `InboxPrActions.tsx`: collection/detail/actions.
 - `src/features/inbox/model/githubTasks.ts` and adjacent provider/read-gate/freshness models: fetching and cached identity.
@@ -41,7 +36,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 Run affected Inbox/model suites, starting with `pnpm exec vitest run src/features/inbox/ui/InboxView.test.ts src/features/inbox/ui/InboxDetail.tabs.test.ts src/features/inbox/model/githubTasks.test.ts`.
 Code-review changes need `UnifiedDiffViewSplit.test.ts`/markers tests and a real Inbox consumer. A CodeMirror diff fixture alone does not verify Inbox review. Check Summary/Code/Checks, long file lists and narrow detail/back.
 
-## Read when needed
+## References
 
 - [Inbox connection settings](../feature-inbox-settings/SKILL.md) for authentication/configured-versus-verified state.
 - [Source control](../feature-source-control/SKILL.md) when shared diff controls change; [Jira](../feature-inbox-jira/SKILL.md) when shared Inbox shell changes.

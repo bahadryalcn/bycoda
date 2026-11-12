@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useId, useState } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Switch } from "../../../shared/ui/Switch";
@@ -79,9 +80,12 @@ export function ServerTerminalRestoreControls({
   if (!state.owner) return null;
   const failed = state.loadFailed || state.saveStatus === "failed";
   return (
-    <section
+    <Text
+      as="section"
+      size="caption"
+      tone="inherit"
       aria-label={t("Saved SSH tabs")}
-      className="shrink-0 border-t border-stroke px-3 text-ui-caption"
+      className="shrink-0 border-t border-stroke px-3"
     >
       <SectionLabel
         collapsible
@@ -107,17 +111,17 @@ export function ServerTerminalRestoreControls({
             onCheckedChange={(checked) => serverTerminalRestoreState.setEnabled(checked, openTabs)}
           />
           {!state.pending.length ? (
-            <p className="min-w-0 text-(--ui-text-secondary)">
+            <Text as="p" size="inherit" className="min-w-0">
               {t(
                 "Restored tabs reconnect only when you choose Connect. This opens a new shell; previous commands are not replayed.",
               )}
-            </p>
+            </Text>
           ) : null}
         </div>
         {state.saveStatus === "saving" ? (
-          <p className="text-(--ui-text-muted)" role="status">
+          <Text as="p" size="inherit" tone="muted" role="status">
             {t("Saving…")}
-          </p>
+          </Text>
         ) : null}
         {state.saveStatus === "failed" ? (
           <InlineError
@@ -138,6 +142,6 @@ export function ServerTerminalRestoreControls({
         ) : null}
         {state.pending.length ? <PendingServerTabs onConnect={onConnect} /> : null}
       </div>
-    </section>
+    </Text>
   );
 }

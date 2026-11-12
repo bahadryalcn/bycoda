@@ -6,6 +6,42 @@
 .motion[data-duration="standard"] {
   --motion-time: var(--motion-duration-standard);
 }
+.motion[data-duration="instant"] {
+  --motion-time: var(--motion-duration-instant);
+}
+.motion[data-duration="slow"] {
+  --motion-time: var(--motion-duration-slow);
+}
+.motion[data-duration="reveal"] {
+  --motion-time: var(--motion-duration-reveal);
+}
+.motion[data-duration="ambient"] {
+  --motion-time: var(--motion-duration-ambient);
+}
+.motion[data-duration="celebrate"] {
+  --motion-time: var(--motion-duration-celebrate);
+}
+.motion[data-duration="scene"] {
+  --motion-time: var(--motion-duration-scene);
+}
+.motion[data-easing="enter"] {
+  transition-timing-function: var(--motion-ease-enter);
+}
+.motion[data-easing="exit"] {
+  transition-timing-function: var(--motion-ease-exit);
+}
+.motion[data-easing="overshoot"] {
+  transition-timing-function: var(--motion-ease-overshoot);
+}
+.motion[data-easing="rise"] {
+  transition-timing-function: var(--motion-ease-rise);
+}
+.motion[data-easing="emphasized"] {
+  transition-timing-function: var(--motion-ease-emphasized);
+}
+.motion[data-easing="sheen"] {
+  transition-timing-function: var(--motion-ease-sheen);
+}
 
 .motion[data-transition="transform"] {
   transition-property: transform, translate, rotate, scale;
@@ -17,6 +53,13 @@
   transition-property:
     color, background-color, border-color, outline-color, text-decoration-color, fill, stroke;
 }
+.motion[data-transition="size"] {
+  transition-property:
+    width, height, inline-size, block-size, max-height, max-block-size, grid-template-rows;
+}
+.motion[data-transition="all"] {
+  transition-property: all;
+}
 
 .motion[data-enter="rise"] {
   animation: motion-rise var(--motion-time) var(--motion-ease-enter) both;
@@ -27,10 +70,39 @@
     translate: 0 2px;
   }
 }
+.motion[data-enter="left"],
+.motion[data-enter="right"],
+.motion[data-enter="down"],
+.motion[data-enter="scale"] {
+  animation: motion-enter var(--motion-time) var(--motion-ease-enter) both;
+}
+.motion[data-enter="left"] {
+  --motion-enter-x: -8px;
+}
+.motion[data-enter="right"] {
+  --motion-enter-x: 8px;
+}
+.motion[data-enter="down"] {
+  --motion-enter-y: -8px;
+}
+.motion[data-enter="scale"] {
+  --motion-enter-scale: 0.95;
+}
+@keyframes motion-enter {
+  from {
+    opacity: 0;
+    translate: var(--motion-enter-x, 0) var(--motion-enter-y, 0);
+    scale: var(--motion-enter-scale, 1);
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .motion {
     transition: none;
     animation: none;
   }
+}
+
+.motion[data-easing="linear"] {
+  transition-timing-function: var(--motion-ease-linear);
 }

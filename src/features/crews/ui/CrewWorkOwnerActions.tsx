@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -167,7 +168,9 @@ function RetryList({ run, tools }: { run: CrewRunView; tools: CrewOwnerTools }) 
     <div className="mt-3 flex flex-col gap-1">
       {blocked.map((task) => (
         <div key={task.id} className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-ui-secondary">{task.title}</span>
+          <Text size="secondary" tone="inherit" truncate className="min-w-0 flex-1">
+            {task.title}
+          </Text>
           <Button
             size="sm"
             variant="secondary"

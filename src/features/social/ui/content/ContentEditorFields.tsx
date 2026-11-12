@@ -1,7 +1,8 @@
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
-import { DateTimeField } from "../../../../shared/ui/DateTimePicker";
+import { DateTimePicker } from "../../../../shared/ui/DateTimePicker";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
@@ -129,7 +130,14 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
                     <PlatformIcon platform={account.platform} className="icon-sm" />
                     <span>{account.name}</span>
                     {availability.disabled ? (
-                      <span className="content-check-reason">{availability.reason}</span>
+                      <Text
+                        size="caption"
+                        tone="secondary"
+                        leading="inherit"
+                        className="content-check-reason"
+                      >
+                        {availability.reason}
+                      </Text>
                     ) : null}
                   </>
                 }
@@ -150,6 +158,8 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
               }
               label={<span>{t("Account no longer available")}</span>}
               key={id}
+              size="body"
+              leading="inherit"
               className="content-check content-account"
             />
           ))}
@@ -167,9 +177,8 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
           }
         />
         {draft.when === "later" ? (
-          <DateTimeField
+          <DateTimePicker
             label={t("Date and time")}
-            mode="datetime"
             min={dayKey(wallClockNow())}
             required
             value={draft.scheduledAt}

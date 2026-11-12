@@ -1361,17 +1361,24 @@ test("model panel stays inside the viewport", async ({ page }, testInfo) => {
     ).toBeLessThanOrEqual(8);
     const helpHeight = await help.evaluate((element) => {
       const strip = getComputedStyle(element);
-      const paragraph = getComputedStyle(element.querySelector("p")!);
+      const textHeight = element.querySelector("p")!.getBoundingClientRect().height;
       return (
-        parseFloat(paragraph.lineHeight) * 3 +
+        textHeight +
         parseFloat(strip.paddingTop) +
         parseFloat(strip.paddingBottom) +
         parseFloat(strip.borderTopWidth)
       );
     });
-    expect(Math.abs((await help.boundingBox())!.height - helpHeight)).toBeLessThanOrEqual(1);
+    if (viewport.width >= 800) {
+      const lineHeight = await help.locator("p").evaluate((el) =>
+        parseFloat(getComputedStyle(el).lineHeight),
+      );
+      expect(helpText!.height).toBeLessThanOrEqual(lineHeight + 1);
+    }
+    // The trailing icon button can be slightly taller than a single text line.
+    expect(Math.abs((await help.boundingBox())!.height - helpHeight)).toBeLessThanOrEqual(3);
     await help.hover();
-    expect(Math.abs((await help.boundingBox())!.height - helpHeight)).toBeLessThanOrEqual(1);
+    expect(Math.abs((await help.boundingBox())!.height - helpHeight)).toBeLessThanOrEqual(3);
     // The panel and its rail, model list and settings column all fit the viewport.
     await expect
       .poll(() =>

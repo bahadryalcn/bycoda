@@ -1,3 +1,4 @@
+import { Text as UiText } from "../../../shared/ui/Text";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Folder, Save } from "../../../shared/ui/icons";
@@ -1155,15 +1156,18 @@ export function FileEditor({
 
   if (loadState.status === "loading" || diffPending) {
     return (
-      <div
+      <UiText
         role="status"
-        className="grid h-full min-w-0 place-items-center p-3 text-ui-caption text-(--ui-text-muted)"
+        as="div"
+        size="caption"
+        tone="muted"
+        className="grid h-full min-w-0 place-items-center p-3"
       >
         <span className="max-w-full break-words text-center">
           {t("Opening ")}
           {basename(path)}…
         </span>
-      </div>
+      </UiText>
     );
   }
 
@@ -1213,12 +1217,14 @@ export function FileEditor({
   const saveStatus = (
     <LiveText
       text={saveStatusText}
+      tone={saveStatusVisible && saveState.status === "error" ? "danger" : "inherit"}
+      truncate={saveStatusVisible && saveState.status !== "error"}
       className={
         !saveStatusVisible
           ? "sr-only"
           : saveState.status === "error"
-            ? "min-w-0 basis-full break-words py-1 text-(--ui-tone-danger-fg)"
-            : "min-w-0 max-w-64 truncate"
+            ? "min-w-0 basis-full break-words py-1"
+            : "min-w-0 max-w-64"
       }
     />
   );
@@ -1253,9 +1259,12 @@ export function FileEditor({
   return (
     <div ref={editorRootRef} className="flex h-full min-h-0 min-w-0 flex-col">
       {draftPersistence?.initializationDecisionRequired ? (
-        <div
+        <UiText
           role="status"
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-ui-caption text-content"
+          as="div"
+          size="caption"
+          tone="primary"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1"
         >
           <span className="min-w-0 flex-1">
             {t(
@@ -1280,7 +1289,7 @@ export function FileEditor({
           >
             {t("Use current document")}
           </Button>
-        </div>
+        </UiText>
       ) : null}
       {draftActionError || (draftPersistence?.error && draftPersistence.phase !== "unsupported") ? (
         <Alert
@@ -1347,13 +1356,16 @@ export function FileEditor({
         </Alert>
       )}
       {showDiff && gitDiff?.eolOnly && (
-        <p
+        <UiText
           role="status"
-          className="shrink-0 border-b border-stroke px-3 py-1 text-ui-secondary text-(--ui-text-secondary)"
+          as="p"
+          size="secondary"
+          tone="secondary"
+          className="shrink-0 border-b border-stroke px-3 py-1"
         >
           {gitDiff.kind === "staged" ? t("Staged") : t("Unstaged")}
           {t(" line-ending changes. Line breaks are normalized in this view.")}
-        </p>
+        </UiText>
       )}
       {hasMarkdownShell ? (
         <MarkdownViewShell
@@ -1417,11 +1429,16 @@ export function FileEditor({
           {chromeError}
         </InlineError>
       ) : null}
-      <footer
-        className={`flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 border-t border-stroke px-2.5 text-ui-micro text-[var(--ui-text-muted)] ${saveState.status === "error" ? "flex-wrap" : ""}`}
+      <UiText
+        as="footer"
+        size="micro"
+        tone="muted"
+        className={`flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 border-t border-stroke px-2.5 ${saveState.status === "error" ? "flex-wrap" : ""}`}
       >
         <Tooltip label={path} when={path === relativePath ? "overflow" : "always"}>
-          <span className="min-w-0 flex-1 truncate font-mono">{relativePath}</span>
+          <UiText size="inherit" tone="inherit" truncate className="min-w-0 flex-1 font-mono">
+            {relativePath}
+          </UiText>
         </Tooltip>
         {html ? (
           <Button
@@ -1462,7 +1479,7 @@ export function FileEditor({
         <InlineBlameToggle reason={footerBlameReason} />
         {hasMarkdownShell ? null : saveAction}
         {hasMarkdownShell ? null : saveStatus}
-      </footer>
+      </UiText>
     </div>
   );
 }

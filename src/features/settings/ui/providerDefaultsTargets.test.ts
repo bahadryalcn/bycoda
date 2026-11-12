@@ -39,3 +39,8 @@ it("names the containing group on a project row and keeps its path searchable", 
   expect(projects.map((option) => option.meta)).toEqual(["Clients", undefined]);
   expect(projects.map((option) => option.keywords)).toEqual([alpha, beta]);
 });
+
+it("includes assigned projects outside recents for All projects", () => {
+  const { options } = buildDefaultsTargets(undefined, [], groups, { "c:/other": "g1" });
+  expect(options.some((option) => option.value === "project:c:/other")).toBe(true);
+});

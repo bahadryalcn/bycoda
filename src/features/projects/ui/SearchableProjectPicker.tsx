@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { useT } from "../../../shared/i18n";
@@ -26,6 +27,7 @@ import {
 } from "../../workspace/model/tabGroups";
 import { Check, ChevronDown, Plus } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
 
@@ -221,7 +223,8 @@ export function SearchableProjectPicker({
           event.preventDefault();
           openPicker();
         }}
-        className={` flex min-w-0 items-center leading-none  ${
+        leading="none"
+        className={` flex min-w-0 items-center  ${
           compact ? "justify-center" : "gap-1.5"
         }     ${buttonClassName ? `   ${buttonClassName}  ` : ""}  `}
       >
@@ -242,13 +245,15 @@ export function SearchableProjectPicker({
         )}
         {compact ? null : (
           <>
-            <span className="min-w-0 truncate font-medium text-[var(--color-content)]">
+            <Text truncate size="inherit" tone="primary" weight="medium" className="min-w-0">
               {label}
-            </span>
+            </Text>
             <ChevronDown
-              className={`icon-xs shrink-0 text-[var(--ui-text-muted)] transition-transform ${
-                open ? "rotate-180" : ""
-              }`}
+              tone="muted"
+              {...motionAttributes(
+                { transition: "transform", duration: "standard", easing: "sheen" },
+                `icon-xs shrink-0 ${open ? "rotate-180" : ""}`,
+              )}
               strokeWidth={1.75}
             />
           </>
@@ -343,19 +348,30 @@ export function SearchableProjectPicker({
                         />
                       )}
                     </span>
-                    <span className="min-w-0 max-w-[calc(100%_-_36px)] shrink-0 truncate text-ui-secondary font-medium">
+                    <Text
+                      truncate
+                      size="secondary"
+                      tone="inherit"
+                      weight="medium"
+                      className="min-w-0 max-w-[calc(100%_-_36px)] shrink-0"
+                    >
                       {itemLabel}
-                    </span>
-                    <span className="min-w-0 max-w-28 flex-1 truncate font-mono text-ui-micro text-[var(--ui-text-muted)]">
+                    </Text>
+                    <Text
+                      truncate
+                      size="micro"
+                      tone="muted"
+                      className="min-w-0 max-w-28 flex-1 font-mono"
+                    >
                       {prettyParent(item.path)}
-                    </span>
+                    </Text>
                   </Button>
                 );
               })
             ) : (
-              <p className="px-2.5 py-5 text-center text-ui-caption text-[var(--ui-text-muted)]">
+              <Text as="p" size="caption" tone="muted" className="px-2.5 py-5 text-center">
                 {t("No projects found")}
-              </p>
+              </Text>
             )}
           </div>
           {onOpenProject ? (

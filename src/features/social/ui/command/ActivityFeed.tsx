@@ -1,3 +1,5 @@
+import { Code } from "../../../../shared/ui/Code";
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { formatRelativeTime } from "../../../../shared/i18n/format";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
@@ -33,7 +35,7 @@ export function ActivityFeed({ items, onUndo }: ActivityFeedProps) {
     <section className="command-activity" aria-label={t("Activity")}>
       {groupActivityByDay(items).map((group) => (
         <div key={group.key} className="command-activity-group">
-          <SectionLabel as="h4" classNames={{ label: "command-day-label" }}>
+          <SectionLabel as="h4" tone="muted" classNames={{ label: "command-day-label" }}>
             {group.label}
           </SectionLabel>
           <div className="activity-timeline">
@@ -49,11 +51,29 @@ export function ActivityFeed({ items, onUndo }: ActivityFeedProps) {
                   details={
                     <>
                       {item.reason ? (
-                        <p className="command-activity-reason">{item.reason}</p>
+                        <Text
+                          as="p"
+                          size="caption"
+                          tone="secondary"
+                          leading="inherit"
+                          className="command-activity-reason"
+                        >
+                          {item.reason}
+                        </Text>
                       ) : null}
-                      {undoReason ? <p className="command-activity-reason">{undoReason}</p> : null}
+                      {undoReason ? (
+                        <Text
+                          as="p"
+                          size="caption"
+                          tone="secondary"
+                          leading="inherit"
+                          className="command-activity-reason"
+                        >
+                          {undoReason}
+                        </Text>
+                      ) : null}
                       <TechnicalDetails>
-                        <code>{item.id}</code>
+                        <Code>{item.id}</Code>
                       </TechnicalDetails>
                     </>
                   }

@@ -1,3 +1,4 @@
+import { Text } from "../../../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Slider as ScaleSlider } from "../../../../../shared/ui/Slider";
@@ -58,9 +59,13 @@ export function InterfaceSizeGroup({ appearance: a }: { appearance: AppearanceSe
           marks={SCALE_MARKS}
           format={percent}
           end={
-            <span className="min-w-[5ch] shrink-0 text-right text-ui-caption tabular-nums text-content">
+            <Text
+              size="caption"
+              tone="primary"
+              className="min-w-[5ch] shrink-0 text-right tabular-nums"
+            >
               {percent(shownScale)}
-            </span>
+            </Text>
           }
           onValueChange={setDraft}
           onValueCommit={(value) => {

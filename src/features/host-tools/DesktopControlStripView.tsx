@@ -1,4 +1,7 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Button } from "../../shared/ui/Button";
+import { ClampText } from "../../shared/ui/ClampText";
+import { Text } from "../../shared/ui/Text";
 import { t } from "../../shared/i18n";
 import styles from "./DesktopControlStrip.module.css";
 import { InlineError } from "../../shared/ui/InlineError";
@@ -66,13 +69,39 @@ export function DesktopControlStripView({
   const label = `${name ? `${name} · ` : ""}${t("Computer use")} · ${t(stopping ? "Stopping..." : unknown ? "Status unavailable" : status?.stopped ? "Stopped" : status?.active ? "Working" : status?.enabled ? "Ready" : "Off")}${action ? ` · ${app} · ${operation}` : ""}`;
   const inactive = !!status && !status.enabled && !status.active && !unknown && !stopping;
   return (
-    <aside
-      className={`${styles.strip} ${floating ? styles.floating : ""}`}
+    <Text
+      as="aside"
+      size="caption"
+      tone="secondary"
+      leading="inherit"
+      {...surfaceAttributes(
+        {
+          frame: "neutral",
+          edge: floating ? "all" : "block-end",
+          variant: floating ? "plain" : undefined,
+          radius: floating ? "card" : undefined,
+        },
+        `${styles.strip} ${floating ? styles.floating : ""}`,
+      )}
       aria-label={t("Computer controls")}
     >
-      <span className={styles.status} role="status" data-tauri-drag-region={floating || undefined}>
-        {label}
-      </span>
+      {floating ? (
+        <ClampText
+          as="span"
+          lines={2}
+          expandable={false}
+          size="inherit"
+          tone="inherit"
+          role="status"
+          data-tauri-drag-region
+        >
+          {label}
+        </ClampText>
+      ) : (
+        <Text as="span" size="inherit" tone="inherit" role="status">
+          {label}
+        </Text>
+      )}
       {error && <InlineError className={styles.error}>{error}</InlineError>}
       {inactive && onDismiss ? (
         <Button size="sm" onClick={onDismiss}>
@@ -83,6 +112,6 @@ export function DesktopControlStripView({
           {t("Stop computer use")}
         </Button>
       )}
-    </aside>
+    </Text>
   );
 }

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Badge } from "../../../shared/ui/Badge";
 import { Meter } from "../../../shared/ui/Meter";
@@ -103,7 +105,9 @@ export function CustomDailyLimit({
         }}
         fieldClassName="w-24 max-w-24"
       />
-      <span className="task-ops-caption">{t("Hours")}</span>
+      <Text size="caption" tone="secondary" leading="inherit" className="task-ops-caption">
+        {t("Hours")}
+      </Text>
       <Button
         variant="secondary"
         type="submit"
@@ -118,9 +122,16 @@ export function CustomDailyLimit({
         </Button>
       ) : null}
       {changedElsewhere ? (
-        <span role="status" className="task-ops-caption" data-tone="warning">
+        <Text
+          size="caption"
+          tone="warning"
+          leading="inherit"
+          role="status"
+          className="task-ops-caption"
+          data-tone="warning"
+        >
           {t("Now {p0} h on this machine. Your edit is kept.", { p0: String(current / 60) })}
-        </span>
+        </Text>
       ) : null}
     </SettingRow>
   );
@@ -141,8 +152,18 @@ export function MachineConcurrency({
   if (!limit) return null;
   // A machine setting, not part of the task: it saves as soon as it changes.
   return (
-    <section className="task-form-limit" aria-busy={saving}>
-      <div className="task-form-limit-row">
+    <Text
+      as="section"
+      size="caption"
+      tone="secondary"
+      leading="inherit"
+      {...surfaceAttributes(
+        { frame: "card", edge: "all", radius: "card", variant: "card" },
+        "task-form-limit",
+      )}
+      aria-busy={saving}
+    >
+      <Text as="div" size="inherit" tone="neutral" className="task-form-limit-row">
         <SearchableSelect
           label={t("Machine task limit")}
           value={String(limit.maxRunningTasks)}
@@ -165,14 +186,14 @@ export function MachineConcurrency({
           }}
         />
         {saving ? <Spinner /> : null}
-      </div>
+      </Text>
       <p>
         {t("Applies to all goals and tasks on this machine.")}{" "}
         {t("Saved immediately for {p0}; it is not part of this task.", {
           p0: limit.machineName,
         })}
       </p>
-    </section>
+    </Text>
   );
 }
 
@@ -214,12 +235,22 @@ export function LimitsPanel({
         label: DAILY_LIMIT_LABELS[minutes] ?? formatAgentMinutes(minutes),
       }));
   return (
-    <ul aria-label={t("Work limits")} className="task-ops-panel">
+    <ul
+      aria-label={t("Work limits")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "task-ops-panel")}
+    >
       {errors.map((entry) => (
         <li key={`error:${entry.machineId}`} className="task-ops-head">
-          <span role="status" className="task-ops-caption task-ops-head-text" data-tone="danger">
+          <Text
+            size="caption"
+            tone="danger"
+            leading="inherit"
+            role="status"
+            className="task-ops-caption task-ops-head-text"
+            data-tone="danger"
+          >
             {entry.machineName}: {entry.error}
-          </span>
+          </Text>
           {onRetry ? (
             <Button variant="ghost" loading={retrying} onClick={() => onRetry(entry.machineId)}>
               {t("Retry")}
@@ -237,7 +268,16 @@ export function LimitsPanel({
           >
             <div className="task-ops-title-line justify-between">
               <span className="task-ops-title-line">
-                <span className="task-ops-title">{entry.machineName}</span>
+                <Text
+                  as="span"
+                  size="body"
+                  weight="medium"
+                  tone="primary"
+                  leading="inherit"
+                  truncate
+                >
+                  {entry.machineName}
+                </Text>
                 {savingMachine === entry.machineId ? <Spinner size="xs" /> : null}
                 {entry.limitReached ? (
                   <Badge size="xs" tone="danger">
@@ -245,11 +285,16 @@ export function LimitsPanel({
                   </Badge>
                 ) : null}
               </span>
-              <span className="task-ops-caption task-ops-num">
+              <Text
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className="task-ops-caption task-ops-num"
+              >
                 {entry.stale ? `${t("Out of date")} · ` : t("Used today: ")}
                 {formatAgentMinutes(entry.usedMinutes)}
                 {limited ? t(" of {p0}", { p0: formatAgentMinutes(entry.dailyAgentMinutes) }) : ""}
-              </span>
+              </Text>
             </div>
             {limited ? (
               // Incomplete usage is a lower bound, never a measured value.

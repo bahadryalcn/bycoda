@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
@@ -116,9 +117,9 @@ export function CrewWorkDetail({
         {run.status !== "finished" ? (
           <div className="flex shrink-0 flex-wrap items-center gap-1">
             {pendingText ? (
-              <span role="status" className="me-1 text-ui-caption text-(--ui-text-secondary)">
+              <Text role="status" className="me-1">
                 {pendingText}
-              </span>
+              </Text>
             ) : null}
             <Button
               variant={run.status === "paused" ? "primary" : "secondary"}
@@ -165,18 +166,18 @@ export function CrewWorkDetail({
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
         <CrewWorkBadges run={run} size="md" />
-        <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
-          {crewProgressLabel(run)}
-        </span>
+        <Text className="tabular-nums">{crewProgressLabel(run)}</Text>
         <CrewWorkUpdated value={run.updatedAt} />
-        {spent && run.status !== "finished" ? (
-          <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">{spent}</span>
-        ) : null}
+        {spent && run.status !== "finished" ? <Text className="tabular-nums">{spent}</Text> : null}
       </div>
       {request.kind === "full" && request.text !== title ? (
-        <p className="mt-2 max-h-32 max-w-[46rem] overflow-y-auto whitespace-pre-wrap break-words text-ui-secondary text-(--ui-text-secondary) [overflow-wrap:anywhere]">
+        <Text
+          as="p"
+          size="secondary"
+          className="mt-2 max-h-32 max-w-[46rem] overflow-y-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+        >
           {request.text}
-        </p>
+        </Text>
       ) : null}
       <CrewWorkSummary run={run} />
       {/* What needs the owner comes first: decisions, acceptance and blockers lead the actions. */}
@@ -188,11 +189,11 @@ export function CrewWorkDetail({
                 {t("Needs decision: {p0}", { p0: message.text })}
               </p>
               {crewMessageMayBeClipped(message.text) ? (
-                <p className="mt-1 text-ui-caption">
+                <Text as="p" tone="inherit" className="mt-1">
                   {t("Showing the first {p0} characters of this message.", {
                     p0: CREW_LIST_MESSAGE_LIMIT,
                   })}
-                </p>
+                </Text>
               ) : null}
             </Alert>
           ))}

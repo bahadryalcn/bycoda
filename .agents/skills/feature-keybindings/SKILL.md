@@ -1,17 +1,13 @@
 ---
 name: feature-keybindings
-description: "Change bycoda shortcut capture, conflict checks, override persistence or global registration. Preserve IME/focus behavior and app/context/native shortcut distinctions."
+description: "Use when changing shortcut capture, conflicts and global registration. Not for message execution; see feature-chat-composer."
 ---
 
 # Keybindings development
 
-All code paths below are repository-relative; linked skill resources are relative to this directory.
-
-## When to use
-
 Use for Settings Keybindings, shortcut defaults/overrides, app dispatch, emergency computer Stop and macOS Quick composer global shortcuts. Shared focus/filter presentation follows shared UI guidance; this card does not own every feature's filter model.
 
-## Start here
+## Source starts
 
 - `src/features/settings/ui/ShortcutSettings.tsx` and `src/shared/ui/ShortcutRecorder.tsx` own editing/recording.
 - `src/features/settings/model/settings.ts`, `appShortcuts.ts` and `useKeybindingShortcut.ts` own defaults, resolution and subscriptions.
@@ -29,13 +25,17 @@ Use for Settings Keybindings, shortcut defaults/overrides, app dispatch, emergen
 - macOS Quick composer editing depends on its enabled state and actual platform; Reset retains its established enabled/default semantics.
 - Conflict/error/pending rows must leave recorder and Reset independently usable at narrow widths; use shared focus ownership rather than adding a competing ring.
 
-## Workflow and checks
+## Workflow
 
 1. Trace the chord from catalog/storage through app dispatch or native/global registration and back to displayed labels; identify which boundary the defect actually crosses.
 2. Use [Arc focus ownership](../../../docs/reference/arc-ui.md) and [shared component contracts](../../../docs/reference/ui-components.md) for presentation; retain capture semantics.
 3. Select recorder/model/runtime tests from the map; exercise cancel/disable/reset/conflict, storage/native rollback, sibling refresh and usable hit areas using isolated preference stores. OS registration needs actual native checks.
 
-## Read when needed
+## Focused checks
+
+Use the tests in the [surface map](references/surfaces.md) for the changed operation.
+
+## References
 
 - Read [surfaces](references/surfaces.md) for keys, commands and verification starting points.
 - For a queue shortcut defect compare the persisted chord, focus and open composer popovers before changing queue transport; read [composer](../feature-chat-composer/SKILL.md) if execution changes.

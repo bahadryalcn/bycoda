@@ -1,9 +1,11 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SelectTrigger } from "../../../shared/ui/Select";
-import { ChevronDown } from "../../../shared/ui/icons";
+import { ChevronDown, WandSparkles } from "../../../shared/ui/icons";
 import {
   delegationNextValue,
   isDelegationSetting,
@@ -66,12 +68,14 @@ export function DelegationSubagentsControl({
           className="bycoda-arc-select w-auto max-w-52"
         >
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            {firstPicked ? (
+            {firstPicked || setting.options.some((option) => option.value === "") ? (
               <span className="grid size-4 shrink-0 place-items-center">
-                <DelegationOptionIcon setting={setting} value={firstPicked} />
+                <DelegationOptionIcon setting={setting} value={firstPicked ?? ""} />
               </span>
             ) : null}
-            <span className="min-w-0 truncate">{t(crossDelegationSummary(setting, values))}</span>
+            <Text size="inherit" tone="inherit" truncate className="min-w-0">
+              {t(crossDelegationSummary(setting, values))}
+            </Text>
           </span>
           <ChevronDown
             className={`bycoda-arc-select-chevron icon-sm shrink-0 ${open ? "rotate-180" : ""}`}
@@ -90,7 +94,9 @@ export function DelegationSubagentsControl({
           onClick={() => setOpen((next) => !next)}
           className="w-[52%] max-w-[11.5rem] min-w-0 shrink-0"
         >
-          <span className="min-w-0 truncate">{t(crossDelegationSummary(setting, values))}</span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {t(crossDelegationSummary(setting, values))}
+          </Text>
           <ChevronDown className="icon-xs shrink-0" />
         </Button>
       )}
@@ -159,23 +165,31 @@ export function DelegationField({
       onClick={onClick}
     >
       <span className="flex min-w-0 flex-1 flex-col items-start">
-        <span data-setting-label className="text-ui-micro leading-4 text-(--ui-text-secondary)">
+        <Text size="micro" data-setting-label>
           {label}
-        </span>
-        <span className="flex max-w-full min-w-0 items-center gap-1.5 leading-4">
+        </Text>
+        <Text
+          as="span"
+          size="inherit"
+          tone="inherit"
+          leading="snug"
+          className="flex max-w-full min-w-0 items-center gap-1.5"
+        >
           {picked ? <DelegationOptionIcon setting={setting} value={picked.value} /> : null}
-          <span className="min-w-0 truncate">
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
             {picked ? delegationShortLabel(setting, picked.value, t(picked.label)) : emptyLabel}
-          </span>
-        </span>
+          </Text>
+        </Text>
       </span>
-      <ChevronDown className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+      <ChevronDown className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
     </Button>
   );
 }
 
 /** The provider icon of one any-provider delegation option; nothing for Off. */
 export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting; value: string }) {
+  if (value === "" && setting.options.find((option) => option.value === "")?.label !== "Off")
+    return <WandSparkles className="icon-sm shrink-0" />;
   if (isImageModelsSetting(setting)) {
     const harness = IMAGE_MODEL_INFO[value as ImageModelId]?.harness;
     return harness ? providerIcon(harness) : null;
@@ -187,7 +201,11 @@ export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting
       | undefined
   )?.accountColor;
   const dot = color ? (
-    <span className="size-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
+    <span
+      {...surfaceAttributes({ radius: "pill" }, "size-2 shrink-0 ")}
+      style={{ background: color }}
+      aria-hidden
+    />
   ) : null;
   if (!ref?.harness) return dot;
   // The account dot sits on the icon's corner so both fit one icon slot (select triggers are 16px).
@@ -195,7 +213,12 @@ export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting
     <span className="relative inline-flex shrink-0">
       {providerIcon(ref.harness)}
       {dot ? (
-        <span className="absolute -right-0.5 -bottom-0.5 flex rounded-full ring-2 ring-(--color-background-base) [&>span]:size-1.5">
+        <span
+          {...surfaceAttributes(
+            { radius: "pill" },
+            "absolute -right-0.5 -bottom-0.5 flex  ring-2 ring-(--color-background-base) [&>span]:size-1.5",
+          )}
+        >
           {dot}
         </span>
       ) : null}

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
@@ -116,15 +118,28 @@ export function PersonPanel({
       description={person ? sourceLabel(person.source) : undefined}
       size="380px"
     >
-      {loading && !detail ? <p className="audience-muted">{t("Loading person…")}</p> : null}
+      {loading && !detail ? (
+        <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
+          {t("Loading person…")}
+        </Text>
+      ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
       {person && detail ? (
         <div className="audience-panel-body">
           <header className="audience-person">
             <SocialAvatar name={person.name} size="lg" />
             <div className="audience-person-text">
-              <span className="audience-person-name">{person.name}</span>
-              <span className="audience-row">
+              <Text
+                size="body"
+                tone="primary"
+                leading="inherit"
+                weight="medium"
+                className="audience-person-name"
+                truncate
+              >
+                {person.name}
+              </Text>
+              <Text size="inherit" tone="inherit" truncate className="audience-row">
                 <Badge size="sm" tone={stageTone(person.stage)}>
                   {stageLabel(person.stage)}
                 </Badge>
@@ -139,7 +154,7 @@ export function PersonPanel({
                     {formatNumber(person.score.value)}
                   </span>
                 ) : null}
-              </span>
+              </Text>
             </div>
           </header>
 
@@ -151,13 +166,21 @@ export function PersonPanel({
 
           <section className="audience-panel-section" aria-labelledby="person-stage-heading">
             <SectionLabel labelId="person-stage-heading">{t("Status")}</SectionLabel>
-            <ol className="audience-pipeline">
+            <Text as="ol" leading="inherit" className="audience-pipeline">
               {PIPELINE_STAGES.map((stage) => (
-                <li key={stage} data-current={stage === person.stage ? "true" : undefined}>
+                <Text
+                  as="li"
+                  size="inherit"
+                  tone={stage === person.stage ? "accent" : "secondary"}
+                  leading="inherit"
+                  key={stage}
+                  data-current={stage === person.stage ? "true" : undefined}
+                  {...surfaceAttributes({ radius: "control" })}
+                >
                   {stageLabel(stage)}
-                </li>
+                </Text>
               ))}
-            </ol>
+            </Text>
             <LabeledSelect
               label={t("Change stage")}
               value={person.stage}
@@ -177,11 +200,11 @@ export function PersonPanel({
                 {person.handles.map((handle) => (
                   <li key={`${handle.accountId}:${handle.platformId}`} className="audience-row">
                     <PlatformMark platform={handle.platform} size="sm" tooltip />
-                    <span className="audience-muted">
+                    <Text size="caption" tone="muted" leading="inherit" className="audience-muted">
                       {handle.username
                         ? `@${handle.username.replace(/^@/, "")}`
                         : handle.platformId}
-                    </span>
+                    </Text>
                   </li>
                 ))}
               </ul>
@@ -193,9 +216,9 @@ export function PersonPanel({
                 {person.emails.map((email) => (
                   <li key={email.address} className="audience-row">
                     <span>{email.address}</span>
-                    <span className="audience-muted">
+                    <Text size="caption" tone="muted" leading="inherit" className="audience-muted">
                       {email.verified ? t("Verified") : t("Not verified")}
-                    </span>
+                    </Text>
                   </li>
                 ))}
               </ul>
@@ -211,11 +234,11 @@ export function PersonPanel({
             <SectionLabel labelId="person-consent-heading">
               {t("Commercial messages (Turkey)")}
             </SectionLabel>
-            <p className="audience-muted">
+            <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
               {t(
                 "Approval in the Turkish commercial message system (IYS) for messages to people in Turkey.",
               )}
-            </p>
+            </Text>
             <LabeledSelect
               label={t("IYS status")}
               value={person.commercialConsent?.iys ?? "unknown"}
@@ -234,17 +257,17 @@ export function PersonPanel({
           <section className="audience-panel-section" aria-labelledby="person-activity-heading">
             <SectionLabel labelId="person-activity-heading">{t("Activity")}</SectionLabel>
             {person.score ? (
-              <p className="audience-muted">
+              <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
                 {t("Interest score {p0}: {p1}", {
                   p0: formatNumber(person.score.value),
                   p1: person.score.reason,
                 })}
-              </p>
+              </Text>
             ) : null}
             {detail.enrollments.length ? (
-              <p className="audience-muted">
+              <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
                 {t("In {p0} sequence steps", { p0: detail.enrollments.length })}
-              </p>
+              </Text>
             ) : null}
             {detail.interactions.length ? (
               <Timeline

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Progress } from "../../../shared/ui/Progress";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
@@ -72,7 +73,7 @@ export function GroupFetchPopover({
       onDismiss={onClose}
       className="overflow-y-auto p-1"
     >
-      <p className="px-2.5 pb-1 pt-1.5 text-ui-caption text-[var(--ui-text-muted)]">
+      <Text as="p" size="caption" tone="muted" className="px-2.5 pb-1 pt-1.5">
         {paths.length === 0
           ? t("No projects to fetch")
           : done
@@ -84,7 +85,7 @@ export function GroupFetchPopover({
                 p0: Math.min(current + 1, paths.length),
                 p1: paths.length,
               })}
-      </p>
+      </Text>
       {paths.length ? (
         <Progress
           compact
@@ -97,21 +98,26 @@ export function GroupFetchPopover({
         {paths.map((path, index) => {
           const result = results[index];
           return (
-            <li
+            <Text
+              as="li"
+              size="secondary"
+              tone="primary"
               key={path}
-              className="flex items-center gap-2 px-2.5 py-1 text-ui-secondary text-[var(--color-content)]"
+              className="flex items-center gap-2 px-2.5 py-1 "
             >
-              <span className="min-w-0 flex-1 truncate" title={path}>
+              <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1" title={path}>
                 {basename(path)}
-              </span>
-              <span
-                className={`shrink-0 text-ui-micro ${
+              </Text>
+              <Text
+                size="micro"
+                tone={
                   result?.status === "failed"
-                    ? "text-(--ui-tone-danger-fg)"
+                    ? "danger"
                     : result?.status === "fetched"
-                      ? "text-(--ui-tone-success-fg)"
-                      : "text-[var(--ui-text-muted)]"
-                }`}
+                      ? "success"
+                      : "muted"
+                }
+                className="shrink-0"
                 title={result?.error}
               >
                 {result
@@ -119,8 +125,8 @@ export function GroupFetchPopover({
                   : index === current && !done
                     ? t("Fetching…")
                     : t("Waiting")}
-              </span>
-            </li>
+              </Text>
+            </Text>
           );
         })}
       </ul>

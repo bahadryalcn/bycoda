@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Heading } from "../../../shared/ui/Heading";
 import { invoke } from "@tauri-apps/api/core";
@@ -137,9 +138,9 @@ export function SshSettings({
   return (
     <Modal title={t("SSH settings")} onClose={() => onClose()} size="lg">
       <div className="flex flex-col gap-4">
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted">
           {t("Local SSH keys and known hosts.")}
-        </p>
+        </Text>
         <Tabs id={panelId} value={securityPanel} onValueChange={setSecurityPanel}>
           <TabList label={t("SSH settings sections")}>
             <Tab value="keys">{t("Keys")}</Tab>
@@ -192,7 +193,7 @@ export function SshSettings({
               </Alert>
             ) : null}
             {agent ? (
-              <div className="mbs-2 text-ui-caption">
+              <Text as="div" tone="inherit" className="mbs-2">
                 <span>
                   {t("SSH agent")}:{" "}
                   {t(
@@ -208,22 +209,22 @@ export function SshSettings({
                     {identity.keyType} · {identity.fingerprint}
                   </p>
                 ))}
-              </div>
+              </Text>
             ) : null}
-            <p className="mbs-1 text-ui-caption text-(--ui-text-muted)">
+            <Text as="p" tone="muted" className="mbs-1">
               {t("Private keys stay in OpenSSH or your OS agent.")}
-            </p>
+            </Text>
             <JumpAuthenticationHelp />
             {canAssignKey ? (
-              <p className="mbs-2 break-all text-ui-caption">
+              <Text as="p" tone="inherit" className="mbs-2 break-all">
                 {t("Select a key for")}: {server?.name}
-              </p>
+              </Text>
             ) : null}
             {canAssignKey && selectedIdentity ? (
               <div className="mbs-2 flex min-w-0 flex-wrap items-center gap-2">
-                <p role="status" className="min-w-0 flex-1 break-all text-ui-caption">
+                <Text role="status" as="p" tone="inherit" className="min-w-0 flex-1 break-all">
                   {inheritedIdentity ? t("SSH key") : t("Assigned")}: {selectedIdentity}
-                </p>
+                </Text>
                 <Button
                   variant="secondary"
                   disabled={busy}
@@ -272,15 +273,17 @@ export function SshSettings({
                   className="mbs-2 flex min-w-0 flex-wrap items-center gap-2"
                   key={`${key.identityFile}:${key.fingerprint}`}
                 >
-                  <div className="min-w-0 flex-1 text-ui-caption">
-                    <p className="break-all text-ui-body font-medium">
+                  <Text as="div" tone="inherit" className="min-w-0 flex-1">
+                    <Text as="p" size="body" tone="inherit" weight="medium" className="break-all">
                       {key.identityFile?.split(/[\\/]/).pop() ?? key.keyType}
-                    </p>
-                    <p className="break-all text-(--ui-text-muted)">{key.identityFile}</p>
-                    <p className="break-all text-(--ui-text-muted)">
+                    </Text>
+                    <Text as="p" size="inherit" tone="muted" className="break-all">
+                      {key.identityFile}
+                    </Text>
+                    <Text as="p" size="inherit" tone="muted" className="break-all">
                       {key.keyType} · {key.fingerprint}
-                    </p>
-                  </div>
+                    </Text>
+                  </Text>
                   {canAssignKey && key.identityFile ? (
                     <Button
                       variant="secondary"
@@ -336,9 +339,9 @@ export function SshSettings({
                   .includes(hostSearch.trim().toLocaleLowerCase()),
               )
               .map((host, index) => (
-                <p key={index} className="mbs-2 break-all text-ui-caption">
+                <Text key={index} as="p" tone="inherit" className="mbs-2 break-all">
                   {host.hostPatterns} · {host.keyType} · {host.fingerprint}
-                </p>
+                </Text>
               ))}
           </TabPanel>
           <TabPanel value="import" keepMounted className="flex flex-col gap-3">
@@ -368,9 +371,9 @@ export function SshSettings({
               {t("Preview")}
             </Button>
             {preview?.warnings.map((warning, index) => (
-              <p key={index} className="text-ui-caption text-(--ui-text-muted)">
+              <Text key={index} as="p" tone="muted">
                 {warning}
-              </p>
+              </Text>
             ))}
             {preview?.hosts.map((host, index) => {
               const existing = servers.filter(

@@ -48,10 +48,17 @@ describe("delegationGuidance", () => {
     expect(text).toContain("Subagent models:");
     expect(text).not.toContain("Advisor model");
     expect(text).not.toContain("Consult the advisor");
-    // Owner decision: no routing between selected models or tools.
-    expect(text).toContain("Delegating is optional");
+    // Owner decision: splittable work is delegated unasked, with no routing between models.
+    expect(text).toContain("Delegate without being asked when a request splits");
+    expect(text).toContain("Do small, sequential or single-file work yourself");
     expect(text).toContain("usefulness first, then cost");
     expect(text).not.toContain("always use it");
+  });
+
+  it("does not ask an advisor-only session to delegate", () => {
+    const text = delegationGuidance({ [CROSS_ADVISOR_KEY]: advisor });
+    expect(text).toContain("Consulting is optional");
+    expect(text).not.toContain("Delegate without being asked");
   });
 
   it("omits the subagent brief rule when only the advisor is on", () => {

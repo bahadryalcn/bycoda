@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SessionSummary } from "../data/sessionStore";
 import { useGlobalRecentSessions } from "./useGlobalRecentSessions";
+import { newSession, type Session } from "../model/session";
 
 const fetch = vi.hoisted(() => vi.fn());
 vi.mock("../data/sessionStore", () => ({
@@ -11,11 +12,13 @@ vi.mock("../data/sessionStore", () => ({
   finalizeRecentSessionPages: (rows: SessionSummary[]) => rows,
 }));
 let history: SessionSummary[] = [];
-const sessions: never[] = [];
+let sessions: Session[] = [];
 let enabled = true;
 let allowed = new Set(["/visible"]);
 let result: ReturnType<typeof useGlobalRecentSessions>;
+let renders = 0;
 function Probe() {
+  renders++;
   const current = useGlobalRecentSessions(history, sessions, enabled, allowed);
   useLayoutEffect(() => {
     result = current;
@@ -37,7 +40,131 @@ afterEach(() => {
   vi.clearAllMocks();
   enabled = true;
   history = [];
+  sessions = [];
   allowed = new Set(["/visible"]);
+});
+
+it("does not render the owner for unchanged live provider history on a tick", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  sessions = [
+    {
+      ...newSession("codex", "/visible"),
+      id: "live",
+      blocks: [{ id: "u", role: "user", text: "hello", startedAt: Date.now() }],
+    },
+  ];
+  fetch.mockResolvedValue({ rows: [], nextCursor: null });
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    const previous = result;
+    const before = renders;
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(result).toBe(previous);
+    expect(renders - before).toBe(0);
+    sessions = [
+      {
+        ...sessions[0],
+        runningModelTarget: { harness: "claude", model: "other", modelSettings: {} },
+      },
+    ];
+    await act(async () => root.render(createElement(Probe)));
+    expect(result.rows[0].providerHistory?.activeHarness).toBe("claude");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps the result identity across an unchanged minute refresh and expires old rows", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const now = Date.now();
+  const recent = { ...row, updatedAt: now - 7 * 86400000 + 90_000 };
+  fetch.mockImplementation(async () => ({ rows: [{ ...recent }], nextCursor: null }));
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    const previous = result;
+    const before = renders;
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(result).toBe(previous);
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(result).toBe(previous);
+    expect(renders - before).toBe(0);
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(result.rows).toHaveLength(0);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shares cloned poll metadata but publishes nested changes even at the same updatedAt", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  let snapshot: SessionSummary = {
+    ...row,
+    linkedWorkItem: { repo: "acme/app", kind: "issue", number: 1, url: "https://example.com/1" },
+    providerHistory: { providers: ["codex"], activeHarness: "codex" },
+    recentPinTarget: { kind: "native", sessionId: row.id, cwd: row.cwd },
+  };
+  fetch.mockImplementation(async () => ({ rows: [structuredClone(snapshot)], nextCursor: null }));
+  const root = createRoot(document.createElement("div"));
+  const poll = async () => {
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+  };
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    const previous = result;
+    const before = renders;
+    await poll();
+    expect(result).toBe(previous);
+    expect(renders - before).toBe(0);
+    snapshot = { ...snapshot, linkedWorkItem: { ...snapshot.linkedWorkItem!, number: 2 } };
+    await poll();
+    expect(result.rows[0].linkedWorkItem?.number).toBe(2);
+    snapshot = {
+      ...snapshot,
+      providerHistory: { providers: ["codex", "claude"], activeHarness: "claude" },
+    };
+    await poll();
+    expect(result.rows[0].providerHistory?.activeHarness).toBe("claude");
+    snapshot = { ...snapshot, recentPinTarget: null };
+    await poll();
+    expect(result.rows[0].recentPinTarget).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
 });
 
 it("updates metadata without rescanning stable activity, while new activity refreshes history", async () => {

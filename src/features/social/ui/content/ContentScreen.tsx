@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useMemo, useState } from "react";
 import { formatDate, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -156,7 +157,14 @@ export function ContentScreen({
               <Button variant="ghost" size="sm" iconOnly label={t("Next")} onClick={() => shift(1)}>
                 <ChevronRight className="icon-sm" aria-hidden />
               </Button>
-              <span className="content-range-label">{rangeLabel}</span>
+              <Text
+                size="secondary"
+                tone="secondary"
+                leading="inherit"
+                className="content-range-label"
+              >
+                {rangeLabel}
+              </Text>
             </div>
           ) : null}
           <span className="content-toolbar-primary">
@@ -184,7 +192,15 @@ export function ContentScreen({
           {t("Could not load posts.")}
         </InlineMessage>
       ) : data.loading ? (
-        <p className="content-platform-note">{t("Loading…")}</p>
+        <Text
+          as="p"
+          size="caption"
+          tone="muted"
+          leading="inherit"
+          className="content-platform-note"
+        >
+          {t("Loading…")}
+        </Text>
       ) : isEmpty ? (
         <EmptyHint
           message={t("No posts yet.")}

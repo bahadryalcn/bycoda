@@ -1,5 +1,6 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { Switch } from "../../../../shared/ui/Switch";
+import { Text } from "../../../../shared/ui/Text";
 import { Row } from "../../../settings/public/settingsControls";
 import roleStyles from "../AssistantProfileFields.module.css";
 
@@ -41,6 +42,7 @@ export function ProfileSwitch({
   label,
   description,
   hintClassName,
+  hintSize = "caption",
   info,
   checked,
   onCheckedChange,
@@ -48,6 +50,8 @@ export function ProfileSwitch({
   label: string;
   description?: string;
   hintClassName?: string;
+  /** Size of the one-line description: `micro` for a dense note, `caption` by default. */
+  hintSize?: "micro" | "caption";
   info?: ReactNode;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
@@ -61,7 +65,11 @@ export function ProfileSwitch({
   return (
     <div className={roleStyles.switchRow}>
       <Switch label={label} checked={checked} onCheckedChange={onCheckedChange} />
-      {description && <p className={hintClassName}>{description}</p>}
+      {description && (
+        <Text as="p" size={hintSize} tone="secondary" leading="normal" className={hintClassName}>
+          {description}
+        </Text>
+      )}
     </div>
   );
 }

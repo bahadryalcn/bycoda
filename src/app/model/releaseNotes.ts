@@ -11,7 +11,12 @@ export type ReleaseNotesDocument = {
 };
 
 export function releaseNotesTitle(version: string): string {
-  return `What's new in ${appName()} ${version}`;
+  return releaseNotesTitleForName(version, appName());
+}
+
+/** Release title using the caller's reactive product name. */
+export function releaseNotesTitleForName(version: string, name: string): string {
+  return `What's new in ${name} ${version}`;
 }
 
 export function releaseNotesForVersion(

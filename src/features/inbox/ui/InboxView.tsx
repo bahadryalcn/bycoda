@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
 import { InboxLoadError } from "./InboxLoadError";
 import { RemoteActivityNotices } from "../../sessions/public/RemoteActivityNotices";
@@ -646,7 +649,10 @@ export function InboxView({
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-transparent"
+      {...surfaceAttributes(
+        { frame: "pane", edge: "right", variant: "transparent" },
+        "inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col",
+      )}
     >
       {sourceRow}
       {viewRow}
@@ -655,7 +661,7 @@ export function InboxView({
           {showCollectionTools ? (
             <>
               <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-                <Search className="pointer-events-none icon-xs shrink-0 text-(--ui-text-secondary)" />
+                <Search tone="secondary" className="pointer-events-none icon-xs shrink-0" />
                 <SearchInput
                   focusOwner="group"
                   value={searchInput}
@@ -905,9 +911,12 @@ export function InboxView({
         )}
       </div>
       {noSourcesConnected || visibleItems.length === 0 ? null : (
-        <div
+        <Text
+          as="div"
+          size="micro"
+          tone="secondary"
           data-inbox-list-status
-          className="flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-ui-micro tabular-nums text-(--ui-text-secondary)"
+          className="flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 tabular-nums"
         >
           <span>
             <LiveText text={t("{p0} loaded", { p0: visibleItems.length })} />
@@ -922,8 +931,12 @@ export function InboxView({
               </span>
             ) : null}
           </span>
-          {sourceError ? <span className="text-(--ui-tone-warning-fg)">{t("Partial")}</span> : null}
-        </div>
+          {sourceError ? (
+            <Text size="inherit" tone="warning">
+              {t("Partial")}
+            </Text>
+          ) : null}
+        </Text>
       )}
       <Sash
         {...resize.sashProps}
@@ -969,11 +982,14 @@ export function InboxView({
     ) : null;
 
   return (
-    <div
+    <Text
+      as="div"
+      size="inherit"
+      tone="neutral"
       role="region"
       aria-label={t("Inbox")}
       data-app-inbox
-      className="bycoda-inbox flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
+      className="bycoda-inbox flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <PaneHeader
         chromeInset={besideRail ? (compactRail ? "compact" : false) : true}
@@ -1029,7 +1045,7 @@ export function InboxView({
             />
             {boardIssue ? (
               <aside
-                className="jira-board-detail"
+                {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, "jira-board-detail")}
                 aria-label={boardIssue.identifier}
                 onKeyDown={(event) => {
                   if (event.key === "Escape" && !hasActiveOverlay()) {
@@ -1108,7 +1124,7 @@ export function InboxView({
       )}
       {filtersPortal}
       {connectPortal}
-    </div>
+    </Text>
   );
 }
 
@@ -1174,14 +1190,17 @@ export function LinkedWorkItemPanel({
 
   const kindLabel = target.kind === "pr" ? t("pull request") : t("issue");
   return (
-    <aside
+    <Text
+      as="aside"
+      size="inherit"
+      tone="neutral"
       ref={resize.setPaneRef}
       aria-label={t("Linked {p0} #{p1}", { p0: kindLabel, p1: target.number })}
       aria-busy={loading}
       aria-hidden={!visible}
       inert={!visible || undefined}
       data-linked-work-item-panel
-      className={`@container/linked relative min-h-0 max-w-full shrink-0 flex-col border-l border-(--ui-pane-border) text-(--ui-tone-neutral-fg) @max-[950px]/main-row:absolute @max-[950px]/main-row:inset-y-0 @max-[950px]/main-row:right-0 @max-[950px]/main-row:z-30 @max-[950px]/main-row:shadow-(--ui-elevation-floating) ${
+      className={`@container/linked relative min-h-0 max-w-full shrink-0 flex-col border-l border-(--ui-pane-border) @max-[950px]/main-row:absolute @max-[950px]/main-row:inset-y-0 @max-[950px]/main-row:right-0 @max-[950px]/main-row:z-30 @max-[950px]/main-row:shadow-(--ui-elevation-floating) ${
         visible ? "flex linked-work-item-enter" : "hidden"
       }`}
     >
@@ -1192,9 +1211,9 @@ export function LinkedWorkItemPanel({
         className="absolute inset-y-0 -left-px"
       />
       <header className="flex shrink-0 items-center gap-2 px-3 py-1">
-        <span className="min-w-0 flex-1 truncate text-ui-caption font-medium text-(--ui-text-secondary)">
+        <Text size="caption" tone="secondary" weight="medium" truncate className="min-w-0 flex-1">
           {t("Linked {p0} #{p1}", { p0: kindLabel, p1: target.number })}
-        </span>
+        </Text>
         <Button
           variant="ghost"
           size="sm"
@@ -1224,7 +1243,7 @@ export function LinkedWorkItemPanel({
           />
         ) : error ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-            <CircleX className="icon-lg text-(--ui-tone-danger-fg)" strokeWidth={1.75} />
+            <CircleX tone="danger" className="icon-lg" strokeWidth={1.75} />
             <Alert tone="danger" className="max-w-sm">
               {error}
             </Alert>
@@ -1246,12 +1265,17 @@ export function LinkedWorkItemPanel({
             </Button>
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center text-(--ui-text-secondary)">
+          <Text
+            as="div"
+            size="inherit"
+            tone="secondary"
+            className="flex h-full items-center justify-center"
+          >
             <Spinner size="md" />
-          </div>
+          </Text>
         )}
       </div>
-    </aside>
+    </Text>
   );
 }
 
@@ -1315,7 +1339,7 @@ const InboxCard = memo(function InboxCard({
   // labels the source line is a sibling laid over the row (clicks outside the badges fall through
   // to the row) and the row keeps the line's height.
   const sourceLine = (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)">
+    <Text size="micro" tone="secondary" className="flex min-w-0 flex-1 items-center gap-1.5">
       {tracker || !item.projectPath ? null : logoPath ? (
         <ProjectLogoIcon
           path={logoPath}
@@ -1330,8 +1354,10 @@ const InboxCard = memo(function InboxCard({
           className="icon-xs shrink-0"
         />
       )}
-      <span className="min-w-0 truncate">{source}</span>
-    </span>
+      <Text size="inherit" tone="inherit" truncate className="min-w-0">
+        {source}
+      </Text>
+    </Text>
   );
 
   return (
@@ -1353,11 +1379,18 @@ const InboxCard = memo(function InboxCard({
           onMouseEnter={() => prefetchInboxItem(item)}
           onFocus={() => prefetchInboxItem(item)}
         >
-          <span
-            className={`min-w-0 line-clamp-2 wrap-anywhere text-ui-secondary leading-snug text-(--ui-tone-neutral-fg) ${unseen ? "font-medium" : "font-normal"}`}
+          <ClampText
+            as="span"
+            lines={2}
+            expandable={false}
+            size="secondary"
+            tone="neutral"
+            weight={unseen ? "medium" : "regular"}
+            leading="snug"
+            className="min-w-0 wrap-anywhere"
           >
             {item.title}
-          </span>
+          </ClampText>
           <span className="flex min-w-0 items-center gap-2">
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
               <Badge
@@ -1367,10 +1400,10 @@ const InboxCard = memo(function InboxCard({
                 icon={<status.Icon strokeWidth={1.75} />}
                 aria-hidden="true"
               />
-              <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
+              <Text size="micro" tone="secondary" truncate className="min-w-0">
                 {t(kindLabel)} {inboxItemRef(item)} · {tracker ? item.state : t(status.label)}
                 {attentionLabel ? ` · ${attentionLabel}` : ""}
-              </span>
+              </Text>
             </span>
             {relatedSessionCount > 0 || time || unseen ? (
               <span className="flex shrink-0 items-center gap-1.5">
@@ -1389,9 +1422,9 @@ const InboxCard = memo(function InboxCard({
                   </Badge>
                 ) : null}
                 {time ? (
-                  <span className="text-ui-micro tabular-nums text-(--ui-text-secondary)">
+                  <Text size="micro" tone="secondary" className="tabular-nums">
                     {time}
-                  </span>
+                  </Text>
                 ) : null}
                 {unseen ? <StatusDot data-inbox-unread tone="accent" label={t("Unread")} /> : null}
               </span>

@@ -8,6 +8,7 @@ import type {
 } from "react";
 import { Button, type ButtonProps } from "./Button";
 import { MoreHorizontal } from "./icons";
+import type { TextSize, TextTone } from "./Text";
 import styles from "./ActionHost.module.css";
 
 export type ActionHostElement = "div" | "article" | "li" | "section" | "aside";
@@ -25,6 +26,12 @@ export type ActionHostProps = ComponentPropsWithRef<"div"> & {
   /** Inline actions appear only on hover, keyboard focus or an open menu; selection and
    *  pointer focus left by a click do not keep them visible. Touch still always shows them. */
   hoverReveal?: boolean;
+  /** Ink of the row's own text, a Text tone. Computed tones are fine (selected, disabled).
+   *  It sits below utility classes, so a caller's `group-hover:text-…` or state class still
+   *  wins; children that set their own colour (Buttons, Text) keep it. Unset keeps today's ink. */
+  tone?: TextTone;
+  /** Type size of the row's own text, a Text size. Unset keeps the surrounding size. */
+  size?: TextSize;
 };
 
 /**
@@ -39,6 +46,8 @@ export function ActionHost({
   selected,
   ground,
   hoverReveal,
+  tone,
+  size,
   className,
   style,
   ...props
@@ -52,6 +61,8 @@ export function ActionHost({
       data-selected={selected || undefined}
       data-ground={ground ? "" : undefined}
       data-hover-reveal={hoverReveal ? "" : undefined}
+      data-tone={tone}
+      data-size={size}
       style={ground ? ({ ...style, "--action-host-ground": ground } as CSSProperties) : style}
       className={[styles.host, className].filter(Boolean).join(" ")}
     />

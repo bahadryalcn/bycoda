@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   assistantPresencePresentation,
@@ -29,7 +30,11 @@ export function AssistantPresenceIndicator({
       aria-hidden={markOnly || undefined}
     >
       <span className={styles.mark} aria-hidden="true" />
-      {!markOnly && <span className={styles.label}>{label ?? t(presentation.label)}</span>}
+      {!markOnly && (
+        <Text size="inherit" tone="inherit" truncate className={styles.label}>
+          {label ?? t(presentation.label)}
+        </Text>
+      )}
     </span>
   );
 }

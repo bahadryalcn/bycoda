@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Button } from "../../../shared/ui/Button";
@@ -638,7 +639,9 @@ export function QuickComposer({
               className="size-3 shrink-0"
             />
           ) : null}
-          <span className="truncate">{cwd ? projectDisplayName(cwd) : t("No project")}</span>
+          <Text size="inherit" tone="inherit" truncate>
+            {cwd ? projectDisplayName(cwd) : t("No project")}
+          </Text>
           <ChevronDown className="icon-xs shrink-0 opacity-60" />
         </Button>
       </div>
@@ -806,7 +809,9 @@ export function QuickComposer({
           className={`flex min-w-0 max-w-[40%] items-center gap-1.5 `}
         >
           <HarnessIcon harness={model.harness} className="size-3.5 shrink-0" />
-          <span className="truncate">{model.name}</span>
+          <Text size="inherit" tone="inherit" truncate>
+            {model.name}
+          </Text>
           <ChevronDown className="icon-xs shrink-0 opacity-60" />
         </Button>
         {model.harness !== "fx" ? (
@@ -823,11 +828,13 @@ export function QuickComposer({
             className={`flex min-w-0 items-center gap-1.5 `}
           >
             <QuickPermissionIcon mode={runtimeMode} className="size-3.5 shrink-0" />
-            <span className="truncate max-[450px]:hidden">{RUNTIME_MODE_LABEL[runtimeMode]}</span>
+            <Text size="inherit" tone="inherit" truncate className="max-[450px]:hidden">
+              {RUNTIME_MODE_LABEL[runtimeMode]}
+            </Text>
             <ChevronDown className="icon-xs shrink-0 opacity-60" />
           </Button>
         ) : null}
-        <span className="ml-auto flex shrink-0 items-center gap-3 text-ui-micro text-(--ui-text-secondary)">
+        <Text size="micro" tone="secondary" className="ml-auto flex shrink-0 items-center gap-3">
           {attachments.loading ? (
             <span role="status">{t("Adding attachment…")}</span>
           ) : (
@@ -854,7 +861,7 @@ export function QuickComposer({
           >
             {leadingMode?.name === DRAFT_COMMAND.name ? t("Save draft") : t("Start")}
           </Button>
-        </span>
+        </Text>
       </div>
 
       {picker === "attachments" ? (
@@ -912,9 +919,9 @@ export function QuickComposer({
               className="shrink-0 border-t border-stroke p-2"
             >
               {commandOptions.length === 0 ? (
-                <p className="px-2 py-2 text-ui-caption text-(--ui-text-secondary)">
+                <Text as="p" size="caption" tone="secondary" className="px-2 py-2">
                   {t("No matching commands")}
-                </p>
+                </Text>
               ) : (
                 commandOptions.map((command, index) => (
                   <Button
@@ -932,9 +939,9 @@ export function QuickComposer({
                     onClick={() => chooseAt(index)}
                   >
                     <CommandLabel name={command.name} />
-                    <span className="text-ui-micro leading-4 text-(--ui-text-secondary)">
+                    <Text size="micro" tone="secondary">
                       {command.description}
-                    </span>
+                    </Text>
                   </Button>
                 ))
               )}
@@ -964,7 +971,12 @@ export function QuickComposer({
           ) : null}
           {picker === "project" ? (
             <div className="flex min-h-0 flex-col border-t border-stroke">
-              <div className="flex shrink-0 items-center gap-2 px-4 py-2 text-(--ui-text-secondary)">
+              <Text
+                as="div"
+                size="inherit"
+                tone="secondary"
+                className="flex shrink-0 items-center gap-2 px-4 py-2"
+              >
                 <Search className="icon-sm shrink-0" />
                 <SearchInput
                   ref={queryRef}
@@ -985,7 +997,7 @@ export function QuickComposer({
                   autoComplete="off"
                   className="min-w-0 flex-1"
                 />
-              </div>
+              </Text>
               <div
                 ref={listRef}
                 role="listbox"
@@ -993,9 +1005,9 @@ export function QuickComposer({
                 className="min-h-0 max-h-64 overflow-y-auto overscroll-none px-2 pb-2"
               >
                 {optionCount === 0 ? (
-                  <p className="px-2 py-2 text-ui-caption text-(--ui-text-secondary)">
+                  <Text as="p" size="caption" tone="secondary" className="px-2 py-2">
                     {t("No matches")}
-                  </p>
+                  </Text>
                 ) : (
                   projectOptions.map((path, index) => (
                     <Button
@@ -1016,10 +1028,12 @@ export function QuickComposer({
                         appearance={projectAppearance}
                         className="size-3 shrink-0"
                       />
-                      <span className="truncate">{projectDisplayName(path)}</span>
-                      <span className="ml-auto truncate pl-3 text-ui-micro text-(--ui-text-secondary)">
+                      <Text size="inherit" tone="inherit" truncate>
+                        {projectDisplayName(path)}
+                      </Text>
+                      <Text truncate size="micro" tone="secondary" className="ml-auto pl-3">
                         {prettyParent(path)}
-                      </span>
+                      </Text>
                     </Button>
                   ))
                 )}
@@ -1037,9 +1051,7 @@ function CommandLabel({ name }: { name: string }) {
   const style = MODE_COMMAND_STYLES[name];
   return (
     <span className="flex items-center gap-1.5">
-      {style ? (
-        <style.Icon className={`size-3.5 shrink-0 ${style.menu?.iconClassName ?? ""}`} />
-      ) : null}
+      {style ? <style.Icon className="size-3.5 shrink-0" tone={style.menu?.tone} /> : null}
       {name.charAt(0).toUpperCase() + name.slice(1)}
     </span>
   );

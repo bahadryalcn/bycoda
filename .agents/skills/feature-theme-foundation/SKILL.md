@@ -1,18 +1,15 @@
 ---
 name: feature-theme-foundation
-description: "Change shared semantic theme roles, pane hierarchy, accent/focus/selection and forced-color behavior while preserving Appearance values and specialized content rendering."
+description: "Use when changing shared color roles and CSS tokens: pane surfaces, accent, focus and selection. Not for Appearance settings; see feature-appearance."
 ---
 
 # Theme foundation changes
-
-## When and scope
 
 Use for palette/theme role implementation under src/styles and its shared consumers. Appearance owns saved settings and applying them; shared UI owns reusable interaction presentation. Feature CSS composes layout rather than inventing theme colors.
 
 ## Source starts
 
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
+Full paths are repository-root relative; adjacent abbreviated names share the preceding directory. Follow current imports and callers; this map is not a completeness claim.
 
 - `src/shared/theme/palette.ts`, `src/styles/palette.css`: palette seeds and generated variables.
 - `src/styles/index.css`, `bycoda.css`: semantic surface/text/status/focus/geometry/motion roles.
@@ -38,10 +35,9 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Focused checks
 
-For palette changes, regenerate with `node scripts/checks/check-theme-colors.mjs --write`, then run `pnpm check:colors`; for semantic CSS changes use the applicable color/static checks and changed consumer tests.
-Inspect shell, forms, lists, modal layers, editor/PDF selection and terminal in both themes, extreme accents/contrast/density, reduced motion/transparency and forced colors. Distinguish browser/fixture from native rendering.
+For palette changes, regenerate with `node scripts/checks/check-theme-colors.mjs --write`, then run `pnpm check:colors`; for semantic CSS changes use the applicable color/static checks and changed consumer tests. Inspect shell, forms, lists, modal layers, editor/PDF selection and terminal in both themes, extreme accents/contrast/density, reduced motion/transparency and forced colors. Distinguish browser/fixture from native rendering.
 
-## Read when needed
+## References
 
 - [UI ownership and semantic roles](../../../docs/reference/ui-design-system.md#ownership-and-dependency-direction) for layer boundaries.
 - [Theme colors](../../../docs/reference/theme-colors.md) for palette generation and content exceptions; project AGENTS rules govern consumer color use.

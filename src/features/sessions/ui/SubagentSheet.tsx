@@ -1,3 +1,8 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Code } from "../../../shared/ui/Code";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Text } from "../../../shared/ui/Text";
 import { Surface } from "../../../shared/ui/Surface";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useFollowBottom } from "../hooks/useFollowBottom";
@@ -182,7 +187,8 @@ export function SubagentSheet({
       closeLabel={t(command ? "Close command panel" : "Close agent panel")}
       escapeScope="[data-session-drop]"
       scroll="none"
-      bodyClassName={`${styles.layout} font-sans text-ui-body`}
+      bodyClassName={`${styles.layout} font-sans`}
+      bodyText={{ size: "body" }}
       onClose={onClose}
       headerActions={
         <>
@@ -262,16 +268,16 @@ export function SubagentSheet({
         />
       )}
       {!command && requests ? (
-        <div className={styles.requests}>
+        <ScrollArea gutter="stable" className={styles.requests}>
           {requests}
           {relay ? <SubagentMessageForm name={name} relay={relay} /> : null}
-        </div>
+        </ScrollArea>
       ) : !command && relay ? (
         <SubagentMessageForm name={name} relay={relay} />
       ) : !command ? (
-        <p className="shrink-0 px-4 py-2 text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary" className="shrink-0 px-4 py-2">
           {t("Messaging is unavailable in this conversation.")}
-        </p>
+        </Text>
       ) : null}
     </Sheet>
   );
@@ -443,24 +449,28 @@ function CommandDetails({
             </Button>
           ) : null}
         </div>
-        <pre
+        <OutputBlock
           tabIndex={0}
-          className={`select-text overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-card-border) bg-(--ui-card-surface) px-3 py-2 font-mono text-ui-caption leading-5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color) ${
+          tone="inherit"
+          density="comfortable"
+          frame="card"
+          scroll
+          className={`break-words bg-(--ui-card-surface) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color) ${
             commandOpen || !longCommand ? "max-h-[min(16rem,32dvh)]" : "max-h-20"
           }`}
         >
           {command.text}
-        </pre>
+        </OutputBlock>
         {command.truncated ? (
-          <p className="text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary">
             {t("Command text was shortened to keep this conversation responsive.")}
-          </p>
+          </Text>
         ) : null}
         {cwd ? (
-          <p className="text-ui-caption wrap-anywhere text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary" className="wrap-anywhere">
             <span>{t("Session working directory")}: </span>
-            <span className="select-text font-mono">{cwd}</span>
-          </p>
+            <Code className="select-text">{cwd}</Code>
+          </Text>
         ) : null}
       </section>
       <section
@@ -471,26 +481,33 @@ function CommandDetails({
         <div className="relative flex min-h-0 flex-1 flex-col">
           {/* The one scroll owner of the sheet: error and output read in one quiet
               panel. Always mounted: the follow hook attaches to this element once. */}
-          <div
+          <ScrollArea
+            axis="both"
+            gutter="stable"
             ref={scroller}
             tabIndex={0}
-            className="min-h-0 flex-1 overflow-auto overscroll-none rounded-(--ui-radius-card) border border-(--ui-card-border) bg-(--ui-card-surface) [scrollbar-gutter:stable] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)"
+            {...surfaceAttributes(
+              { frame: "card", edge: "all", variant: "card" },
+              "min-h-0 flex-1 overflow-auto overscroll-none rounded-(--ui-radius-card)  border-(--ui-card-border)  focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)",
+            )}
           >
             <div className="flex min-w-0 flex-col gap-2 px-3 py-2">
               {error ? (
-                <pre className="select-text whitespace-pre-wrap break-words font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
+                <OutputBlock tone="danger" density="comfortable">
                   <AnsiText text={error} />
-                </pre>
+                </OutputBlock>
               ) : null}
               {output ? (
-                <pre className="select-text whitespace-pre-wrap break-words font-mono text-ui-caption leading-5">
+                <OutputBlock tone="inherit" density="comfortable">
                   <AnsiText text={output} />
-                </pre>
+                </OutputBlock>
               ) : emptyText ? (
-                <p className="text-ui-caption text-(--ui-text-secondary)">{emptyText}</p>
+                <Text as="p" size="caption" tone="secondary">
+                  {emptyText}
+                </Text>
               ) : null}
             </div>
-          </div>
+          </ScrollArea>
           {behind && output ? (
             <Button
               className="absolute right-3 bottom-3 shadow-(--ui-elevation-floating)"
@@ -504,12 +521,17 @@ function CommandDetails({
           ) : null}
         </div>
         {inspection.outputTruncated ? (
-          <p className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary" className="shrink-0">
             {t("Output was shortened; the full text may not be available.")}
-          </p>
+          </Text>
         ) : null}
         {remote ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
+          <Text
+            as="div"
+            size="caption"
+            tone="secondary"
+            className="flex shrink-0 flex-wrap items-center gap-2"
+          >
             <span>{t("Only a summary of this output is kept here.")}</span>
             {onLoadRemoteBlock ? (
               <Button
@@ -529,7 +551,7 @@ function CommandDetails({
             {loadState === "failed" ? (
               <InlineError>{t("Could not load the full output.")}</InlineError>
             ) : null}
-          </div>
+          </Text>
         ) : null}
       </section>
     </div>
@@ -598,14 +620,21 @@ function PromptCard({ prompt }: { prompt: string }) {
       variant="card"
       padding="none"
       aria-label={t("Prompt")}
-      className="mb-2 px-3 py-2 text-ui-secondary leading-5"
+      className="mb-2 px-3 py-2"
     >
-      <SectionLabel>{t("Prompt")}</SectionLabel>
-      <ClampText lines={6} moreLabel={t("Show full prompt")}>
-        <p className="min-w-0 whitespace-pre-wrap break-words text-(--ui-text-secondary)">
-          {prompt}
-        </p>
-      </ClampText>
+      <Text as="div" size="secondary" tone="inherit" leading="normal">
+        <SectionLabel>{t("Prompt")}</SectionLabel>
+        <ClampText lines={6} moreLabel={t("Show full prompt")}>
+          <Text
+            as="p"
+            size="inherit"
+            tone="secondary"
+            className="min-w-0 whitespace-pre-wrap break-words"
+          >
+            {prompt}
+          </Text>
+        </ClampText>
+      </Text>
     </Surface>
   );
 }
@@ -679,17 +708,18 @@ function SubagentTrail({
   const following = useFollowBottom(scroller, true, steps, 32, false, report);
 
   return (
-    <div
+    <ScrollArea
+      gutter="stable"
       ref={scroller}
       data-subagent-trail
-      className="min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-none"
     >
       <div className="flex min-w-0 flex-col gap-1 px-4 py-3">
         {prompt ? <PromptCard prompt={prompt} /> : null}
         {visible.length === 0 && !report ? (
-          <p className="pt-1 text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary" className="pt-1">
             {running ? t("Waiting for the first step.") : t("This agent did not report any steps.")}
-          </p>
+          </Text>
         ) : null}
         {hidden > 0 ? (
           <Button
@@ -717,6 +747,6 @@ function SubagentTrail({
         ))}
         <SubagentReport block={block} cwd={cwd} onOpenFile={onOpenFile} className="mt-3" />
       </div>
-    </div>
+    </ScrollArea>
   );
 }

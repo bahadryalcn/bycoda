@@ -1,5 +1,7 @@
+import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { Surface } from "../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useState, type ReactNode } from "react";
@@ -15,26 +17,25 @@ import { finishedOwnerNotices, type TaskStatusLine } from "../model/taskStatusLi
 export function TaskStatusText({
   status,
   onOpen,
-  className = "",
 }: {
   status: TaskStatusLine;
   onOpen?: () => void;
-  className?: string;
 }) {
   useLocale();
   const content = (
     <>
       <StatusDot tone={status.tone} label={status.label} className="me-1 inline-block" />
-      <span className="font-medium">{status.label}</span>
+      <Text weight="medium" size="inherit" tone="inherit">
+        {status.label}
+      </Text>
       {status.detail ? (
-        <span className="text-(--ui-text-secondary)">
+        <Text tone="secondary" size="inherit">
           {" · "}
           {status.detail}
-        </span>
+        </Text>
       ) : null}
     </>
   );
-  const shared = `line-clamp-2 break-words text-start text-ui-micro text-(--ui-text-secondary) ${className}`;
   return onOpen ? (
     <Button
       variant="link"
@@ -43,18 +44,29 @@ export function TaskStatusText({
       data-no-drag=""
       data-task-status-line={status.kind}
       tooltip={t("Show details")}
-      className={shared}
+      lines={2}
+      className="break-words text-start"
       onClick={(event) => {
         event.stopPropagation();
         onOpen();
       }}
     >
-      <span className="line-clamp-2">{content}</span>
+      <ClampText as="span" lines={2} expandable={false} size="micro" tone="secondary">
+        {content}
+      </ClampText>
     </Button>
   ) : (
-    <p data-task-status-line={status.kind} className={shared}>
+    <ClampText
+      as="p"
+      lines={2}
+      expandable={false}
+      size="micro"
+      tone="secondary"
+      data-task-status-line={status.kind}
+      className="break-words text-start"
+    >
       {content}
-    </p>
+    </ClampText>
   );
 }
 
@@ -81,32 +93,37 @@ export function TaskOwnerNotices({ task }: { task: HostTask }) {
       padding="md"
       aria-label={t("What you should know")}
       data-task-owner-notices
-      className="space-y-1.5 text-ui-caption"
     >
-      <Heading size="item">{t("What you should know")}</Heading>
-      {task.completedWithFindings ? (
-        <p className="text-(--ui-tone-warning-fg)">
-          {t("Completed after automatic correction ran out; the review did not pass.")}
-        </p>
-      ) : null}
-      {NOTICE_GROUPS.map((group) => {
-        const rows = notices.filter((notice) => notice.kind === group.kind);
-        if (rows.length === 0) return null;
-        return (
-          <div key={group.kind} className="space-y-0.5">
-            <p className="text-ui-micro text-(--ui-text-muted)">{group.label()}</p>
-            <ul className="space-y-0.5">
-              {rows.map((notice) => (
-                <li key={notice.id} className="text-(--ui-text-secondary)">
-                  <OverflowTooltip label={notice.message}>
-                    <span className="line-clamp-2 break-words">{notice.message}</span>
-                  </OverflowTooltip>
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      })}
+      <Text as="div" size="caption" tone="inherit" className="space-y-1.5">
+        <Heading size="item">{t("What you should know")}</Heading>
+        {task.completedWithFindings ? (
+          <Text as="p" tone="warning" size="inherit">
+            {t("Completed after automatic correction ran out; the review did not pass.")}
+          </Text>
+        ) : null}
+        {NOTICE_GROUPS.map((group) => {
+          const rows = notices.filter((notice) => notice.kind === group.kind);
+          if (rows.length === 0) return null;
+          return (
+            <div key={group.kind} className="space-y-0.5">
+              <Text as="p" size="micro" tone="muted">
+                {group.label()}
+              </Text>
+              <ul className="space-y-0.5">
+                {rows.map((notice) => (
+                  <Text as="li" key={notice.id} size="inherit" tone="secondary" leading="inherit">
+                    <OverflowTooltip label={notice.message}>
+                      <ClampText as="span" lines={2} expandable={false} className="break-words">
+                        {notice.message}
+                      </ClampText>
+                    </OverflowTooltip>
+                  </Text>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </Text>
     </Surface>
   );
 }
@@ -131,12 +148,15 @@ export function ClampedMarkdown({
   const overflows = long || text.length > 280 || text.split("\n").filter(Boolean).length > 4;
   return (
     <div className="min-w-0">
-      <div
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
         data-clamped={(!expanded && overflows) || undefined}
-        className={`min-w-0 text-ui-caption text-(--ui-text-secondary) ${!expanded && overflows ? "task-clamped-markdown" : ""}`}
+        className={`min-w-0 ${!expanded && overflows ? "task-clamped-markdown" : ""}`}
       >
         <AgentMarkdown text={text} allowRemoteMedia={false} className="task-summary-md" />
-      </div>
+      </Text>
       {expanded ? extra : collapsedExtra}
       {overflows ? (
         <Button
@@ -181,7 +201,11 @@ export function TaskOutcomeSummary({ task }: { task: HostTask }) {
     <section aria-label={t("What was done")} data-task-outcome className="space-y-1">
       <SectionLabel as="h3">{t("What was done")}</SectionLabel>
       {summary ? <ClampedMarkdown text={summary} /> : null}
-      {diff ? <p className="font-mono text-ui-micro text-(--ui-text-muted)">{diff}</p> : null}
+      {diff ? (
+        <Text as="p" size="micro" tone="muted" className="font-mono">
+          {diff}
+        </Text>
+      ) : null}
     </section>
   );
 }

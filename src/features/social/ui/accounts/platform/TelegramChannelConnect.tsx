@@ -1,7 +1,9 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { InlineMessage } from "../../../../../shared/ui/InlineError";
+import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import type { SocialAccount, SocialTelegramChannelReview } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
@@ -105,12 +107,12 @@ export function TelegramChannelConnect({
     }).catch(() => undefined);
 
   return (
-    <div className="social-card">
-      <p className="social-muted">
+    <div {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}>
+      <Text as="p" tone="muted" leading="snug" className="social-muted">
         {t(
           "Create the Telegram channel with your existing account and add the configured bot as an administrator with permission to post. Connecting here does not change those permissions.",
         )}
-      </p>
+      </Text>
       <TextField
         label={t("Telegram channel ID or public username")}
         value={target}
@@ -141,11 +143,11 @@ export function TelegramChannelConnect({
           <p>
             {t("Bot")}: {review.botName} ({review.botId})
           </p>
-          <p className="social-muted">
+          <Text as="p" tone="muted" leading="snug" className="social-muted">
             {t(
               "This connection publishes to the reviewed channel. Private messages and channel monitoring stay separate.",
             )}
-          </p>
+          </Text>
           <Button
             variant="primary"
             size="sm"

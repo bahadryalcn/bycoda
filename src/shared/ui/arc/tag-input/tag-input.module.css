@@ -93,6 +93,23 @@
 .content input::placeholder {
   color: var(--text-muted);
 }
+/* Toolbar fields use the shared compact height, including the frame border.
+   Tags may still wrap; each row keeps usable text and remove targets. */
+.field[data-variant="compact"] .content {
+  min-block-size: calc(var(--ui-field-height-sm) - 2px);
+  padding-block: 0;
+}
+.field[data-variant="compact"] .content input {
+  min-block-size: calc(var(--ui-field-height-sm) - 2px);
+}
+.field[data-variant="compact"] label {
+  margin-block-end: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.field[data-variant="compact"] :is(.hint, .error) {
+  padding-block-start: var(--space-1);
+}
 .placeholder {
   display: none;
 }

@@ -1,3 +1,4 @@
+import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
@@ -9,12 +10,22 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { bulkTaskKey } from "../model/taskBulkActions";
 import type { BoardTask } from "../model/taskClient";
 import { taskInstructionsSummary } from "../model/taskInstructions";
-import { taskStatusLine } from "../model/taskStatusLine";
+import { taskStatusLine, type TaskStatusTone } from "../model/taskStatusLine";
 import { resolveModel } from "../../sessions/public/models";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { AssistantTaskBadge } from "./AssistantTaskBadge";
 import "./task-list.css";
+
+/** The ink of a status detail line: the danger ink unless the status names a warning or a plain state. */
+const STATUS_DETAIL_TONE: Record<TaskStatusTone, TextTone> = {
+  danger: "danger",
+  warning: "warning",
+  neutral: "secondary",
+  accent: "secondary",
+  info: "secondary",
+  success: "secondary",
+};
 
 /** First non-empty line of the task prompt, shown as the one-line description caption. */
 export function taskListDescription(prompt: string | undefined): string {
@@ -98,45 +109,89 @@ export function TaskList({
                   layout="text"
                   align="start"
                   className="task-list-open"
+                  textSize="body"
+                  weight="medium"
                   onClick={() => onOpen(task)}
                 >
                   <OverflowTooltip label={task.title}>
-                    <span className="task-list-title">{task.title}</span>
+                    <Text size="inherit" tone="inherit" truncate className="task-list-title">
+                      {task.title}
+                    </Text>
                   </OverflowTooltip>
                 </Button>
                 {description ? (
-                  <p className="task-list-caption task-list-description">{description}</p>
+                  <Text
+                    as="p"
+                    truncate
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    className="task-list-caption task-list-description"
+                  >
+                    {description}
+                  </Text>
                 ) : null}
-                <p className="task-list-caption">
+                <Text
+                  as="p"
+                  truncate
+                  size="caption"
+                  tone="muted"
+                  leading="inherit"
+                  className="task-list-caption"
+                >
                   {task.machineName} · {task.cwd}
                   {task.stale ? ` · ${t("Offline")}` : ""}
-                </p>
+                </Text>
                 {planning ? (
-                  <p className="task-list-caption task-list-planning">{planning}</p>
+                  <Text
+                    as="p"
+                    truncate
+                    size="caption"
+                    tone="muted"
+                    leading="inherit"
+                    className="task-list-caption task-list-planning"
+                  >
+                    {planning}
+                  </Text>
                 ) : null}
                 <AssistantTaskBadge task={task} />
                 {status.detail ? (
-                  <p
+                  <Text
+                    as="p"
+                    size="caption"
+                    tone={STATUS_DETAIL_TONE[status.tone]}
+                    leading="inherit"
+                    truncate
                     data-task-status-detail
                     title={task.error ?? task.mergeError ?? status.detail}
-                    className="task-list-error"
-                    data-tone={status.tone}
                   >
                     {status.detail}
-                  </p>
+                  </Text>
                 ) : null}
               </div>
               {model ? (
-                <span className="task-list-agent task-list-secondary">
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className="task-list-agent task-list-secondary"
+                >
                   <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
                   <OverflowTooltip label={model.name}>
-                    <span className="task-list-agent-name">{model.name}</span>
+                    <Text size="inherit" tone="inherit" truncate className="task-list-agent-name">
+                      {model.name}
+                    </Text>
                   </OverflowTooltip>
-                </span>
+                </Text>
               ) : null}
-              <span className="task-list-updated task-list-secondary">
+              <Text
+                size="caption"
+                tone="muted"
+                leading="inherit"
+                className="task-list-updated task-list-secondary"
+              >
                 {updatedAt ? <Timestamp value={updatedAt} /> : null}
-              </span>
+              </Text>
               <Badge tone={status.tone} data-task-status={status.kind} className="task-list-status">
                 {status.label}
               </Badge>

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -194,9 +195,9 @@ export function TermiusImportDialog({
           </Button>
         </form>
         {!preview ? (
-          <p className="text-ui-body text-(--ui-text-muted)">
+          <Text as="p" size="body" tone="muted">
             {t("Read local Termius records without changing Termius data.")}
-          </p>
+          </Text>
         ) : null}
         {error ? <Alert tone="danger">{t(error)}</Alert> : null}
         {outcome ? (
@@ -220,11 +221,12 @@ export function TermiusImportDialog({
                   )
                 }
                 label={t("Select all")}
-                className="flex items-center gap-2 text-ui-body"
+                size="body"
+                className="flex items-center gap-2"
               />
-              <span className="text-ui-caption text-(--ui-text-muted)" role="status">
+              <Text tone="muted" role="status">
                 {t("{p0} of {p1} selected", { p0: selected.size, p1: preview.hosts.length })}
-              </span>
+              </Text>
             </div>
             <SearchInput
               value={query}
@@ -256,9 +258,17 @@ export function TermiusImportDialog({
                         });
                       }}
                     />
-                    <div className="min-w-0 flex-1 text-ui-body">
+                    <Text as="div" size="body" tone="inherit" className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                        <span className="break-words font-medium">{host.name}</span>
+                        <Text
+                          as="span"
+                          size="inherit"
+                          tone="inherit"
+                          weight="medium"
+                          className="break-words"
+                        >
+                          {host.name}
+                        </Text>
                         {duplicate ? (
                           <Badge size="sm" tone="info">
                             {t("Already in Servers")}
@@ -267,10 +277,10 @@ export function TermiusImportDialog({
                           <Badge size="sm">{t("SSH key available")}</Badge>
                         ) : null}
                       </div>
-                      <p className="break-all text-ui-caption text-(--ui-text-muted)">
+                      <Text as="p" tone="muted" className="break-all">
                         {host.endpoint.user ? `${host.endpoint.user}@` : ""}
                         {host.endpoint.host}:{host.endpoint.port}
-                      </p>
+                      </Text>
                       <BadgeList
                         label={t("Tags")}
                         size="xs"
@@ -281,13 +291,18 @@ export function TermiusImportDialog({
                           .map((label, index) => ({ id: `${index}:${label}`, label }))}
                       />
                       {host.warnings.length ? (
-                        <ul className="mt-1 list-inside list-disc text-ui-caption text-(--ui-text-muted)">
+                        <Text
+                          as="ul"
+                          size="caption"
+                          tone="muted"
+                          className="mt-1 list-inside list-disc"
+                        >
                           {host.warnings.map((warning, i) => (
                             <li key={i}>{t(warning)}</li>
                           ))}
-                        </ul>
+                        </Text>
                       ) : null}
-                    </div>
+                    </Text>
                   </div>
                 );
               })}
@@ -306,10 +321,11 @@ export function TermiusImportDialog({
                 disabled={busy}
                 onChange={(event) => setImportKeys(event.target.checked)}
                 label={t("Import linked SSH keys into private local files")}
-                className="flex items-center gap-2 text-ui-body"
+                size="body"
+                className="flex items-center gap-2"
               />
             ) : null}
-            <div className="text-ui-caption text-(--ui-text-muted)">
+            <Text as="div" tone="muted">
               <p>
                 {t(
                   "Names, addresses, users, ports, groups and tags. Existing records are preserved.",
@@ -320,7 +336,7 @@ export function TermiusImportDialog({
                   {t(warning)}
                 </p>
               ))}
-            </div>
+            </Text>
           </>
         ) : null}
       </div>

@@ -155,7 +155,7 @@
   z-index: -1;
   inset: 0;
   border-radius: inherit;
-  background: var(--ui-tone-neutral-subtle);
+  background: var(--ui-surface-hover);
   pointer-events: none;
 }
 .optionIcon {

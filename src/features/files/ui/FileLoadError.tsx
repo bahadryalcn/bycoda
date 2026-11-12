@@ -1,3 +1,5 @@
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { formatBytes } from "../../../shared/i18n/format";
 import { Folder, RotateCcw } from "../../../shared/ui/icons";
@@ -123,14 +125,19 @@ function LargeTextFileView({
   const hasNext = page.end < page.size && page.end > page.offset;
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-[var(--ui-control-height-compact)] shrink-0 flex-wrap items-center gap-1 border-b border-stroke px-2.5 text-ui-micro text-[var(--ui-text-muted)]">
-        <span className="min-w-0 flex-1 truncate">
+      <Text
+        as="div"
+        size="micro"
+        tone="muted"
+        className="flex min-h-[var(--ui-control-height-compact)] shrink-0 flex-wrap items-center gap-1 border-b border-stroke px-2.5"
+      >
+        <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
           {t("Read-only preview, too large to edit · {p0}–{p1} of {p2}", {
             p0: formatBytes(page.offset),
             p1: formatBytes(page.end),
             p2: formatBytes(page.size),
           })}
-        </span>
+        </Text>
         <Button
           size="sm"
           variant="ghost"
@@ -161,10 +168,15 @@ function LargeTextFileView({
           <Folder className="icon-xs" strokeWidth={1.75} />
           {REVEAL_LABEL}
         </Button>
-      </div>
-      <pre className="min-h-0 min-w-0 flex-1 overflow-auto whitespace-pre-wrap wrap-break-word px-4 py-3 font-mono text-ui-secondary leading-5 text-(--ui-text-secondary)">
+      </Text>
+      <OutputBlock
+        size="secondary"
+        tone="secondary"
+        density="comfortable"
+        className="min-h-0 min-w-0 flex-1 overflow-auto wrap-break-word px-4 py-3"
+      >
         {page.text}
-      </pre>
+      </OutputBlock>
     </div>
   );
 }

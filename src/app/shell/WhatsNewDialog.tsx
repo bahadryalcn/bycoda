@@ -1,5 +1,10 @@
+import { Text } from "../../shared/ui/Text";
 import { useT } from "../../shared/i18n";
-import { formatReleaseDate, presentReleaseNotes, releaseNotesTitle } from "../model/releaseNotes";
+import {
+  formatReleaseDate,
+  presentReleaseNotes,
+  releaseNotesTitleForName,
+} from "../model/releaseNotes";
 import { AgentMarkdown } from "../../features/sessions/ui/AgentMarkdown";
 import { Modal } from "../../shared/ui/Modal";
 import { Button } from "../../shared/ui/Button";
@@ -16,16 +21,16 @@ type Props = {
 export function WhatsNewBody({ version }: { version: string }) {
   const t = useT();
   const notes = presentReleaseNotes(version);
-  const title = releaseNotesTitle(version);
+  const title = releaseNotesTitleForName(version, useAppName());
 
   return (
     <article aria-label={title} className="px-5 py-4">
       {notes?.markdown ? (
         <AgentMarkdown className="whats-new-md" text={notes.markdown} streaming={false} />
       ) : (
-        <p className="text-ui-secondary text-(--ui-text-secondary)">
+        <Text as="p" size="secondary" tone="secondary">
           {t("Release notes for this version have not been added yet.")}
-        </p>
+        </Text>
       )}
       {PRODUCT_IDENTITY.releaseNotesUrl ? (
         <AgentMarkdown
@@ -57,9 +62,9 @@ export function WhatsNewDialog({ version, onClose }: Props) {
     >
       {hasHighlights ? (
         <div className="flex items-center justify-between gap-3 px-5 pt-4">
-          <span className="text-ui-secondary text-(--ui-text-secondary)">
+          <Text size="secondary" tone="secondary">
             {t("See the new features of this update in the app.")}
-          </span>
+          </Text>
           <Button
             variant="primary"
             size="sm"

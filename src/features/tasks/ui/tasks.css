@@ -12,7 +12,6 @@
 .task-workspace-fields {
   padding-block: 0.75rem;
   margin-block: 0.5rem;
-  font-size: var(--ui-font-caption);
 }
 .task-workspace-fields > div {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
@@ -30,8 +29,6 @@
 .task-planning-caption {
   min-inline-size: 0;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .task-goals-disclosure {
   flex-shrink: 0;
@@ -40,8 +37,7 @@
 }
 .task-create-sprint-context {
   padding: 0.5rem 1rem 0;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
+
   overflow-wrap: anywhere;
 }
 .task-row-select {
@@ -68,8 +64,6 @@
   gap: 0.75rem;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
 }
 .task-session-preview {
   display: grid;
@@ -82,8 +76,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
 }
 .task-session-message {
   min-inline-size: 0;
@@ -97,8 +89,6 @@
 }
 .task-session-activity {
   min-inline-size: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
 }
 .task-session-activity-item {
   min-inline-size: 0;
@@ -107,11 +97,6 @@
 }
 .task-session-heading {
   margin-block-end: 0.5rem;
-}
-
-.task-recovery-status {
-  font-size: var(--ui-font-secondary);
-  color: var(--ui-tone-warning-fg);
 }
 
 /* One form language for the new/edit task and new goal dialogs: the dialog
@@ -136,7 +121,6 @@
   min-inline-size: 0;
   margin: 0;
   padding: 0;
-  border: 0;
 }
 .task-form-context {
   display: flex;
@@ -144,8 +128,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 /* No filled panel: the group is a hairline-framed block, rows split by hairlines. */
 .task-form-options,
@@ -165,7 +147,6 @@
 .task-form-section {
   min-inline-size: 0;
   padding-block: 0.375rem;
-  font-size: var(--ui-font-caption);
 }
 .task-form-section-body {
   display: grid;
@@ -174,34 +155,24 @@
   padding-block-end: 0.5rem;
 }
 .task-form-hint {
-  font-size: var(--ui-font-micro);
-  color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
 }
 .task-form-checks {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
   gap: 0.75rem 1rem;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .task-form-limit {
   display: grid;
   gap: 0.25rem;
   min-inline-size: 0;
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-card-surface);
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .task-form-limit-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  color: var(--ui-tone-neutral-fg);
 }
 .task-form-footer {
   display: flex;
@@ -211,18 +182,10 @@
   justify-content: flex-end;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  border-block-start: 1px solid var(--ui-tone-neutral-border);
 }
 .task-form-footer-hint {
   flex: 1 1 14rem;
   min-inline-size: 0;
-  font-size: var(--ui-font-micro);
-  color: var(--ui-text-secondary);
-}
-
-.task-form-label {
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 
 /* Long descriptions scroll inside a viewport-relative cap so the form actions stay in reach. */

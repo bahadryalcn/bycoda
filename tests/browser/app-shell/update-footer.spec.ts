@@ -257,6 +257,53 @@ test("compact account rail preserves its width, standard targets and action orde
   }
 });
 
+test("footer star and assistant share the idle Settings surface", async ({ page }) => {
+  const backgroundCaptureRoot = "temp/verification/2026-11-12-footer-background";
+  mkdirSync(backgroundCaptureRoot, { recursive: true });
+  writeFileSync(
+    `${backgroundCaptureRoot}/README.md`,
+    "# Footer background browser evidence\n\nReal SidebarAccountFooter and VoiceLauncher components, with native account, updater, presence and repository commands mocked. Captures cover wide and compact footers in light and dark themes. Installed application and live native behavior are not verified.\n",
+  );
+  for (const compact of [false, true]) {
+    await page.goto(`${route}?account${compact ? "&compact" : ""}`);
+    const footer = page.locator("[data-sidebar-account-footer]");
+    const assistant = footer.getByRole("button", { name: "Talk to Arif", exact: true });
+    const github = footer.getByRole("button", { name: "View bycoda on GitHub", exact: true });
+    const settings = footer.getByRole("button", { name: "Settings", exact: true });
+    const group = footer.locator("[data-github-star-prompt]");
+    await expect(assistant).toBeVisible();
+    await expect(github).toBeVisible();
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.mouse.move(1270, 10);
+      await footer.screenshot({
+        path: `${backgroundCaptureRoot}/${compact ? "compact" : "wide"}-${theme}.png`,
+      });
+      const settingsBackground = (await paint(settings)).background;
+      expect.soft(settingsBackground).toBe("rgba(0, 0, 0, 0)");
+      for (const control of [assistant, github, group]) {
+        expect.soft((await paint(control)).background).toBe(settingsBackground);
+        const borders = await control.evaluate((element) => {
+          const visible = (style: CSSStyleDeclaration) =>
+            style.display !== "none" &&
+            style.borderTopStyle !== "none" &&
+            parseFloat(style.borderTopWidth) > 0 &&
+            style.borderTopColor !== "rgba(0, 0, 0, 0)";
+          const overlay = getComputedStyle(element, "::after");
+          return {
+            control: visible(getComputedStyle(element)),
+            overlay: overlay.content !== "none" && visible(overlay),
+          };
+        });
+        expect.soft(borders).toEqual({ control: false, overlay: false });
+      }
+    }
+  }
+});
+
 test("footer star and corner dismiss retain separate pointer targets", async ({ page }) => {
   await page.goto(`${route}?account&compact`);
   const github = page.getByRole("button", { name: "View bycoda on GitHub", exact: true });

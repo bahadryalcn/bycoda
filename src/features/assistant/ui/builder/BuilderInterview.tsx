@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import { t } from "../../../../shared/i18n";
 import type { AssistantBuilderTurn } from "../../../../shared/model/host-contracts/assistant-builder";
@@ -53,12 +54,20 @@ export function BuilderInterview({
     }
   };
   return (
-    <div className={styles.stage}>
+    <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.stage}>
       <div className={styles.chat} role="log" aria-label={t("Interview")}>
         {transcript.map((turn, index) => (
-          <p key={index} className={styles.bubble} data-role={turn.role}>
+          <Text
+            as="p"
+            size="body"
+            tone="inherit"
+            leading="normal"
+            key={index}
+            className={styles.bubble}
+            data-role={turn.role}
+          >
             {turn.text}
-          </p>
+          </Text>
         ))}
         {busy ? <LoadingText delay={false}>{t("Thinking…")}</LoadingText> : null}
         <div ref={end} />
@@ -106,6 +115,6 @@ export function BuilderInterview({
           onClick={() => send(text)}
         />
       </div>
-    </div>
+    </Text>
   );
 }

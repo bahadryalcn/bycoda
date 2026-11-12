@@ -1,6 +1,7 @@
 import { useId } from "react";
 import type { ComponentPropsWithRef, ReactNode } from "react";
 import { fieldDescribedBy, fieldMessageIds } from "./arc/lib/field-ids";
+import { optionalTextAttributes, type TextRoles } from "./Text";
 import styles from "./Field.module.css";
 
 /** `form` is the comfortable label-above composition; `compact` is the toolbar/inline-filter one. */
@@ -86,13 +87,34 @@ export function Field({
 
 /**
  * The native `<label for>` of a control that sits elsewhere in the layout, such as the title of a settings row
- * whose control is in another column. Unstyled: the caller owns type and spacing. Field renders its own label.
+ * whose control is in another column. Unstyled unless `size` or `tone` is set; the caller owns spacing. Field renders its own label.
  * @group fields
  * @use A row or card title that must name a custom control by id.
  * @avoid Label over a control you can wrap: Field, TextField, Checkbox, Switch. Caption over a group: SectionLabel.
  */
-export function FieldLabel({ children, ...props }: ComponentPropsWithRef<"label">) {
-  return <label {...props}>{children}</label>;
+export function FieldLabel({
+  children,
+  size,
+  tone,
+  weight,
+  leading,
+  className,
+  ...props
+}: ComponentPropsWithRef<"label"> & {
+  /** Type size of the label; unset keeps the surrounding size. */
+  size?: TextRoles["size"];
+  /** Ink of the label; unset keeps the surrounding colour. */
+  tone?: TextRoles["tone"];
+  /** Label weight; unset preserves the existing weight. */
+  weight?: TextRoles["weight"];
+  /** Label line height; unset follows the chosen size. */
+  leading?: TextRoles["leading"];
+}) {
+  return (
+    <label {...props} {...optionalTextAttributes({ size, tone, weight, leading }, className)}>
+      {children}
+    </label>
+  );
 }
 
 /**

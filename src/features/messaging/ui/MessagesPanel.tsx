@@ -1,7 +1,9 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useDeferredValue, useMemo, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -103,11 +105,11 @@ export function MessagesPanel({
   const connectedCount = accounts.length - disconnected.length;
   const allFailed = connectedCount > 0 && failures.length === connectedCount;
 
-  const selectThread = (thread: MessageThread) => {
+  const selectThread = useStableCallback((thread: MessageThread) => {
     markThreadSeen(thread);
     setSelectedKey(threadKey(thread));
     setDetailOpen(true);
-  };
+  });
   const onSent = (thread: MessageThread, message: ThreadMessage) => {
     const patch = { preview: message.body, updatedAt: message.at || Date.now(), unread: false };
     patchThread(thread, patch);
@@ -170,12 +172,15 @@ export function MessagesPanel({
     <div className="inbox-list-detail flex min-h-0 min-w-0 flex-1" data-detail-open={detailOpen}>
       <div
         ref={setPaneRef}
-        className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-transparent"
+        {...surfaceAttributes(
+          { variant: "transparent" },
+          "inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border)",
+        )}
       >
         {sourceRow}
         <div className="flex h-9 shrink-0 items-center gap-1 px-2">
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-            <Search className="pointer-events-none icon-xs shrink-0 text-(--ui-text-secondary)" />
+            <Search className="pointer-events-none icon-xs shrink-0" tone="secondary" />
             <SearchInput
               focusOwner="group"
               value={search}

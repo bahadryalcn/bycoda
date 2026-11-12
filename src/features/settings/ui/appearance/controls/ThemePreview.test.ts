@@ -39,3 +39,16 @@ it("shows the current image with active-chat visibility and blur, then removes i
   );
   expect(container.querySelector("img")).toBeNull();
 });
+
+it("shows the unveiled image while retaining the separate blur setting", () => {
+  const appearance = {
+    chatBackgroundPath: "/library/night.png",
+    chatBackgroundSessionOpacity: 0.35,
+    chatBackgroundBlur: 4,
+    preferences: { chatBackgroundLayer: false },
+  } as AppearanceSettings;
+  act(() => root.render(createElement(ThemePreview, { appearance })));
+  const image = container.querySelector<HTMLImageElement>("img")!;
+  expect(image.style.opacity).toBe("1");
+  expect(image.style.filter).toBe("blur(4px)");
+});

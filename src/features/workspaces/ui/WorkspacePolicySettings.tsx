@@ -1,3 +1,5 @@
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Text } from "../../../shared/ui/Text";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { WorkspacePolicyEditor } from "./WorkspacePolicyEditor";
@@ -384,11 +386,11 @@ export function WorkspacePolicySettings({
             </SettingsFeedback>
           )}
           {!workspaces.length && !renderWorktrees ? (
-            <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="secondary" role="status">
               {t(
                 "No managed workspace directories yet. Workspaces created by sessions appear here.",
               )}
-            </p>
+            </Text>
           ) : (
             <div className="settings-collection">
               <CollectionToolbar
@@ -408,7 +410,14 @@ export function WorkspacePolicySettings({
               </CollectionToolbar>
               {!visibleWorkspaces.length &&
               !(showUnmanaged && (hasWorktreeMatches?.(query) ?? !!renderWorktrees)) ? (
-                <div className="settings-collection-empty" role="status">
+                <Text
+                  as="div"
+                  size="caption"
+                  tone="secondary"
+                  leading="normal"
+                  className="settings-collection-empty"
+                  role="status"
+                >
                   <p>{t("No results")}</p>
                   <Button
                     size="sm"
@@ -420,9 +429,15 @@ export function WorkspacePolicySettings({
                   >
                     {t("Clear search")}
                   </Button>
-                </div>
+                </Text>
               ) : (
-                <div role="list" aria-label={t("Worktrees")} className="settings-collection-list">
+                <ScrollArea
+                  gutter="stable"
+                  as="div"
+                  role="list"
+                  aria-label={t("Worktrees")}
+                  className="settings-collection-list"
+                >
                   {visibleWorkspaces.map((workspace) => (
                     <WorkspaceManagedRow
                       key={workspace.id}
@@ -473,7 +488,7 @@ export function WorkspacePolicySettings({
                     />
                   ))}
                   {showUnmanaged && renderWorktrees?.(query)}
-                </div>
+                </ScrollArea>
               )}
             </div>
           )}

@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import {
@@ -29,7 +30,8 @@ export function ExecutionPermissionPicker({
           label: t(RUNTIME_MODE_LABEL[mode]),
           icon: (
             <Icon
-              className={`icon-sm ${mode === "full-access" ? "text-(--ui-tone-warning-fg)" : ""}`}
+              className="icon-sm"
+              tone={mode === "full-access" ? "warning" : undefined}
               strokeWidth={1.75}
             />
           ),
@@ -50,12 +52,22 @@ export function ExecutionPermissionPicker({
     );
   return (
     <div className={styles.permission}>
-      <p className={styles.label}>{t("Execution permissions")}</p>
+      <Text as="p" tone="inherit" weight="medium" leading="snug" className={styles.label}>
+        {t("Execution permissions")}
+      </Text>
       {segmented}
-      <p className={styles.permissionText}>
-        <strong>{t(RUNTIME_MODE_LABEL[value])}</strong>
+      <Text
+        as="p"
+        size="caption"
+        tone="secondary"
+        leading="normal"
+        className={styles.permissionText}
+      >
+        <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
+          {t(RUNTIME_MODE_LABEL[value])}
+        </Text>
         <span>{t(RUNTIME_MODE_HINT[value])}</span>
-      </p>
+      </Text>
     </div>
   );
 }

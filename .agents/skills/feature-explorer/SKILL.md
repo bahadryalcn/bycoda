@@ -1,18 +1,13 @@
 ---
 name: feature-explorer
-description: "Change the Explorer tree, root header, selection, inline create/rename and filesystem actions while preserving local/remote routing and recovery."
+description: "Use when changing Explorer trees and file actions. Not for Markdown preview; see feature-markdown-preview."
 ---
 
 # Explorer changes
 
-## When and scope
-
 Use for the workspace file tree and its actions. File content, Markdown presentation, project management and managed-workspace policy have separate owners.
 
 ## Source starts
-
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
 
 - `src/features/files/ui/FileTree.tsx` and `useFileTreeOperations.ts`: rendered tree and action admission.
 - `src/features/files/model/`: selection, names, listing/cache state.
@@ -37,9 +32,9 @@ directory. Follow current imports and callers; this map is not a completeness cl
 ## Focused checks
 
 For tree/action changes, run `pnpm exec vitest run src/features/files/ui/FileTree.test.ts src/features/files/ui/FileTree.create.test.ts` plus the affected model/platform tests.
-For layout or event changes, exercise root keyboard/context/drop targets, long names, excluded selections and large folders; use the current `tests/browser/files/file-tree.spec.ts` fixture where applicable. Follow the project tier for visual evidence.
+For layout or event changes, exercise root keyboard/context/drop targets, long names, excluded selections and large folders; use the current `tests/browser/files/file-tree.spec.ts` fixture where applicable.
 
-## Read when needed
+## References
 
 - [File-content and tree behavior](../../../docs/guides/explorer-and-file-content.md) for user-visible action scope.
 - [Editor recovery](../../../docs/guides/editor-draft-recovery.md) when touching draft/save lifecycles.

@@ -7,13 +7,7 @@ export function SessionsEmpty({ message }: { message: string }) {
     <EmptyState
       context="panel"
       kind="empty"
-      icon={
-        <ProjectMascot
-          project="workspace"
-          name="bridge"
-          className="size-8 text-(--ui-text-secondary)"
-        />
-      }
+      icon={<ProjectMascot project="workspace" name="bridge" tone="secondary" className="size-8" />}
       description={message}
     />
   );

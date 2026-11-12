@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -70,16 +71,28 @@ export function SkillMachinesPanel({
                   : t("Installed, enabled");
         return (
           <li key={id} className={styles.machineRow} data-current={here || undefined}>
-            <div className={styles.machineText}>
-              <span className={styles.machineName}>{name}</span>
-              <span
+            <Text
+              as="div"
+              size="secondary"
+              tone="inherit"
+              leading="inherit"
+              className={styles.machineText}
+            >
+              <Text size="inherit" tone="inherit" weight="medium">
+                {name}
+              </Text>
+              <Text
+                as="span"
+                size="caption"
+                tone={list.skills === null && !!list.error ? "danger" : "secondary"}
+                leading="inherit"
                 className={styles.machineStatus}
                 data-error={(list.skills === null && !!list.error) || undefined}
               >
                 {status}
                 {here ? ` · ${t("Shown")}` : ""}
-              </span>
-            </div>
+              </Text>
+            </Text>
             <div className={styles.machineActions}>
               {saving ? <Spinner size="xs" label={t("Saving…")} /> : null}
               {entry && !here ? (

@@ -1,4 +1,5 @@
 import { t, useLocale } from "../../../shared/i18n";
+import { Text } from "../../../shared/ui/Text";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -169,7 +170,13 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
             {message}
           </Alert>
         ) : null}
-        <ul className="flex list-disc flex-col gap-1 pl-4 text-ui-micro leading-snug text-(--ui-text-muted)">
+        <Text
+          as="ul"
+          size="micro"
+          tone="muted"
+          leading="snug"
+          className="flex list-disc flex-col gap-1 pl-4"
+        >
           <li>
             {t("This hides locked groups inside ")}
             {PRODUCT_IDENTITY.displayName}
@@ -182,7 +189,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
               "Only a salted hash is stored on this computer. A forgotten password cannot be recovered, only reset from Settings, which removes the lock from every group.",
             )}
           </li>
-        </ul>
+        </Text>
       </form>
     </Modal>
   );

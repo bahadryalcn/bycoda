@@ -4,8 +4,6 @@
   flex: 1;
   min-inline-size: 0;
   min-block-size: 0;
-  color: var(--color-content);
-  background: var(--ui-workspace-canvas);
 }
 
 .library,
@@ -21,7 +19,7 @@
    editor still needs 28rem+; below 44rem the two panes become one (see the container query below). */
 .library {
   flex: 0 0 clamp(16rem, 32%, 25rem);
-  background: var(--ui-workspace-panel);
+
   border-inline-end: 1px solid var(--ui-pane-border);
 }
 
@@ -60,13 +58,6 @@
   flex: 1;
   min-inline-size: 0;
 }
-.count,
-.meta,
-.path,
-.detailFooter {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
 .count {
   display: flex;
   align-items: center;
@@ -86,9 +77,6 @@
 }
 .message {
   margin: 0.5rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  line-height: 1.6;
   overflow-wrap: anywhere;
 }
 /* One line per skill: name, off mark, machine presence, actions (shown on hover/focus). */
@@ -115,16 +103,10 @@
 .skillName {
   min-inline-size: 0;
   overflow: clip;
-  text-overflow: ellipsis;
   white-space: nowrap;
-}
-.row[data-off] .skillName {
-  color: var(--ui-text-secondary);
 }
 .offLabel {
   flex: none;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 /* Machine columns: the same fixed cell width in the heading and every row. */
 .columns {
@@ -136,10 +118,6 @@
   gap: 0.375rem;
   padding: 0.5rem 0.25rem 0.375rem 0.5rem;
   margin-block-start: -0.5rem;
-  background: var(--ui-workspace-panel);
-  border-block-end: 1px solid var(--ui-pane-border);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .columnsName {
   flex: 1;
@@ -153,16 +131,11 @@
   inline-size: 3.25rem;
   min-inline-size: 0;
   overflow: clip;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .columns .cell {
   display: block;
   text-align: center;
-}
-.cell[data-state="missing"],
-.cell[data-state="unknown"] {
-  color: var(--ui-text-secondary);
 }
 .menuSlot {
   flex: none;
@@ -194,7 +167,6 @@
 .feedback {
   flex: none;
   padding: 0.5rem clamp(1rem, 3cqi, 2rem) 0.75rem;
-  border-block-start: 1px solid var(--ui-pane-border);
 }
 .detailTabs {
   margin-block-start: 0.75rem;
@@ -224,18 +196,9 @@
   display: grid;
   flex: 1;
   min-inline-size: 0;
-  font-size: var(--ui-font-secondary);
-}
-.machineName {
-  font-weight: 500;
 }
 .machineStatus {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
-}
-.machineStatus[data-error] {
-  color: var(--ui-tone-danger-fg);
 }
 .machineActions {
   display: flex;
@@ -251,8 +214,6 @@
   margin-block-start: 0.375rem;
 }
 .description {
-  font-size: var(--ui-font-secondary);
-  line-height: 1.6;
   margin-block: 1rem;
   max-block-size: 8rem;
   overflow-y: auto;
@@ -263,7 +224,7 @@
 }
 .fileLabel {
   flex: 1;
-  font-size: var(--ui-font-caption);
+
   font-family: var(--font-mono);
 }
 .document {

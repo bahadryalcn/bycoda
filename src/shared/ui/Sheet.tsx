@@ -1,3 +1,4 @@
+import { optionalTextAttributes, type TextRoles } from "./Text";
 import {
   useEffect,
   useId,
@@ -88,6 +89,8 @@ export type SheetProps = {
   scroll?: "auto" | "none";
   /** `md` (default) the body owns its padding (`px-4 pt-2 pb-4`); `none` for full-bleed content. `scroll="none"` implies `none`. */
   padding?: "md" | "none";
+  /** Body typography (size, tone, weight, leading); unset preserves the existing body. */
+  bodyText?: TextRoles;
   /** Frequent surfaces open without the entrance slide. */
   motion?: "auto" | "none";
   languageDomain?: LanguageDomain;
@@ -142,6 +145,7 @@ export function Sheet(props: SheetProps) {
     initialFocus,
     scroll,
     padding,
+    bodyText,
     motion,
     languageDomain,
     className,
@@ -158,6 +162,7 @@ export function Sheet(props: SheetProps) {
       initialFocus={initialFocus || undefined}
       scroll={scroll}
       padding={padding}
+      bodyText={bodyText}
       motion={motion}
       languageDomain={languageDomain}
       panelStyle={
@@ -206,6 +211,7 @@ function NonModalSheet({
   className,
   glassClassName,
   bodyClassName,
+  bodyText,
   overlayClassName,
   ref,
   overlayRef,
@@ -383,9 +389,10 @@ function NonModalSheet({
       ) : null}
       <div
         ref={bodyRef}
+        {...optionalTextAttributes(bodyText ?? {})}
         className={[
           "relative z-[1] flex h-full min-h-0 flex-col text-(--ui-tone-neutral-fg)",
-          bodyClassName,
+          optionalTextAttributes(bodyText ?? {}, bodyClassName).className,
         ]
           .filter(Boolean)
           .join(" ")}

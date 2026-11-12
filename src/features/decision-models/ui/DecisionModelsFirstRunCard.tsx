@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -57,9 +58,9 @@ export function DecisionModelsFirstRunCard({
       <Heading size="item">
         {offer === "install" ? t("Set up a local decision model?") : t("Set up a decision model?")}
       </Heading>
-      <p className="text-ui-caption text-(--ui-text-secondary)">
+      <Text as="p" size="caption" tone="secondary">
         {recommendationText(recommendation.tier)}
-      </p>
+      </Text>
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onDismiss}>
           {t("Not now")}

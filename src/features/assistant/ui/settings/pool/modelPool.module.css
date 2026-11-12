@@ -9,9 +9,6 @@
 }
 .intro {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 .list {
   display: grid;
@@ -36,9 +33,6 @@
 }
 .number {
   min-inline-size: 1.25rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -75,8 +69,6 @@
   gap: 4px 16px;
   min-inline-size: 0;
   /* Checkbox labels inherit the ambient size; match the settings rows. */
-  font-size: var(--ui-font-secondary);
-  line-height: 1.5;
 }
 .quota {
   display: flex;
@@ -85,12 +77,6 @@
   gap: 2px 8px;
   margin: 0;
   margin-inline-start: auto;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
-.quota strong {
-  color: var(--ui-text);
-  font-weight: 500;
 }
 .reset {
   white-space: nowrap;

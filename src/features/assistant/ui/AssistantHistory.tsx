@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import type { AssistantActivity } from "../../../shared/model/host-contracts/assistant";
 import { dateTimeFormat, t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction, InlineTextAction } from "../../../shared/ui/ActionHost";
@@ -55,6 +57,7 @@ export function AssistantHistory({
     <div className={styles.history}>
       {/* Always mounted so the empty state is announced when it first appears. */}
       <LiveText
+        tone="secondary"
         className={styles.empty}
         text={!entries.length ? t(filtered ? "No results" : "No activity yet") : ""}
       />
@@ -68,11 +71,26 @@ export function AssistantHistory({
               year: "numeric",
             }).format(new Date(events[0].createdAt))}
           </SectionLabel>
-          <ol className={styles.events}>
+          <ol {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.events)}>
             {events.map((entry) => (
               <ActionHost as="li" className={styles.event} key={entry.id} hoverReveal>
-                <Timestamp className={styles.time} format="time" value={entry.createdAt} />
-                <p className={styles.summary}>{entry.summary}</p>
+                <Timestamp
+                  className={styles.time}
+                  format="time"
+                  value={entry.createdAt}
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                />
+                <Text
+                  as="p"
+                  size="secondary"
+                  tone="inherit"
+                  leading="normal"
+                  className={styles.summary}
+                >
+                  {entry.summary}
+                </Text>
                 <Badge size="xs" tone={DANGER_KINDS.has(entry.kind) ? "danger" : "neutral"}>
                   {t(labels[entry.kind] ?? "Activity")}
                 </Badge>

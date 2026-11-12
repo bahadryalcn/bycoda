@@ -13,8 +13,6 @@ button.model-picker-field-trigger[data-model-picker-presentation="field"] {
   border: 1px solid var(--ui-field-border);
   border-radius: var(--ui-field-radius);
   background: var(--ui-surface-muted);
-  font-size: var(--text-sm);
-  font-weight: 400;
   justify-content: flex-start;
   text-align: start;
 }
@@ -48,7 +46,6 @@ button.model-picker-field-trigger[data-model-picker-presentation="field"]:focus-
   box-shadow: var(--ui-focus-ring);
 }
 button.model-picker-field-trigger[data-model-picker-presentation="field"]:disabled {
-  color: var(--ui-control-disabled-fg);
   background: var(--ui-control-disabled-surface);
   border-color: var(--ui-control-disabled-border);
 }
@@ -81,18 +78,13 @@ button.model-effort-bar {
   inline-size: 100%;
   border-radius: var(--ui-control-radius) var(--ui-control-radius) 0 0;
   background: var(--ui-fill-subtle);
-  transition:
-    background-color 0.15s,
-    box-shadow 0.15s;
 }
 .model-effort-bar:hover > i {
   background: var(--ui-surface-hover);
 }
 .model-effort-bar[data-filled] > i {
-  background: linear-gradient(to top, var(--ui-tone-info-solid), var(--ui-tone-accent-solid));
 }
 .model-effort-bar[data-filled][data-ultra] > i {
-  background: linear-gradient(to top, var(--ui-tone-warning-solid), var(--ui-tone-accent-solid));
 }
 .model-effort-bar[aria-checked="true"] > i {
   box-shadow:

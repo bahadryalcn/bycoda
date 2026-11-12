@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { observeResize } from "../../../shared/lib/observeResize";
 import { t, useLocale } from "../../../shared/i18n";
 import { Divider } from "../../../shared/ui/Divider";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -17,7 +18,6 @@ import {
 import { TodayView } from "../../today";
 import { useAccount } from "../hooks/useAccount";
 import { accountController } from "../model/accountService";
-import { AccountActivity } from "./AccountActivity";
 import { AccountData } from "./AccountData";
 import { AccountDevices } from "./AccountDevices";
 import { AccountHeader } from "./AccountHeader";
@@ -65,14 +65,11 @@ function tabItems(): { value: AccountTabId; label: string; icon: ReactNode }[] {
 function useWide(min: number, mountKey: string) {
   const ref = useRef<HTMLDivElement>(null);
   const [wide, setWide] = useState(true);
+  // Keep keyboard navigation orientation aligned with the available account width.
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) setWide(entry.contentRect.width >= min);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
+    return observeResize(element, (entry) => setWide(entry.contentRect.width >= min));
   }, [min, mountKey]);
   return { ref, wide };
 }
@@ -88,6 +85,7 @@ export function AccountScreen() {
   const [tab, setTab] = useState<AccountTabId>("profile");
   const { ref, wide } = useWide(SIDE_NAV_MIN, state.phase);
   const stale = state.phase === "signed-in" && state.stale;
+  // Refresh cached account facts without blocking offline navigation.
   useEffect(() => {
     if (stale)
       accountController()
@@ -175,8 +173,6 @@ export function AccountScreen() {
             <TabPanel value="activity">
               <div className={styles.tabs}>
                 <TodayView />
-                <Divider />
-                <AccountActivity />
               </div>
             </TabPanel>
             <TabPanel value="notifications">

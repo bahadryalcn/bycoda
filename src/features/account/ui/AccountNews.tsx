@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { t, useLocale } from "../../../shared/i18n";
 import { formatRelativeTime } from "../../../shared/i18n/format";
@@ -18,17 +19,29 @@ export function AccountNews() {
     <section className={styles.section} aria-labelledby="account-news">
       <SectionLabel labelId="account-news">{t("News")}</SectionLabel>
       {recent.length === 0 ? (
-        <p className={styles.meta}>{t("No announcements right now.")}</p>
+        <Text as="p" size="caption" tone="secondary" leading="inherit">
+          {t("No announcements right now.")}
+        </Text>
       ) : null}
       <ul className={styles.rows}>
         {recent.map((item) => (
           <li key={item.id} className={styles.row}>
             <div className={styles.rowMain}>
-              <strong className={styles.rowTitle}>{item.title}</strong>
-              <span className={styles.meta}>
+              <Text
+                as="strong"
+                size="body"
+                tone="inherit"
+                leading="inherit"
+                className={styles.rowTitle}
+              >
+                {item.title}
+              </Text>
+              <Text size="caption" tone="secondary" leading="inherit">
                 {formatRelativeTime(Date.parse(item.publishedAt))}
-              </span>
-              <p className={styles.lead}>{item.body}</p>
+              </Text>
+              <Text as="p" size="body" tone="secondary" className={styles.lead}>
+                {item.body}
+              </Text>
             </div>
             {item.url ? (
               <Button

@@ -1,5 +1,6 @@
 import { HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
+import { Text } from "../../../shared/ui/Text";
 
 function knownProvider(provider: string): provider is keyof typeof HARNESS_TITLE {
   return Object.prototype.hasOwnProperty.call(HARNESS_TITLE, provider);
@@ -14,9 +15,14 @@ export function UsageProviderIdentity({ provider, label }: { provider: string; l
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
       {knownProvider(provider) && <HarnessIcon harness={provider} size="sm" className="shrink-0" />}
-      <span className={label === "" ? "sr-only" : "truncate"}>
+      <Text
+        size="inherit"
+        tone="inherit"
+        truncate={label !== ""}
+        className={label === "" ? "sr-only" : undefined}
+      >
         {label || usageProviderLabel(provider)}
-      </span>
+      </Text>
     </span>
   );
 }

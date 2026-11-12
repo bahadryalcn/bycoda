@@ -2,6 +2,7 @@ import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { useDelayedVisible } from "../hooks/useDelayedVisible";
 import { useT } from "../i18n";
 import { Spinner } from "./Spinner";
+import { optionalTextAttributes, type TextSize, type TextTone, type TextRoles } from "./Text";
 import styles from "./LoadingText.module.css";
 
 export type LoadingTextProps = Omit<ComponentPropsWithoutRef<"div">, "children" | "role"> & {
@@ -21,6 +22,12 @@ export type LoadingTextProps = Omit<ComponentPropsWithoutRef<"div">, "children" 
   delay?: boolean;
   /** Text-only status for surfaces whose existing layout owns its presentation. */
   presentation?: "standard" | "text";
+  /** Text roles; unset preserves existing styling. */
+  size?: TextSize;
+  tone?: TextTone;
+  weight?: TextRoles["weight"];
+  /** Line height role; `inherit` keeps the surrounding line height. */
+  leading?: TextRoles["leading"];
 };
 
 /**
@@ -38,6 +45,10 @@ export function LoadingText({
   presentation = "standard",
   className,
   style,
+  size,
+  tone,
+  weight,
+  leading,
   ...props
 }: LoadingTextProps) {
   const t = useT();
@@ -51,7 +62,10 @@ export function LoadingText({
         role={held ? undefined : "status"}
         aria-hidden={held || undefined}
         style={style}
-        className={[held ? styles.held : "", className].filter(Boolean).join(" ") || undefined}
+        {...optionalTextAttributes(
+          { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading },
+          [held ? styles.held : "", className].filter(Boolean).join(" ") || undefined,
+        )}
       >
         {children ?? t("Loading…")}
       </p>
@@ -64,14 +78,17 @@ export function LoadingText({
       aria-hidden={held || undefined}
       data-loading-layout={layout}
       style={style}
-      className={[
-        "flex min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)",
-        layout === "fill" ? "h-full min-h-0 justify-center p-3" : "",
-        held ? styles.held : "",
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      {...optionalTextAttributes(
+        { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading },
+        [
+          "flex min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)",
+          layout === "fill" ? "h-full min-h-0 justify-center p-3" : "",
+          held ? styles.held : "",
+          className,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      )}
     >
       <Spinner size="xs" />
       <span className="min-w-0 truncate">{children ?? t("Loading…")}</span>

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { Alert } from "../../../shared/ui/Alert";
@@ -171,9 +172,9 @@ export function InboxFiltersMenu({
       className="overflow-y-auto overscroll-none p-1"
     >
       <div className="flex h-8 items-center justify-between gap-2 ps-2">
-        <span className="text-ui-caption font-medium text-(--ui-text-secondary)">
+        <Text size="caption" tone="secondary" weight="medium">
           {t("Filter inbox")}
-        </span>
+        </Text>
         {hasActiveInboxFilters(filters, source, hiddenLinearTeamIds, hiddenJiraProjectIds) ||
         codeHostProjectsActive ? (
           <Button
@@ -409,10 +410,14 @@ function FilterItem({
       label={
         <>
           {icon}
-          <span className="min-w-0 flex-1 truncate">{label}</span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+            {label}
+          </Text>
         </>
       }
-      className="flex min-w-0 items-center gap-2 px-2 py-1 text-ui-caption text-(--ui-tone-neutral-fg)"
+      size="caption"
+      tone="neutral"
+      className="flex min-w-0 items-center gap-2 px-2 py-1"
     />
   );
 }

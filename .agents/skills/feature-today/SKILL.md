@@ -1,6 +1,6 @@
 ---
 name: feature-today
-description: Develop the personal Today / This week view (sessions, agent run time, active time, cost by project) and its opt-in provider summary; Usage owns the cost model, Activity the active minutes, Notes the daily note.
+description: "Use when changing the Today and This week view and its provider summary. Not for the cost model or active minutes; see feature-usage, feature-activity."
 ---
 
 # Today

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -114,15 +115,15 @@ function ProxyApprovalDialog({
       }
     >
       <div className="flex min-w-0 flex-col gap-3">
-        <div className="text-ui-caption">
-          <p className="break-all font-medium">
+        <Text as="div" tone="inherit">
+          <Text as="p" size="inherit" tone="inherit" weight="medium" className="break-all">
             {secure ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
             {sshEndpointPreview(request.endpoint.httpProxy!)}
-          </p>
-          <p className="mbs-1 break-all text-(--ui-text-muted)">
+          </Text>
+          <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
             {t("SSH target")}: {sshEndpointPreview(request.endpoint)}
-          </p>
-          <p className="mbs-1 text-(--ui-text-muted)">
+          </Text>
+          <Text as="p" size="inherit" tone="muted" className="mbs-1">
             {t(
               {
                 terminal: "Terminal",
@@ -135,7 +136,7 @@ function ProxyApprovalDialog({
                 sftpDiscard: "Discard partial",
               }[request.operation.kind],
             )}
-          </p>
+          </Text>
           {request.operation.kind === "runbook" ? (
             <p className="mbs-1 break-all">
               {request.operation.automationId} · r{request.operation.revision} ·{" "}
@@ -158,7 +159,7 @@ function ProxyApprovalDialog({
                 : " · SOCKS5"}
             </p>
           ) : null}
-        </div>
+        </Text>
         <SegmentedControl
           label={t("Proxy authentication")}
           value={mode}
@@ -203,20 +204,21 @@ function ProxyApprovalDialog({
                   ? "I approve these Basic credentials for this TLS-verified HTTPS proxy and this operation."
                   : "I allow sending these Basic credentials to this HTTP proxy without TLS for this operation.",
               )}
-              className="flex items-start gap-2 text-ui-caption"
+              size="caption"
+              className="flex items-start gap-2"
             />
-            <p className="text-ui-caption text-(--ui-text-muted)">
+            <Text as="p" tone="muted">
               {t(
                 "SSH traffic remains encrypted after CONNECT. Proxy credentials are temporary and never saved; another operation needs a new approval.",
               )}
-            </p>
+            </Text>
           </>
         ) : (
-          <p className="text-ui-caption text-(--ui-text-muted)">
+          <Text as="p" tone="muted">
             {t(
               "Continue without credentials. A proxy authentication error will not retry automatically.",
             )}
-          </p>
+          </Text>
         )}
       </div>
     </Modal>

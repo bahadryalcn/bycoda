@@ -6,7 +6,6 @@
   min-inline-size: 0;
   padding: 0.75rem 1rem;
   overflow-y: auto;
-  border-block-end: 1px solid var(--ui-pane-border);
 }
 .task-ops-head {
   display: flex;
@@ -68,15 +67,6 @@
   flex-wrap: nowrap;
   gap: 0.25rem;
 }
-.task-ops-title {
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
-  color: var(--color-content);
-}
 .task-ops-title-line {
   display: flex;
   align-items: center;
@@ -86,14 +76,6 @@
 .task-ops-caption {
   min-inline-size: 0;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
-}
-.task-ops-caption[data-tone="danger"] {
-  color: var(--ui-tone-danger-fg);
-}
-.task-ops-caption[data-tone="warning"] {
-  color: var(--ui-tone-warning-fg);
 }
 .task-ops-num {
   font-variant-numeric: tabular-nums;
@@ -101,8 +83,6 @@
 .task-ops-form {
   display: grid;
   min-inline-size: 0;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 .task-ops-fields {
   display: grid;
@@ -110,7 +90,6 @@
   min-inline-size: 0;
   margin: 0;
   padding: 0.75rem 1rem;
-  border: 0;
 }
 .task-ops-footer {
   display: flex;
@@ -119,7 +98,6 @@
   justify-content: flex-end;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  border-block-start: 1px solid var(--ui-pane-border);
 }
 .task-ops-kpis {
   display: grid;
@@ -131,14 +109,9 @@
   gap: 0.125rem;
   min-inline-size: 0;
   padding: 0.625rem 0.75rem;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 .task-ops-kpi-value {
-  font-size: var(--ui-font-heading);
-  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: var(--color-content);
 }
 .task-ops-meter {
   display: grid;

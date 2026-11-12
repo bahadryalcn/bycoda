@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import type {
   AssistantJob,
   AssistantRequest,
@@ -131,14 +132,22 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                   p0: review.tasks.length,
                 })}
               </p>
-              <ul className={jobStyles.deleteTasks}>
+              <Text as="ul" tone="inherit" leading="inherit" className={jobStyles.deleteTasks}>
                 {review.tasks.map((task) => (
                   <li key={task.id}>
-                    <strong>{task.title}</strong>
+                    <Text
+                      as="strong"
+                      size="inherit"
+                      tone="inherit"
+                      weight="medium"
+                      leading="inherit"
+                    >
+                      {task.title}
+                    </Text>
                     <span>· {projectName(task.projectId)}</span>
                   </li>
                 ))}
-              </ul>
+              </Text>
             </>
           ) : reviewError ? (
             <InlineError>{t(reviewError)}</InlineError>
@@ -407,7 +416,11 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     t("Project unavailable");
   const errorFor = (key: string) =>
     error?.key === key ? <InlineError className={styles.error}>{error.text}</InlineError> : null;
-  const empty = (text: string) => <p className={styles.empty}>{t(text)}</p>;
+  const empty = (text: string) => (
+    <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.empty}>
+      {t(text)}
+    </Text>
+  );
   function clearHistory() {
     setConfirm({
       title: t("Clear history?"),

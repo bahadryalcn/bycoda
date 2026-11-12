@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { LoadingCard } from "../../../shared/ui/LoadingCard";
 import { settingsSectionLabel, type SettingsSectionId } from "../model/settings";
@@ -12,7 +13,7 @@ import "./SettingsLoadingSurface.css";
 export function SettingsLoadingSurface({ section }: { section: SettingsSectionId }) {
   useLocale();
   return (
-    <div className="settings-loading" data-settings-loading>
+    <div {...surfaceAttributes({ variant: "canvas" }, "settings-loading")} data-settings-loading>
       <LoadingCard
         heading={settingsSectionLabel(section)}
         title={t("Loading Settings…")}

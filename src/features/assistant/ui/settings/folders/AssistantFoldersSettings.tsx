@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
 import { pickFolders } from "../../../../../platform/tauri/fs";
 import { ASSISTANT_FOLDERS_MAX } from "../../../../../shared/model/assistantFolders";
@@ -52,10 +54,26 @@ export function AssistantFoldersSettings({
         stacked
       >
         <div className={styles.list}>
-          {draft.paths.length === 0 && <p className={styles.empty}>{t("No folders added yet.")}</p>}
+          {draft.paths.length === 0 && (
+            <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.empty}>
+              {t("No folders added yet.")}
+            </Text>
+          )}
           {draft.paths.map((path) => (
-            <div key={path} className={styles.item}>
-              <span className={styles.path}>{path}</span>
+            <div
+              key={path}
+              {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.item)}
+            >
+              <Text
+                as="span"
+                size="secondary"
+                tone="inherit"
+                leading="inherit"
+                truncate
+                className={styles.path}
+              >
+                {path}
+              </Text>
               <Button
                 type="button"
                 variant="ghost"

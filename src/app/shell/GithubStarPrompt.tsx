@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { ButtonGroup } from "../../shared/ui/ButtonGroup";
 import { useT } from "../../shared/i18n";
@@ -80,7 +81,9 @@ function GithubStarPromptBody({ version, action, icon = false, compact = false }
       >
         <Star className={icon ? "icon-md" : "icon-xs shrink-0"} strokeWidth={1.75} />
         {!icon ? (
-          <span className="truncate text-ui-caption font-medium">{t("View on GitHub")}</span>
+          <Text size="caption" tone="inherit" weight="medium" truncate>
+            {t("View on GitHub")}
+          </Text>
         ) : null}
       </Button>
       <Button
@@ -101,7 +104,7 @@ function GithubStarPromptBody({ version, action, icon = false, compact = false }
   ) : null;
   return (
     <ButtonGroup
-      surface="navigation"
+      surface={icon ? "transparent" : "navigation"}
       aria-label={t("Actions")}
       data-github-star-prompt
       data-icon={icon || undefined}

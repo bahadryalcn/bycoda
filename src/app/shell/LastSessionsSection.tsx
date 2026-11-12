@@ -1,10 +1,11 @@
+import { Text } from "../../shared/ui/Text";
 import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManagedBadge";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Button } from "../../shared/ui/Button";
 import { ContinuousList } from "../../shared/ui/ContinuousList";
 import { ActionHost } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
-import { getLocale, useT } from "../../shared/i18n";
+import { useLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
@@ -16,7 +17,7 @@ import {
 } from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
-import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
+import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
 import type { useTabGroupLogos } from "../../features/projects/hooks/useTabGroupLogos";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
@@ -38,7 +39,8 @@ import {
   type RecentSessionStatus,
 } from "../../features/sessions/model/recentSessions";
 import { HARNESS_TITLE } from "../../features/sessions/model/session";
-import { resolveModel } from "../../features/sessions/model/models";
+import { resolveModelFromCatalog } from "../../features/sessions/model/models";
+import { useModelCatalog } from "../../features/sessions/model/modelHooks";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
   resolveTabGroupColor,
@@ -215,7 +217,7 @@ export function LastSessionsRows({
       <div
         role="list"
         aria-label={t("Last sessions")}
-        className={`flex min-h-0 flex-1 flex-col gap-px ${className ?? ""}`}
+        className={`flex min-h-0 flex-1 flex-col gap-0 ${className ?? ""}`}
       >
         <ContinuousList
           className="flex-1 min-h-0 px-2"
@@ -318,12 +320,17 @@ function SessionRow({
   const logoPath = useResolvedTabGroupLogo(key, groupLogos);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
   const agent = HARNESS_TITLE[row.harness];
-  const model = row.model ? resolveModel(row.harness, row.model).name : "";
+  const catalog = useModelCatalog(row.harness);
+  const model = row.model
+    ? resolveModelFromCatalog(catalog.resolution!, row.harness, row.model).name
+    : "";
   const time = formatRelative(row.updatedAt, now);
   const status = row.status;
   // Text left unsent in another session's composer; the open session shows its own.
   const draft = useUnsentComposerDraft(row.id, !selected);
-  const location = row.remote ? `${remoteProjectFor(row.cwd)?.cwd ?? row.cwd} (remote)` : row.cwd;
+  const remoteProject = useRemoteProject(row.remote ? row.cwd : "");
+  const locale = useLocale();
+  const location = row.remote ? `${remoteProject?.cwd ?? row.cwd} (remote)` : row.cwd;
   const tooltip = [
     row.title,
     projectless ? project : `${project} · ${location}`,
@@ -331,7 +338,7 @@ function SessionRow({
     draft ? t("Draft") : "",
     status
       ? t(STATUS_LABEL[status])
-      : time && `Last activity ${new Date(row.updatedAt).toLocaleString(getLocale())}`,
+      : time && `Last activity ${new Date(row.updatedAt).toLocaleString(locale)}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -366,7 +373,7 @@ function SessionRow({
       >
         <span className="grid icon-sm shrink-0 place-items-center" aria-hidden="true">
           {projectless ? (
-            <FolderOpen className="icon-sm text-(--ui-text-secondary)" strokeWidth={1.75} />
+            <FolderOpen className="icon-sm" tone="secondary" strokeWidth={1.75} />
           ) : logoPath && status !== "working" ? (
             <ProjectLogoIcon
               path={logoPath}
@@ -383,19 +390,23 @@ function SessionRow({
             />
           )}
         </span>
-        <span className="min-w-0 flex-1 truncate text-ui-secondary leading-tight">{row.title}</span>
+        <Text truncate size="secondary" tone="inherit" leading="tight" className="min-w-0 flex-1">
+          {row.title}
+        </Text>
         <AssistantManagedBadge management={row.managedBy} compact local={!row.remote} />
         {draft ? (
           <PenLine
             aria-hidden="true"
-            className="icon-xs shrink-0 text-(--ui-tone-warning-fg)"
+            className="icon-xs shrink-0"
+            tone="warning"
             strokeWidth={1.75}
           />
         ) : null}
         {row.remote ? (
           <Internet
             aria-label={t("On another machine")}
-            className="icon-xs shrink-0 text-(--ui-text-secondary)"
+            className="icon-xs shrink-0"
+            tone="secondary"
             strokeWidth={1.75}
           />
         ) : null}
@@ -404,7 +415,8 @@ function SessionRow({
           <CircleAlert
             role="img"
             aria-label={t("Interrupted")}
-            className="icon-xs shrink-0 text-(--ui-tone-warning-fg)"
+            className="icon-xs shrink-0"
+            tone="warning"
             strokeWidth={1.75}
           />
         ) : status ? (
@@ -416,9 +428,9 @@ function SessionRow({
           />
         ) : null}
         {time ? (
-          <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
+          <Text size="micro" tone="secondary" className="shrink-0 tabular-nums">
             {time}
-          </span>
+          </Text>
         ) : null}
       </Button>
     </ActionHost>

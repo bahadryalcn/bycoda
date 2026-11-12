@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useState } from "react";
@@ -45,9 +47,9 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
       textValue: folder ? folder.name : row.kind === "new" ? row.name : "",
       icon: folder ? <Folder className="icon-sm" /> : <Plus className="icon-sm text-skill" />,
       trailing: folder ? (
-        <span className="text-ui-micro tabular-nums text-(--ui-text-secondary)">
+        <Text size="micro" tone="secondary" className="tabular-nums">
           {folder.sessionIds.length}
-        </span>
+        </Text>
       ) : undefined,
     };
   });
@@ -67,7 +69,10 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
       data-session-folder-picker
       role="dialog"
       aria-label={t("Choose a session folder")}
-      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-floating)"
+      {...surfaceAttributes(
+        { radius: "card", frame: "neutral", edge: "all" },
+        "overflow-hidden   border-(--ui-tone-neutral-border) bg-(--ui-surface-floating)",
+      )}
     >
       <PopoverSearchHeader
         label={t("Session folder")}

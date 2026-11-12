@@ -100,7 +100,9 @@ export function TurnOutputActions({
         <LiveText
           key={message}
           mode="assertive"
-          className="min-w-0 max-w-xs text-ui-caption break-words text-(--ui-tone-danger-fg)"
+          size="caption"
+          tone="danger"
+          className="min-w-0 max-w-xs break-words"
           text={message}
         />
       ))}

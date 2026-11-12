@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { openExternal } from "../../../../platform/tauri/openExternal";
@@ -226,11 +227,11 @@ export function EmailAccountForm({ account, onSaved, onCancel }: AccountFormProp
               />
               {appPasswordPage ? (
                 <InfoPopover label={t("About app passwords")} className="shrink-0">
-                  <p className="text-ui-caption">
+                  <Text as="p" size="caption" tone="inherit">
                     {t(
                       "With 2-step verification on, this provider rejects your normal password. Create an app password and enter it here.",
                     )}
-                  </p>
+                  </Text>
                   <Button
                     variant="link"
                     startIcon={<ExternalLink className="icon-sm" />}

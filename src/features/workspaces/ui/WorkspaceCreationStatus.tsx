@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import type { WorkspaceCreationPreview } from "../model/workspaceCreation";
@@ -22,14 +23,19 @@ export function WorkspaceCreationStatus({
   // there is a result (the new worktree preview) or an error.
   if (!error && !preview) return null;
   return (
-    <div
+    <Text
+      as="div"
+      size="caption"
+      tone="secondary"
       data-workspace-creation-status
-      className="flex min-w-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)"
+      className="flex min-w-0 flex-wrap items-center gap-2"
       role={error ? "alert" : "status"}
     >
       {error ? (
         <>
-          <span className="min-w-0 flex-1 break-words text-(--ui-tone-danger-fg)">{t(error)}</span>
+          <Text size="inherit" tone="danger" className="min-w-0 flex-1 break-words">
+            {t(error)}
+          </Text>
           {onUseCurrentCheckout ? (
             <Button size="sm" variant="secondary" onClick={onUseCurrentCheckout}>
               {t("Use current checkout")}
@@ -48,9 +54,9 @@ export function WorkspaceCreationStatus({
             p1: preview.baseCommit.slice(0, 8),
           })}
         >
-          <span className="text-content">
+          <Text size="inherit" tone="primary">
             {t("New worktree from {p0}", { p0: shortWorkspaceRef(preview.baseRef) })}
-          </span>
+          </Text>
           {preview.excludedPaths > 0 ? (
             <span className="tabular-nums">
               {" · "}
@@ -59,6 +65,6 @@ export function WorkspaceCreationStatus({
           ) : null}
         </span>
       ) : null}
-    </div>
+    </Text>
   );
 }

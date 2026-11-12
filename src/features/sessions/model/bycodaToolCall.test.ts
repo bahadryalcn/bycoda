@@ -100,3 +100,9 @@ describe("Bycoda CLI tool calls", () => {
     expect(bycodaWorkSummary([...calls, shell("git status")], true)).toBeUndefined();
   });
 });
+
+it("labels agents.reply CLI calls", () => {
+  expect(bycodaToolCall(shell("bycoda app agents.reply --input -"))?.label).toBe(
+    "Continue a session",
+  );
+});

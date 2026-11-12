@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { lazy, Suspense, useRef, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { ChevronDown } from "../../../shared/ui/icons";
@@ -169,7 +170,9 @@ export function GitGenerationSettings({
           }}
           className="flex flex-col gap-2 p-3"
         >
-          <p className="text-ui-body font-medium">{t("Commit and pull request generation")}</p>
+          <Text as="p" size="body" tone="inherit" weight="medium">
+            {t("Commit and pull request generation")}
+          </Text>
           <GitGenerationModelControl
             cwd={cwd}
             preferred={preferred}
@@ -178,12 +181,12 @@ export function GitGenerationSettings({
             disabled={disabled}
           />
           {account ? (
-            <p className="text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="secondary">
               {t("Account")} · {account}
-            </p>
+            </Text>
           ) : null}
           {hasOverride && (
-            <div className="flex items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
+            <Text as="div" size="caption" tone="secondary" className="flex items-center gap-1">
               <span>{t("Project setting")} ·</span>
               <Button
                 size="sm"
@@ -193,7 +196,7 @@ export function GitGenerationSettings({
               >
                 {t("Use global")}
               </Button>
-            </div>
+            </Text>
           )}
         </Popover>
       )}

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -56,7 +57,7 @@ export function MemberPerformance({
       }}
     >
       {status === "loading" || status === "idle" ? (
-        <p className="text-ui-caption text-(--ui-text-secondary)">{t("Loading performance…")}</p>
+        <Text as="p">{t("Loading performance…")}</Text>
       ) : status === "error" ? (
         <Alert tone="danger">
           <p>{t("Could not load performance")}</p>
@@ -75,7 +76,7 @@ export function MemberPerformance({
               <li>{t("Accepted: {p0}", { p0: percent(performance.acceptedRate) })}</li>
             ) : null}
           </ul>
-          <p className="text-ui-caption text-(--ui-text-secondary)">{t("By model")}</p>
+          <Text as="p">{t("By model")}</Text>
           <ul className="flex min-w-0 flex-col gap-1">
             {performance.perModel.map((model) => (
               <li
@@ -83,22 +84,22 @@ export function MemberPerformance({
                 className="flex min-w-0 flex-wrap justify-between gap-x-3"
               >
                 <span className="min-w-0 break-all">
-                  {model.model} <span className="text-(--ui-text-secondary)">{model.harness}</span>
+                  {model.model} <Text size="inherit">{model.harness}</Text>
                 </span>
-                <span className="text-(--ui-text-secondary)">
+                <Text size="inherit">
                   {model.firstPassRate !== undefined
                     ? t("{p0} reviewed · {p1} first-pass", {
                         p0: formatNumber(model.count),
                         p1: percent(model.firstPassRate),
                       })
                     : t("{p0} reviewed", { p0: formatNumber(model.count) })}
-                </span>
+                </Text>
               </li>
             ))}
           </ul>
         </div>
       ) : (
-        <p className="text-ui-caption text-(--ui-text-secondary)">{t("No reviewed work yet")}</p>
+        <Text as="p">{t("No reviewed work yet")}</Text>
       )}
     </Disclosure>
   );

@@ -71,22 +71,13 @@
   margin: 0;
 }
 .integration-device-code {
-  font-family: var(--font-mono);
-  font-size: var(--ui-font-title);
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  color: var(--color-content);
   user-select: all;
 }
 
 .integration-code {
   margin: 0;
   padding: 8px 12px;
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
   font-family: var(--font-mono);
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
   user-select: all;
 }

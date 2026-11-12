@@ -23,8 +23,6 @@
 
 .summary {
   margin-inline-start: auto;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -34,8 +32,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
 }
 
@@ -47,8 +43,6 @@
 }
 
 .groupCount {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 
@@ -62,7 +56,6 @@
   min-inline-size: 0;
   max-inline-size: 100%;
   padding: 2px;
-  border-radius: var(--ui-control-radius);
 }
 
 .control {
@@ -99,48 +92,23 @@
   display: block;
   max-inline-size: 100%;
   overflow: clip;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ui-text-muted);
 }
-.hint,
-.error {
-  font-size: var(--ui-font-caption);
-  overflow-wrap: anywhere;
-}
-
-.hint,
-.modified {
-  color: var(--ui-text-secondary);
-}
-
-.error {
-  color: var(--ui-tone-danger-fg);
-}
-
 .modified {
   display: inline-block;
   margin-inline-start: 8px;
-  font-size: var(--ui-font-caption);
-  font-weight: 400;
-}
-
-.disabled {
-  color: var(--ui-text-disabled);
 }
 
 .popover {
   display: grid;
   gap: 12px;
   padding: 12px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 /* A keybinding list is a compact collection, not a form: shorter rows and a
    quiet hover fill keep 70+ commands scannable. */
 .list :global(.settings-row) {
-  padding-block: 3px;
+  padding-block: 4px;
 }
 @media (hover: hover) and (pointer: fine) {
   .list :global(.settings-row):hover {

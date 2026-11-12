@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -128,12 +129,15 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
       ) : (
         <>
           {notes.length > 0 ? (
-            <p
+            <Text
               role="status"
-              className="shrink-0 border-b border-stroke px-4 py-1.5 text-ui-caption text-(--ui-text-secondary)"
+              as="p"
+              size="caption"
+              tone="secondary"
+              className="shrink-0 border-b border-stroke px-4 py-1.5"
             >
               {notes.join(" ")}
-            </p>
+            </Text>
           ) : null}
           <div className="flex min-h-0 flex-1 flex-col">
             {load.stages.images && selected && !selected.unavailable ? (

@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { formatDuration } from "../../../../shared/i18n/format";
@@ -86,7 +87,7 @@ export function CrewsActive({
       {groupActiveByProject(items, currentKey).map((group) => (
         <section key={group.key} aria-label={group.name || t("Project")} className="flex flex-col">
           <SectionLabel count={group.items.length}>{group.name || t("Project")}</SectionLabel>
-          <ul className="flex flex-col gap-px">
+          <ul className="flex flex-col gap-0">
             {group.items.map((item) => (
               <ActiveRow
                 key={activeMemberKey(item)}
@@ -102,9 +103,9 @@ export function CrewsActive({
         </section>
       ))}
       {truncated ? (
-        <p className="text-ui-caption text-content-muted">
+        <Text as="p" tone="inherit">
           {t("Only the first members are listed.")}
-        </p>
+        </Text>
       ) : null}
     </div>
   );
@@ -149,19 +150,23 @@ function ActiveRow({
         />
         <span className="flex min-w-0 flex-1 flex-col text-start">
           <span className="flex min-w-0 items-baseline gap-1.5">
-            <span className="truncate text-ui-secondary font-medium">{item.memberName}</span>
+            <Text size="secondary" tone="inherit" weight="medium" truncate>
+              {item.memberName}
+            </Text>
             {item.handle ? (
-              <span className="truncate text-ui-caption text-content-muted">@{item.handle}</span>
+              <Text tone="inherit" truncate>
+                @{item.handle}
+              </Text>
             ) : null}
-            <span className="shrink-0 text-ui-caption text-content-muted">
+            <Text tone="inherit" className="shrink-0">
               {roleLabel(item.memberRole)}
-            </span>
+            </Text>
           </span>
-          <span className="truncate text-ui-caption text-content-muted">
+          <Text tone="inherit" truncate>
             {[item.definitionName, focus !== item.definitionName ? focus : ""]
               .filter(Boolean)
               .join(" · ")}
-          </span>
+          </Text>
         </span>
         {attention && item.attention ? (
           <Badge size="xs" tone={CREW_ATTENTION_TONE[item.attention]}>
@@ -169,9 +174,9 @@ function ActiveRow({
           </Badge>
         ) : null}
         {elapsed !== null ? (
-          <span className="shrink-0 text-ui-caption tabular-nums text-content-muted">
+          <Text tone="inherit" className="shrink-0 tabular-nums">
             {formatDuration(elapsed)}
-          </span>
+          </Text>
         ) : null}
       </Button>
       {item.attention && canOpenWork ? (

@@ -1,14 +1,9 @@
 import { t, useLocale } from "../../../shared/i18n";
-import {
-  harnessUnavailableHint,
-  hasProbedHarnessAvailability,
-  isHarnessAvailable,
-} from "../../../integrations/harness/core/availability";
+import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
-import { ProviderBinaryControl } from "./ProviderBinarySettings";
 import { Group, Row, Toggle } from "./settingsControls";
 
-/** CLI path, setup and installation help; for Claude Code also its hooks switch. */
+/** Account-side options; CLI setup belongs to ProviderCliTab. */
 export function ProviderRuntimeGroup({
   harness,
   claudeHooks,
@@ -23,9 +18,9 @@ export function ProviderRuntimeGroup({
   onPickerVisible: (visible: boolean) => void;
 }) {
   useLocale();
-  const missing = hasProbedHarnessAvailability() && !isHarnessAvailable(harness);
-  return (
-    <Group id={`cli-path-${harness}`} layout="full" title={t("Runtime")}>
+  if (harness !== "claude" && !isHarnessAvailable(harness)) return null;
+  const options = (
+    <Group layout="full" title={t("Options")}>
       {/* The one-column layout has no provider list, so its picker switch moves here. */}
       {isHarnessAvailable(harness) ? (
         <div className="provider-picker-narrow">
@@ -38,17 +33,6 @@ export function ProviderRuntimeGroup({
           </Row>
         </div>
       ) : null}
-      <Row label={t("{p0} CLI path and installation", { p0: HARNESS_TITLE[harness] })}>
-        <ProviderBinaryControl
-          key={harness}
-          provider={harness}
-          showLabel
-          triggerVariant="secondary"
-        />
-      </Row>
-      {missing ? (
-        <Row label={t("Installation help")} description={harnessUnavailableHint(harness)} />
-      ) : null}
       {harness === "claude" ? (
         <Row
           id="claude-hooks"
@@ -60,4 +44,5 @@ export function ProviderRuntimeGroup({
       ) : null}
     </Group>
   );
+  return harness === "claude" ? options : <div className="provider-picker-narrow">{options}</div>;
 }

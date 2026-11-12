@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { useAccount } from "../hooks/useAccount";
@@ -36,9 +37,16 @@ export function AccountRailRow({
       className="flex w-full items-center gap-2 @max-[140px]/rail:justify-center"
     >
       <AccountAvatar user={user} />
-      <span className="min-w-0 flex-1 truncate text-start text-ui-body font-medium leading-tight @max-[140px]/rail:hidden">
+      <Text
+        size="body"
+        tone="inherit"
+        weight="medium"
+        leading="tight"
+        truncate
+        className="min-w-0 flex-1 text-start @max-[140px]/rail:hidden"
+      >
         {label}
-      </span>
+      </Text>
     </Button>
   );
 }

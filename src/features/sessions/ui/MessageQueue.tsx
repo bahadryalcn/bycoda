@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { activeQueueFeedback, type QueueFeedback } from "./queueFeedback";
 import { canSendQueueMessage } from "../model/queueAction";
 import { useAcceptedQueueDeparture, type MessageQueueProps } from "./useAcceptedQueueDeparture";
@@ -347,16 +348,22 @@ export function MessageQueue({
     onEditingChange?.();
   };
   return (
-    <div className="text-(--ui-text-secondary)" data-message-queue data-usage-guide="queue">
+    <Text as="div" size="inherit" tone="secondary" data-message-queue data-usage-guide="queue">
       {queueClosed ? (
         <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
       ) : null}
       <div className="relative z-0 rounded-t-xl px-2 py-1" data-message-queue-card ref={card}>
         {paused ? (
-          <div className="mb-1 flex h-7 items-center gap-2 text-ui-caption">
+          <Text as="div" size="caption" tone="inherit" className="mb-1 flex h-7 items-center gap-2">
             <Pause className="icon-sm" />
             {messages.length > 0 ? <DeliveryProgressIndicator sessionId={sessionId} /> : null}
-            <span className="min-w-0 flex-1 truncate" title={holdDetail}>
+            <Text
+              size="inherit"
+              tone="inherit"
+              truncate
+              className="min-w-0 flex-1"
+              title={holdDetail}
+            >
               {(delivery && (delivery.stage === "rejected" || delivery.stage === "unknown")) ||
               messages.some((message) => message.deliveryUnknown)
                 ? `${t("Queue")} · ${messages.length}`
@@ -366,7 +373,7 @@ export function MessageQueue({
                     ? holdDetail?.split(/\r?\n/, 1)[0] ||
                       t("Queue paused: the last message was not accepted")
                     : t("Queue paused because you interrupted")}
-            </span>
+            </Text>
             <Button
               variant="ghost"
               type="button"
@@ -386,19 +393,22 @@ export function MessageQueue({
               <Play className="icon-sm" />
               {pendingAction === "resume" ? t("Resuming…") : t("Resume")}
             </Button>
-          </div>
+          </Text>
         ) : null}
         {leaseHeld && sessionId ? (
-          <div
-            className="mb-1 flex h-7 items-center gap-2 text-ui-caption"
+          <Text
+            as="div"
+            size="caption"
+            tone="inherit"
+            className="mb-1 flex h-7 items-center gap-2"
             data-queue-held-elsewhere
           >
             <Pause className="icon-sm" />
-            <span className="min-w-0 flex-1 truncate">
+            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
               {activeFeedback && !activeFeedback.error
                 ? activeFeedback.text
                 : t("Queue held by another window, which sends it")}
-            </span>
+            </Text>
             <Button
               variant="ghost"
               type="button"
@@ -410,17 +420,17 @@ export function MessageQueue({
             >
               {pendingAction === "takeover" ? t("Taking over…") : t("Take over")}
             </Button>
-          </div>
+          </Text>
         ) : null}
         {restored ? (
-          <div className="mb-1 flex h-7 items-center gap-2 text-ui-caption">
+          <Text as="div" size="caption" tone="inherit" className="mb-1 flex h-7 items-center gap-2">
             <Pause className="icon-sm" />
             <DeliveryProgressIndicator sessionId={sessionId} />
-            <span className="min-w-0 flex-1 truncate">
+            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
               {messages.length === 1
                 ? t("1 queued message restored")
                 : t("{p0} queued messages restored", { p0: messages.length })}
-            </span>
+            </Text>
             <Button
               variant="ghost"
               type="button"
@@ -442,30 +452,43 @@ export function MessageQueue({
               <Play className="icon-sm" />
               {pendingAction === "resume" ? t("Sending…") : t("Send next")}
             </Button>
-          </div>
+          </Text>
         ) : null}
         {messages.length > 0 && !paused && !restored && !leaseHeld ? (
-          <div className="flex min-h-7 items-center gap-2 px-1 text-ui-caption" data-queue-summary>
+          <Text
+            as="div"
+            size="caption"
+            tone="inherit"
+            className="flex min-h-7 items-center gap-2 px-1"
+            data-queue-summary
+          >
             <ListEnd className="icon-sm shrink-0" />
             {messages.length > 0 ? <DeliveryProgressIndicator sessionId={sessionId} /> : null}
             <span className="shrink-0">
               {t("Queue")} · {messages.length}
             </span>
             {activeFeedback && !activeFeedback.error ? (
-              <span className="truncate">{activeFeedback.text}</span>
+              <Text size="inherit" tone="inherit" truncate>
+                {activeFeedback.text}
+              </Text>
             ) : null}
             {!delivery && busy && !activeFeedback ? (
-              <span className="min-w-0 truncate text-(--ui-text-muted)">
+              <Text size="inherit" tone="muted" truncate className="min-w-0">
                 {t("Waiting for the running response to finish")}
-              </span>
+              </Text>
             ) : null}
-          </div>
+          </Text>
         ) : null}
         <DeliveryProgressNotice sessionId={sessionId} messages={messages} embedded />
         {holdDetail && !delivery && (holdDetail.length > 180 || holdDetail.includes("\n")) ? (
-          <p className="max-h-32 overflow-y-auto px-1 pb-1 whitespace-pre-wrap text-(--ui-text-muted) [overflow-wrap:anywhere]">
+          <Text
+            as="p"
+            size="inherit"
+            tone="muted"
+            className="max-h-32 overflow-y-auto px-1 pb-1 whitespace-pre-wrap [overflow-wrap:anywhere]"
+          >
             {holdDetail}
-          </p>
+          </Text>
         ) : null}
         <div
           className="max-h-[min(30dvh,15rem)] min-h-0 overflow-y-auto overscroll-contain"
@@ -473,9 +496,15 @@ export function MessageQueue({
         >
           {departing ? (
             <div className="queue-departure" data-queue-departure={departing.id} aria-hidden="true">
-              <div className="min-w-0 overflow-hidden truncate text-ui-caption">
+              <Text
+                as="div"
+                size="caption"
+                tone="inherit"
+                truncate
+                className="min-w-0 overflow-hidden"
+              >
                 {departing.text || t("Queued message")}
-              </div>
+              </Text>
             </div>
           ) : null}
           {messages.map((message, index) => {
@@ -516,10 +545,13 @@ export function MessageQueue({
               message.text.trim() ||
               t(files === 1 ? "1 attachment" : "{p0} attachments", { p0: files });
             return (
-              <div
+              <Text
                 key={message.id}
                 ref={(node) => sortable.setItemRef(message.id, node)}
-                className="reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-ui-caption data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg"
+                as="div"
+                size="caption"
+                tone="inherit"
+                className="reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg"
               >
                 <Button
                   iconOnly
@@ -559,30 +591,41 @@ export function MessageQueue({
                 </Button>
                 <div className="min-w-0 py-1">
                   <OverflowTooltip label={label}>
-                    <div className="truncate text-(--ui-text-secondary)">{label}</div>
+                    <Text as="div" size="inherit" tone="secondary" truncate>
+                      {label}
+                    </Text>
                   </OverflowTooltip>
                   {attachmentGone ? (
-                    <span
-                      className="block [overflow-wrap:anywhere] text-(--ui-tone-warning-fg)"
+                    <Text
+                      size="inherit"
+                      tone="warning"
+                      className="block [overflow-wrap:anywhere]"
                       title={t(
                         "An attached file is gone. Edit this message to drop it, or remove the message.",
                       )}
                     >
                       {t("Attachment missing")}
-                    </span>
+                    </Text>
                   ) : null}
                   {target && targetLabel ? (
-                    <span
-                      className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)"
+                    <Text
+                      size="micro"
+                      tone="secondary"
+                      className="flex min-w-0 items-center gap-1"
                       data-queue-target
                     >
                       <HarnessIcon harness={target.harness} className="size-3 shrink-0" />
                       <span aria-hidden="true">·</span>
-                      <span className="truncate" title={t("Queued for {p0}", { p0: targetLabel })}>
+                      <Text
+                        size="inherit"
+                        tone="inherit"
+                        truncate
+                        title={t("Queued for {p0}", { p0: targetLabel })}
+                      >
                         {targetLabel}
-                      </span>
+                      </Text>
                       {routeNote ? <span className="shrink-0">· {routeNote}</span> : null}
-                    </span>
+                    </Text>
                   ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -647,7 +690,7 @@ export function MessageQueue({
                     <Trash2 className="icon-sm" />
                   </Button>
                 </div>
-              </div>
+              </Text>
             );
           })}
         </div>
@@ -664,11 +707,11 @@ export function MessageQueue({
           <InlineError className="py-1">{activeFeedback.text}</InlineError>
         ) : null}
         {remote ? (
-          <div className="pt-1 text-ui-micro text-(--ui-text-secondary)">
+          <Text as="div" size="micro" tone="secondary" className="pt-1">
             {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
               p0: PRODUCT_IDENTITY.displayName,
             })}
-          </div>
+          </Text>
         ) : null}
       </div>
       {editingMessage ? (
@@ -686,6 +729,6 @@ export function MessageQueue({
           onCancel={cancelEdit}
         />
       ) : null}
-    </div>
+    </Text>
   );
 }

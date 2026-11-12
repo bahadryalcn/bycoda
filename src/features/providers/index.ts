@@ -8,3 +8,5 @@ export type * as providerPreferenceOutcome from "./public/providerPreferenceOutc
 export type * as catalogReceipts from "./public/catalogReceipts";
 export type * as uiCatalogReceiptStatus from "./public/CatalogReceiptStatus";
 export type * as providerSettingsLink from "./public/providerSettingsLink";
+
+export type * as uiProviderStatusGroup from "./public/ProviderStatusGroup";

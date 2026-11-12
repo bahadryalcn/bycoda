@@ -1,5 +1,7 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import noteStyles from "../AssistantNoteCard.module.css";
 import { Heading } from "../../../../shared/ui/Heading";
+import { Text } from "../../../../shared/ui/Text";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -64,14 +66,17 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
           {view === "Notes" && (
             <Heading size="page" level={2}>
               {t("Notes")}{" "}
-              <span>
+              <Text as="span" weight="regular" leading="inherit">
                 {snapshot.notes.filter((note) => matches(query, note.title, note.body)).length}
-              </span>
+              </Text>
             </Heading>
           )}
           {view === "Jobs" && (
             <Heading size="page" level={2} className={styles.jobsTitle}>
-              {t("Jobs")} <span>{allJobs.length}</span>
+              {t("Jobs")}{" "}
+              <Text as="span" weight="regular" leading="inherit">
+                {allJobs.length}
+              </Text>
             </Heading>
           )}
           <SearchInput
@@ -199,7 +204,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                 </>
               )}
             </div>
-            <div className={toolbar.footer}>
+            <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, toolbar.footer)}>
               <Button
                 variant="ghost"
                 disabled={!activeFilters}

@@ -1,5 +1,6 @@
 import { t, useLocale } from "../../../../../shared/i18n";
 import { RadioGroup } from "../../../../../shared/ui/RadioGroup";
+import { Text } from "../../../../../shared/ui/Text";
 import { THEME_PALETTE_PRESETS, matchThemePalette } from "../../../model/themePalettes";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import "./ThemeControls.css";
@@ -57,7 +58,9 @@ export function PaletteCards({ appearance }: { appearance: AppearanceSettings })
                 <span key={swatch} style={{ background: color }} />
               ))}
             </span>
-            <span className="theme-palette-name">{palette.name}</span>
+            <Text as="span" size="secondary" tone="inherit" weight="medium" leading="inherit">
+              {palette.name}
+            </Text>
           </>
         ),
       }))}

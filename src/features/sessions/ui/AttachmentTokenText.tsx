@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -51,7 +52,14 @@ function TokenPill({ token, label, attachment }: PillProps) {
       </span>
       {/* Copying gives back `[image1]`; the file name is drawn from an attribute. */}
       <span className="sr-only">[{label}]</span>
-      <span className={styles.name} aria-hidden="true" data-name={attachment.name} />
+      <Text
+        size="inherit"
+        tone="inherit"
+        truncate
+        className={styles.name}
+        aria-hidden="true"
+        data-name={attachment.name}
+      />
       {size ? (
         // Drawn from an attribute so copying the pill still gives back `[image1]`.
         <span className={styles.size} aria-hidden="true" data-size={size} />
@@ -87,10 +95,10 @@ function TokenPill({ token, label, attachment }: PillProps) {
         {body}
       </Button>
       {loading ? (
-        <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
+        <Text role="status" size="caption" tone="secondary">
           {" "}
           {t("Loading…")}
-        </span>
+        </Text>
       ) : null}
       {error ? (
         // Phrasing-only: this renders inside <pre>/<p> prose, where the block InlineMessage (a div) is invalid.
@@ -98,7 +106,8 @@ function TokenPill({ token, label, attachment }: PillProps) {
           {" "}
           <LiveText
             mode="assertive"
-            className="text-ui-caption text-(--ui-tone-warning-fg)"
+            size="caption"
+            tone="warning"
             text={t("Preview unavailable. Try again.")}
           />
         </>

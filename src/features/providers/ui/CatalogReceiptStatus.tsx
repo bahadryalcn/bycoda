@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -82,10 +83,10 @@ export function CatalogReceiptStatus({
     );
   }
   return (
-    <p role="status" className="provider-cli-catalog-source text-ui-caption text-(--ui-text-muted)">
+    <Text as="p" size="caption" tone="muted" role="status" className="provider-cli-catalog-source">
       {receipt?.status === "fresh"
         ? t("Model list refreshed from the CLI. Account access is not checked.")
         : t("Model list from the CLI. Not rechecked in this session.")}
-    </p>
+    </Text>
   );
 }

@@ -108,7 +108,15 @@ export function VoiceLauncher({
   const tone = voiceStatusTone(state);
   const icon = name ? (
     <span className={styles.launcherAvatar} data-state={state}>
-      <AssistantAvatarMark className={styles.launcherMark} value={avatar} name={name} />
+      <AssistantAvatarMark
+        className={styles.launcherMark}
+        value={avatar}
+        name={name}
+        size="micro"
+        tone="secondary"
+        weight="medium"
+        leading="none"
+      />
       {tone && (
         <StatusDot className={styles.launcherDot} tone={tone} size="fixed" appearance="solid" />
       )}
@@ -121,6 +129,7 @@ export function VoiceLauncher({
       <Button
         ref={ref}
         shape="pill"
+        variant={slot ? "ghost" : "secondary"}
         iconOnly={compact}
         className={styles.launcherButton}
         data-docked={slot ? "" : undefined}

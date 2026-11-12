@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -228,7 +229,14 @@ export function SprintReports({
   // Nothing to report yet: one sentence and one action, no heading or refresh.
   if (!sprintId && board.sprints.length === 0)
     return (
-      <section className="sprint-report" aria-label={t("Sprint reports")}>
+      <Text
+        as="section"
+        size="secondary"
+        tone="primary"
+        leading="inherit"
+        className="sprint-report"
+        aria-label={t("Sprint reports")}
+      >
         <EmptyState
           context="list"
           kind="empty"
@@ -243,7 +251,7 @@ export function SprintReports({
           }
         />
         {error ? <InlineError>{error}</InlineError> : null}
-      </section>
+      </Text>
     );
   const capacityPoints = report && !partial && !projectKey ? report.sprint.capacityPoints : null;
   const staleSources =
@@ -252,17 +260,27 @@ export function SprintReports({
       report.sprint.projects.some((project) => board.syncFailures[project.environmentId])) ||
     incompleteSources;
   return (
-    <section className="sprint-report" aria-label={t("Sprint reports")} aria-busy={loading}>
+    <Text
+      as="section"
+      size="secondary"
+      tone="primary"
+      leading="inherit"
+      className="sprint-report"
+      aria-label={t("Sprint reports")}
+      aria-busy={loading}
+    >
       <div className="sprint-heading">
         <div className="sprint-title-block">
           <div className="sprint-title">
-            <Heading size="section">{report?.sprint.name ?? t("Sprint reports")}</Heading>
+            <Heading size="section" lines={2}>
+              {report?.sprint.name ?? t("Sprint reports")}
+            </Heading>
             {report ? <SprintStatusBadge state={report.sprint.state} /> : null}
           </div>
           {!sprintId ? (
-            <p className="sprint-muted">
+            <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
               {t("Choose a sprint to inspect its progress and burndown.")}
-            </p>
+            </Text>
           ) : null}
         </div>
         <div className="sprint-actions">
@@ -392,14 +410,14 @@ export function SprintReports({
           <section className="sprint-section">
             <SectionLabel>{t("Burndown")}</SectionLabel>
             {report?.sprint.startedAt === undefined ? (
-              <p className="sprint-muted">
+              <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
                 {t("Start the sprint to record its burndown. Planned scope is shown below.")}
-              </p>
+              </Text>
             ) : null}
             {!start || !end ? (
-              <p className="sprint-muted">
+              <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
                 {t("Set sprint dates to show the ideal burndown line.")}
-              </p>
+              </Text>
             ) : null}
             {chart.length ? (
               <LineChart
@@ -491,10 +509,12 @@ export function SprintReports({
               </Disclosure>
             </>
           ) : sprintId ? (
-            <p className="sprint-muted">{t("Complete a sprint to see recorded velocity.")}</p>
+            <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
+              {t("Complete a sprint to see recorded velocity.")}
+            </Text>
           ) : null}
         </Surface>
       ) : null}
-    </section>
+    </Text>
   );
 }

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { RefObject } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -30,7 +31,9 @@ function InboxSourceTab({
     >
       <span className="flex items-center gap-1.5">
         <InboxProviderMark provider={source} className="block icon-sm shrink-0" />
-        <span className="leading-none">{label}</span>
+        <Text size="inherit" tone="inherit" leading="none">
+          {label}
+        </Text>
       </span>
     </Tab>
   );
@@ -64,7 +67,7 @@ export function InboxSourceRow({
   useLocale();
   const tabCount = sources.length + (messages ? 1 : 0);
   return (
-    <div className="flex h-9 shrink-0 items-center gap-px px-2">
+    <div className="flex h-9 shrink-0 items-center gap-0 px-2">
       {tabCount > 0 ? (
         <Tabs
           value={messagesSelected ? MESSAGES_TAB : source}
@@ -94,7 +97,9 @@ export function InboxSourceRow({
               <Tab value={MESSAGES_TAB}>
                 <span className="flex items-center gap-1.5">
                   <MessageMultiple className="block icon-sm shrink-0" strokeWidth={1.75} />
-                  <span className="leading-none">{t("Messages")}</span>
+                  <Text size="inherit" tone="inherit" leading="none">
+                    {t("Messages")}
+                  </Text>
                 </span>
               </Tab>
             ) : null}

@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { SettingsFeedback } from "./settingsControls";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { invoke } from "@tauri-apps/api/core";
@@ -190,7 +193,7 @@ function CreateToken({
       }
     >
       {secret ? (
-        <div className={styles.stack}>
+        <Text as="div" size="secondary" tone="inherit" leading="inherit" className={styles.stack}>
           <p>{t("Copy this token now. It will not be shown again.")}</p>
           <TextField
             ref={tokenField}
@@ -200,9 +203,13 @@ function CreateToken({
             autoComplete="off"
             spellCheck={false}
           />
-        </div>
+        </Text>
       ) : (
-        <form
+        <Text
+          as="form"
+          size="secondary"
+          tone="inherit"
+          leading="inherit"
           id={formId}
           onSubmit={(event) => void submit(event)}
           className={styles.stack}
@@ -247,7 +254,15 @@ function CreateToken({
                   onChange={(value) => setModes((current) => ({ ...current, [group]: value }))}
                 />
                 {group === "runtime-logs" ? (
-                  <p className={styles.metadata}>{t("Runtime logs are read-only.")}</p>
+                  <Text
+                    as="p"
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    className={styles.metadata}
+                  >
+                    {t("Runtime logs are read-only.")}
+                  </Text>
                 ) : null}
               </div>
             ))}
@@ -264,7 +279,7 @@ function CreateToken({
             onChange={(e) => setDays(e.target.value)}
           />
           {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
-        </form>
+        </Text>
       )}
     </Modal>
   );
@@ -381,7 +396,11 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         .includes(query.trim().toLocaleLowerCase()),
   );
   return (
-    <section
+    <Text
+      as="section"
+      size="secondary"
+      tone="inherit"
+      leading="inherit"
       id="setting-external-mcp-access"
       className={styles.section}
       aria-labelledby="external-mcp-heading"
@@ -465,9 +484,15 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
               </Button>
             ) : null}
             {data ? (
-              <span className={`${styles.metadata} ${styles.count}`} role="status">
+              <Text
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className={`${styles.metadata} ${styles.count}`}
+                role="status"
+              >
                 {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
-              </span>
+              </Text>
             ) : null}
           </div>
         </div>
@@ -480,7 +505,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           onDismiss={() => setFiltersOpen(false)}
           width={260}
         >
-          <div className={styles.help}>
+          <Text as="div" tone="primary" leading="inherit" className={styles.help}>
             <Select
               hideLabel
               label={t("Status")}
@@ -502,7 +527,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             >
               {t("Reset filters")}
             </Button>
-          </div>
+          </Text>
         </Popover>
       ) : null}
       {!loading && !error && data && !data.projects.length && (
@@ -518,12 +543,19 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       {!loading && data?.tokens.length && shownTokens.length === 0 ? (
         <SettingsFeedback state="empty">{t("No tokens match your filters.")}</SettingsFeedback>
       ) : null}
-      <div className={styles.list}>
+      <ScrollArea
+        axis="both"
+        gutter="stable"
+        {...surfaceAttributes(
+          { variant: "card", frame: "card", edge: "all", radius: "card" },
+          styles.list,
+        )}
+      >
         {shownTokens.map((grant) => (
           <div key={grant.id} className={styles.row}>
             <div className={styles.identity}>
               <span>{grant.name}</span>
-              <span className={styles.metadata}>
+              <Text size="caption" tone="secondary" leading="inherit" className={styles.metadata}>
                 {data?.projects.find((p) => p.id === grant.projectId)?.name ?? grant.projectId}{" "}
                 <Badge
                   tone={
@@ -538,15 +570,21 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                     ]
                   }
                 </Badge>
-              </span>
-              <span className={styles.metadata}>
+              </Text>
+              <Text size="caption" tone="secondary" leading="inherit" className={styles.metadata}>
                 {t("Expires")}: {new Date(grant.expiresAt).toLocaleString()}
-              </span>
+              </Text>
               <section>
                 <SectionLabel as="h3">{t("Scopes")}</SectionLabel>
                 {/* The grant list is a grid of auto tracks; a zero base width keeps the list's own
                     full-row measuring copy from widening the track. */}
-                <div className={`${styles.metadata} w-0 min-w-full`}>
+                <Text
+                  as="div"
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className={`${styles.metadata} w-0 min-w-full`}
+                >
                   <BadgeList
                     label={t("Scopes")}
                     items={Object.entries(grant.scopes).map(([group, modes]) => ({
@@ -554,7 +592,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                       label: `${group}: ${modes.map((mode) => (mode === "read" ? t("Read") : t("Write"))).join(", ")}`,
                     }))}
                   />
-                </div>
+                </Text>
               </section>
             </div>
             {grant.revokedAt === undefined && (
@@ -574,7 +612,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             )}
           </div>
         ))}
-      </div>
+      </ScrollArea>
       {help && (
         <Popover
           anchor={info}
@@ -584,20 +622,24 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           role="dialog"
           aria-label={t("MCP connection examples")}
         >
-          <div className={styles.help}>
+          <Text as="div" tone="primary" leading="inherit" className={styles.help}>
             <p>
               {t(
                 "Set BYCODA_MCP_TOKEN in the client environment, then restart the client. Keep it out of URLs and configuration files.",
               )}
             </p>
             <p>{t("This address connects to bycoda on this computer.")}</p>
-            <strong>Claude Code · .mcp.json</strong>
+            <Text as="strong" size="inherit" tone="inherit" weight="medium">
+              Claude Code · .mcp.json
+            </Text>
             <pre>{examples.claude}</pre>
             <CopyButton value={examples.claude} label={t("Copy Claude Code example")} />
-            <strong>Codex · config.toml</strong>
+            <Text as="strong" size="inherit" tone="inherit" weight="medium">
+              Codex · config.toml
+            </Text>
             <pre>{examples.codex}</pre>
             <CopyButton value={examples.codex} label={t("Copy Codex example")} />
-          </div>
+          </Text>
         </Popover>
       )}
       {creating && data && (
@@ -609,6 +651,6 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           onCreated={() => void refresh()}
         />
       )}
-    </section>
+    </Text>
   );
 }

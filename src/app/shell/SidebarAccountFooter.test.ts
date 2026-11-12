@@ -53,10 +53,34 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 const render = (props = {}) =>
   act(async () => root.render(createElement(SidebarAccountFooter, props)));
 const byLabel = (label: string) => container.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+
+it.each([false, true])(
+  "keeps the development marker inside footer actions (compact=%s)",
+  async (compact) => {
+    vi.stubEnv("DEV", true);
+    await render({ compact });
+    const marker = container.querySelector("[data-dev-mode-indicator]");
+    expect(marker).not.toBeNull();
+    expect(marker!.closest("[data-sidebar-account-footer]")).toBe(
+      container.querySelector("[data-sidebar-account-footer]"),
+    );
+    expect(marker!.compareDocumentPosition(byLabel("View bycoda on GitHub")!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(marker!.getAttribute("aria-label")).toBe("Development build");
+  },
+);
+
+it("omits the development marker in production", async () => {
+  vi.stubEnv("DEV", false);
+  await render();
+  expect(container.querySelector("[data-dev-mode-indicator]")).toBeNull();
+});
 
 it("keeps the repository actions before Settings and account", async () => {
   const onOpenSettings = vi.fn();

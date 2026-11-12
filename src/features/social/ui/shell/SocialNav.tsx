@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { t } from "../../../../shared/i18n";
 import { TabStrip } from "../../../../shared/ui/Tabs";
 import { Inbox, Link, MessageMultiple, Share, Zap } from "../../../../shared/ui/icons";
@@ -38,7 +39,7 @@ export function SocialNav({
   onSelect: (screen: SocialScreenId) => void;
 }) {
   return (
-    <nav className="social-shell-nav">
+    <nav {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "social-shell-nav")}>
       <TabStrip
         label={t("Social sections")}
         value={active}

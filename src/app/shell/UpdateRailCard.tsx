@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { ButtonGroup } from "../../shared/ui/ButtonGroup";
 import { useT } from "../../shared/i18n";
@@ -33,13 +34,13 @@ export function UpdateRailCard({ update, onOpen, onDismiss }: Props) {
             aria-hidden
             className="size-4 shrink-0 object-contain"
           />
-          <span className="min-w-0 truncate text-ui-caption font-medium text-content">
+          <Text size="caption" tone="primary" weight="medium" truncate className="min-w-0">
             {t("Updated to ")}
             {update.version}
-          </span>
-          <span className="shrink-0 text-ui-caption text-content @max-[240px]/rail:hidden">
+          </Text>
+          <Text size="caption" tone="primary" className="shrink-0 @max-[240px]/rail:hidden">
             {t("What's new")}
-          </span>
+          </Text>
         </Button>
         <Button
           iconOnly

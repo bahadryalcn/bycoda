@@ -1,5 +1,6 @@
 import { type KeyboardEvent, type PointerEvent } from "react";
 import { t } from "../../../../../shared/i18n";
+import { Text } from "../../../../../shared/ui/Text";
 import styles from "./GradientStrip.module.css";
 
 export function AngleDial({
@@ -31,7 +32,7 @@ export function AngleDial({
     onChange(Math.max(0, Math.min(360, next)));
   };
   return (
-    <div className={styles.dialWrap}>
+    <Text as="div" tone="muted" leading="inherit" className={styles.dialWrap}>
       <div
         role="slider"
         aria-label={t("Gradient angle")}
@@ -57,6 +58,6 @@ export function AngleDial({
         <span className={styles.needle} style={{ transform: `rotate(${value}deg)` }} />
       </div>
       <span>{value}°</span>
-    </div>
+    </Text>
   );
 }

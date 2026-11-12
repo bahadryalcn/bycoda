@@ -1,6 +1,7 @@
 import type { AssistantKeepAwakeStatus as Status } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
 import styles from "./AssistantView.module.css";
+import { Text } from "../../../shared/ui/Text";
 
 /** Requested policy and actual native activation are deliberately distinct. */
 export function AssistantKeepAwakeStatus({
@@ -21,15 +22,19 @@ export function AssistantKeepAwakeStatus({
           : t("Waiting to prevent sleep")
         : t("Sleep prevention is off");
   return (
-    <div
+    <Text
+      as="div"
       role={state?.error ? "alert" : "status"}
-      className={state?.error ? styles.error : styles.muted}
+      size={state?.error ? "caption" : "micro"}
+      tone={state?.error ? "danger" : "secondary"}
+      leading="inherit"
+      className={styles.muted}
       data-assistant-keep-awake={
         state?.active ? "active" : state?.requested ? "requested" : state ? "off" : "unknown"
       }
     >
       {label}
       {state?.error && <> · {state.error}</>}
-    </div>
+    </Text>
   );
 }

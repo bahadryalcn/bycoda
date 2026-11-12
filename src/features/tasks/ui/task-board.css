@@ -47,8 +47,6 @@
   padding: 0.25rem 0.25rem 0;
   text-align: start;
   align-items: flex-start;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 /* Drop cues use theme tokens only: the lane that would accept the card, and a line
@@ -113,28 +111,12 @@
   align-items: center;
   gap: 0.25rem;
   min-inline-size: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-micro);
 }
 .task-card-title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
   padding-inline-end: 1rem;
   overflow-wrap: anywhere;
 }
-.task-card-meta,
-.task-card-note,
 .task-card-description {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-micro);
-}
-.task-card-description {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-  overflow: hidden;
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
@@ -158,9 +140,7 @@
   position: absolute;
   inset-block-start: 0.75rem;
   inset-inline-end: 0.5rem;
-  color: var(--ui-text-muted);
   opacity: 0;
-  transition: opacity var(--motion-duration-fast);
 }
 [draggable="true"]:hover .task-drag-grip,
 [draggable="true"]:focus-within .task-drag-grip {
@@ -177,9 +157,6 @@
 .task-card-actions > button:not([aria-haspopup]) {
   min-inline-size: 0;
   max-inline-size: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .task-card-actions > [aria-haspopup] {
   flex-shrink: 0;

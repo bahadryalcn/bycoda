@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
   AiIdea,
@@ -20,12 +21,14 @@ import { PLAN_COMMAND } from "../model/plan";
 
 type ModeCommandStyle = {
   Icon: typeof AiIdea;
-  /** Text color of the command inside the prompt. */
-  className: string;
+  /** Text tone of the command inside the prompt. */
+  tone?: TextTone;
+  /** Feature ink for the command when no Text tone matches (orchestration). */
+  className?: string;
   /** Shows a mode pill under the prompt while the mode is on. */
   pill?: true;
   /** Rows that list the mode, such as a + menu or command list. */
-  menu?: { iconClassName: string };
+  menu?: { tone?: TextTone };
 };
 
 /** Presentation only. Wording lives in `modeCommandText`, which takes the caller's
@@ -33,31 +36,31 @@ type ModeCommandStyle = {
 export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
   [PLAN_COMMAND.name]: {
     Icon: AiIdea,
-    className: "text-(--ui-tone-warning-fg)",
+    tone: "warning",
     pill: true,
-    menu: { iconClassName: "text-(--ui-tone-warning-fg)" },
+    menu: { tone: "warning" },
   },
   [OPERATOR_COMMAND.name]: {
     Icon: CursorMagicSelection,
-    className: "text-(--ui-tone-info-fg)",
+    tone: "info",
     pill: true,
-    menu: { iconClassName: "text-(--ui-tone-info-fg)" },
+    menu: { tone: "info" },
   },
   [ORCHESTRATOR_COMMAND.name]: {
     Icon: Share,
     className: "text-orchestration",
     pill: true,
-    menu: { iconClassName: "text-(--ui-text-secondary)" },
+    menu: { tone: "secondary" },
   },
   [DRAFT_COMMAND.name]: {
     Icon: CircleDashed,
-    className: "text-(--ui-text-secondary)",
+    tone: "secondary",
     pill: true,
-    menu: { iconClassName: "text-(--ui-text-secondary)" },
+    menu: { tone: "secondary" },
   },
   [BTW_COMMAND.name]: {
     Icon: MessageSquare,
-    className: "text-(--ui-tone-success-fg)",
+    tone: "success",
   },
   [SUBAGENTS_COMMAND.name]: {
     Icon: Bot,
@@ -65,7 +68,7 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
   },
   [TASK_COMMAND.name]: {
     Icon: CheckList,
-    className: "text-(--ui-tone-info-fg)",
+    tone: "info",
   },
 };
 
@@ -115,7 +118,7 @@ export const SHELL_MODE_NAME = "shell";
 
 const SHELL_MODE_STYLE: ModeCommandStyle = {
   Icon: Terminal,
-  className: "text-(--ui-tone-warning-fg)",
+  tone: "warning",
 };
 
 /** First-line indent that, with the `/`, makes room for a mode icon. */
@@ -163,7 +166,12 @@ export function ModeCommandText({
 }) {
   useLocale();
   return (
-    <span className={mode.style.className}>
+    <Text
+      as="span"
+      size="inherit"
+      tone={mode.style.tone ?? "inherit"}
+      className={mode.style.className}
+    >
       <span className="relative">
         <span className="text-transparent">{text[0]}</span>
         <mode.style.Icon
@@ -174,7 +182,7 @@ export function ModeCommandText({
       <span key={mode.name} className="composer-mode-shimmer">
         {text.slice(1, mode.end)}
       </span>
-    </span>
+    </Text>
   );
 }
 

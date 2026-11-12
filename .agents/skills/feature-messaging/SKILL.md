@@ -1,6 +1,6 @@
 ---
 name: feature-messaging
-description: "Change messaging integrations (multiple email accounts over IMAP/SMTP, Slack, Discord, Microsoft Teams), the Settings Integrations cards for them and the Inbox Messages view. Work-item providers (GitHub, GitLab, Azure DevOps, Jira, Linear) belong to feature-inbox-settings and feature-inbox-github."
+description: "Use when changing email, Slack, Discord and Teams accounts and messages. Not for work-item accounts; see feature-inbox-settings."
 ---
 
 # Messaging integrations
@@ -15,11 +15,11 @@ messaging surface yet.
 ## Source starts
 
 - Native: `src-tauri/src/messaging.rs` (module root), `src-tauri/src/messaging/commands.rs`
-  (Tauri commands and dispatch), `store.rs` (accounts and secret files), `types.rs`
-  (shared shapes), one module per provider (`email`, `slack`, `discord`, `teams`) and
-  `microsoft.rs` (device-code OAuth shared by Teams and Outlook mail), `oauth.rs` (browser
+  (Tauri commands and dispatch), `src-tauri/src/messaging/store.rs` (accounts and secret files), `src-tauri/src/messaging/types.rs`
+  (shared shapes), one module per provider (`src-tauri/src/messaging/email`, `slack`, `discord`, `src-tauri/src/messaging/teams`) and
+  `src-tauri/src/messaging/microsoft.rs` (device-code OAuth shared by Teams and Outlook mail), `src-tauri/src/messaging/oauth.rs` (browser
   sign-in for Gmail and Slack).
-- UI contract: `src/features/messaging/model/messagingTypes.ts`, `messagingApi.ts`; public
+- UI contract: `src/features/messaging/model/messagingTypes.ts`, `src/features/messaging/model/messagingApi.ts`; public
   exports in `src/features/messaging/index.ts`.
 - Offered providers: `src/features/messaging/model/messagingProviders.ts`
   (`ENABLED_MESSAGING_PROVIDERS`) gates Settings cards, search, the Inbox connect menu and
@@ -37,8 +37,7 @@ messaging surface yet.
 2. Add provider behaviour behind the five provider functions (`normalize_config`,
    `verify`, `list_threads`, `thread_messages`, `reply`); keep pure mapping functions
    separate from HTTP or socket I/O so tests stay offline.
-3. Route new UI strings through `t()` and add them to every locale catalog.
-4. Run the focused checks below; live provider behaviour needs a real test account.
+3. Run the focused checks below; live provider behaviour needs a real test account.
 
 ## Preserve
 

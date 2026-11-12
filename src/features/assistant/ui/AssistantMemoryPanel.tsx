@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import type { AssistantMemory } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
@@ -80,7 +82,9 @@ export function AssistantMemoryPanel(props: Props) {
             <SectionLabel as="h3" count={entries.length}>
               {t(label)}
             </SectionLabel>
-            <div className={styles.list}>
+            <div
+              {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.list)}
+            >
               {entries.map((entry) => (
                 <ActionHost
                   as="article"
@@ -89,10 +93,24 @@ export function AssistantMemoryPanel(props: Props) {
                   aria-label={entry.text}
                 >
                   <div className={styles.text}>
-                    <p className={styles.body} id={`assistant-memory-${entry.id}`}>
+                    <Text
+                      as="p"
+                      size="body"
+                      tone="inherit"
+                      weight="medium"
+                      leading="normal"
+                      className={styles.body}
+                      id={`assistant-memory-${entry.id}`}
+                    >
                       {entry.text}
-                    </p>
-                    <div className={styles.meta}>
+                    </Text>
+                    <Text
+                      as="div"
+                      size="caption"
+                      tone="secondary"
+                      leading="inherit"
+                      className={styles.meta}
+                    >
                       <span>
                         {t(
                           entry.scope === "all"
@@ -114,9 +132,11 @@ export function AssistantMemoryPanel(props: Props) {
                       </span>
                       <span aria-hidden>·</span>
                       <Timestamp className={styles.time} value={entry.createdAt} />
-                    </div>
+                    </Text>
                     {entry.quote && entry.quote !== entry.text && (
-                      <blockquote className={styles.quote}>{entry.quote}</blockquote>
+                      <Text as="blockquote" leading="normal" className={styles.quote}>
+                        {entry.quote}
+                      </Text>
                     )}
                   </div>
                   <div className={styles.actions}>

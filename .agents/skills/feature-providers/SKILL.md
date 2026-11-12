@@ -1,15 +1,13 @@
 ---
 name: feature-providers
-description: "Change provider/model discovery and enable policy, global/project defaults, accounts/sign-in, CLI setup/update/version checks or model handoff selection."
+description: "Use when changing provider catalogs, model defaults, accounts and CLI setup. Not for message handoff; see feature-chat-composer."
 ---
 
 # Providers and models
 
 Own provider settings and catalog/account workflows. Composer owns the submitted request and handoff UI; Host runtime owns captured process/operation writers, physical retirement and execution authority. Do not duplicate their protocols in provider preferences.
 
-## Source entry points
-
-Code paths below are repository-root relative.
+## Source starts
 
 - `src/features/providers/`
 - `src/features/settings/ui/ProviderSettings.tsx`
@@ -40,10 +38,15 @@ Code paths below are repository-root relative.
 - Visible probe timeout is not physical process completion or signed-out proof. Retain/coalesce original provider/profile work; dismissing an update notice does not cancel an update.
 - Do not fabricate CLI cancellation or current version from catalog refresh. Binary path drafts, active/configured-next distinction and restart recovery remain explicit.
 
-## Verification and references
+## Focused checks
 
 - Choose changed provider catalog/preferences/account/update/control tests and affected picker/settings consumers. Process/transport changes additionally need the Host/native owner suites.
 - Review affected UI in both themes and required widths, long/custom IDs and pending/error/retry states. A rendered SVG or mocked sign-in does not establish installed glyph visibility or live account acceptance.
-- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
-- [Host process authority](../../../docs/reference/host-runtime.md)
-- [Provider-switch behavior](../../../docs/guides/chat-artifacts-and-connected-files.md)
+
+## References
+
+- [Provider decisions](references/decisions.md) when changing model defaults or delegation policy.
+
+- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners.
+- [Host process authority](../../../docs/reference/host-runtime.md) when changing the linked contract.
+- [Provider-switch behavior](../../../docs/guides/chat-artifacts-and-connected-files.md) when changing the linked contract.

@@ -2,6 +2,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useState } from "react";
 import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -136,9 +137,9 @@ export function ContinuousUsageTable({
   return (
     <>
       <div className="usage-section-heading">
-        <span className="usage-muted">
+        <Text as="span" leading="inherit" className="usage-muted">
           {rows.length.toLocaleString(getLocale())} {t("records")}
-        </span>
+        </Text>
         <Button
           variant="ghost"
           aria-expanded={allMetrics}
@@ -234,7 +235,7 @@ export function UsageDataNotes({
   truncated: boolean;
 }) {
   return (
-    <div className="usage-data-notes flex items-center gap-2">
+    <Text as="div" leading="relaxed" className="usage-data-notes flex items-center gap-2">
       <InfoPopover label={t("Data sources and coverage")}>
         <p>
           {t(
@@ -282,10 +283,10 @@ export function UsageDataNotes({
         <p>{t("Token timestamps have 15-minute precision. End time is exclusive.")}</p>
       </InfoPopover>
       {unpriced.length > 0 && (
-        <span className="usage-muted">
+        <Text as="span" leading="inherit" className="usage-muted">
           {t("Models without prices")}: {unpriced.length}
-        </span>
+        </Text>
       )}
-    </div>
+    </Text>
   );
 }

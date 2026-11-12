@@ -54,9 +54,18 @@ export function VoiceCompanionRecovery({
       {shownError ? <MicrophoneRecoveryAction message={shownError} /> : null}
       <LiveText
         className={styles.caption}
+        size="caption"
+        tone="secondary"
+        leading="snug"
         text={historyNotice !== shownError && historyNotice !== historyFailed ? historyNotice : ""}
       />
-      <LiveText className={styles.caption} text={ruleNotice} />
+      <LiveText
+        className={styles.caption}
+        size="caption"
+        tone="secondary"
+        leading="snug"
+        text={ruleNotice}
+      />
       {rulePending && (
         <Button loading={savingRule} onClick={onSaveRule}>
           {t("Retry rule save")}

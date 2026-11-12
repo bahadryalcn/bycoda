@@ -3,17 +3,17 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DateRangePicker } from "./DateRangePicker";
-import type { DateRangePickerProps } from "./arc/date-range-picker/date-range-picker";
+import type { DateRangePickerProps } from "./DateRangePicker";
 
 let container: HTMLDivElement;
 let root: Root;
 const date = (day: number) => new Date(2026, 9, day);
 const range = (start: number, end = start) => ({ start: date(start), end: date(end) });
 const button = (text: string) =>
-  Array.from(container.querySelectorAll("button")).find((node) => node.textContent === text)!;
-const render = async (props: DateRangePickerProps) => {
+  Array.from(document.querySelectorAll("button")).find((node) => node.textContent === text)!;
+const render = async (props: Partial<DateRangePickerProps>) => {
   await act(async () =>
-    root.render(createElement(DateRangePicker, { locale: "en-US", months: 1, ...props })),
+    root.render(createElement(DateRangePicker, { value: null, onChange: vi.fn(), ...props })),
   );
 };
 const open = async () => {
@@ -127,9 +127,7 @@ it("rejects an invalid controlled range and permits calendar recovery within cur
   });
   await open();
   expect(button("Apply").disabled).toBe(true);
-  const first = container.querySelector<HTMLButtonElement>(
-    '[data-current] [data-date="2026-10-10"]',
-  )!;
+  const first = document.querySelector<HTMLButtonElement>('[data-date="2026-10-10"]')!;
   await act(async () => first.click());
   await act(async () => first.focus());
   await act(async () =>
@@ -137,7 +135,7 @@ it("rejects an invalid controlled range and permits calendar recovery within cur
   );
   expect(document.activeElement?.getAttribute("data-date")).toBe("2026-10-10");
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[data-current] [data-date="2026-10-20"]')!.click(),
+    document.querySelector<HTMLButtonElement>('[data-date="2026-10-20"]')!.click(),
   );
   await act(async () => button("Apply").click());
   expect(change).toHaveBeenCalledExactlyOnceWith(range(10, 20));
@@ -149,18 +147,18 @@ it("keeps a disabled or read-only trigger closed and exposes the state on the fr
   expect(trigger.disabled).toBe(true);
   expect(container.querySelector("[data-disabled]")).not.toBeNull();
   await act(async () => trigger.click());
-  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
 
   await render({ value: range(10, 12), readOnly: true });
   const quiet = container.querySelector<HTMLButtonElement>("button")!;
   expect(quiet.disabled).toBe(false);
-  expect(quiet.hasAttribute("aria-haspopup")).toBe(false);
+  expect(quiet.getAttribute("aria-readonly")).toBe("true");
   expect(container.querySelector("[data-readonly]")).not.toBeNull();
   await act(async () => quiet.click());
-  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
 
-  await render({ value: range(10, 12), invalid: true });
-  expect(container.querySelector("[data-invalid]")).not.toBeNull();
+  await render({ value: range(10, 12), error: "Invalid range" });
+  expect(container.querySelector('[aria-invalid="true"]')).not.toBeNull();
   await open();
-  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
 });

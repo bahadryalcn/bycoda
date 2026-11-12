@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
@@ -83,7 +84,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
         {compact ? null : (
           <>
             {muted.length ? t("Muted") : t("Mute")}
-            <ChevronDown className="icon-xs text-(--ui-text-secondary)" aria-hidden="true" />
+            <ChevronDown className="icon-xs" tone="secondary" aria-hidden="true" />
           </>
         )}
       </Button>
@@ -99,9 +100,9 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
           ariaLabel={t("Mute notifications")}
           width={244}
           header={
-            <p className="px-2 py-1.5 text-ui-micro text-(--ui-text-secondary)">
+            <Text as="p" size="micro" tone="secondary" className="px-2 py-1.5">
               {t("Mute all notifications for")}
-            </p>
+            </Text>
           }
           items={notificationMuteActions()}
           onClose={() => close(Boolean(document.activeElement?.closest('[role="menu"]')))}

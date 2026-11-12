@@ -395,11 +395,10 @@ export function useInboxActivity(
         .map(([id]) => id),
     );
   }, [updates, notificationRevision]);
-  return {
-    unseen,
-    linkedSessionUpdates: updates,
-    linkedSessionUpdateIds: linkedIndicators,
-  };
+  return useMemo(
+    () => ({ unseen, linkedSessionUpdates: updates, linkedSessionUpdateIds: linkedIndicators }),
+    [unseen, updates, linkedIndicators],
+  );
 }
 
 /** Badge-only compatibility wrapper for consumers that do not render sessions. */

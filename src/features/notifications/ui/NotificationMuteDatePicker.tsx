@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
@@ -7,7 +8,7 @@ import {
   updateNotificationPreferences,
 } from "../model/notificationPreferences";
 import {
-  DateTimePicker,
+  DateTimePanel,
   parseLocalDateTime,
   toLocalDateTime,
 } from "../../../shared/ui/DateTimePicker";
@@ -58,10 +59,10 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
         }
       }}
     >
-      <p className="mb-3 px-1 text-ui-micro text-(--ui-text-secondary)">
+      <Text as="p" size="micro" tone="secondary" className="mb-3 px-1">
         {t("Mute all notifications until")}
-      </p>
-      <DateTimePicker
+      </Text>
+      <DateTimePanel
         value={value}
         onChange={(next) => {
           setValue(next);

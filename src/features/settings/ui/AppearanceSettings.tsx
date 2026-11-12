@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useContext, useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
@@ -125,8 +126,8 @@ export function AppearancePage({
       {/* The tabs lead the page; generation edits every topic, so its toolbar stays pinned with them. */}
       <div ref={sentinel} aria-hidden="true" className="appearance-generator-sentinel" />
       <Tabs value={section} onValueChange={select}>
-        <div ref={generator} className="appearance-generator">
-          <TabList label={t("Appearance")}>
+        <div ref={generator} {...surfaceAttributes({ variant: "base" }, "appearance-generator")}>
+          <TabList label={t("Appearance")} scrollbar="hidden">
             {sections.map(({ id, label }) => (
               <Tab key={id} value={id}>
                 {label}

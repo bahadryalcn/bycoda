@@ -41,16 +41,10 @@
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
-  padding: 3px 10px;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--radius-pill);
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
+  padding: 4px 10px;
 }
 .chip strong {
-  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: inherit;
 }
 .note {
   margin: 0;

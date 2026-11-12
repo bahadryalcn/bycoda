@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
@@ -29,17 +31,25 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
   const title = t("Switched from {p0} to {p1}", { p0: describe(from), p1: describe(to) });
   const line = (
     <>
-      <ArrowLeftRight className="icon-sm shrink-0 text-(--ui-text-muted)" aria-hidden="true" />
+      <ArrowLeftRight className="icon-sm shrink-0" tone="muted" aria-hidden="true" />
       <SwitchState state={from} previous />
-      <span aria-hidden="true" className="shrink-0 text-(--ui-text-muted)">
+      <Text aria-hidden="true" size="inherit" tone="muted" className="shrink-0">
         →
-      </span>
+      </Text>
       <SwitchState state={to} />
       <StepNote step={to} />
       {switches > 1 ? (
-        <span className="shrink-0 rounded-full border border-(--ui-pane-border) px-1.5 text-ui-caption leading-4 text-(--ui-text-muted)">
+        <Text
+          as="span"
+          size="caption"
+          tone="muted"
+          {...surfaceAttributes(
+            { radius: "pill", frame: "pane", edge: "all" },
+            "shrink-0   border-(--ui-pane-border) px-1.5",
+          )}
+        >
           {switches}
-        </span>
+        </Text>
       ) : null}
     </>
   );
@@ -60,11 +70,14 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
             aria-expanded={open}
             aria-label={t("{p0}, {p1} switches", { p0: title, p1: String(switches) })}
             onClick={() => setOpen(!open)}
-            className="w-full min-w-0 text-left text-ui-body text-(--ui-text-secondary)"
+            className="w-full min-w-0 text-left"
+            textSize="body"
+            textTone="secondary"
           >
             {line}
             <ChevronRight
-              className={`ml-auto icon-sm shrink-0 text-(--ui-text-secondary) ${open ? "rotate-90" : ""}`}
+              className={`ml-auto icon-sm shrink-0 ${open ? "rotate-90" : ""}`}
+              tone="secondary"
               strokeWidth={1.75}
               aria-hidden="true"
             />
@@ -72,13 +85,16 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
           {open ? <SwitchHistory steps={steps} /> : null}
         </>
       ) : (
-        <div
+        <Text
           role="note"
           aria-label={title}
-          className="flex min-w-0 items-center gap-1.5 py-1 text-ui-body text-(--ui-text-secondary)"
+          as="div"
+          size="body"
+          tone="secondary"
+          className="flex min-w-0 items-center gap-1.5 py-1"
         >
           {line}
-        </div>
+        </Text>
       )}
     </div>
   );
@@ -91,23 +107,33 @@ function SwitchState({ state, previous = false }: { state: ModelSwitchState; pre
     >
       <HarnessIcon harness={state.harness} className="size-3.5 shrink-0" />
       {state.account ? (
-        <span
-          className={`min-w-0 truncate ${previous ? "" : "font-medium text-(--ui-tone-neutral-fg)"}`}
+        <Text
+          size="inherit"
+          tone={previous ? "inherit" : "neutral"}
+          weight={previous ? undefined : "medium"}
+          truncate
+          className={`min-w-0  `}
         >
           {state.account}
-        </span>
+        </Text>
       ) : null}
-      <span
+      <Text
         aria-hidden="true"
-        className={`shrink-0 text-(--ui-text-muted) ${previous ? "@max-[420px]/switch:hidden" : ""} ${state.account ? "" : "hidden"}`}
+        size="inherit"
+        tone="muted"
+        className={`shrink-0  ${previous ? "@max-[420px]/switch:hidden" : ""} ${state.account ? "" : "hidden"}`}
       >
         ·
-      </span>
-      <span
-        className={`min-w-0 truncate ${previous && state.account ? "@max-[420px]/switch:hidden" : ""} ${state.account || previous ? "" : "font-medium text-(--ui-tone-neutral-fg)"}`}
+      </Text>
+      <Text
+        size="inherit"
+        tone={state.account || previous ? "inherit" : "neutral"}
+        weight={state.account || previous ? undefined : "medium"}
+        truncate
+        className={`min-w-0  ${previous && state.account ? "@max-[420px]/switch:hidden" : ""} `}
       >
         {state.model}
-      </span>
+      </Text>
     </span>
   );
 }
@@ -116,16 +142,16 @@ function StepNote({ step }: { step: ModelSwitchStep }) {
   const t = useT();
   if (step.note === "summary") {
     return (
-      <span className="shrink-0 truncate text-ui-caption text-(--ui-tone-warning-fg)">
+      <Text size="caption" tone="warning" truncate className="shrink-0">
         {t("Summary goes with next message")}
-      </span>
+      </Text>
     );
   }
   if (step.note === "deferred") {
     return (
-      <span className="shrink-0 text-ui-caption italic text-(--ui-text-muted)">
+      <Text size="caption" tone="muted" className="shrink-0 italic">
         {t("Next message")}
-      </span>
+      </Text>
     );
   }
   return null;
@@ -134,7 +160,12 @@ function StepNote({ step }: { step: ModelSwitchStep }) {
 function SwitchHistory({ steps }: { steps: ModelSwitchStep[] }) {
   const t = useT();
   return (
-    <ol className="ml-1.5 flex min-w-0 flex-col border-l border-(--ui-pane-border) pl-3">
+    <ol
+      {...surfaceAttributes(
+        { frame: "pane", edge: "left" },
+        "ml-1.5 flex min-w-0 flex-col  border-(--ui-pane-border) pl-3",
+      )}
+    >
       {steps.map((step, index) => {
         const before = steps[index - 1];
         const current = index === steps.length - 1;
@@ -147,38 +178,48 @@ function SwitchHistory({ steps }: { steps: ModelSwitchStep[] }) {
           ...(current ? [t("Now")] : []),
         ];
         return (
-          <li
+          <Text
             key={`${index}:${step.at}`}
-            className="flex min-w-0 items-center gap-1.5 py-0.5 text-ui-body text-(--ui-text-secondary)"
+            as="li"
+            size="body"
+            tone="secondary"
+            className="flex min-w-0 items-center gap-1.5 py-0.5"
           >
-            <span className="w-11 shrink-0 font-mono text-ui-caption text-(--ui-text-muted)">
+            <Text size="caption" tone="muted" className="w-11 shrink-0 font-mono">
               {index === 0 ? "" : <Timestamp value={step.at} format="time" tooltip={false} />}
-            </span>
+            </Text>
             <HarnessIcon harness={step.harness} className="size-3.5 shrink-0" />
             {step.account ? (
-              <span
-                className={`min-w-0 truncate ${current || changed.includes("account") ? "font-medium text-(--ui-tone-neutral-fg)" : ""}`}
+              <Text
+                size="inherit"
+                tone={current || changed.includes("account") ? "neutral" : "inherit"}
+                weight={current || changed.includes("account") ? "medium" : undefined}
+                truncate
+                className={`min-w-0  `}
               >
                 {step.account}
-              </span>
+              </Text>
             ) : null}
             {step.account ? (
-              <span aria-hidden="true" className="shrink-0 text-(--ui-text-muted)">
+              <Text aria-hidden="true" size="inherit" tone="muted" className="shrink-0">
                 ·
-              </span>
+              </Text>
             ) : null}
-            <span
-              className={`min-w-0 truncate ${changed.includes("model") ? "text-(--ui-tone-neutral-fg)" : ""}`}
+            <Text
+              size="inherit"
+              tone={changed.includes("model") ? "neutral" : "inherit"}
+              truncate
+              className={`min-w-0  `}
             >
               {step.model}
-            </span>
+            </Text>
             {tags.length ? (
-              <span className="shrink-0 text-ui-caption text-(--ui-text-muted)">
+              <Text size="caption" tone="muted" className="shrink-0">
                 {tags.join(" · ")}
-              </span>
+              </Text>
             ) : null}
             <StepNote step={step} />
-          </li>
+          </Text>
         );
       })}
     </ol>

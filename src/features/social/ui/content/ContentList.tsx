@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { ClampText } from "../../../../shared/ui/ClampText";
+import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { ActionHost } from "../../../../shared/ui/ActionHost";
@@ -101,7 +104,7 @@ export function ContentList({
         </NativeSelect>
       </div>
       {rows.length ? (
-        <ul className="content-rows">
+        <ul {...surfaceAttributes({ frame: "pane", edge: "all", radius: "card" }, "content-rows")}>
           {rows.map(({ campaign, state }) => {
             const platforms = [
               ...new Set(
@@ -134,10 +137,35 @@ export function ContentList({
                       ))}
                     </span>
                     <span className="content-row-main">
-                      <span className="content-row-name">{campaign.name}</span>
-                      {preview ? <span className="content-row-text">{preview}</span> : null}
+                      <Text
+                        size="inherit"
+                        tone="inherit"
+                        weight="medium"
+                        truncate
+                        className="content-row-name"
+                      >
+                        {campaign.name}
+                      </Text>
+                      {preview ? (
+                        <ClampText
+                          as="span"
+                          lines={2}
+                          expandable={false}
+                          size="caption"
+                          tone="secondary"
+                          leading="inherit"
+                          className="content-row-text"
+                        >
+                          {preview}
+                        </ClampText>
+                      ) : null}
                     </span>
-                    <span className="content-row-meta">
+                    <Text
+                      size="caption"
+                      tone="secondary"
+                      leading="inherit"
+                      className="content-row-meta"
+                    >
                       {at ? (
                         <span className="content-row-time">
                           {formatDate(at, {
@@ -149,7 +177,7 @@ export function ContentList({
                         </span>
                       ) : null}
                       <ContentStateBadge state={state} />
-                    </span>
+                    </Text>
                   </span>
                 </Button>
               </ActionHost>
@@ -157,17 +185,35 @@ export function ContentList({
           })}
         </ul>
       ) : (
-        <p className="content-platform-note">{t("No posts match these filters.")}</p>
+        <Text
+          as="p"
+          size="caption"
+          tone="muted"
+          leading="inherit"
+          className="content-platform-note"
+        >
+          {t("No posts match these filters.")}
+        </Text>
       )}
       {programs.length ? (
         <section className="content-programs" aria-label={t("Repeating programs")}>
           <SectionLabel as="h3" className="content-programs-title">
             {t("Repeating programs")}
           </SectionLabel>
-          <ul className="content-rows">
+          <ul
+            {...surfaceAttributes({ frame: "pane", edge: "all", radius: "card" }, "content-rows")}
+          >
             {programs.map((program) => (
               <li key={program.id} className="content-row-static">
-                <span className="content-row-name">{program.name}</span>
+                <Text
+                  size="inherit"
+                  tone="inherit"
+                  weight="medium"
+                  truncate
+                  className="content-row-name"
+                >
+                  {program.name}
+                </Text>
                 <Badge
                   size="sm"
                   tone={program.cancelled || !program.enabled ? "neutral" : "success"}

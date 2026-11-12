@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useId, useState, useRef, useEffect, useLayoutEffect } from "react";
@@ -83,7 +84,12 @@ export function SheetGridView({
       }
     >
       {grid.truncated ? (
-        <div className="shrink-0 border-b border-stroke px-3 py-1 text-ui-micro text-[var(--ui-text-secondary)]">
+        <Text
+          as="div"
+          size="micro"
+          tone="secondary"
+          className="shrink-0 border-b border-stroke px-3 py-1"
+        >
           {t("Showing the first ")}
           {formatInteger(grid.rowCount)}
           {t(" of")} {formatInteger(grid.totalRows)}
@@ -95,7 +101,7 @@ export function SheetGridView({
                 " Cell/text preview budget reached; some values are omitted or shortened. Open the original file to see all values.",
               )
             : ""}
-        </div>
+        </Text>
       ) : null}
       <div
         ref={scrollRef}
@@ -148,10 +154,13 @@ export function SheetGridView({
             height: headerHeight + grid.rowCount * rowHeight,
           }}
         >
-          <div
+          <Text
             role="row"
             aria-rowindex={1}
-            className="sticky top-0 z-2 flex border-b border-stroke bg-(--color-background-base) text-(--ui-text-secondary)"
+            as="div"
+            size="inherit"
+            tone="secondary"
+            className="sticky top-0 z-2 flex border-b border-stroke bg-(--color-background-base)"
             style={{
               height: headerHeight,
               width,
@@ -176,7 +185,7 @@ export function SheetGridView({
                 {label}
               </div>
             ))}
-          </div>
+          </Text>
           {Array.from(
             new Set([
               ...Array.from({ length: last - first }, (_, offset) => first + offset),
@@ -197,10 +206,13 @@ export function SheetGridView({
                     width,
                   }}
                 >
-                  <div
+                  <Text
                     role="rowheader"
                     aria-colindex={1}
-                    className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--color-background-base) text-right text-(--ui-text-secondary) tabular-nums"
+                    as="div"
+                    size="inherit"
+                    tone="secondary"
+                    className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--color-background-base) text-right tabular-nums"
                     style={{
                       width: rowHeaderWidth,
                       lineHeight: `${rowHeight}px`,
@@ -208,11 +220,12 @@ export function SheetGridView({
                     }}
                   >
                     {index + 1}
-                  </div>
+                  </Text>
                   {grid.columns.map((_, column) => {
                     const cell = grid.cells[`${index}:${column}`] ?? "";
                     return (
-                      <div
+                      <Text
+                        truncate
                         key={column}
                         role="gridcell"
                         aria-colindex={column + 2}
@@ -223,7 +236,10 @@ export function SheetGridView({
                           setFocused({ row: index, column });
                           scrollRef.current?.focus();
                         }}
-                        className="shrink-0 truncate border-r border-stroke text-content"
+                        as="div"
+                        size="inherit"
+                        tone="primary"
+                        className="shrink-0 border-r border-stroke"
                         style={{
                           ...cellStyle,
                           outline:
@@ -234,9 +250,11 @@ export function SheetGridView({
                         }}
                       >
                         <OverflowTooltip label={cell}>
-                          <span className="block truncate">{cell}</span>
+                          <Text size="inherit" tone="inherit" truncate className="block">
+                            {cell}
+                          </Text>
                         </OverflowTooltip>
-                      </div>
+                      </Text>
                     );
                   })}
                 </div>

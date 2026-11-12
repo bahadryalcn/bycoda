@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { useState } from "react";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -128,7 +130,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const { section, filters, menu, status } = props;
   return (
-    <header className="task-board-toolbar">
+    <header {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "task-board-toolbar")}>
       <Heading size="page" className="sr-only">
         {t("Tasks")}
       </Heading>
@@ -166,7 +168,9 @@ export function TaskToolbar(props: TaskToolbarProps) {
         />
       ) : null}
       {props.machineNotice ? (
-        <span className="task-board-notice">{props.machineNotice}</span>
+        <Text size="caption" tone="secondary" leading="inherit" className="task-board-notice">
+          {props.machineNotice}
+        </Text>
       ) : null}
       <div className="task-board-actions">
         {props.view.visible ? (
@@ -191,11 +195,17 @@ export function TaskToolbar(props: TaskToolbarProps) {
           />
         ) : null}
         {props.newReviewNotes > 0 ? (
-          <span data-new-review-notes className="task-review-notes">
+          <Text
+            size="micro"
+            tone="warning"
+            leading="inherit"
+            data-new-review-notes
+            className="task-review-notes"
+          >
             {props.newReviewNotes}
             {t(" new review ")}
             {props.newReviewNotes === 1 ? t("note") : t("notes")}
-          </span>
+          </Text>
         ) : null}
         {filters.visible ? (
           <TaskToolbarFilters

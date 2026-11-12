@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -52,17 +55,26 @@ export function OwnerApprovalChat({
             <section
               key={request.id}
               aria-label={request.title}
-              className="shrink-0 border-t border-(--ui-pane-border) px-4 py-3"
+              {...surfaceAttributes(
+                { frame: "pane", edge: "top" },
+                "shrink-0 border-(--ui-pane-border) px-4 py-3",
+              )}
             >
-              <strong className="text-ui-body">{request.title}</strong>
+              <Text as="strong" size="body" tone="inherit">
+                {request.title}
+              </Text>
               {request.inbox ? (
                 <div className="my-2 max-h-64 overflow-auto">
                   <InboxApprovalPreview details={request.inbox} message={request.message} />
                 </div>
               ) : (
-                <pre className="my-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+                <OutputBlock
+                  size="caption"
+                  tone="secondary"
+                  className="my-2 max-h-48 overflow-auto break-words"
+                >
                   {request.message}
-                </pre>
+                </OutputBlock>
               )}
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={() => settleOwnerApproval(request.id, false)}>
@@ -90,12 +102,21 @@ export function OwnerApprovalChat({
             <section
               key={request.id}
               aria-label={t("Secret request")}
-              className="shrink-0 border-t border-(--ui-pane-border) px-4 py-3"
+              {...surfaceAttributes(
+                { frame: "pane", edge: "top" },
+                "shrink-0 border-(--ui-pane-border) px-4 py-3",
+              )}
             >
-              <strong className="text-ui-body">{t("Secret request")}</strong>
-              <pre className="my-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+              <Text as="strong" size="body" tone="inherit">
+                {t("Secret request")}
+              </Text>
+              <OutputBlock
+                size="caption"
+                tone="secondary"
+                className="my-2 max-h-48 overflow-auto break-words"
+              >
                 {request.message}
-              </pre>
+              </OutputBlock>
               <OwnerSecretForm request={request} />
             </section>
           ))}

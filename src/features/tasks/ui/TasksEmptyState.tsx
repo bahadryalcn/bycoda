@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Plus } from "../../../shared/ui/icons";
@@ -40,12 +42,37 @@ export function TasksEmptyState({
       <ol className="task-onboarding-steps" aria-label={t("How it works")}>
         {steps.map((step, index) => (
           <li key={step.title}>
-            <span className="task-onboarding-number" aria-hidden="true">
+            <Text
+              tone="secondary"
+              size="caption"
+              leading="inherit"
+              {...surfaceAttributes(
+                { frame: "pane", edge: "all", radius: "pill" },
+                "task-onboarding-number",
+              )}
+              aria-hidden="true"
+            >
               {index + 1}
-            </span>
+            </Text>
             <span className="task-onboarding-copy">
-              <span className="task-onboarding-title">{step.title}</span>
-              <span className="task-onboarding-detail">{step.detail}</span>
+              <Text
+                as="span"
+                size="secondary"
+                tone="primary"
+                weight="medium"
+                leading="inherit"
+                className="task-onboarding-title"
+              >
+                {step.title}
+              </Text>
+              <Text
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className="task-onboarding-detail"
+              >
+                {step.detail}
+              </Text>
             </span>
           </li>
         ))}

@@ -1,9 +1,6 @@
 {
   "note": "Components and hooks the React Compiler does not compile in the folders it compiles in full, counted per file by scripts/checks/check-compiler-coverage.mjs. Counts may only fall; lower them with --ratchet after a fix. Rule bycoda/compiler-owns-memo allows manual memoization only in the files listed here.",
   "counts": {
-    "src/app/shell/LastSessionsSection.tsx": {
-      "uncompiled-function": 1
-    },
     "src/app/shell/SessionRecoveryPanel.tsx": {
       "uncompiled-function": 1
     },
@@ -16,16 +13,7 @@
     "src/app/shell/UsageFooter.tsx": {
       "uncompiled-function": 1
     },
-    "src/app/shell/UsageProviderChip.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/app/shell/WhatsNewDialog.tsx": {
-      "uncompiled-function": 1
-    },
     "src/app/shell/sessionListWindow.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/app/shell/useCheckoutChangeStats.ts": {
       "uncompiled-function": 1
     },
     "src/app/shell/useMuteStatuses.ts": {
@@ -52,9 +40,6 @@
     "src/features/sessions/ui/AgentClock.tsx": {
       "uncompiled-function": 1
     },
-    "src/features/sessions/ui/AgentTranscript.tsx": {
-      "uncompiled-function": 1
-    },
     "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
       "uncompiled-function": 2
     },
@@ -73,13 +58,7 @@
     "src/features/sessions/ui/SecondOpinionButton.tsx": {
       "uncompiled-function": 1
     },
-    "src/features/sessions/ui/SessionAgentIdentity.tsx": {
-      "uncompiled-function": 1
-    },
     "src/features/sessions/ui/SessionPane.tsx": {
-      "uncompiled-function": 1
-    },
-    "src/features/sessions/ui/SessionSubagentSheet.tsx": {
       "uncompiled-function": 1
     },
     "src/features/sessions/ui/SessionWorkingStatus.tsx": {

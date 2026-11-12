@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -70,11 +72,11 @@ export function EditFromHereDialog({
     >
       <div className="flex min-w-0 flex-col gap-4">
         {planLoading ? (
-          <p role="status" className="text-ui-body text-content-secondary">
+          <Text as="p" role="status" size="body" tone="inherit">
             {t("Checking session file history…")}
-          </p>
+          </Text>
         ) : plan && !plan.unavailable ? (
-          <div className="flex min-w-0 flex-col gap-2 text-ui-body">
+          <Text as="div" size="body" tone="inherit" className="flex min-w-0 flex-col gap-2">
             <p>{t("Session files: {p0}", { p0: plan.files.length })}</p>
             {conflicts.length ? (
               <div className="flex min-w-0 flex-col gap-1">
@@ -84,17 +86,21 @@ export function EditFromHereDialog({
                 <ul className="flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto">
                   {conflicts.map((file) => (
                     <li key={file.path} className="break-words [overflow-wrap:anywhere]">
-                      <span className="font-mono">{file.path}</span>
+                      <Code>{file.path}</Code>
                       {": "}
-                      <span className="text-content-secondary">{file.conflict}</span>
+                      <Text as="span" size="inherit" tone="inherit">
+                        {file.conflict}
+                      </Text>
                     </li>
                   ))}
                 </ul>
               </div>
             ) : null}
-          </div>
+          </Text>
         ) : (
-          <p className="text-ui-body text-content-secondary">{unavailable}</p>
+          <Text as="p" size="body" tone="inherit">
+            {unavailable}
+          </Text>
         )}
         {error ? <InlineError>{error}</InlineError> : null}
       </div>

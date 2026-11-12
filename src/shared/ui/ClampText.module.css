@@ -2,6 +2,12 @@
 @layer properties, theme, base, components, utilities;
 
 @layer components {
+  .silent {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--clamp-lines, 4);
+    overflow: hidden;
+  }
   .root {
     min-inline-size: 0;
     display: flex;

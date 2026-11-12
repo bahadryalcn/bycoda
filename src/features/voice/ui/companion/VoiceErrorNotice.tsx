@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { TriangleAlert } from "../../../../shared/ui/icons";
@@ -26,14 +27,16 @@ export function VoiceErrorMark({ error, onShow }: { error: string; onShow?: () =
   const title = voiceErrorTitle(error);
   if (!onShow) {
     return (
-      <span
+      <Text
+        size="inherit"
+        tone="danger"
         data-voice-error=""
         role="img"
         aria-label={title}
-        className="grid size-7 shrink-0 place-items-center text-(--ui-tone-danger-fg)"
+        className="grid size-7 shrink-0 place-items-center"
       >
         <TriangleAlert className="icon-sm" />
-      </span>
+      </Text>
     );
   }
   return (
@@ -54,15 +57,21 @@ export function VoiceErrorMark({ error, onShow }: { error: string; onShow?: () =
 export function VoiceErrorNotice({ error, onDismiss }: { error: string; onDismiss: () => void }) {
   const title = voiceErrorTitle(error);
   return (
-    <div className="flex flex-col gap-2 text-ui-caption">
-      {title === error ? null : <p className="font-medium">{title}</p>}
-      <p className="break-words text-(--ui-text-secondary) select-text">{error}</p>
+    <Text as="div" size="caption" tone="inherit" className="flex flex-col gap-2">
+      {title === error ? null : (
+        <Text as="p" size="inherit" tone="secondary" weight="medium">
+          {title}
+        </Text>
+      )}
+      <Text as="p" size="inherit" tone="secondary" className="break-words select-text">
+        {error}
+      </Text>
       <MicrophoneRecoveryAction message={error} />
       <div className="flex justify-end">
         <Button variant="primary" onClick={onDismiss}>
           {t("Dismiss")}
         </Button>
       </div>
-    </div>
+    </Text>
   );
 }

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
@@ -22,14 +24,29 @@ export function DeviceConnectState({
   onSetup: (anchor: HTMLElement) => void;
 }) {
   return (
-    <div className="device-panel-state device-panel-connect">
-      <Smartphone className="device-panel-state-icon" aria-hidden />
-      <p className="device-panel-state-title">{t("Connect a device")}</p>
-      <p className="host-tool-muted">
+    <Text
+      as="div"
+      size="caption"
+      tone="inherit"
+      leading="inherit"
+      className="device-panel-state device-panel-connect"
+    >
+      <Smartphone className="device-panel-state-icon" tone="secondary" aria-hidden />
+      <Text
+        as="p"
+        size="body"
+        tone="primary"
+        weight="medium"
+        leading="inherit"
+        className="device-panel-state-title"
+      >
+        {t("Connect a device")}
+      </Text>
+      <Text as="p" size="caption" tone="secondary" leading="relaxed" className="host-tool-muted">
         {t(
           "Connect an Android phone with USB debugging, or use an emulator. iOS simulators require a Mac with Xcode.",
         )}
-      </p>
+      </Text>
       <div className="device-panel-state-actions">
         <Button
           variant="primary"
@@ -48,7 +65,7 @@ export function DeviceConnectState({
           {t("Setup and access")}
         </Button>
       </div>
-    </div>
+    </Text>
   );
 }
 
@@ -64,12 +81,37 @@ function DeviceRow({
 }) {
   return (
     <div className="device-panel-device-row" data-booted={item.booted}>
-      <span className="device-panel-device-tile" aria-hidden>
+      <Text
+        size="inherit"
+        tone="secondary"
+        {...surfaceAttributes(
+          { frame: "pane", edge: "all", radius: "control" },
+          "device-panel-device-tile",
+        )}
+        aria-hidden
+      >
         <Smartphone className="icon-sm" />
-      </span>
+      </Text>
       <span className="device-panel-device-text">
-        <span className="device-panel-device-name">{item.name}</span>
-        <span className="device-panel-device-facts">{facts}</span>
+        <Text
+          truncate
+          size="body"
+          tone="primary"
+          weight="medium"
+          leading="inherit"
+          className="device-panel-device-name"
+        >
+          {item.name}
+        </Text>
+        <Text
+          truncate
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className="device-panel-device-facts"
+        >
+          {facts}
+        </Text>
       </span>
       {action}
     </div>
@@ -115,13 +157,27 @@ export function DeviceWaitingState({
 }) {
   if (loadingDevices)
     return (
-      <div className="device-panel-waiting" role="status">
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        className="device-panel-waiting"
+        role="status"
+      >
         <LoadingText presentation="text">{t("Loading devices…")}</LoadingText>
-      </div>
+      </Text>
     );
   if (device && !device.booted)
     return (
-      <div className="device-panel-waiting" role="status">
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        className="device-panel-waiting"
+        role="status"
+      >
         <DeviceRow
           item={device}
           facts={facts(device)}
@@ -157,22 +213,51 @@ export function DeviceWaitingState({
             </Button>
           </div>
         ) : null}
-      </div>
+      </Text>
     );
   if (device?.booted && !error)
     return (
-      <div className="device-panel-waiting" role="status">
-        <Smartphone className="device-panel-state-icon" aria-hidden />
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        className="device-panel-waiting"
+        role="status"
+      >
+        <Smartphone className="device-panel-state-icon" tone="secondary" aria-hidden />
         <p className="device-panel-waiting-text">
           {live ? t("Loading device screen…") : t("Resume live view to follow the device screen.")}
         </p>
-      </div>
+      </Text>
     );
-  if (!devices.length || selected) return <div className="device-panel-waiting" role="status" />;
+  if (!devices.length || selected)
+    return (
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        className="device-panel-waiting"
+        role="status"
+      />
+    );
   return (
-    <div className="device-panel-waiting" role="status">
+    <Text
+      as="div"
+      size="caption"
+      tone="secondary"
+      leading="inherit"
+      className="device-panel-waiting"
+      role="status"
+    >
       <p className="device-panel-waiting-text">{t("Select a device to view its screen.")}</p>
-      <div className="device-panel-device-list">
+      <div
+        {...surfaceAttributes(
+          { frame: "card", edge: "all", radius: "card" },
+          "device-panel-device-list",
+        )}
+      >
         {devices.map((item) => (
           <DeviceRow
             key={item.id}
@@ -193,6 +278,6 @@ export function DeviceWaitingState({
           />
         ))}
       </div>
-    </div>
+    </Text>
   );
 }

@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -48,7 +50,7 @@ export function RemoveMachineDialog({
         </ModalActions>
       }
     >
-      <div className="flex flex-col gap-3 text-ui-caption leading-relaxed text-(--ui-text-muted)">
+      <Text as="div" tone="muted" leading="relaxed" className="flex flex-col gap-3">
         {isLocalSyncMachine(machine) ? (
           <p>
             {t("Removing this stops syncing projects and groups with the")}{" "}
@@ -87,16 +89,16 @@ export function RemoveMachineDialog({
         <div>
           <p>
             {t("To stop the host and turn off its background service, run")}{" "}
-            <code>{"~/.bycoda-host/bin/bycoda-host service uninstall"}</code>{" "}
+            <Code>{"~/.bycoda-host/bin/bycoda-host service uninstall"}</Code>{" "}
             {t("on that machine (")}
-            <code>
+            <Code>
               {"%USERPROFILE%\\.bycoda-host\\bin\\bycoda-host.cmd service uninstall"}
-            </code>{" "}
+            </Code>{" "}
             {t("on Windows). Its sessions and history are kept.")}
           </p>
         </div>
         {error ? <Alert tone="danger">{error}</Alert> : null}
-      </div>
+      </Text>
     </Modal>
   );
 }

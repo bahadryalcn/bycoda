@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { t, useLocale } from "../../../../shared/i18n";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Globe } from "../../../../shared/ui/icons";
@@ -56,10 +57,15 @@ export function SocialShell({
         onClose={onClose}
         onToggleSidebar={onToggleSidebar}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
-          <Globe className="icon-sm text-(--ui-text-secondary)" aria-hidden />
+        <Text
+          as="div"
+          size="secondary"
+          tone="inherit"
+          className="flex min-w-0 flex-1 items-center gap-2 px-3"
+        >
+          <Globe className="icon-sm" tone="secondary" aria-hidden />
           <span>{t("Social Media")}</span>
-        </div>
+        </Text>
       </Header>
       <SocialShellBar
         client={client}

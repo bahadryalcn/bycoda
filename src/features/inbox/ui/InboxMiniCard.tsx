@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
@@ -47,32 +49,38 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
             }}
             className="w-full min-w-0"
           >
-            <span className="line-clamp-2 wrap-anywhere text-ui-secondary font-medium leading-snug text-(--ui-tone-neutral-fg)">
+            <ClampText
+              as="span"
+              lines={2}
+              expandable={false}
+              size="secondary"
+              weight="medium"
+              tone="neutral"
+              leading="snug"
+              className="wrap-anywhere"
+            >
               {card.title}
-            </span>
+            </ClampText>
             <span className="flex min-w-0 items-center gap-1.5">
               <InboxProviderMark provider={card.provider} className="icon-sm shrink-0" />
-              <KindIcon
-                className="icon-xs shrink-0 text-(--ui-text-secondary)"
-                strokeWidth={1.75}
-              />
-              <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
+              <KindIcon tone="secondary" className="icon-xs shrink-0" strokeWidth={1.75} />
+              <Text size="micro" tone="secondary" truncate className="min-w-0">
                 {kindLabel} · {card.identifier}
-              </span>
+              </Text>
             </span>
             {hasLabels ? (
               <span aria-hidden="true" className="mt-1 block h-4" />
             ) : card.source ? (
-              <span className="mt-1 min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
+              <Text size="micro" tone="secondary" truncate className="mt-1 min-w-0">
                 {card.source}
-              </span>
+              </Text>
             ) : null}
           </Button>
           {hasLabels ? (
             <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-ui-micro text-(--ui-text-secondary)">
+              <Text size="micro" tone="secondary" truncate className="min-w-0 flex-1">
                 {card.source}
-              </span>
+              </Text>
               <span className="pointer-events-auto min-w-0 max-w-[60%] shrink-0 [&>div>ul]:justify-end">
                 <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(card.labels)} />
               </span>

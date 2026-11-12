@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -45,7 +46,17 @@ export function ScreenHeader({ title, description, primary, secondary = [] }: Sc
         <Heading size="page" level={2}>
           {title}
         </Heading>
-        {description ? <p className="social-screen-description">{description}</p> : null}
+        {description ? (
+          <Text
+            as="p"
+            size="caption"
+            tone="muted"
+            leading="inherit"
+            className="social-screen-description"
+          >
+            {description}
+          </Text>
+        ) : null}
       </div>
       <div className="social-screen-actions">
         {primary ? (

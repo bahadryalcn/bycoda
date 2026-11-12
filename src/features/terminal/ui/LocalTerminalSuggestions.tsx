@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
@@ -265,14 +266,16 @@ export function LocalTerminalSuggestions({
                 onClick={() => accept(value)}
               >
                 <OverflowTooltip label={value}>
-                  <span className={styles.text}>{value}</span>
+                  <Text as="span" size="inherit" tone="inherit" truncate className={styles.text}>
+                    {value}
+                  </Text>
                 </OverflowTooltip>
               </Button>
             ))}
           </div>
-          <div className={styles.hint}>
+          <Text as="div" size="caption" tone="muted" className={styles.hint}>
             {t("Tab to complete. Enter to insert. Run with Enter in the terminal.")}
-          </div>
+          </Text>
         </TerminalCursorPopover>
       ) : null}
     </>

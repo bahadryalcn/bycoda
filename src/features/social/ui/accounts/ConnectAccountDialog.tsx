@@ -196,6 +196,7 @@ export function ConnectAccountDialog({
               }
               label={project.name}
               key={project.id}
+              size="secondary"
               className="social-check"
             />
           ))}

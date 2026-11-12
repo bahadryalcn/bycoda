@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { EntitlementsSummary, User } from "@bycoda/account-contracts";
 import { useState } from "react";
 import { dateTimeFormat, getLocale, t, useLocale } from "../../../shared/i18n";
@@ -67,7 +68,9 @@ export function AccountProfile({
           <Badge tone="accent">{planLabel(entitlements.planTier)}</Badge>
         </Row>
         <Row label={t("Member since")}>
-          <span className="text-ui-body text-muted">{memberSince(user)}</span>
+          <Text size="body" tone="muted">
+            {memberSince(user)}
+          </Text>
         </Row>
       </Group>
       <Group
@@ -82,7 +85,9 @@ export function AccountProfile({
           }
         >
           <span className="flex items-center gap-2">
-            <span className="text-ui-body text-muted">{user.timeZone}</span>
+            <Text size="body" tone="muted">
+              {user.timeZone}
+            </Text>
             {user.timeZone !== here ? (
               <Button variant="secondary" size="sm" loading={update.isPending} onClick={useHere}>
                 {t("Use {p0}", { p0: here })}

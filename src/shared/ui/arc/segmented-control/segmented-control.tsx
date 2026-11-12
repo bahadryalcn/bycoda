@@ -16,6 +16,8 @@ import styles from "./segmented-control.module.css";
 export interface Segment {
   value: string;
   label: string;
+  /** Full label when the visible label is abbreviated. */
+  tooltip?: string;
   /** Optional leading icon before the label. Decorative: the label stays the accessible name.
    *  With `iconOnly`, only the icon shows and the label becomes the accessible name. */
   icon?: ReactNode;
@@ -26,6 +28,8 @@ export interface Segment {
   disabled?: boolean;
 }
 export interface SegmentedControlProps {
+  /** Equal-width, compact steps; labels hide below a narrow container width. */
+  compact?: boolean;
   options: Segment[];
   value: string;
   onValueChange: (value: string) => void;
@@ -40,6 +44,7 @@ export interface SegmentedControlProps {
 
 export default function SegmentedControl({
   options,
+  compact = false,
   value,
   onValueChange,
   label,
@@ -139,6 +144,7 @@ export default function SegmentedControl({
   return (
     <div
       className={`${styles.root} ${className ?? ""}`}
+      data-compact={compact || undefined}
       role={selectionRole === "radio" ? "radiogroup" : "group"}
       aria-label={label}
     >
@@ -163,7 +169,10 @@ export default function SegmentedControl({
                 aria-pressed={selectionRole === "pressed" ? value === option.value : undefined}
                 tabIndex={index === tabStop ? 0 : -1}
                 disabled={option.disabled}
-                aria-label={option.iconOnly && option.icon != null ? option.label : undefined}
+                aria-label={
+                  option.tooltip ??
+                  (option.iconOnly && option.icon != null ? option.label : undefined)
+                }
                 onClick={() => onValueChange(option.value)}
                 onKeyDown={onKeyDown}
                 onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
@@ -187,7 +196,7 @@ export default function SegmentedControl({
                   {option.iconOnly && option.icon != null ? (
                     <span className="sr-only">{option.label}</span>
                   ) : (
-                    option.label
+                    <span className={styles.copy}>{option.label}</span>
                   )}
                   {option.accessory != null ? (
                     <span className={styles.accessory}>{option.accessory}</span>
@@ -195,8 +204,8 @@ export default function SegmentedControl({
                 </span>
               </button>
             );
-            return iconOnly ? (
-              <Tooltip key={option.value} label={option.label}>
+            return iconOnly || option.tooltip ? (
+              <Tooltip key={option.value} label={option.tooltip ?? option.label}>
                 {button}
               </Tooltip>
             ) : (

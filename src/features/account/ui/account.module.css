@@ -18,18 +18,7 @@
   align-items: center;
   gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
-}
-
-.name {
-  overflow: hidden;
-  color: var(--ui-tone-neutral-fg);
-  font-size: var(--ui-font-title);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex-wrap: wrap;
 }
 
 .facts {
@@ -38,8 +27,6 @@
   align-items: center;
   gap: var(--space-2);
   margin-block-start: var(--space-1);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 .layout {
@@ -63,7 +50,7 @@
 
 .screen[data-wide] .nav {
   position: sticky;
-  inset-block-start: 0;
+  inset-block-start: calc(var(--ui-control-height-compact) + var(--space-4) + var(--space-3));
   overflow: visible;
 }
 
@@ -93,9 +80,6 @@
 
 .lead {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-body);
-  line-height: var(--ui-leading-body);
 }
 
 .actions {
@@ -108,14 +92,12 @@
 .identity {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
-  min-width: 0;
+  gap: var(--space-1);
+  min-width: min(12rem, 100%);
   flex: 1;
 }
 
 .email {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
 }
 
@@ -143,7 +125,7 @@
 .rowMain {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-1);
   min-width: 0;
   flex: 1;
 }
@@ -153,24 +135,9 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
-  font-size: var(--ui-font-body);
-}
-
-.meta {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: minmax(8rem, 1fr) repeat(4, minmax(3.5rem, auto));
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
 }
 
 .gridHead {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   text-align: center;
 }
 
@@ -183,18 +150,7 @@
   justify-content: center;
 }
 
-.quiet {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: var(--space-3);
-}
-
 @media (max-width: 40rem) {
-  .grid {
-    gap: var(--space-2);
-  }
-
   .screen {
     padding: var(--space-3);
   }
@@ -209,7 +165,4 @@
 .benefits {
   margin: 0;
   padding-inline-start: var(--space-4);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-body);
-  line-height: var(--ui-leading-body);
 }

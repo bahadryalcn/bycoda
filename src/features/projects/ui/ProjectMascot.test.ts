@@ -29,4 +29,17 @@ describe("code-art project icon", () => {
     expect(new Set(ids).size).toBe(2);
     for (const id of ids) expect(html).toContain(`url(#${id})`);
   });
+  it("tone gives the symbol a shared ink instead of its palette; color still wins", () => {
+    const toned = renderToStaticMarkup(
+      createElement(ProjectMascot, { project: "web", name: "weave", tone: "muted" }),
+    );
+    expect(toned).toContain('data-tone="muted"');
+    expect(toned).not.toContain("#60a5fa");
+    expect(toned).toContain("--sigil-hi:currentColor");
+    const colored = renderToStaticMarkup(
+      createElement(ProjectMascot, { project: "web", tone: "muted", color: "#123456" }),
+    );
+    expect(colored).not.toContain("data-tone");
+    expect(colored).toContain("#123456");
+  });
 });

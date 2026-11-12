@@ -1,19 +1,59 @@
 import type { ComponentPropsWithRef } from "react";
 import styles from "./Motion.module.css";
 
-export type MotionProps = ComponentPropsWithRef<"div"> & {
-  /** Element: `div` (default) or `span` for inline content. */
-  as?: "div" | "span";
+export type MotionRoles = {
   /**
    * What eases when the caller changes it: `transform` (default; rotate, scale, translate),
-   * `opacity`, or `colors` (text, fill, border and outline colours).
+   * `opacity`, `colors` (text, fill, border and outline colours), `size` (width, height and
+   * their limits) or `all` when several of these change together.
    */
-  transition?: "transform" | "opacity" | "colors";
-  /** `fast` (120ms, default) for feedback; `standard` (160ms) for a larger move. */
-  duration?: "fast" | "standard";
-  /** `rise` fades the element in while it settles 2px up, once, when it mounts. */
-  enter?: "rise";
+  transition?: "transform" | "opacity" | "colors" | "size" | "all";
+  /**
+   * A duration token: `instant` 80ms, `fast` 120ms (default, feedback), `standard` 160ms (a
+   * larger move), `slow` 260ms, `reveal` 320ms, `ambient` 600ms, `celebrate` 1100ms, `scene`
+   * 2200ms. A hand-written duration moves to the nearest token.
+   */
+  duration?:
+    | "instant"
+    | "fast"
+    | "standard"
+    | "slow"
+    | "reveal"
+    | "ambient"
+    | "celebrate"
+    | "scene";
+  /** An easing token; `linear` keeps a constant speed. Unset is the standard curve. */
+  easing?: "standard" | "enter" | "exit" | "overshoot" | "rise" | "emphasized" | "sheen" | "linear";
+  /**
+   * Plays once when the element mounts: `rise` fades in while settling 2px up; `left`, `right`
+   * and `down` slide in from that side; `scale` grows in.
+   */
+  enter?: "rise" | "left" | "right" | "down" | "scale";
 };
+
+export type MotionProps = ComponentPropsWithRef<"div"> &
+  MotionRoles & {
+    /** Element: `div` (default) or `span` for inline content. */
+    as?: "div" | "span";
+  };
+
+/**
+ * The attributes that give an existing element the shared motion roles, so it eases without a
+ * new layout box: spread them on the element (an SVG part, a list item, a shared component that
+ * forwards attributes). The state the caller changes stays a class or attribute of that element.
+ */
+export function motionAttributes(
+  { transition = "transform", duration = "fast", easing, enter }: MotionRoles = {},
+  className?: string,
+) {
+  return {
+    "data-transition": transition,
+    "data-duration": duration === "fast" ? undefined : duration,
+    "data-easing": easing,
+    "data-enter": enter,
+    className: [styles.motion, className].filter(Boolean).join(" "),
+  };
+}
 
 /**
  * Motion on an element: the property that eases, its duration and the mount animation come from
@@ -37,6 +77,7 @@ export function Motion({
   as = "div",
   transition = "transform",
   duration = "fast",
+  easing,
   enter,
   className,
   ...props
@@ -44,12 +85,6 @@ export function Motion({
   // One prop type for both tags: they take the same attributes.
   const Tag = as as "div";
   return (
-    <Tag
-      {...props}
-      data-transition={transition}
-      data-duration={duration === "standard" ? "standard" : undefined}
-      data-enter={enter}
-      className={[styles.motion, className].filter(Boolean).join(" ")}
-    />
+    <Tag {...props} {...motionAttributes({ transition, duration, easing, enter }, className)} />
   );
 }

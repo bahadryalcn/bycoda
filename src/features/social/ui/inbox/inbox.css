@@ -32,8 +32,6 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
 }
 
 .inbox-notices {
@@ -48,8 +46,6 @@
   gap: 0.125rem;
   margin: 0;
   padding-inline-start: 1.25rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 .inbox-body {
@@ -116,18 +112,6 @@
 .inbox-row-title {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  font-weight: 400;
-}
-
-/* Unread rows read in full ink with a small accent dot. */
-.inbox-row-title[data-unread] {
-  color: var(--color-content);
-  font-weight: 500;
 }
 
 .inbox-unread-dot {
@@ -142,27 +126,18 @@
 .inbox-line-time {
   flex: none;
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 
 .inbox-row-subject,
 .inbox-row-preview {
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .inbox-row-subject {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
 }
 
 .inbox-row-preview {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 .inbox-row-meta {
@@ -199,9 +174,6 @@
 
 .inbox-conversation-title {
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .inbox-conversation-account {
@@ -209,14 +181,9 @@
   align-items: center;
   gap: 0.25rem;
   min-width: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 .inbox-conversation-account-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .inbox-tag-field {
@@ -225,8 +192,6 @@
 
 .inbox-note {
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 /* Messages */
@@ -247,8 +212,6 @@
   align-items: center;
   gap: 0.75rem;
   margin-block: 0.25rem;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 .inbox-day::before,
@@ -276,7 +239,6 @@
   padding: 0.5rem 0.75rem;
   border-radius: var(--ui-radius-card);
   background: var(--ui-fill-subtle);
-  color: var(--color-content);
 }
 
 .inbox-line[data-direction="outbound"] .inbox-bubble {

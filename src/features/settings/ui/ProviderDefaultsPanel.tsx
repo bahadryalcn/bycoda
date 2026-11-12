@@ -1,3 +1,5 @@
+import "./ProviderDefaults.css";
+import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
@@ -108,7 +110,11 @@ export function ProviderDefaultsPanel({
             hideLabel
             label={t("Default provider")}
             value={defaultProvider ?? ""}
-            options={providerChoices.map((id) => ({ value: id, label: HARNESS_TITLE[id] }))}
+            options={providerChoices.map((id) => ({
+              value: id,
+              label: HARNESS_TITLE[id],
+              icon: <HarnessIcon harness={id} className="icon-sm" />,
+            }))}
             onChange={(next) => {
               const value = next as HarnessId;
               const { defaultProvider: _drop, ...rest } = draft;

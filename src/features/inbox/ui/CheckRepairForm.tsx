@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
@@ -180,24 +181,24 @@ export function CheckRepairForm({
       header={
         <>
           <div className="flex shrink-0 items-start gap-2.5 px-3.5 pb-3 pt-3.5">
-            <Sparkles
-              className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
-              strokeWidth={1.75}
-            />
+            <Sparkles tone="secondary" className="mt-0.5 icon-md shrink-0" strokeWidth={1.75} />
             <div className="min-w-0 flex-1">
-              <p className="text-ui-secondary font-medium leading-5 text-(--ui-tone-neutral-fg)">
+              <Text as="p" size="secondary" weight="medium" tone="neutral" leading="normal">
                 {t("Fix with AI")}
-              </p>
-              <p
+              </Text>
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
                 title={checks.length > 1 ? checks.map((check) => check.name).join(", ") : undefined}
-                className="mt-0.5 break-words text-ui-caption text-(--ui-text-secondary)"
+                className="mt-0.5 break-words"
               >
                 {checks.length === 1
                   ? checks[0].name
                   : t("{p0} failed checks", { p0: checks.length })}{" "}
                 {t("· PR #")}
                 {repair.number}
-              </p>
+              </Text>
             </div>
             <Button
               iconOnly
@@ -228,14 +229,20 @@ export function CheckRepairForm({
           {error ? <Alert tone="danger">{error}</Alert> : null}
           {/* Always mounted so the message is announced when the fix becomes blocked. */}
           <LiveText
-            className="block px-3.5 pb-3 text-ui-caption leading-4 text-(--ui-text-secondary) empty:hidden"
+            size="caption"
+            tone="secondary"
+            className="block px-3.5 pb-3 empty:hidden"
             text={blocked && !busy ? t("Wait for the latest checks before starting a fix.") : ""}
           />
           <PickerFooter align="between" className="gap-3 px-3 py-2.5">
-            <div className="min-w-0 text-ui-micro leading-4">
-              <p className="break-words text-(--ui-text-secondary)">{selectedTitle}</p>
-              <p className="text-(--ui-text-secondary)">{t("CI details included")}</p>
-            </div>
+            <Text as="div" size="micro" tone="inherit" className="min-w-0">
+              <Text as="p" size="inherit" tone="secondary" className="break-words">
+                {selectedTitle}
+              </Text>
+              <Text as="p" size="inherit" tone="secondary">
+                {t("CI details included")}
+              </Text>
+            </Text>
             <Button
               variant="ghost"
               type="button"

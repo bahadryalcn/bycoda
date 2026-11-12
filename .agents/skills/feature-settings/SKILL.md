@@ -1,17 +1,13 @@
 ---
 name: feature-settings
-description: "Change bycoda Settings navigation, search/reveal, shared settings rows, Policies or Connections. Route page-specific behavior to its feature skill."
+description: "Use when changing Settings navigation, search, rows, Policies and Connections. Not for page preferences; see feature-workspace-settings."
 ---
 
 # Settings development
 
-All code paths below are repository-relative; linked skill resources are relative to this directory.
-
-## When to use
-
 Use for Settings shell, section/search metadata, shared Settings composition, Policies and Connections. For a single named page, read its specialist directly; use this entry additionally only if shell or shared contracts change.
 
-## Start here
+## Source starts
 
 - `src/features/settings/ui/SettingsView.tsx`, `src/app/shell/SettingsRail.tsx` and `src/features/settings/model/settings.ts` own navigation and reveal.
 - `src/features/settings/ui/settingsControls.tsx` and `BycodaSettings.css` own Settings presentation; verify the current collection adapter before editing.
@@ -27,15 +23,19 @@ Use for Settings shell, section/search metadata, shared Settings composition, Po
 - Connections changes preserve machine/Host identity, pairing secret lifecycle, credential gates and recovery. Visibility or pairing UI is not new remote execution authority.
 - A skill, source map or old screenshot is not a runtime capability grant or proof of installed source inclusion.
 
-## Workflow and checks
+## Workflow
 
 1. Trace the changed control from section/search metadata through persistence and its actual consumer; follow Host/native/mobile only when the operation crosses those boundaries.
 2. For shared rows, read the Settings row contract in [UI design system](../../../docs/reference/ui-design-system.md); consult [Arc adapters](../../../docs/reference/arc-ui.md) for control/overlay behavior.
 3. Choose focused settings model/control/view tests from the surface map; use the repository's current TypeScript check command when TS changes. Exercise affected pages, search/reveal, keyboard and storage failure under the current tier rules.
 
-## Read when needed
+## References
 
 - [Decision provenance](references/decisions.md): owner decisions for Settings groups and the three-state permission rule.
 
 - For specialist page routing, Policies/Connections source paths and test entry points, read [surfaces](references/surfaces.md).
 - For product-wide presentation, use [DESIGN](../../../docs/reference/DESIGN.md) and the [generated component catalog](../../../docs/reference/ui-components.md).
+
+## Focused checks
+
+Use the focused test owners in [the surface map](references/surfaces.md).

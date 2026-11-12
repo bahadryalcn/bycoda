@@ -11,9 +11,6 @@
 }
 .archive-settings-note {
   margin: 0 0 8px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 .archive-settings-partial {
   padding: 0 12px 8px;

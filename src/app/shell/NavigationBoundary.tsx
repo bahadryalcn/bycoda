@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { useLocale, useT } from "../../shared/i18n";
 import { Suspense, type ReactNode } from "react";
@@ -29,7 +30,7 @@ export function NavigationBoundary({
 function NavigationLoading({ name, onBack }: { name: string; onBack: () => void }) {
   const t = useT();
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col text-content">
+    <Text as="div" size="inherit" tone="primary" className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PaneHeader
         dragRegion
         chromeInset
@@ -59,6 +60,6 @@ function NavigationLoading({ name, onBack }: { name: string; onBack: () => void 
           <SkeletonBar key={width} width={width} height="0.625rem" index={index + 1} />
         ))}
       </LoadingCard>
-    </div>
+    </Text>
   );
 }

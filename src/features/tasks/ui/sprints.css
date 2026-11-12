@@ -2,8 +2,6 @@
 .sprint-report,
 .sprint-planning {
   min-width: 0;
-  color: var(--color-content);
-  font-size: var(--ui-font-secondary);
 }
 .sprint-management {
   min-block-size: 0;
@@ -14,7 +12,6 @@
   flex-direction: column;
   gap: 0.75rem;
   padding: 0.75rem;
-  border-bottom: 1px solid var(--ui-pane-border);
 }
 .sprint-management p,
 .sprint-report p {
@@ -42,20 +39,13 @@
 }
 .sprint-heading h2 {
   min-inline-size: 0;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
   margin: 0;
   overflow-wrap: anywhere;
 }
 .sprint-dates {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .sprint-goal-copy {
-  color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -70,10 +60,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  color: var(--ui-text-secondary);
-}
-.sprint-context-label {
-  font-size: var(--ui-font-caption);
 }
 .sprint-host-error {
   flex: 1 1 14rem;
@@ -84,13 +70,9 @@
   min-width: 10rem;
 }
 .sprint-errors {
-  color: var(--ui-tone-danger-fg);
   overflow-wrap: anywhere;
   margin: 0.5rem 0;
   padding-left: 1.25rem;
-}
-.sprint-muted {
-  color: var(--ui-text-secondary);
 }
 
 /* Selected sprint progress. */
@@ -134,8 +116,6 @@
   align-items: flex-start;
 }
 .sprint-row-dates {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .sprint-row-projects {
@@ -248,19 +228,8 @@
   gap: 0.25rem;
   min-width: 0;
 }
-.sprint-kpi-label {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
 .sprint-kpi-value {
-  font-size: var(--ui-font-heading);
-  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-}
-.sprint-kpi-detail {
-  color: var(--ui-tone-danger-fg);
-  font-size: var(--ui-font-caption);
 }
 .sprint-notes {
   display: flex;

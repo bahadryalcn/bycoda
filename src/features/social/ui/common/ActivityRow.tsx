@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { ActionHost, InlineTextAction } from "../../../../shared/ui/ActionHost";
@@ -57,8 +58,13 @@ function statusTone(status: StatusTextStatus): StatusTone {
   }
 }
 
-function KindIcon({ kind }: { kind?: ActivityKind }) {
-  const props = { className: "icon-sm", strokeWidth: 1.75, "aria-hidden": true } as const;
+function KindIcon({ kind, neutral }: { kind?: ActivityKind; neutral: boolean }) {
+  const props = {
+    className: "icon-sm",
+    tone: neutral ? "secondary" : "inherit",
+    strokeWidth: 1.75,
+    "aria-hidden": true,
+  } as const;
   switch (kind) {
     case "reply":
       return <MessageSquare {...props} />;
@@ -81,14 +87,16 @@ export function ActivityRow({ title, time, status, kind, meta, details, undo }: 
     <div className="social-activity-row">
       <ActionHost className="social-activity-head">
         <span className="social-activity-icon" data-tone={statusTone(status)} aria-hidden="true">
-          <KindIcon kind={kind} />
+          <KindIcon kind={kind} neutral={statusTone(status) === "neutral"} />
         </span>
         <div className="social-activity-main">
-          <span className="social-activity-title">{title}</span>
-          <span className="social-activity-meta">
+          <Text size="body" tone="primary" leading="inherit" className="social-activity-title">
+            {title}
+          </Text>
+          <Text size="caption" tone="muted" leading="inherit" className="social-activity-meta">
             {meta}
             <span className="social-activity-time">{time}</span>
-          </span>
+          </Text>
         </div>
         <StatusText status={status} />
         <div className="social-activity-actions">
@@ -103,7 +111,17 @@ export function ActivityRow({ title, time, status, kind, meta, details, undo }: 
           ) : null}
         </div>
       </ActionHost>
-      {details ? <div className="social-activity-details">{details}</div> : null}
+      {details ? (
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className="social-activity-details"
+        >
+          {details}
+        </Text>
+      ) : null}
     </div>
   );
 }

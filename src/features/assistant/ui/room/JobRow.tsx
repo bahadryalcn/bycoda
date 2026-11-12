@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type { AssistantJob } from "../../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../../shared/i18n";
@@ -13,6 +14,7 @@ import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { Meter } from "../../../../shared/ui/Meter";
+import { motionAttributes } from "../../../../shared/ui/Motion";
 import { WorkingIndicator } from "../../../../shared/ui/WorkingIndicator";
 import {
   AlertCircle,
@@ -56,10 +58,21 @@ function JobStatusMark({ job }: { job: AssistantJob }) {
     default:
       mark = <Clock className={icon} aria-hidden />;
   }
+  const tone = jobStatusTone(job);
   return (
-    <span className={styles.mark} data-tone={jobStatusTone(job)}>
+    <Text
+      as="span"
+      size="inherit"
+      tone={
+        tone === "success" || tone === "danger" || tone === "warning" || tone === "info"
+          ? tone
+          : "secondary"
+      }
+      leading="inherit"
+      className={styles.mark}
+    >
       {mark}
-    </span>
+    </Text>
   );
 }
 
@@ -104,7 +117,7 @@ export function JobRow({
   return (
     <ActionHost className={styles.row} selected={selected}>
       <Checkbox
-        className={styles.check}
+        {...motionAttributes({ transition: "opacity", easing: "standard" }, styles.check)}
         data-visible={selectionMode || selected || undefined}
         aria-label={t("Select {p0}", { p0: job.title })}
         checked={selected}
@@ -116,6 +129,9 @@ export function JobRow({
           <Button
             variant="link"
             className={styles.title}
+            truncate
+            textSize="body"
+            weight="medium"
             tooltip={job.title}
             tooltipWhen="overflow"
             onClick={onDetails}
@@ -123,12 +139,18 @@ export function JobRow({
             {job.title}
           </Button>
           {projectName && (
-            <Badge size="sm" tone="neutral" className={styles.project}>
+            <Badge size="sm" tone="neutral" truncate className={styles.project}>
               {projectName}
             </Badge>
           )}
         </div>
-        <div className={styles.progressLine}>
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className={styles.progressLine}
+        >
           {total > 0 && (
             <Meter
               label={t("Progress")}
@@ -139,8 +161,19 @@ export function JobRow({
             />
           )}
           <span>{caption.join(" · ")}</span>
-        </div>
-        {job.summary && <p className={styles.caption}>{job.summary}</p>}
+        </Text>
+        {job.summary && (
+          <Text
+            as="p"
+            size="caption"
+            tone="secondary"
+            leading="inherit"
+            truncate
+            className={styles.caption}
+          >
+            {job.summary}
+          </Text>
+        )}
         {job.dispatchState === "unknown" && (
           <InlineError>
             {t("Dispatch status unknown. Check the linked goal before retrying.")}

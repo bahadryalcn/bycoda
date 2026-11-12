@@ -10,6 +10,7 @@ import {
 } from "react";
 import { animate, motion, useReducedMotion } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
+import { optionalTextAttributes, type TextRoles } from "../../Text";
 import styles from "./radio-group.module.css";
 
 export interface RadioOption {
@@ -25,6 +26,10 @@ export type RadioGroupProps = Omit<
   "type" | "value" | "defaultValue" | "checked" | "defaultChecked" | "children" | "size"
 > & {
   label: ReactNode;
+  /** Legend typography; unset preserves the native group defaults. */
+  legendText?: TextRoles;
+  /** Option description typography; unset preserves the native group defaults. */
+  descriptionText?: TextRoles;
   options: readonly RadioOption[];
   value?: string;
   defaultValue?: string;
@@ -66,6 +71,8 @@ function place(
 export function RadioGroup({
   label,
   options,
+  legendText,
+  descriptionText,
   value,
   defaultValue,
   onValueChange,
@@ -148,7 +155,9 @@ export function RadioGroup({
       data-compact={compact || undefined}
       data-variant={variant === "list" ? "list" : undefined}
     >
-      <legend id={`${groupId}-legend`}>{label}</legend>
+      <legend id={`${groupId}-legend`} {...optionalTextAttributes(legendText ?? {})}>
+        {label}
+      </legend>
       <div ref={list} className={styles.options}>
         <span ref={highlight} className={styles.highlight} aria-hidden="true" />
         {options.map((option, index) => {
@@ -212,7 +221,11 @@ export function RadioGroup({
               </span>
               <span className={styles.copy}>
                 <strong id={labelId}>{option.label}</strong>
-                {description && <small id={descriptionId}>{description}</small>}
+                {description && (
+                  <small id={descriptionId} {...optionalTextAttributes(descriptionText ?? {})}>
+                    {description}
+                  </small>
+                )}
               </span>
             </label>
           );

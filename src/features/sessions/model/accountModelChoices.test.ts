@@ -1,11 +1,17 @@
 import { expect, it, vi } from "vitest";
-import { accountModelChoices, modelAccountLabel, modelChoiceBaseName } from "./accountModelChoices";
+import {
+  accountModelChoices,
+  modelAccountLabel,
+  modelAccountLabelWith,
+  modelChoiceBaseName,
+} from "./accountModelChoices";
+import { t } from "../../../shared/i18n/core";
 import type { AgentModel } from "./models";
 import { providerAccounts } from "../../providers/model/providerAccounts";
 
 vi.mock("../../providers/model/providerAccounts", () => ({
   providerAccounts: vi.fn(() => [
-    { id: "native-secret", label: "Native profile", provider: "codex" },
+    { id: "native-secret", label: "Native profile", provider: "codex", isDefault: true },
   ]),
   providerAccountColorValue: () => "var(--ui-text-secondary)",
   providerAccountLabel: () => "Native profile",
@@ -13,6 +19,17 @@ vi.mock("../../providers/model/providerAccounts", () => ({
   supportsProviderAccounts: (provider: string) => provider === "codex" || provider === "claude",
 }));
 const model = { id: "codex:model", harness: "codex", name: "Model" } as AgentModel;
+
+it("keeps local account model labels identical with explicit accounts and translator", () => {
+  const accounts = providerAccounts("codex");
+  for (const accountId of [undefined, "native-secret"])
+    expect(modelAccountLabelWith(model, accountId, accounts, t)).toBe(
+      modelAccountLabel(model, accountId),
+    );
+  expect(modelAccountLabelWith(model, "removed", accounts, t)).toBe("Model Removed account");
+  expect(modelAccountLabelWith(model, "default", [], t)).toBe("Model Default account");
+  expect(modelAccountLabelWith({ ...model, harness: "cursor" }, undefined, [], t)).toBe("Model");
+});
 
 it("uses only Host IDs and labels when an explicit Host account catalog is supplied", () => {
   vi.mocked(providerAccounts).mockClear();

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { saveShowRemainingUsage, useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import { settingDomId, Toggle } from "../../settings/ui/settingsControls";
@@ -7,7 +8,11 @@ export function UsageDisplaySettings() {
   useLocale();
   const showRemainingUsage = useShowRemainingUsage();
   return (
-    <div
+    <Text
+      as="div"
+      size="caption"
+      tone="secondary"
+      leading="inherit"
       id={settingDomId("show-remaining-usage")}
       data-setting-id="show-remaining-usage"
       className="usage-display-toggle"
@@ -19,6 +24,6 @@ export function UsageDisplaySettings() {
         on={showRemainingUsage}
         onChange={saveShowRemainingUsage}
       />
-    </div>
+    </Text>
   );
 }

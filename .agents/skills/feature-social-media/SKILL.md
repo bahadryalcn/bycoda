@@ -1,18 +1,15 @@
 ---
 name: feature-social-media
-description: "Change Social accounts, audience, outreach, inbox, content, AI autonomy and browser automation while preserving policy, account/Host scope, suppression, drafts and explicit sending authority."
+description: "Use when changing Social accounts, audience, outreach, inbox and browser automation. Not for decision routing; see feature-decision-models."
 ---
 
 # Social media workflow changes
-
-## When and scope
 
 Use for Social product workflows and their Host operations. Distinguish platform support, connection mode (API or browser), account identity, project grant, the account's autonomy level, suppression and the global stops. UI restyling or a draft never grants send authority.
 
 ## Source starts
 
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
+Full paths are repository-root relative; adjacent abbreviated names share the preceding directory. Follow current imports and callers; this map is not a completeness claim.
 
 - `src/features/social/ui/SocialView.tsx` mounts the shell; `ui/shell/` holds the frame and screen map; `ui/command|content|audience|inbox|accounts/` hold the five screens; `ui/browser/` holds NEEDS_HUMAN and live view; `ui/common/` shared pieces.
 - `src/features/social/model/`: `socialTools.ts` (AI-callable actions), `autonomy.ts` (levels and defaults), `audience.ts`, `outreach.ts`, `socialActions.ts` (RPC names). Hooks, `ui/socialBulk.ts` and draft/program models hold workflow state.
@@ -25,7 +22,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Preserve
 
-The full invariant list is in [Social contracts](references/contracts.md). Keep these summaries true when editing.
+- The full invariant list is in [Social contracts](references/contracts.md). Keep these summaries true when editing.
 
 - Autonomy: levels `suggest` (default), `approve`, `autonomous`, per account and action. Only the owner sets `autonomous`; an AI principal at `autonomous` still obeys limits, hours, suppression and both stops.
 - Suppression is the single send gate for every outbound path; new paths call it, never a copy.
@@ -55,7 +52,7 @@ Listing a command here is not a passing result.
 
 Inspect populated, empty and long content, account switches during requests, recurring work, media review, suppressed recipients and partial bulk recovery.
 
-## Read when needed
+## References
 
 - [Social contracts](references/contracts.md) for the full preserve list: autonomy, grants, credentials, indexed queries and polling cursors.
 - [Decisions](references/decisions.md) for owner decisions that set autonomy, consent, driver and browser rules.

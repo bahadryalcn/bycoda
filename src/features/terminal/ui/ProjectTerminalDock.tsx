@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { TabList, Tab, Tabs } from "../../../shared/ui/Tabs";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
@@ -378,7 +379,9 @@ function ProjectTerminalDockComponent({
                     onKeyDown={(event) => sortable.onItemKeyDown(file.id, event)}
                   >
                     <Terminal className="icon-sm shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{terminalTabLabel(file)}</span>
+                    <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                      {terminalTabLabel(file)}
+                    </Text>
                   </Tab>
                   <div className="terminal-row-actions">
                     {onSplitTerminal ? (

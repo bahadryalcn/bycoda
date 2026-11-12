@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { Alert } from "../../shared/ui/Alert";
 import { Badge } from "../../shared/ui/Badge";
 import { RecoveryStatusBadge } from "../../features/workspace/ui/RecoveryStatusBadge";
@@ -408,7 +409,7 @@ export function SessionRecoveryPanel({
         </div>
       ) : null}
       {selected.size > 0 ? (
-        <div role="status" className="recovery-status text-ui-caption text-(--ui-text-secondary)">
+        <Text role="status" as="div" size="caption" tone="secondary" className="recovery-status">
           <span>{t("{p0} selected in this view", { p0: selectedIds.length })}</span>
           {hiddenSelectedCount > 0 ? (
             <span>{t("{p0} selected outside this view", { p0: hiddenSelectedCount })}</span>
@@ -421,7 +422,7 @@ export function SessionRecoveryPanel({
           >
             {t("Clear selection")}
           </Button>
-        </div>
+        </Text>
       ) : null}
       {listError ? <Alert tone="danger">{listError}</Alert> : null}
       <div className="recovery-body">
@@ -441,22 +442,30 @@ export function SessionRecoveryPanel({
                   />
                   <HarnessIcon harness={stub.harness} className="size-4 shrink-0" />
                   <div className="min-w-0 basis-48 flex-1">
-                    <div className="break-words text-ui-secondary font-medium">{title}</div>
-                    <div className="break-words text-ui-caption text-(--ui-text-muted)">
+                    <Text
+                      as="div"
+                      size="secondary"
+                      tone="inherit"
+                      weight="medium"
+                      className="break-words"
+                    >
+                      {title}
+                    </Text>
+                    <Text as="div" size="caption" tone="muted" className="break-words">
                       <p>{`${projectDisplayNameFrom(stub.cwd, projectLabels)} · ${machine}`}</p>
                       <p className="select-text [overflow-wrap:anywhere]">{stub.cwd}</p>
                       <p>
                         {HARNESS_TITLE[stub.harness]} · {stub.model}
                       </p>
-                    </div>
-                    <div className="text-ui-caption text-(--ui-text-secondary)">
+                    </Text>
+                    <Text as="div" size="caption" tone="secondary">
                       <RecoveryStatusBadge key={status} status={status} /> ·{" "}
                       {activityAt
                         ? t("Last activity {p0}", { p0: formatRelative(activityAt, Date.now()) })
                         : t("Recovered {p0}", {
                             p0: formatRelative(recovery.capturedAt, Date.now()),
                           })}
-                    </div>
+                    </Text>
                     {verification ? (
                       <RecoveryVerification
                         verification={verification}
@@ -536,7 +545,12 @@ export function SessionRecoveryPanel({
           <Alert tone="danger">
             {openError}
             {openOutcome ? (
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-ui-caption">
+              <Text
+                as="div"
+                size="caption"
+                tone="inherit"
+                className="mt-1 flex flex-wrap items-center gap-2"
+              >
                 <span>
                   {t("{p0} opened · {p1} already open · {p2} remaining", {
                     p0: openOutcome.opened.length,
@@ -561,7 +575,7 @@ export function SessionRecoveryPanel({
                 >
                   {t("Retry")}
                 </Button>
-              </div>
+              </Text>
             ) : null}
           </Alert>
         ) : null}

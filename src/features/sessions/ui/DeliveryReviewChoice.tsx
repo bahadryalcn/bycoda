@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useId, useRef } from "react";
 import { Button } from "../../../shared/ui/Button";
@@ -38,9 +39,14 @@ export function DeliveryReviewChoice({
     <div className="mt-1" data-delivery-review>
       <div className="flex flex-wrap items-center gap-1">
         <OverflowTooltip label={text}>
-          <span className="min-w-0 max-w-full flex-1 basis-40 truncate text-ui-caption">
+          <Text
+            size="caption"
+            tone="inherit"
+            truncate
+            className="min-w-0 max-w-full flex-1 basis-40"
+          >
             {text}
-          </span>
+          </Text>
         </OverflowTooltip>
         <Button
           ref={first}
@@ -67,7 +73,14 @@ export function DeliveryReviewChoice({
           {t("Discard")}
         </Button>
       </div>
-      <p id={warning} className="mt-0.5 text-ui-caption" data-delivery-review-warning>
+      <Text
+        id={warning}
+        as="p"
+        size="caption"
+        tone="inherit"
+        className="mt-0.5"
+        data-delivery-review-warning
+      >
         {lateSettlement
           ? t(
               "The provider has not answered yet and may still deliver this message. Sending it again could duplicate it. Wait, or stop the turn.",
@@ -75,7 +88,7 @@ export function DeliveryReviewChoice({
           : t(
               "Check the conversation first. Sending again duplicates a message that was delivered. Keeping it queued pauses the queue and does not resend it.",
             )}
-      </p>
+      </Text>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Text } from "../../../../shared/ui/Text";
 import { Select } from "../../../../shared/ui/Select";
 import { Popover } from "../../../../shared/ui/Popover";
 import { AssistantKeepAwakeStatus } from "../AssistantKeepAwakeStatus";
@@ -31,15 +32,15 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
           kind="dialog"
           aria-label={t("Assistant status")}
         >
-          <div className={styles.popover}>
+          <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>
             <AssistantPresenceStatus snapshot={snapshot} details />
-            <p>
+            <Text as="p" leading="normal">
               {snapshot.lastHeartbeatAt
                 ? t("Last checked: {p0}", {
                     p0: date(snapshot.lastHeartbeatAt),
                   })
                 : t("Waiting for the first check")}
-            </p>
+            </Text>
             <AssistantKeepAwakeStatus state={snapshot.keepAwake} />
             <Button
               variant="link"
@@ -52,8 +53,10 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
                 p0: formatNumber(snapshot.usage.total),
               })}
             </Button>
-            <p>{t("Work tracking continues while voice is off.")}</p>
-          </div>
+            <Text as="p" leading="normal">
+              {t("Work tracking continues while voice is off.")}
+            </Text>
+          </Text>
         </Popover>
       )}
       {presenceAnchor && (
@@ -63,7 +66,7 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
           kind="dialog"
           aria-label={t("Presence")}
         >
-          <div className={styles.popover}>
+          <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>
             <Select
               hideLabel
               label={t("Presence")}
@@ -89,7 +92,7 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
             >
               {t("I'm back")}
             </Button>
-          </div>
+          </Text>
         </Popover>
       )}
     </>

@@ -2,6 +2,7 @@ import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "../../../shared/ui/icons";
+import { Text } from "../../../shared/ui/Text";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import {
   accountStatus,
@@ -89,11 +90,18 @@ export function ProviderAccountMenu({
         {current && storedAccounts.find((account) => account.id === current.id) ? (
           <AccountColorDot account={storedAccounts.find((account) => account.id === current.id)!} />
         ) : null}
-        <span className={variant === "pill" ? "min-w-0 truncate text-ui-micro" : ""}>
+        <Text
+          as="span"
+          size={variant === "pill" ? "micro" : "inherit"}
+          tone="inherit"
+          truncate={variant === "pill"}
+          className={variant === "pill" ? "min-w-0" : undefined}
+        >
           {variant === "pill" ? label : t("Switch account")}
-        </span>
+        </Text>
         <ChevronDown
-          className={`icon-xs shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""}`}
+          className={`icon-xs shrink-0 ${open ? "rotate-180" : ""}`}
+          tone="secondary"
           strokeWidth={1.75}
         />
       </Button>

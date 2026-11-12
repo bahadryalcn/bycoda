@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -37,10 +38,12 @@ export function VoiceActivityRow() {
 
 function ActivityLine({ label }: { label: string }) {
   return (
-    <span className="flex min-w-0 items-center gap-2 text-ui-caption">
+    <Text size="caption" tone="inherit" className="flex min-w-0 items-center gap-2">
       <StatusDot tone="danger" appearance="solid" size="sm" />
-      <span className="truncate">{label}</span>
-    </span>
+      <Text size="inherit" tone="inherit" truncate>
+        {label}
+      </Text>
+    </Text>
   );
 }
 

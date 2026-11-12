@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useRetainedScroll } from "../../../shared/hooks/useRetainedScroll";
 import { t, useLocale } from "../../../shared/i18n";
@@ -61,18 +64,38 @@ export function NoteEditorPane({
       data-document={readingPane || undefined}
       className={hidden ? "hidden" : "note-editor-pane"}
     >
-      {split ? <div className="note-pane-label">{label}</div> : null}
-      <div
+      {split ? (
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          weight="medium"
+          {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "note-pane-label")}
+        >
+          {label}
+        </Text>
+      ) : null}
+      <ScrollArea
+        axis="both"
+        gutter="stable"
         ref={setViewport}
         className="note-pane-scroll"
         role="region"
         aria-label={label}
         tabIndex={0}
       >
-        <div ref={content} className="note-pane-content">
+        <Text
+          as="div"
+          size="inherit"
+          tone="inherit"
+          leading={readingPane ? "relaxed" : "inherit"}
+          ref={content}
+          className="note-pane-content"
+        >
           {children}
-        </div>
-      </div>
+        </Text>
+      </ScrollArea>
       {more ? (
         <div className="note-pane-footer">
           <Button

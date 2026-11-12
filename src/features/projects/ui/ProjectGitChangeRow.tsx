@@ -1,3 +1,5 @@
+import { DiffStat } from "../../../shared/ui/DiffStat";
+import { Text } from "../../../shared/ui/Text";
 import type { ComponentProps } from "react";
 import { useT } from "../../../shared/i18n";
 import { formatInteger } from "../../../shared/lib/numbers";
@@ -19,27 +21,19 @@ export function ProjectGitChangeRow({
       ? t(change.files === 1 ? "{p0} file" : "{p0} files", { p0: formatInteger(change.files) })
       : "";
   return (
-    <div
+    <Text
+      as="div"
+      size="secondary"
+      tone="secondary"
       {...rest}
-      className={[
-        "flex min-w-0 items-center gap-2 px-1 text-ui-secondary text-(--ui-text-secondary)",
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      className={["flex min-w-0 items-center gap-2 px-1", className].filter(Boolean).join(" ")}
     >
       <FileDiff className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden="true" />
-      <span className="min-w-0 truncate tabular-nums">
+      <Text size="inherit" tone="inherit" truncate className="min-w-0 tabular-nums">
         {files}
         {files && change.hasLines ? " · " : ""}
-        {change.additions > 0 ? (
-          <span className="text-diff-add-fg">+{formatInteger(change.additions)}</span>
-        ) : null}
-        {change.additions > 0 && change.deletions > 0 ? " " : ""}
-        {change.deletions > 0 ? (
-          <span className="text-diff-del-fg">-{formatInteger(change.deletions)}</span>
-        ) : null}
-      </span>
-    </div>
+        <DiffStat additions={change.additions} deletions={change.deletions} />
+      </Text>
+    </Text>
   );
 }

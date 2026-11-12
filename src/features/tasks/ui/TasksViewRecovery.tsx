@@ -1,5 +1,7 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import type { PlanningRecovery } from "./useTaskBoardOperations";
 
 /** Sprint assignments that failed after the task or goal was created, each with a retry. */
@@ -15,10 +17,19 @@ export function TasksViewRecovery({
   const t = useT();
   if (!items.length) return null;
   return (
-    <ul className="task-planning-recovery" aria-label={t("Pending sprint assignments")}>
+    <Text
+      as="ul"
+      size="caption"
+      tone="inherit"
+      leading="inherit"
+      {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "task-planning-recovery")}
+      aria-label={t("Pending sprint assignments")}
+    >
       {items.map((item) => (
         <li key={item.id}>
-          <span>{item.title}</span>
+          <Text as="span" size="inherit" tone="primary">
+            {item.title}
+          </Text>
           <Button
             variant="secondary"
             loading={retrying === item.id}
@@ -29,6 +40,6 @@ export function TasksViewRecovery({
           </Button>
         </li>
       ))}
-    </ul>
+    </Text>
   );
 }

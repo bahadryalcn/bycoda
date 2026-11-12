@@ -164,6 +164,7 @@ it("starts the file-list freshness window on completion and keeps another root c
   api.exec.mockImplementation(async (_file: string, args: string[]) => {
     if (args.includes("--is-inside-work-tree")) return { stdout: "true", stderr: "" };
     if (args.includes("--deleted")) return { stdout: "", stderr: "" };
+    if (args.includes("--stage")) return { stdout: "", stderr: "" };
     await new Promise<void>((done) => {
       release = done;
     });

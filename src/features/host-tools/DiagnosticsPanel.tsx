@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
 import { Button } from "../../shared/ui/Button";
@@ -82,7 +83,13 @@ function ResourceChart({
     )
     .join(" ");
   return (
-    <div className={`resource-chart resource-chart-${metric}`}>
+    <Text
+      as="div"
+      size="caption"
+      tone="inherit"
+      leading="inherit"
+      className={`resource-chart resource-chart-${metric}`}
+    >
       <div className="resource-chart-scale" aria-hidden="true">
         <span>{metric === "cpu" ? `${ceiling.toFixed(0)}%` : `${ceiling.toFixed(0)} MiB`}</span>
         <span>0</span>
@@ -120,7 +127,7 @@ function ResourceChart({
         <span>{samples.length > 1 ? time(start) : "—"}</span>
         <span>{samples.length ? time(samples[samples.length - 1].at) : "—"}</span>
       </div>
-    </div>
+    </Text>
   );
 }
 export function DiagnosticsPanel(props: Props) {
@@ -236,17 +243,26 @@ function ProjectDiagnosticsPanel({
         >
           <RefreshCw className="icon-sm" aria-hidden />
         </Button>
-        <span role="status" className="resource-sample-status">
+        <Text
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          role="status"
+          className="resource-sample-status"
+        >
           {busy ? t("Measuring…") : sample ? time(sample.at) : t("No samples yet")}
-        </span>
-        <span
+        </Text>
+        <Text
+          size="caption"
+          tone="secondary"
+          leading="inherit"
           className="resource-scope"
           title={t(
             "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to 60 samples are retained.",
           )}
         >
           {hostLabel ?? t("Host process")} · {t("Node process only")}
-        </span>
+        </Text>
         <InfoPopover label={t("Measurement details")}>
           <p>{hostLabel ?? t("Host process")}</p>
           {sample ? (
@@ -297,29 +313,53 @@ function ProjectDiagnosticsPanel({
             </Surface>
           </div>
           <Surface as="article" variant="outline" className="resource-card resource-system-memory">
-            <div className="resource-memory-heading">
+            <Text
+              size="caption"
+              tone="inherit"
+              leading="inherit"
+              as="div"
+              className="resource-memory-heading"
+            >
               <SectionLabel as="h3">{t("Computer memory")}</SectionLabel>
               <strong>
                 {memoryUsed !== null ? `${memoryUsed.toFixed(1)}% ${t("Used")}` : "—"}
               </strong>
-            </div>
+            </Text>
             <Meter label={t("Computer memory")} value={memoryUsed} warning={75} danger={90} />
-            <div className="resource-memory-legend">
+            <Text
+              size="micro"
+              tone="inherit"
+              leading="inherit"
+              as="div"
+              className="resource-memory-legend"
+            >
               <span>
-                {t("Available")} <strong>{sample ? gib(sample.host.freeMemoryBytes) : "—"}</strong>
+                {t("Available")}{" "}
+                <Text size="inherit" tone="primary" weight="medium" leading="inherit" as="strong">
+                  {sample ? gib(sample.host.freeMemoryBytes) : "—"}
+                </Text>
               </span>
               <span>
-                {t("Total")} <strong>{sample ? gib(sample.host.totalMemoryBytes) : "—"}</strong>
+                {t("Total")}{" "}
+                <Text size="inherit" tone="primary" weight="medium" leading="inherit" as="strong">
+                  {sample ? gib(sample.host.totalMemoryBytes) : "—"}
+                </Text>
               </span>
-            </div>
+            </Text>
           </Surface>
         </>
       ) : null}
       {sample ? (
-        <div className="resource-history-caption">
+        <Text
+          size="micro"
+          tone="inherit"
+          leading="inherit"
+          as="div"
+          className="resource-history-caption"
+        >
           <span>{t("Sample history")}</span>
           <span>{samples.length} / 60</span>
-        </div>
+        </Text>
       ) : null}
     </section>
   );

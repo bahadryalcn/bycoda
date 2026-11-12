@@ -58,7 +58,26 @@ async function installNavigationFixture(page: Page) {
               upstream: null,
             };
           if (command === "git_branches") return { current: "main", detached: false, branches: [] };
-          if (command === "git_worktrees") return { defaultRoot: "/fixture", worktrees: [] };
+          if (command === "git_worktrees")
+            return {
+              defaultRoot: "/fixture",
+              worktrees: new URLSearchParams(location.search).has("pickerWidth")
+                ? [
+                    {
+                      path: "/fixture/bycoda",
+                      branch: "main",
+                      isMain: true,
+                      head: "abcdef",
+                      locked: false,
+                      prunable: false,
+                      missing: false,
+                      dirty: false,
+                      unpushed: 0,
+                      sessionIds: [],
+                    },
+                  ]
+                : [],
+            };
           if (command === "git_status") return { files: [], branch: "main" };
           if (command === "remote_machines")
             return [
@@ -123,6 +142,63 @@ async function installNavigationFixture(page: Page) {
     });
   });
 }
+
+test("workspace picker uses spare header width before clipping names", async ({
+  page,
+}, testInfo) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/app-shell/compact-navigation.html?pickerWidth");
+  const header = page.locator("[data-workspace-header]");
+  const picker = header.getByRole("button", { name: "Switch working copy", exact: true });
+  await expect(picker).toContainText("main", { timeout: 90_000 });
+  await page.getByRole("tab", { name: "Explorer", exact: true }).click();
+  const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
+  await resize.press("Enter");
+  for (let step = 0; step < 3; step++) await resize.press("Shift+ArrowRight");
+  await resize.blur();
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await header.screenshot({ path: testInfo.outputPath(`picker-${theme}-${width}.png`) });
+      const labels = await picker.locator("span").evaluateAll((elements) =>
+        elements
+          .filter((element) => element.textContent === "bycoda" || element.textContent === "main")
+          .map((element) => ({
+            text: element.textContent,
+            clipped: element.scrollWidth > element.clientWidth + 1,
+          })),
+      );
+      expect(labels).toHaveLength(2);
+      expect(labels.filter((label) => label.clipped)).toEqual([]);
+      const bounds = (await header.boundingBox())!;
+      for (const control of await header.getByRole("button").all()) {
+        if (!(await control.isVisible())) continue;
+        const box = (await control.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(bounds.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
+      }
+    }
+  }
+  await page.getByRole("tab", { name: /^Sessions/ }).click();
+  await header.getByRole("button", { name: "Search conversations", exact: true }).click();
+  const search = header.getByPlaceholder("Search conversations...");
+  await expect(search).toBeVisible();
+  await search.fill("retained query");
+  for (const pane of ["wide", "narrow"]) {
+    if (pane === "narrow") await resize.press("Enter");
+    await resize.blur();
+    const bounds = (await header.boundingBox())!;
+    const queryBounds = (await search.boundingBox())!;
+    expect(queryBounds.x + queryBounds.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
+    await expect(search).toHaveValue("retained query");
+    await header.screenshot({ path: testInfo.outputPath(`picker-search-${pane}.png`) });
+  }
+});
 
 test("session scrollbar preserves geometry and follows pointer or keyboard interaction", async ({
   page,

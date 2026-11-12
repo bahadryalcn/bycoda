@@ -1,3 +1,4 @@
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -71,12 +72,14 @@ function AttachmentTextPreview({ readBytes }: { readBytes: () => Promise<Uint8Ar
       </DocumentMessage>
     );
   return (
-    <pre
+    <OutputBlock
       tabIndex={0}
-      className="max-h-[min(620px,70dvh)] min-w-0 overflow-auto whitespace-pre-wrap break-words p-3 select-text font-mono text-ui-caption text-content"
+      tone="primary"
+      scroll
+      className="max-h-[min(620px,70dvh)] min-w-0 break-words p-3"
     >
       {state.text}
-    </pre>
+    </OutputBlock>
   );
 }
 

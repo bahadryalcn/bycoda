@@ -45,18 +45,11 @@
 
 .project-notification-name {
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  color: var(--color-content);
 }
 
 .project-notification-summary {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 
 .project-notification-error {
@@ -66,8 +59,6 @@
 .project-notification-categories {
   margin: 0 8px 8px 40px;
   padding: 4px 12px;
-  border-radius: var(--ui-control-radius);
-  background: var(--ui-surface-panel);
 }
 
 .project-notification-category-grid {
@@ -83,22 +74,15 @@
   min-block-size: 2.25rem;
   gap: 16px;
   cursor: pointer;
-  font-size: var(--ui-font-secondary);
-  color: var(--color-content);
 }
 
 .project-notification-mute-hint {
   grid-column: 1 / -1;
   padding-block: 8px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 .project-notification-footnote {
   margin-block-start: 8px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 
 @container notifications (width < 36rem) {

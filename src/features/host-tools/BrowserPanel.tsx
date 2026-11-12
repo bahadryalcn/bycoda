@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
+import { Text } from "../../shared/ui/Text";
 import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
 import { Heading } from "../../shared/ui/Heading";
@@ -1029,8 +1031,17 @@ function ProjectBrowserPanel({
       </span>
       {error && !selectionOpen ? <InlineError icon={null}>{errorSummary}</InlineError> : null}
       {setupRequired ? (
-        <section className="host-browser-setup" aria-label={t("Browser setup required")}>
-          <strong>{t("Browser setup required")}</strong>
+        <Text
+          as="section"
+          size="caption"
+          tone="inherit"
+          leading="inherit"
+          className="host-browser-setup"
+          aria-label={t("Browser setup required")}
+        >
+          <Text size="inherit" tone="inherit" weight="medium" leading="inherit" as="strong">
+            {t("Browser setup required")}
+          </Text>
           <Button
             motion="none"
             type="button"
@@ -1040,12 +1051,21 @@ function ProjectBrowserPanel({
           >
             {state?.runtime?.installing ? t("Installing browser…") : t("Set up host browser")}
           </Button>
-        </section>
+        </Text>
       ) : null}
       <div className="host-browser-workspace" data-has-selection={Boolean(selection)}>
         <div className="host-browser-stage">
           {selecting ? (
-            <div className="host-browser-selection-mode">
+            <Text
+              size="micro"
+              tone="inherit"
+              leading="inherit"
+              as="div"
+              {...surfaceAttributes(
+                { variant: "raised", radius: "popup" },
+                "host-browser-selection-mode",
+              )}
+            >
               <span>{t("Select element")}</span>
               <InfoPopover>
                 <p>
@@ -1054,7 +1074,7 @@ function ProjectBrowserPanel({
                   )}
                 </p>
               </InfoPopover>
-            </div>
+            </Text>
           ) : null}
           {limitation ? <Alert tone="info">{limitation}</Alert> : null}
           {!frameCurrent ? (
@@ -1376,7 +1396,12 @@ function ProjectBrowserPanel({
                           }}
                         >
                           {index === 1 ? (
-                            <span
+                            <Text
+                              as="span"
+                              size="micro"
+                              tone="primary"
+                              leading="snug"
+                              truncate
                               className="host-browser-highlight-label"
                               data-align={element.bounds.x > frame.width / 2 ? "end" : "start"}
                             >
@@ -1388,7 +1413,7 @@ function ProjectBrowserPanel({
                               element.layout?.display === "grid"
                                 ? ` · ${element.layout.display}`
                                 : ""}
-                            </span>
+                            </Text>
                           ) : null}
                         </span>
                       ) : null,
@@ -1437,12 +1462,12 @@ function ProjectBrowserPanel({
                 <OverflowTooltip
                   label={`${selection.element.tag}${selection.element.text ? ` · ${selection.element.text}` : ""}`}
                 >
-                  <p className="host-browser-target">
+                  <Text as="p" leading="inherit" className="host-browser-target">
                     {selection.element.tag}
                     {selection.element.text ? ` · ${selection.element.text}` : ""}
                     {` · ${Math.round(selection.element.bounds.width)} × ${Math.round(selection.element.bounds.height)}`}
                     {selection.element.role ? ` · ${selection.element.role}` : ""}
-                  </p>
+                  </Text>
                 </OverflowTooltip>
                 <TextareaField
                   label={t("Explain the selected element")}
@@ -1594,7 +1619,11 @@ function ProjectBrowserPanel({
                 </Button>
               ) : null}
             </div>
-            {error ? <DetailedInlineError className="host-browser-target" error={error} /> : null}
+            {error ? (
+              <Text as="div" size="caption" tone="inherit" leading="inherit">
+                <DetailedInlineError className="host-browser-target" error={error} />
+              </Text>
+            ) : null}
             {uncertainDelivery ? (
               <Button variant="ghost" onClick={() => setUncertainDelivery(false)}>
                 {t("I checked the target composer")}

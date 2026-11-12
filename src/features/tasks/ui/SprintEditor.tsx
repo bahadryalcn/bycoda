@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from "react";
-import { DateTimeField } from "../../../shared/ui/DateTimePicker";
+import { DatePicker } from "../../../shared/ui/DatePicker";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -141,15 +141,13 @@ export function SprintEditor({
         <section className="sprint-form-section">
           <SectionLabel>{t("Schedule")}</SectionLabel>
           <div className="sprint-form-grid">
-            <DateTimeField
-              mode="date"
+            <DatePicker
               label={t("Start date")}
               value={startsAt}
               onChange={setStartsAt}
               disabled={busy}
             />
-            <DateTimeField
-              mode="date"
+            <DatePicker
               label={t("End date")}
               value={endsAt}
               min={startsAt || undefined}

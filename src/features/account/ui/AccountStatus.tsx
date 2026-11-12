@@ -121,10 +121,7 @@ export function AccountStatus({
           </>
         )}
       </Group>
-      <Group
-        title={t("Delete account")}
-        description={t("Removes everything bycoda stores about you after a grace period.")}
-      >
+      <Group title={t("Delete account")}>
         {deletion ? (
           <Row
             label={t("Deletion scheduled")}
@@ -143,8 +140,8 @@ export function AccountStatus({
           </Row>
         ) : (
           <Row
-            label={t("Delete account")}
-            description={t("You have {p0} days to change your mind.", { p0: DELETION_GRACE_DAYS })}
+            label={t("You have {p0} days to change your mind.", { p0: DELETION_GRACE_DAYS })}
+            description={t("Removes everything bycoda stores about you after a grace period.")}
           >
             <Button
               variant="danger"

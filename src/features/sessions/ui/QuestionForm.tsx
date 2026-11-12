@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { QuestionFields, updateCustomAnswer, nextSelection } from "./QuestionFields";
 import { useQuestionFormDraft } from "./useQuestionFormDraft";
 import { useQuestionAttachmentRecovery } from "./useQuestionAttachmentRecovery";
@@ -372,9 +374,15 @@ function QuestionFormContent({
       onPasteCapture={interact}
       onChangeCapture={interact}
     >
-      <form
+      <Text
+        as="form"
         ref={form}
-        className={`bycoda-arc ${styles.form}`}
+        size="inherit"
+        tone="neutral"
+        {...surfaceAttributes(
+          { frame: "card", edge: "all", radius: "card", variant: "transparent" },
+          `bycoda-arc ${styles.form}`,
+        )}
         aria-label={t("Question")}
         aria-busy={sending}
         onPaste={(event) => {
@@ -398,19 +406,48 @@ function QuestionFormContent({
       >
         {/* Without a separate heading the question itself sits beside the icon; the field
             legend still names the group for assistive technology. */}
-        <div className={styles.context} data-prompt={title ? undefined : ""}>
-          <MessageSquare className="icon-sm shrink-0" aria-hidden />
+        <Text
+          as="div"
+          size="inherit"
+          tone={title ? "secondary" : "neutral"}
+          className={styles.context}
+          data-prompt={title ? undefined : ""}
+        >
+          <MessageSquare className="icon-sm shrink-0" tone="secondary" aria-hidden />
           {title ? (
-            <span className={styles.contextTitle}>{title}</span>
+            <Text
+              as="span"
+              size="caption"
+              tone="inherit"
+              weight="medium"
+              leading="inherit"
+              className={styles.contextTitle}
+              tracking="normal"
+            >
+              {title}
+            </Text>
           ) : (
-            <span className={styles.contextPrompt} aria-hidden>
+            <Text
+              size="body"
+              tone="inherit"
+              weight="medium"
+              leading="normal"
+              className={styles.contextPrompt}
+              aria-hidden
+            >
               {question.prompt}
-            </span>
+            </Text>
           )}
           {total > 1 ? (
-            <LiveText className={styles.progress} text={`${index + 1} / ${total}`} />
+            <LiveText
+              className={styles.progress}
+              size="caption"
+              tone="secondary"
+              leading="inherit"
+              text={`${index + 1} / ${total}`}
+            />
           ) : null}
-        </div>
+        </Text>
         <FieldGroup variant="bare" disabled={sending}>
           <div className={styles.body} data-inline-prompt={title ? undefined : ""}>
             <QuestionFields
@@ -466,7 +503,7 @@ function QuestionFormContent({
             />
           </div>
         </FieldGroup>
-        <div className={styles.footer}>
+        <div {...surfaceAttributes({ variant: "inset" }, styles.footer)}>
           {canAttach ? (
             <Button
               variant="ghost"
@@ -485,7 +522,11 @@ function QuestionFormContent({
               <LiveText text={t("Preparing session checkpoint. Your draft is kept.")} />
             ) : null}
             {capacityMessage ? <InlineError>{capacityMessage}</InlineError> : null}
-            <p
+            <Text
+              as="p"
+              size="caption"
+              tone={failed ? "danger" : "secondary"}
+              leading="normal"
               role={failed || uncertain ? "alert" : "status"}
               className={styles.status}
               id={statusId}
@@ -493,10 +534,12 @@ function QuestionFormContent({
             >
               {StatusIcon ? <StatusIcon className="icon-sm shrink-0" aria-hidden /> : null}
               <span>{status}</span>
-            </p>
+            </Text>
             {prompt.autoResolveAt != null && !transportHeld ? (
-              <span
-                className="text-ui-caption text-(--ui-text-secondary) tabular-nums"
+              <Text
+                size="caption"
+                tone="secondary"
+                className="tabular-nums"
                 title={t("Interact to keep this question open.")}
               >
                 {prompt.autoResolveAt - now > 60_000
@@ -504,7 +547,7 @@ function QuestionFormContent({
                   : t("Continues without an answer in {p0}s", {
                       p0: Math.max(0, Math.ceil((prompt.autoResolveAt - now) / 1000)),
                     })}
-              </span>
+              </Text>
             ) : null}
           </div>
           <div className={styles.actions}>
@@ -555,7 +598,7 @@ function QuestionFormContent({
             </Button>
           </div>
         </div>
-      </form>
+      </Text>
     </div>
   );
 }

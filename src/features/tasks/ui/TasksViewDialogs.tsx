@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { formatDate, useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -48,20 +49,32 @@ export function TaskBoardStatusDialog({
   const t = useT();
   return (
     <Modal title={t("Task board status")} onClose={onClose}>
-      <div className="task-board-status-details">
+      <Text
+        as="div"
+        size="secondary"
+        tone="inherit"
+        leading="inherit"
+        className="task-board-status-details"
+      >
         {missingNotice ? <p>{missingNotice}</p> : null}
         {error ? <p>{error}</p> : <p>{t("Up to date")}</p>}
         {updatedAt ? (
-          <p className="task-status-meta">
+          <Text
+            as="p"
+            size="caption"
+            tone="secondary"
+            leading="inherit"
+            className="task-status-meta"
+          >
             {t("Last verified {p0}", {
               p0: formatDate(updatedAt, { dateStyle: "medium", timeStyle: "short" }),
             })}
-          </p>
+          </Text>
         ) : null}
         {hostStopped ? (
           <LocalHostStartButton onStarted={onRetry} onError={(message) => onStartError(message)} />
         ) : null}
-      </div>
+      </Text>
     </Modal>
   );
 }
@@ -119,11 +132,11 @@ export function TaskDeliveryDialog({
       }
     >
       <div className="task-delivery">
-        <p>
+        <Text as="p" size="secondary" leading="inherit">
           {t(
             "The completed task stays on its branch. Pending tasks in this goal and project will use the selected integration worktree.",
           )}
-        </p>
+        </Text>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <TaskWorkspacePicker
           machine={machine}

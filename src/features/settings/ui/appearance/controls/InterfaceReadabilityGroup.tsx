@@ -1,6 +1,7 @@
 import { t, useLocale } from "../../../../../shared/i18n";
 import { DIFF_PALETTE_DEFAULT, type DiffPalette } from "../../../model/appearance";
 import { AppearanceContrast } from "../../AppearanceContrast";
+import { Text } from "../../../../../shared/ui/Text";
 import { RadioTiles } from "../../RadioTiles";
 import { Group, Row } from "../../settingsControls";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
@@ -48,8 +49,20 @@ export function InterfaceReadabilityGroup({ appearance: a }: { appearance: Appea
                   <span />
                   <span />
                 </span>
-                <span>{option.label()}</span>
-                {option.tag ? <span className="diff-swatch-tag">{option.tag()}</span> : null}
+                <Text as="span" size="caption" tone="inherit" leading="inherit">
+                  {option.label()}
+                </Text>
+                {option.tag ? (
+                  <Text
+                    as="span"
+                    size="micro"
+                    tone="muted"
+                    leading="inherit"
+                    className="diff-swatch-tag"
+                  >
+                    {option.tag()}
+                  </Text>
+                ) : null}
               </>
             ),
           }))}

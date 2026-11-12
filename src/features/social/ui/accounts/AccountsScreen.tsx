@@ -2,6 +2,7 @@ import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
+import { Text } from "../../../../shared/ui/Text";
 import { Sheet } from "../../../../shared/ui/Sheet";
 import { EmptyHint } from "../common/EmptyHint";
 import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
@@ -65,7 +66,11 @@ export function AccountsScreen({
         </InlineMessage>
       ) : null}
       <section className="social-accounts-section" aria-label={t("Accounts")}>
-        {!snapshot && data.loading ? <p className="social-muted">{t("Loading…")}</p> : null}
+        {!snapshot && data.loading ? (
+          <Text as="p" tone="muted" leading="snug" className="social-muted">
+            {t("Loading…")}
+          </Text>
+        ) : null}
         {accounts.length ? (
           <ul className="social-account-list">
             {accounts.map((account) => (

@@ -8,8 +8,6 @@
   width: 100%;
   min-width: 0;
   height: 2rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--ui-pane-border);
 }
 .stop {
   position: absolute;
@@ -24,8 +22,6 @@
   border-radius: 50%;
 }
 .label {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   white-space: nowrap;
 }
 .controlRow {
@@ -50,11 +46,9 @@
 .dialWrap {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 6px;
   flex: none;
   white-space: nowrap;
-  color: var(--ui-text-muted);
-  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
 .dial {

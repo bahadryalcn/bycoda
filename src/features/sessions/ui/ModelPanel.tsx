@@ -3,6 +3,7 @@ import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Settings } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
+import { Text } from "../../../shared/ui/Text";
 import {
   providerAccountLabel,
   providerAccounts,
@@ -127,9 +128,16 @@ export function ModelPanel({
             defaultMark={defaultMark?.mark}
             header={
               <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-1.5 pb-1">
-                <span className="shrink-0 text-ui-micro font-medium tracking-wide text-(--ui-text-secondary) uppercase">
+                <Text
+                  as="span"
+                  size="micro"
+                  weight="medium"
+                  tone="secondary"
+                  tracking="wide"
+                  className="shrink-0 uppercase"
+                >
                   {title}
-                </span>
+                </Text>
                 {browser.query.trim() ? null : (
                   <ModelAccountControl
                     accounts={shownAccounts}

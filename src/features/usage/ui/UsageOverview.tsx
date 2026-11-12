@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import {
@@ -542,7 +543,9 @@ export function UsageOverview({
           />
         )}
         <div className="usage-band-scope">
-          <p>{t("This machine")}</p>
+          <Text as="p" leading="inherit">
+            {t("This machine")}
+          </Text>
           <InfoPopover label={t("Data sources and coverage")}>
             <p>{t(limitsOnly ? "This machine" : "This machine · Local session logs")}</p>
             <p>{Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
@@ -617,8 +620,10 @@ export function UsageOverview({
           <div className="usage-filter-panel">
             <SectionLabel>{t("Filters")}</SectionLabel>
             <DateTimeRangePicker
-              minDate={new Date(0)}
-              maxDate={new Date(new Date().setHours(24, 0, 0, 0))}
+              required
+              minuteStep={15}
+              min={new Date(0)}
+              max={new Date(new Date().setHours(24, 0, 0, 0))}
               value={{ start: new Date(window.start), end: new Date(window.end) }}
               onChange={(range) => {
                 setPreset("custom");
@@ -758,7 +763,13 @@ export function UsageOverview({
       {view !== "limits" && showAnalytics && (
         <>
           {refreshing && load.refreshedAt > 0 && (
-            <LoadingText presentation="text" className="usage-muted">
+            <LoadingText
+              presentation="text"
+              size="caption"
+              tone="secondary"
+              leading="inherit"
+              className="usage-muted"
+            >
               {t("Refreshing usage… Previous results remain visible.")}
             </LoadingText>
           )}
@@ -791,16 +802,22 @@ export function UsageOverview({
                       >
                         {t(metricNames[key])}
                       </Button>
-                      <strong>
+                      <Text
+                        as="strong"
+                        size="heading"
+                        tone="primary"
+                        weight="medium"
+                        leading="inherit"
+                      >
                         {!load.refreshedAt ||
                         (key !== "duration" && !!load.error && !filtered.length) ||
                         (key === "duration" && load.turns === null) ||
                         (key === "cost" && unpriced.length > 0 && pricedTokens === 0)
                           ? "—"
                           : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`}
-                      </strong>
+                      </Text>
                       {key === "cost" ? (
-                        <small>
+                        <Text as="small" size="caption" tone="secondary" leading="inherit">
                           {t("API-equivalent, not billed")}
                           {/* Full coverage is stated in the data notes; only a gap needs the tile. */}
                           {!totals.tokens || pricedTokens < totals.tokens
@@ -810,9 +827,15 @@ export function UsageOverview({
                                   : "—"
                               }`
                             : null}
-                        </small>
+                        </Text>
                       ) : null}
-                      <small hidden={key === "cost" && change == null}>
+                      <Text
+                        as="small"
+                        size="caption"
+                        tone="secondary"
+                        leading="inherit"
+                        hidden={key === "cost" && change == null}
+                      >
                         {change == null
                           ? t(
                               key === "cost"
@@ -822,7 +845,7 @@ export function UsageOverview({
                                   : "tokens",
                             )
                           : `${change >= 0 ? "+" : ""}${formatUsagePercent(change)} ${t("vs previous period")}`}
-                      </small>
+                      </Text>
                     </div>
                   );
                 })}
@@ -834,44 +857,56 @@ export function UsageOverview({
                 open={showDetails}
                 onOpenChange={setShowDetails}
               >
-                <div className="usage-facts">
+                <Text
+                  as="div"
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className="usage-facts"
+                >
                   <span>
-                    {t("Total tokens")} <b>{formatMetric(totals.tokens, "tokens")}</b>
+                    {t("Total tokens")}{" "}
+                    <Text as="b" size="inherit" tone="primary" weight="medium">
+                      {formatMetric(totals.tokens, "tokens")}
+                    </Text>
                   </span>
                   <span>
                     {t("Cache hit rate")}{" "}
-                    <b>
+                    <Text as="b" size="inherit" tone="primary" weight="medium">
                       {inputTotal ? formatUsagePercent((totals.cacheRead / inputTotal) * 100) : "—"}
-                    </b>
+                    </Text>
                   </span>
                   <span>
                     {t("Cache savings")}{" "}
-                    <b>
+                    <Text as="b" size="inherit" tone="primary" weight="medium">
                       {unpriced.length ? "≥ " : ""}
                       {formatMetric(cacheSavings, "cost")}
-                    </b>
+                    </Text>
                   </span>
                   <span>
-                    {t("Active days")} <b>{activeDays}</b>
+                    {t("Active days")}{" "}
+                    <Text as="b" size="inherit" tone="primary" weight="medium">
+                      {activeDays}
+                    </Text>
                   </span>
                   <span>
                     {t("Cost per active day")}{" "}
-                    <b>
+                    <Text as="b" size="inherit" tone="primary" weight="medium">
                       {activeDays
                         ? `${unpriced.length ? "≥ " : ""}${formatMetric(totals.cost / activeDays, "cost")}`
                         : "—"}
-                    </b>
+                    </Text>
                   </span>
-                </div>
+                </Text>
               </Disclosure>
             </>
           )}
           {view === "overview" && actualResolution !== resolution && (
-            <p className="usage-muted">
+            <Text as="p" leading="inherit" className="usage-muted">
               {t(
                 "The chart uses a coarser resolution to show the entire interval. Select a shorter range for more detail.",
               )}
-            </p>
+            </Text>
           )}
           {!refreshing && !hasFilteredData && !partial && (
             <Alert tone="info">

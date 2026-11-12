@@ -27,9 +27,7 @@ export function runtimeModeOptions(
       title: RUNTIME_MODE_LABEL[mode],
       description: RUNTIME_MODE_HINT[mode],
       icon: (
-        <ModeIcon
-          className={`icon-sm ${mode === "full-access" ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-secondary)"}`}
-        />
+        <ModeIcon className="icon-sm" tone={mode === "full-access" ? "warning" : "secondary"} />
       ),
       disabled: reason ? true : undefined,
       disabledReason: reason,

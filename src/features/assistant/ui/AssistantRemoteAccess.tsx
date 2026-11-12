@@ -1,3 +1,6 @@
+import { Code } from "../../../shared/ui/Code";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useRemoteMachines } from "../../connections/model/connections";
@@ -200,13 +203,13 @@ export function AssistantRemoteAccess({
           }
         >
           <div className={styles.body}>
-            <p className={styles.status}>
+            <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.status}>
               {sourceStatus === "registered"
                 ? t("This Room is registered on its original Host.")
                 : sourceStatus === "unavailable"
                   ? t("Room registration is unavailable. Reopen the Room to retry.")
                   : t("Checking Room registration…")}
-            </p>
+            </Text>
             <div className={styles.grid}>
               <Select
                 label={t("Paired Host")}
@@ -247,19 +250,21 @@ export function AssistantRemoteAccess({
             </div>
             {machinesError && <InlineError>{machinesError}</InlineError>}
             {!loading && !targets.length && (
-              <p className={styles.note}>{t("No other paired Host is available.")}</p>
+              <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.note}>
+                {t("No other paired Host is available.")}
+              </Text>
             )}
-            <p className={styles.note}>
+            <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.note}>
               {t(
                 "The target project must be visible and the native identity trusted by both Hosts. Each connection requires native review.",
               )}
-            </p>
+            </Text>
             {request && (
               <Surface variant="card" padding="md" className={styles.request}>
-                <p>
+                <Text as="p" leading="normal">
                   {t("Inspect the original request before starting another connection.")}{" "}
-                  <code>{request.requestId}</code>
-                </p>
+                  <Code>{request.requestId}</Code>
+                </Text>
                 <div className={styles.actions}>
                   <Button
                     disabled={pending}
@@ -286,7 +291,17 @@ export function AssistantRemoteAccess({
                 </div>
               </Surface>
             )}
-            {result && <p className={styles.result}>{result}</p>}
+            {result && (
+              <Text
+                as="p"
+                size="secondary"
+                tone="inherit"
+                leading="inherit"
+                className={styles.result}
+              >
+                {result}
+              </Text>
+            )}
             <div className={styles.actions}>
               <Button
                 variant="ghost"
@@ -304,13 +319,15 @@ export function AssistantRemoteAccess({
             {error && <InlineError>{error}</InlineError>}
             {identity && (
               <Surface variant="card" padding="md" className={styles.identity}>
-                <p>
-                  {t("Installation ID")}: <code>{identity.installationId}</code>
-                </p>
-                <p>
-                  {t("Fingerprint")}: <code>{identity.fingerprint}</code>
-                </p>
-                <pre>{identity.publicKey}</pre>
+                <Text as="p" tone="inherit" leading="inherit">
+                  {t("Installation ID")}: <Code>{identity.installationId}</Code>
+                </Text>
+                <Text as="p" tone="inherit" leading="inherit">
+                  {t("Fingerprint")}: <Code>{identity.fingerprint}</Code>
+                </Text>
+                <OutputBlock size="caption" tone="inherit" leading="inherit" frame="none">
+                  {identity.publicKey}
+                </OutputBlock>
               </Surface>
             )}
           </div>

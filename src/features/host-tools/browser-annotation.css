@@ -29,8 +29,6 @@
 }
 .browser-annotation-details {
   min-inline-size: 0;
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .browser-inspector-navigation {
@@ -51,11 +49,9 @@
 }
 .browser-inspector-breadcrumbs code {
   padding-inline: 6px;
-  color: var(--ui-text-secondary);
 }
 .browser-annotation-details pre {
   white-space: pre-wrap;
-  font: inherit;
 }
 .browser-annotation-chip > summary {
   cursor: pointer;
@@ -68,14 +64,10 @@
   color: var(--ui-tone-accent-fg);
 }
 .browser-annotation-chip {
-  font-size: var(--ui-font-micro);
   max-inline-size: min(100%, 520px);
   padding: 8px;
   border: 1px solid var(--ui-card-border);
   border-radius: var(--ui-radius-card);
-}
-.browser-annotation-details .host-tool-muted {
-  color: var(--ui-text-secondary);
 }
 .browser-annotation-attachment {
   display: flex;

@@ -122,9 +122,9 @@ describe("MarkdownDocumentPreview images", () => {
 
     expect(html).not.toContain("data-document-image");
     expect(html).not.toContain("<img");
-    expect(html).toMatch(/data-image-alt=""[^>]*>Escaped<\/span>/);
-    expect(html).toMatch(/data-image-alt=""[^>]*>build<\/span>/);
-    expect(html).toMatch(/data-image-alt=""[^>]*>Local file<\/span>/);
+    expect(html).toMatch(/data-image-alt=""[^>]*>Escaped<\/em>/);
+    expect(html).toMatch(/data-image-alt=""[^>]*>build<\/em>/);
+    expect(html).toMatch(/data-image-alt=""[^>]*>Local file<\/em>/);
   });
 
   it("leaves images alone when no document is shown", () => {

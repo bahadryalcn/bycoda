@@ -59,6 +59,10 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   Restart now runs the normal quit (saving drafts and asking about running work)
   and relaunches. Linux uses Main pane glass. If the native window update fails,
   retry from the setting.
+- The Image layer's **Chat background layer** switch is on by default. Turn it off
+  to show chat images without the readability veil, opacity fade or gradient
+  treatment. Text may be harder to read. Image scope and the separate Blur
+  control still apply. Background reset and saved looks include this switch.
 - The Color layer offers six presets, linear, radial and soft-blend styles, three
   colors, an angle dial and strength. Edits apply while you drag and save
   automatically; only a genuine edit from another window asks for resolution.

@@ -42,15 +42,8 @@
   gap: 8px;
   min-inline-size: 0;
 }
-.inbox-scope-row .settings-collection-title {
-  font-weight: 400;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .inbox-scope-row .settings-collection-meta {
   flex: none;
-  color: var(--ui-text-muted);
 }
 .inbox-settings .settings-collection-list {
   max-block-size: 18rem;

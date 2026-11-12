@@ -10,6 +10,7 @@ import { useT } from "../i18n";
 import { FieldControl } from "./Field";
 import { InlineAction } from "./ActionHost";
 import { X } from "./icons";
+import { optionalTextAttributes, type TextRoles } from "./Text";
 import styles from "./SearchInput.module.css";
 
 type SearchInputProps = ComponentPropsWithoutRef<"input"> & {
@@ -25,6 +26,10 @@ type SearchInputProps = ComponentPropsWithoutRef<"input"> & {
   /** Field height: `sm` is the compact toolbar/filter height (default), `md` matches form
    *  controls and `size="md"` Buttons. The native `size` attribute keeps its meaning. */
   fieldSize?: SearchFieldSize;
+  /** Size of the typed text: `secondary` 13px, `body` 14px, ...; unset keeps the field's own size. */
+  textSize?: TextRoles["size"];
+  /** Line height of the typed text; unset keeps the field's own. */
+  leading?: TextRoles["leading"];
 };
 
 export type SearchFieldSize = "sm" | "md";
@@ -79,7 +84,7 @@ export const SearchInputTrigger = forwardRef<HTMLButtonElement, ComponentPropsWi
 
 /**
  * Single-line search field with a clear button; clearing fires a real change event and keeps focus in the field.
- * `fieldSize` sm (default, toolbar height) or md (form height). Native input events, ref and keys pass through.
+ * `fieldSize` sm (default, toolbar height) or md (form height); `textSize` and `leading` set the type role of the typed text. Native input events, ref and keys pass through.
  * @group fields
  * @use Filter or search a list, tree or table; standalone or inside a SearchInputGroup.
  * @avoid Choosing from a long option list: SearchableSelect. General text entry: Input.
@@ -93,6 +98,8 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
     clearable = true,
     focusOwner,
     fieldSize,
+    textSize,
+    leading,
     onChange,
     ...props
   },
@@ -138,9 +145,10 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         onChange?.(event);
       }}
       ref={input}
-      className={[className, styles.input, insetClear && styles.standaloneInput]
-        .filter(Boolean)
-        .join(" ")}
+      {...optionalTextAttributes(
+        { size: textSize, leading },
+        [className, styles.input, insetClear && styles.standaloneInput].filter(Boolean).join(" "),
+      )}
       data-search-filled={canClear || undefined}
     />
   );

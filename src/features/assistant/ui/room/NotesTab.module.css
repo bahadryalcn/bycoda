@@ -36,9 +36,6 @@
   gap: 8px;
   min-block-size: 2rem;
   padding-inline: 8px 4px;
-  border-block-end: 1px solid var(--ui-pane-border);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .listHead > :first-child {
   flex: 1 1 auto;
@@ -47,7 +44,7 @@
 .list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   min-inline-size: 0;
   margin: 0;
   padding: 0;
@@ -60,7 +57,6 @@
 .check {
   flex: none;
   opacity: 0;
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .item:hover .check,
 .item:focus-within .check,
@@ -71,11 +67,6 @@
 @media (hover: none), (pointer: coarse) {
   .check {
     opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .check {
-    transition: none;
   }
 }
 .row {
@@ -98,25 +89,16 @@
   flex: 1 1 auto;
   min-inline-size: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
 }
 .rowTime {
   flex: none;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-micro);
 }
 .rowPreview {
   min-inline-size: 0;
   inline-size: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-weight: 400;
 }
 
 .reader {
@@ -144,8 +126,6 @@
 }
 .readerMeta {
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 .readerActions {
   display: flex;
@@ -156,9 +136,6 @@
 
 .markdown {
   min-inline-size: 0;
-  color: var(--color-content);
-  font-size: var(--ui-font-secondary);
-  line-height: 1.6;
   overflow-wrap: anywhere;
 }
 /* Reader-scoped markdown scale: note headings stay below the note title. */
@@ -174,8 +151,6 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: var(--ui-font-secondary);
-  line-height: 1.5;
 }
 .entry {
   display: grid;
@@ -190,10 +165,8 @@
   border-block-end: 0;
 }
 .entryTime {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
-  padding-block-start: 1px;
+  padding-block-start: 0;
 }
 
 .summary {
@@ -207,18 +180,12 @@
   margin: 0;
 }
 .summary p {
-  font-size: var(--ui-font-secondary);
-  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 .summaryMeta {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 .unavailable {
   margin: 0 0 12px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
 }
 .readerTitle h3 {
   overflow-wrap: anywhere;

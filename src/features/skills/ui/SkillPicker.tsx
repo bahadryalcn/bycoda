@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TextField } from "../../../shared/ui/TextField";
@@ -163,9 +165,9 @@ function SkillList({
 
   if (skills.length === 0) {
     return (
-      <p className="px-3 py-2.5 text-ui-caption text-(--ui-text-secondary)">
+      <Text as="p" size="caption" tone="secondary" className="px-3 py-2.5">
         {query.trim() ? t("No matching commands or skills") : t("No commands yet")}
-      </p>
+      </Text>
     );
   }
 
@@ -182,9 +184,15 @@ function SkillList({
         return (
           <Fragment key={`${skill.kind}:${skill.source}:${skill.invocation}`}>
             {skill.kind === "template" && skills[index - 1]?.kind !== "template" ? (
-              <p className="px-2 pb-0.5 pt-1.5 text-ui-caption font-medium text-(--ui-text-secondary)">
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                weight="medium"
+                className="px-2 pb-0.5 pt-1.5"
+              >
                 {t("Templates")}
-              </p>
+              </Text>
             ) : null}
             <Button
               variant="item"
@@ -200,24 +208,33 @@ function SkillList({
               onClick={() => onPick(skill)}
             >
               <span className="flex min-w-0 w-full items-baseline gap-2">
-                <span className="truncate text-ui-secondary">
+                <Text size="secondary" tone="inherit" truncate>
                   {prefix}
                   {skill.invocation}
-                </span>
-                <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                </Text>
+                <Text size="caption" tone="secondary" className="shrink-0">
                   {scopeLabel(skill)}
-                </span>
+                </Text>
               </span>
               {!compact && skill.description ? (
-                <span className="line-clamp-2 ui-caption-text leading-4">{skill.description}</span>
+                <ClampText as="span" lines={2} expandable={false} size="caption" tone="secondary">
+                  {skill.description}
+                </ClampText>
               ) : null}
               {!compact &&
               skill.kind === "native" &&
               (skill.inputHint || skill.subcommands?.length) ? (
-                <span className="line-clamp-2 ui-caption-text">
+                <ClampText
+                  as="span"
+                  lines={2}
+                  expandable={false}
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                >
                   {skill.inputHint ||
                     skill.subcommands?.map((sub) => sub.usage || sub.name).join(" · ")}
-                </span>
+                </ClampText>
               ) : null}
             </Button>
           </Fragment>
@@ -319,9 +336,9 @@ export function CreateSkillForm({
       }}
       className={className}
     >
-      <p className="mb-2 text-ui-micro text-(--ui-text-secondary)">
+      <Text as="p" size="micro" tone="secondary" className="mb-2">
         {t("Writes a starter SKILL.md you can edit.")}
-      </p>
+      </Text>
       <TextField
         monospace={monospace}
         label={t("Skill name")}
@@ -337,9 +354,9 @@ export function CreateSkillForm({
         }}
       />
       {parentClosed ? (
-        <p role="status" className="mb-2 text-ui-micro text-(--ui-text-secondary)">
+        <Text as="p" size="micro" tone="secondary" role="status" className="mb-2">
           {t("Preparing session checkpoint. Your draft is kept.")}
-        </p>
+        </Text>
       ) : null}
       <RadioGroup
         compact
@@ -360,21 +377,26 @@ export function CreateSkillForm({
         ]}
       />
       {showScopeHelp ? (
-        <p className="[margin-block-end:0.5rem] break-all text-ui-caption text-(--ui-text-secondary)">
+        <Text
+          as="p"
+          size="caption"
+          tone="secondary"
+          className="[margin-block-end:0.5rem] break-all"
+        >
           {project && scope === "project"
             ? t("Creates a starter in {p0}.agents/skills. Edit SKILL.md after creation.", {
                 p0: `${cwd.replace(/[\\/]+$/, "")}/`,
               })
             : t("Creates a starter in ~/.agents/skills on this computer.")}
           {!project ? ` ${t("Open a local project to enable project scope.")}` : ""}
-        </p>
+        </Text>
       ) : null}
       {error ? (
         <Alert tone="danger">{error}</Alert>
       ) : !name.trim() || valid ? null : (
-        <p className="mb-2 text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary" className="mb-2">
           {t("Use lowercase letters, numbers, and hyphens.")}
-        </p>
+        </Text>
       )}
       <div className="flex items-center justify-end gap-1">
         <Button

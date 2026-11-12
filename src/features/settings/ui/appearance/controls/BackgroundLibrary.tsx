@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { Text } from "../../../../../shared/ui/Text";
 import { useEffect, useRef } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
@@ -70,7 +72,9 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
   return (
     <Row id="background-library" stacked label={t("Library")}>
       {images.length === 0 ? (
-        <p className={styles.empty}>{t("Images you use appear here.")}</p>
+        <Text as="p" size="caption" tone="muted" leading="inherit" className={styles.empty}>
+          {t("Images you use appear here.")}
+        </Text>
       ) : (
         <ul className={styles.grid} aria-label={t("Library")}>
           {images.map((image) => {
@@ -87,9 +91,15 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                 >
                   <img src={libraryImageSrc(image)} alt="" draggable={false} loading="lazy" />
                   {generated ? (
-                    <span className={styles.badge} aria-hidden="true">
+                    <Text
+                      size="inherit"
+                      tone="secondary"
+                      leading="inherit"
+                      {...surfaceAttributes({ radius: "pill", variant: "plain" }, styles.badge)}
+                      aria-hidden="true"
+                    >
                       <Sparkles className="icon-xs" />
-                    </span>
+                    </Text>
                   ) : null}
                 </Button>
                 <Button

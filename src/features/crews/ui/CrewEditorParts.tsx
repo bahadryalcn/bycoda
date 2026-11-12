@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Copy } from "../../../shared/ui/icons";
@@ -35,7 +36,9 @@ export function CrewEditorHeader({
       />
       {isNew ? (
         <div className="flex min-w-0 flex-col items-start gap-1">
-          <span className="text-ui-body font-medium">{t("Available in")}</span>
+          <Text size="body" tone="inherit" weight="medium">
+            {t("Available in")}
+          </Text>
           <SegmentedControl
             label={t("Available in")}
             value={draft.projectId ? "project" : "global"}

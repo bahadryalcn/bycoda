@@ -356,7 +356,7 @@
   right: 0;
   left: 0;
   border-radius: var(--radius-control);
-  background: var(--color-selection);
+  background: var(--ui-surface-hover);
   pointer-events: none;
 }
 
@@ -466,7 +466,6 @@
 }
 .option:is([data-active], [aria-selected="true"]) {
   background: var(--ui-surface-selected);
-  box-shadow: inset 0 0 0 1px var(--ui-field-border);
 }
 .root:has(.lid .trigger:focus-visible) .shape {
   box-shadow: var(--ui-focus-ring);

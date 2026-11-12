@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -41,11 +44,26 @@ export function DeviceSetupPanel({
     <div className="device-panel-setup">
       <div className="device-panel-setup-head">
         <StatusDot tone={unknown ? "warning" : running ? "success" : "neutral"} />
-        <span className="device-panel-setup-summary">
+        <Text
+          size="body"
+          tone="primary"
+          weight="medium"
+          leading="inherit"
+          className="device-panel-setup-summary"
+        >
           {hostLabel ? `${hostLabel} · ` : ""}
           {unknown ? t("Unknown") : running ? t("Device host running") : t("Device host stopped")}
-          <span className="host-tool-muted">{t("{p0} devices found", { p0: deviceCount })}</span>
-        </span>
+          <Text
+            as="span"
+            size="caption"
+            tone="inherit"
+            leading="relaxed"
+            weight="regular"
+            className="host-tool-muted"
+          >
+            {t("{p0} devices found", { p0: deviceCount })}
+          </Text>
+        </Text>
         <InfoPopover>
           <p>
             {t(
@@ -66,24 +84,49 @@ export function DeviceSetupPanel({
           <RefreshCw className="icon-sm" aria-hidden />
         </Button>
       </div>
-      <ul className="device-panel-setup-platforms">
+      <ul
+        {...surfaceAttributes(
+          { frame: "card", edge: "all", radius: "card" },
+          "device-panel-setup-platforms",
+        )}
+      >
         {status.platforms.map((item) => (
-          <li key={item.platform} data-available={item.available}>
+          <Text
+            as="li"
+            size="caption"
+            tone="inherit"
+            leading="inherit"
+            key={item.platform}
+            data-available={item.available}
+          >
             <DevicePlatformIcon platform={item.platform} active={item.available} />
-            <span className="device-panel-setup-platform">{platformLabel(item.platform)}</span>
-            <span className="device-panel-setup-fact">
+            <Text
+              size="inherit"
+              tone="primary"
+              weight="medium"
+              className="device-panel-setup-platform"
+            >
+              {platformLabel(item.platform)}
+            </Text>
+            <Text size="inherit" tone="secondary" className="device-panel-setup-fact">
               {item.available ? t("SDK detected") : item.reason}
-            </span>
+            </Text>
             {item.available ? (
-              <Check className="icon-sm device-panel-setup-mark" aria-hidden />
+              <Check className="icon-sm device-panel-setup-mark" tone="success" aria-hidden />
             ) : (
-              <TriangleAlert className="icon-sm device-panel-setup-mark" aria-hidden />
+              <TriangleAlert
+                className="icon-sm device-panel-setup-mark"
+                tone="warning"
+                aria-hidden
+              />
             )}
-          </li>
+          </Text>
         ))}
       </ul>
       {showLastError && status.lastError ? (
-        <pre className="device-panel-output">{status.lastError}</pre>
+        <OutputBlock size="micro" tone="primary" leading="inherit" className="device-panel-output">
+          {status.lastError}
+        </OutputBlock>
       ) : null}
       <div className="host-tool-actions">
         <Button disabled={setup.disabled} loading={setup.loading} onClick={setup.onClick}>

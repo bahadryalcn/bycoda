@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Field } from "../../../shared/ui/Field";
@@ -66,7 +67,11 @@ export function AssistantPresetNumber({
           step={1}
           steppers={false}
           required
-          endAdornment={<span className={styles.unit}>{unit}</span>}
+          endAdornment={
+            <Text size="micro" tone="secondary" leading="inherit" className={styles.unit}>
+              {unit}
+            </Text>
+          }
           onChange={(event) => {
             const raw = event.currentTarget.value;
             const parsed = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;

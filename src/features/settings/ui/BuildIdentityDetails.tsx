@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
@@ -72,7 +73,9 @@ export function BuildIdentityDetails() {
           /* Both stamps are the same: say so once and show the identity once. */
           <DescriptionItem term={t("Source")}>
             {t(buildIdentityLabel())}{" "}
-            <span className="text-(--ui-text-secondary)">· {t("Same source")}</span>
+            <Text size="inherit" tone="secondary">
+              · {t("Same source")}
+            </Text>
           </DescriptionItem>
         ) : (
           <>
@@ -82,10 +85,10 @@ export function BuildIdentityDetails() {
                 ? t("Unavailable: the native build stamp could not be read.")
                 : t(buildIdentityLabel(native))}
               {readState === "failed" && native ? (
-                <span className="text-(--ui-text-secondary)">
+                <Text size="inherit" tone="secondary">
                   {" "}
                   {t("(last successful read; the latest read failed)")}
-                </span>
+                </Text>
               ) : null}
             </DescriptionItem>
             <DescriptionItem term={t("Source comparison")}>
@@ -117,9 +120,9 @@ export function BuildIdentityDetails() {
             <Copy aria-hidden className="icon-xs" strokeWidth={1.75} />
           )}
         </Button>
-        <span role="status" className="text-(--ui-text-secondary) empty:hidden">
+        <Text role="status" size="inherit" tone="secondary" className="empty:hidden">
           {copied ? t("Copied") : ""}
-        </span>
+        </Text>
         {readState === "failed" ? (
           <Button onClick={() => setAttempt((value) => value + 1)}>{t("Retry native read")}</Button>
         ) : null}

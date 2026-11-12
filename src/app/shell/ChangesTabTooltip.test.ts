@@ -20,8 +20,8 @@ describe("changesTooltipDetails", () => {
     expect(scope).toContain("upstream");
     expect(scope).toContain("This session");
     expect(stats).toContain("543 files");
-    expect(stats).toMatch(/text-diff-add-fg">\+20,563/);
-    expect(stats).toMatch(/text-diff-del-fg">−8,788/);
+    expect(stats).toMatch(/data-side="added">\+20,563/);
+    expect(stats).toMatch(/data-side="removed">−8,788/);
   });
 
   it("shows the project path instead of the checkout and omits empty stats", () => {

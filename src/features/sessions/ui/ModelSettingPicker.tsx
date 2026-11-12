@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -68,7 +69,16 @@ export function ModelSettingPicker({
         >
           <ArrowLeft className="icon-sm" strokeWidth={1.75} />
         </Button>
-        <span className="min-w-0 flex-1 truncate text-ui-caption font-medium">{label}</span>
+        <Text
+          as="span"
+          size="caption"
+          tone="inherit"
+          weight="medium"
+          truncate
+          className="min-w-0 flex-1"
+        >
+          {label}
+        </Text>
       </div>
       <div className="shrink-0 px-1.5 pb-1.5">
         <SearchInput
@@ -92,9 +102,15 @@ export function ModelSettingPicker({
           [...groups].map(([group, options]) => (
             <div key={group || "none"}>
               {group ? (
-                <div className="px-1.5 pt-2 pb-0.5 text-ui-micro font-medium tracking-wide text-(--ui-text-secondary) uppercase">
+                <Text
+                  as="div"
+                  size="micro"
+                  weight="medium"
+                  tracking="wide"
+                  className="px-1.5 pt-2 pb-0.5 uppercase"
+                >
                   {group}
-                </div>
+                </Text>
               ) : null}
               {options.map((option) => {
                 const selected = delegationOptionSelected(setting, values, option.value);
@@ -116,14 +132,18 @@ export function ModelSettingPicker({
                     }}
                   >
                     <DelegationOptionIcon setting={setting} value={option.value} />
-                    <span className={`min-w-0 flex-1 truncate ${selected ? "font-medium" : ""}`}>
+                    <Text
+                      as="span"
+                      size="inherit"
+                      tone="inherit"
+                      weight={selected ? "medium" : undefined}
+                      truncate
+                      className="min-w-0 flex-1"
+                    >
                       {optionLabel(option)}
-                    </span>
+                    </Text>
                     {selected ? (
-                      <Check
-                        className="icon-sm shrink-0 text-(--ui-tone-neutral-fg)"
-                        strokeWidth={2}
-                      />
+                      <Check className="icon-sm shrink-0" tone="neutral" strokeWidth={2} />
                     ) : (
                       <span className="size-3.5 shrink-0" aria-hidden />
                     )}
@@ -137,9 +157,9 @@ export function ModelSettingPicker({
       {multi ? (
         // Stays under the scrolling list, so Done never needs a scroll back up.
         <div className="flex shrink-0 items-center gap-2 border-t border-(--ui-frosted-divider) px-2 py-1.5">
-          <span className="min-w-0 flex-1 truncate ui-caption-text">
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1 ui-caption-text">
             {t("{p0} selected", { p0: picked })}
-          </span>
+          </Text>
           <Button variant="primary" size="sm" type="button" onClick={onClose}>
             {t("Done")}
           </Button>

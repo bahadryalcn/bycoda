@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Text } from "../../../../shared/ui/Text";
 import { AdvancedSettings, Row } from "../settingsControls";
 
 /** Provider setup instructions behind a closed disclosure, so the form stays compact. */
@@ -17,11 +18,11 @@ export function SetupSteps({
   return (
     <AdvancedSettings title={title} defaultOpen={false}>
       <Row stacked label={label}>
-        <ol className="integration-steps text-ui-caption text-(--ui-text-secondary)">
+        <Text as="ol" className="integration-steps">
           {steps.map((step, index) => (
             <li key={index}>{step}</li>
           ))}
-        </ol>
+        </Text>
         {children}
       </Row>
     </AdvancedSettings>

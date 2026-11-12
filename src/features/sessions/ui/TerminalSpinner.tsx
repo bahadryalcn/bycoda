@@ -6,7 +6,7 @@ import { WorkingIndicator, type WorkingIndicatorSize } from "../../../shared/ui/
  * agent is working" status rather than a plain pending glyph) and forwards `size`.
  */
 export function TerminalSpinner({
-  className = "inline-block w-3.5 select-none text-center text-ui-micro leading-none",
+  className = "inline-block w-3.5 select-none text-center",
   size,
 }: {
   className?: string;

@@ -21,6 +21,10 @@
   font-size: var(--ui-font-title);
   line-height: var(--ui-leading-title);
 }
+.heading[data-size="heading"] {
+  font-size: var(--ui-font-heading);
+  line-height: var(--ui-leading-heading);
+}
 .heading[data-size="section"] {
   font-size: var(--ui-font-body);
   line-height: var(--ui-leading-body);
@@ -32,4 +36,19 @@
 .heading[data-size="caption"] {
   font-size: var(--ui-font-caption);
   line-height: var(--ui-leading-caption);
+}
+.heading[data-leading="inherit"] {
+  line-height: inherit;
+}
+.heading[data-truncate] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Clamp to N lines, no expander. */
+.heading[data-lines] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--clamp-lines, 2);
+  overflow: hidden;
 }

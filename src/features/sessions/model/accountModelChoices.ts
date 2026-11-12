@@ -97,6 +97,19 @@ export function accountChoicesSnapshot(): string {
   return JSON.stringify([providerAccounts("claude"), providerAccounts("codex")]);
 }
 
+/** Local model account label from the caller's reactive accounts and translator. */
+export function modelAccountLabelWith(
+  model: AgentModel,
+  accountId: string | undefined,
+  accounts: readonly { id: string; label: string; isDefault?: boolean }[],
+  translate: (message: string) => string,
+): string {
+  if (!supportsProviderAccounts(model.harness)) return model.name;
+  const id = accountId ?? accounts.find((account) => account.isDefault)?.id ?? "default";
+  const found = accounts.find((account) => account.id === id);
+  return `${model.name} ${found ? accountDisplayLabel(accounts, found) : translate(id !== "default" ? "Removed account" : "Default account")}`;
+}
+
 export function signedOutAccountKeys(usage: Record<string, ProviderRateLimits>): Set<string> {
   return new Set(
     Object.entries(usage)

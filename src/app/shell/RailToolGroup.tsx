@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Button } from "../../shared/ui/Button";
-import { ButtonGroup } from "../../shared/ui/ButtonGroup";
+import { ButtonGroup, ButtonGroupSelection } from "../../shared/ui/ButtonGroup";
 import { StatusDot } from "../../shared/ui/StatusDot";
 
 export type RailTool = {
@@ -20,7 +20,7 @@ export type RailTool = {
 /** Workspace tools as one joined row of icon buttons; each name lives in its tooltip. */
 export function RailToolGroup({ label, tools }: { label: string; tools: readonly RailTool[] }) {
   return (
-    <ButtonGroup aria-label={label} surface="navigation" className="w-full">
+    <ButtonGroup aria-label={label} surface="navigation" selection="plate" className="w-full">
       {tools.map((tool) => (
         <Button
           key={tool.id}
@@ -61,6 +61,7 @@ export function RailToolGroup({ label, tools }: { label: string; tools: readonly
               : undefined
           }
         >
+          {tool.active ? <ButtonGroupSelection /> : null}
           {tool.icon}
           {tool.dot ? (
             <StatusDot

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Portal } from "../../../shared/ui/Portal";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
@@ -218,9 +219,11 @@ export const TranscriptFind = memo(function TranscriptFind({
             className="w-44"
             trailing={
               <>
-                <span
+                <Text
                   role="status"
-                  className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono text-ui-micro tabular-nums text-(--ui-text-secondary)"
+                  size="micro"
+                  tone="secondary"
+                  className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono tabular-nums"
                 >
                   {query.trim()
                     ? matches.length
@@ -230,7 +233,7 @@ export const TranscriptFind = memo(function TranscriptFind({
                         })
                       : t("No results")
                     : ""}
-                </span>
+                </Text>
                 <FindButton
                   label={t("Previous match")}
                   shortcut="Shift+Enter / Shift+F3"

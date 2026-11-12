@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useEffect, useRef, useState } from "react";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -84,7 +85,13 @@ export function TaskSessionSheet({
       onClose={onClose}
     >
       <div className="task-session-preview">
-        <div className="task-session-toolbar">
+        <Text
+          as="div"
+          tone="secondary"
+          size="secondary"
+          leading="inherit"
+          className="task-session-toolbar"
+        >
           <span role="status">
             <Badge
               tone={session?.status === "running" ? "accent" : "neutral"}
@@ -125,7 +132,7 @@ export function TaskSessionSheet({
           >
             {t("Open in Sessions")}
           </Button>
-        </div>
+        </Text>
         {error ? (
           <Alert tone="danger">
             <span>{error}</span>
@@ -147,16 +154,21 @@ export function TaskSessionSheet({
           <Disclosure
             className="task-session-activity"
             size="sm"
+            textSize="secondary"
+            tone="secondary"
+            leading="inherit"
             summary={t("Activity ({p0})", { p0: operational.length })}
           >
-            {operational.map((block) => (
-              <section className="task-session-activity-item" key={block.id}>
-                <SectionLabel as="h3" className="task-session-heading">
-                  {t(operationalRoleLabel(block.role))}
-                </SectionLabel>
-                <AgentMarkdown text={block.text} />
-              </section>
-            ))}
+            <Text as="div" size="secondary" tone="secondary" leading="inherit">
+              {operational.map((block) => (
+                <section className="task-session-activity-item" key={block.id}>
+                  <SectionLabel as="h3" className="task-session-heading">
+                    {t(operationalRoleLabel(block.role))}
+                  </SectionLabel>
+                  <AgentMarkdown text={block.text} />
+                </section>
+              ))}
+            </Text>
           </Disclosure>
         ) : null}
         {session && visibleBlocks.length === 0 ? (

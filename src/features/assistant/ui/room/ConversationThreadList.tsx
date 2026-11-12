@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
 import { formatRelativeTime } from "../../../../shared/i18n/format";
 import { Badge } from "../../../../shared/ui/Badge";
@@ -49,7 +51,10 @@ export function ConversationThreadList({
       Number(Boolean(a.projectId)) - Number(Boolean(b.projectId)) || b.updatedAt - a.updatedAt,
   );
   return (
-    <aside className={styles.threadList} aria-label={t("Conversations")}>
+    <aside
+      {...surfaceAttributes({ frame: "pane", edge: "inline-end" }, styles.threadList)}
+      aria-label={t("Conversations")}
+    >
       <div className={styles.listTools}>
         <Select
           hideLabel
@@ -128,9 +133,21 @@ export function ConversationThreadList({
             >
               <span className={styles.threadRow}>
                 <span className={styles.threadTop}>
-                  <span className={styles.threadName}>{projectName || t("Global")}</span>
+                  <Text
+                    as="span"
+                    size="body"
+                    tone="inherit"
+                    weight="medium"
+                    leading="inherit"
+                    truncate
+                    className={styles.threadName}
+                  >
+                    {projectName || t("Global")}
+                  </Text>
                   {thread.projectId && <Badge size="xs">{t("Project")}</Badge>}
-                  <span className={styles.threadTime}>{threadTime(thread.updatedAt)}</span>
+                  <Text size="micro" tone="muted" leading="inherit" className={styles.threadTime}>
+                    {threadTime(thread.updatedAt)}
+                  </Text>
                 </span>
               </span>
             </Button>

@@ -1,6 +1,8 @@
+import { Text } from "../../shared/ui/Text";
 import { LEVEL_LABELS, RuntimeLogRow } from "./ui/RuntimeLogRow";
 import { useRuntimeTerminalMonitor } from "./hooks/useRuntimeTerminalMonitor";
 import { EmptyState } from "../../shared/ui/EmptyState";
+import { ScrollArea } from "../../shared/ui/ScrollArea";
 import { Alert } from "../../shared/ui/Alert";
 import { Popover } from "../../shared/ui/Popover";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
@@ -963,8 +965,10 @@ function ScopedRuntimeLogsPanel({
       ) : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}
 
-      <div
+      <ScrollArea
         ref={timeline}
+        axis="both"
+        gutter="stable"
         className="runtime-logs-timeline"
         role="region"
         aria-label={t("Log timeline")}
@@ -1028,7 +1032,7 @@ function ScopedRuntimeLogsPanel({
             />
           )}
         </SurfaceSelection>
-      </div>
+      </ScrollArea>
 
       <footer className="runtime-logs-footer">
         <Badge
@@ -1050,7 +1054,13 @@ function ScopedRuntimeLogsPanel({
                     : `${t("Live")} · ${t("Waiting for logs")}`
                   : t("Connecting…")}
         </Badge>
-        <div className="runtime-logs-selection">
+        <Text
+          size="micro"
+          tone="inherit"
+          leading="inherit"
+          as="div"
+          className="runtime-logs-selection"
+        >
           <span>
             {chosen.length
               ? t("{p0} selected logs", { p0: chosen.length })
@@ -1070,20 +1080,20 @@ function ScopedRuntimeLogsPanel({
           {groups.length > visibleGroups.length ? (
             <span>{t("Showing the latest {p0} rows.", { p0: MAX_RENDERED_RUNTIME_LOGS })}</span>
           ) : null}
-        </div>
-        <span className="runtime-logs-totals">
+        </Text>
+        <Text size="micro" tone="inherit" leading="inherit" className="runtime-logs-totals">
           {errorCount > 0 && <span data-level="error">{t("{p0} errors", { p0: errorCount })}</span>}
           {warningCount > 0 && (
             <span data-level="warn">{t("{p0} warnings", { p0: warningCount })}</span>
           )}
-        </span>
+        </Text>
       </footer>
       {buffer.dropped || buffer.trimmed ? (
-        <p className="runtime-logs-hint">
+        <Text size="micro" tone="inherit" leading="normal" as="p" className="runtime-logs-hint">
           {t("{p0} older events were dropped from retained history.", {
             p0: buffer.dropped + buffer.trimmed,
           })}
-        </p>
+        </Text>
       ) : null}
     </section>
   );

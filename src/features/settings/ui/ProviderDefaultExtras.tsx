@@ -1,3 +1,6 @@
+import type { CSSProperties } from "react";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Zap, WandSparkles } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import {
   CROSS_ADVISOR_KEY,
@@ -98,6 +101,51 @@ export function ProviderDefaultExtras({
                   onSessionDefaultsChange({ ...scopeDefaults, extras });
                 }}
               />
+            ) : (setting.id === "fast" || setting.id === "serviceTier") && !savedIsUnavailable ? (
+              <div
+                style={
+                  {
+                    "--ui-surface-selected":
+                      saved === "true" || saved === "fast"
+                        ? "var(--ui-tone-accent-subtle)"
+                        : undefined,
+                  } as CSSProperties
+                }
+              >
+                <SegmentedControl
+                  label={t(setting.label)}
+                  value={saved ?? ""}
+                  options={[
+                    {
+                      value: "",
+                      icon: <WandSparkles className="icon-sm" />,
+                      label: inheritedChoiceLabel(
+                        inheritedLabel ? t(inheritedLabel) : undefined,
+                        Boolean(inheritedOption),
+                      ),
+                    },
+                    ...setting.options.map((option) => ({
+                      value: option.value,
+                      label:
+                        option.value === "true" || option.value === "fast"
+                          ? t("Fast")
+                          : option.value === "false" || option.value === "default"
+                            ? t("Standard")
+                            : t(option.label),
+                      icon:
+                        option.value === "true" || option.value === "fast" ? (
+                          <Zap className="icon-sm" tone="accent" fill="currentColor" />
+                        ) : undefined,
+                    })),
+                  ]}
+                  onValueChange={(next) => {
+                    const extras = { ...scopeDefaults.extras };
+                    if (next) extras[setting.id] = next;
+                    else delete extras[setting.id];
+                    onSessionDefaultsChange({ ...scopeDefaults, extras });
+                  }}
+                />
+              </div>
             ) : (
               <Select
                 hideLabel
@@ -120,6 +168,7 @@ export function ProviderDefaultExtras({
                 options={[
                   {
                     value: "",
+                    icon: <WandSparkles className="icon-sm" />,
                     label: inheritedChoiceLabel(
                       inheritedLabel ? t(inheritedLabel) : undefined,
                       Boolean(inheritedOption) || inherited === "null",

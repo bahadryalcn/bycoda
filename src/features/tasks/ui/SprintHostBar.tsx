@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -31,8 +32,12 @@ export function SprintHostBar({
   return (
     <>
       {showHost || showRefresh || message ? (
-        <div className="sprint-context">
-          {showHost ? <span className="sprint-context-label">{t("Planning Host")}</span> : null}
+        <Text as="div" size="inherit" tone="secondary" className="sprint-context">
+          {showHost ? (
+            <Text size="caption" tone="inherit" leading="inherit" className="sprint-context-label">
+              {t("Planning Host")}
+            </Text>
+          ) : null}
           {showHost ? (
             <div className="sprint-source">
               <SearchableSelect
@@ -79,18 +84,18 @@ export function SprintHostBar({
             </Button>
           ) : null}
           {message ? <InlineError className="sprint-host-error">{message}</InlineError> : null}
-        </div>
+        </Text>
       ) : null}
       {board.syncErrors.length ? (
         <div>
           <InlineError className="sprint-host-error">
             {t("Some machines need synchronization")}
           </InlineError>
-          <ul className="sprint-errors">
+          <Text as="ul" size="inherit" tone="danger" className="sprint-errors">
             {board.syncErrors.map((entry) => (
               <li key={entry}>{entry}</li>
             ))}
-          </ul>
+          </Text>
         </div>
       ) : null}
     </>

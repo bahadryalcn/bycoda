@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
+import { ScrollArea } from "../../shared/ui/ScrollArea";
+import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
@@ -21,7 +24,6 @@ import {
   SplitSquare,
   StickyNote,
   Terminal,
-  Wrench,
   X,
 } from "../../shared/ui/icons";
 import {
@@ -290,7 +292,7 @@ function TabHarnesses({
             {status === "busy" ? (
               <TerminalSpinner />
             ) : status === "done" ? (
-              <CheckCircle className="icon-sm shrink-0 text-success" strokeWidth={2} />
+              <CheckCircle className="icon-sm shrink-0" tone="success" strokeWidth={2} />
             ) : (
               <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
             )}
@@ -452,7 +454,8 @@ function TitleTabItem({
           />
         ) : tab.terminal || !fileIcon ? (
           <Terminal
-            className={`icon-sm shrink-0 ${active ? "text-content" : "text-(--ui-text-secondary)"}`}
+            className="icon-sm shrink-0"
+            tone={active ? "primary" : "secondary"}
             strokeWidth={1.75}
           />
         ) : (
@@ -464,7 +467,9 @@ function TitleTabItem({
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="flex min-w-0 flex-1 items-center gap-1">
             <TabLabel
-              className={`leading-tight text-ui-secondary ${tab.previewFileId || tab.previewSessionId ? "italic" : ""}`}
+              size="secondary"
+              leading="tight"
+              className={tab.previewFileId || tab.previewSessionId ? "italic" : undefined}
             >
               {headline}
             </TabLabel>
@@ -476,8 +481,10 @@ function TitleTabItem({
                     : t("Moves to a new window when the response finishes")
                 }
               >
-                <span
-                  className="shrink-0 text-accent"
+                <Text
+                  size="inherit"
+                  tone="accent"
+                  className="shrink-0"
                   role="img"
                   aria-label={
                     tab.movingWindow
@@ -486,7 +493,7 @@ function TitleTabItem({
                   }
                 >
                   <AppWindow className="icon-xs" strokeWidth={1.75} />
-                </span>
+                </Text>
               </Tooltip>
             ) : null}
             {tab.dirty ? (
@@ -496,7 +503,12 @@ function TitleTabItem({
             ) : null}
           </span>
           {meta ? (
-            <TabLabel className="hidden max-w-[45%] shrink-0 text-ui-caption leading-tight text-(--ui-text-secondary) @min-[11rem]:block">
+            <TabLabel
+              size="caption"
+              tone="secondary"
+              leading="tight"
+              className="hidden max-w-[45%] shrink-0 @min-[11rem]:block"
+            >
               {meta}
             </TabLabel>
           ) : null}
@@ -652,37 +664,6 @@ function AppMenuButton() {
 
 const TITLEBAR_HEIGHT = "calc(var(--ui-control-height-compact) + 0.5rem)";
 const TITLEBAR_HEIGHT_STYLE = { height: TITLEBAR_HEIGHT, minHeight: TITLEBAR_HEIGHT } as const;
-
-/**
- * Development-build marker for the lower-left corner of a rail or sidebar: a small
- * status-toned wrench with its word. In a rail narrower than 140px the word drops
- * and the icon stays; the name and tooltip are always "Development build". Only
- * development builds render it; production renders nothing.
- */
-export function DevModeIndicator({ className }: { className?: string }) {
-  const t = useT();
-  if (!import.meta.env.DEV) return null;
-  return (
-    <div
-      data-dev-mode-indicator=""
-      className={`flex min-w-0 shrink-0 items-center px-3 pb-2 pt-1 @max-[140px]/rail:justify-center @max-[140px]/rail:px-0 ${className ?? ""}`}
-    >
-      <Tooltip label={t("Development")} when="overflow" side="top">
-        <Badge
-          size="xs"
-          tone="info"
-          appearance="subtle"
-          role="img"
-          aria-label={t("Development build")}
-          className="min-w-0"
-        >
-          <Wrench className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
-          <span className="truncate @max-[140px]/rail:hidden">{t("Development")}</span>
-        </Badge>
-      </Tooltip>
-    </div>
-  );
-}
 
 export function TabVisitNav({
   canGoBack = false,
@@ -1271,9 +1252,18 @@ function TitleBarComponent({
           placement="below"
           onCwdChange={onSelectProject}
           onNewTerminal={onNewTerminal}
-          buttonClassName="flex h-full min-w-0 max-w-64 shrink items-center gap-2 px-6 text-left text-ui-body font-medium leading-tight"
+          buttonClassName="flex h-full min-w-0 max-w-64 shrink items-center gap-2 px-6 text-left"
         >
-          <span className="min-w-0 truncate text-(--ui-text-secondary)">{t("No project")}</span>
+          <Text
+            size="body"
+            tone="secondary"
+            weight="medium"
+            leading="tight"
+            truncate
+            className="min-w-0"
+          >
+            {t("No project")}
+          </Text>
         </CwdPicker>
       ) : null}
 
@@ -1298,10 +1288,12 @@ function TitleBarComponent({
           {tabOverflow.right ? (
             <TabStripChevron side="right" onClick={() => scrollTabsBy(1)} />
           ) : null}
-          <div
+          <ScrollArea
+            axis="x"
+            scrollbar="hidden"
             ref={setTabStripRef}
             data-title-tab-strip
-            className="scrollbar-none flex h-full min-w-0 cursor-default items-center gap-0.5 overflow-x-auto overflow-y-hidden overscroll-none pl-1.5 pr-2.5"
+            className="flex h-full min-w-0 cursor-default items-center gap-0.5 overscroll-none pl-1.5 pr-2.5"
           >
             {displayed.map((entry) => {
               const tab = entry.item;
@@ -1320,9 +1312,12 @@ function TitleBarComponent({
                   {!entry.closing && paneToTabDrop?.targetTabId === tab.id ? (
                     <span
                       data-pane-tab-drop-hint
-                      className={`pointer-events-none absolute inset-y-1 z-1 w-0.5 rounded-full ${paneToTabDrop.invalid ? "bg-danger" : "bg-accent"} ${
-                        paneToTabDrop.position === "before" ? "left-0" : "right-0"
-                      }`}
+                      {...surfaceAttributes(
+                        { radius: "pill" },
+                        `pointer-events-none absolute inset-y-1 z-1 w-0.5 ${paneToTabDrop.invalid ? "bg-danger" : "bg-accent"} ${
+                          paneToTabDrop.position === "before" ? "left-0" : "right-0"
+                        }`,
+                      )}
                     />
                   ) : null}
                   <TitleTabItem
@@ -1364,7 +1359,7 @@ function TitleBarComponent({
                 </div>
               );
             })}
-          </div>
+          </ScrollArea>
         </div>
 
         {detached && onReturnToMain ? (

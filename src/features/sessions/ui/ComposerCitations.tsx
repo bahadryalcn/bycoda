@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -85,7 +87,10 @@ export function ComposerCitations({
   return (
     <div className={styles.root} role="group" aria-label={t("Quoted reply")}>
       {citations.map((citation, index) => (
-        <div className={styles.row} key={`${citation.id}:${index}`}>
+        <div
+          {...surfaceAttributes({ frame: "stroke", edge: "all", radius: "card" }, styles.row)}
+          key={`${citation.id}:${index}`}
+        >
           <Button
             variant="ghost"
             size="sm"
@@ -99,8 +104,17 @@ export function ComposerCitations({
             onFocus={() => preview(citation)}
             onClick={() => preview(citation, true)}
           >
-            <span className={styles.token}>{tokenLabel(chatCitationToken(index))}</span>
-            <span className={styles.excerpt}>{chatCitationPreview(citation)}</span>
+            <Text
+              as="span"
+              size="inherit"
+              tone="accent"
+              {...surfaceAttributes({ radius: "control" }, styles.token)}
+            >
+              {tokenLabel(chatCitationToken(index))}
+            </Text>
+            <Text size="inherit" tone="secondary" truncate className={styles.excerpt}>
+              {chatCitationPreview(citation)}
+            </Text>
           </Button>
           <Button
             iconOnly
@@ -158,7 +172,13 @@ export function ComposerCitations({
           </Button>
         </div>
       ))}
-      <LiveText className={styles.feedback} text={copied ? t("Quote copied") : ""} />
+      <LiveText
+        className={styles.feedback}
+        size="micro"
+        tone="secondary"
+        leading="inherit"
+        text={copied ? t("Quote copied") : ""}
+      />
       {error ? <InlineError>{error}</InlineError> : null}
       {editing && editingCitation ? (
         <Popover
@@ -172,7 +192,9 @@ export function ComposerCitations({
           flow="scroll"
         >
           <div className={styles.editor}>
-            <blockquote className={styles.quote}>{editingCitation.text}</blockquote>
+            <Text as="blockquote" size="caption" leading="relaxed" className={styles.quote}>
+              {editingCitation.text}
+            </Text>
             <TextareaField
               label={t("Comment (optional)")}
               value={editing.comment}

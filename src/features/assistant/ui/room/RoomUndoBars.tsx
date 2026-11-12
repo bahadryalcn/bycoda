@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { X } from "../../../../shared/ui/icons";
@@ -31,10 +33,10 @@ export function RoomUndoBars() {
             { projectId: undo.projectId, projectIds: undo.projectIds },
             canSeeProject,
           )) && (
-          <div className={styles.undo}>
-            <span className={styles.undoText}>
+          <div {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.undo)}>
+            <Text size="inherit" tone="inherit" truncate className={styles.undoText}>
               {t("Deleted")}: {undo.label}
-            </span>
+            </Text>
             <span className={styles.undoActions}>
               <Button
                 disabled={Boolean(pending)}
@@ -68,10 +70,10 @@ export function RoomUndoBars() {
           </div>
         )}
       {deletedNoteWithoutReceipt && (
-        <div className={styles.undo}>
-          <span className={styles.undoText}>
+        <div {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.undo)}>
+          <Text size="inherit" tone="inherit" truncate className={styles.undoText}>
             {t("Deleted")}: {deletedNoteWithoutReceipt}
-          </span>
+          </Text>
           <span className={styles.undoActions}>
             <Button
               onClick={() => {

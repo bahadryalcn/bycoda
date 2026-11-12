@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { HarnessId } from "../../sessions";
 import type { GitFileDiffKind, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { GitChangesPanel } from "./GitChangesPanel";
@@ -48,12 +49,17 @@ export function SourceControl({
   // A plain folder has no worktrees to list; the panel below says so once.
   const discoveryNotice =
     error && !/not a git repository/i.test(error) ? (
-      <div className="flex shrink-0 flex-wrap items-center gap-x-2 border-b border-stroke px-2 py-0.5 text-ui-caption">
-        <p role="status" className="min-w-0 text-(--ui-text-secondary)">
+      <Text
+        as="div"
+        size="caption"
+        tone="inherit"
+        className="flex shrink-0 flex-wrap items-center gap-x-2 border-b border-stroke px-2 py-0.5"
+      >
+        <Text role="status" as="p" size="inherit" tone="secondary" className="min-w-0">
           {data
             ? t("Could not refresh worktrees. Showing the last available list.")
             : `${t("Worktrees")} · ${t("Unavailable")}`}
-        </p>
+        </Text>
         <ErrorDetails detail={error} />
         <Button
           variant="ghost"
@@ -65,7 +71,7 @@ export function SourceControl({
         >
           {t("Retry")}
         </Button>
-      </div>
+      </Text>
     ) : null;
   const checkouts = (() => {
     const paths: string[] = [];

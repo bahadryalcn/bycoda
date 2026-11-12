@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { motionAttributes } from "../../../shared/ui/Motion";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { Mic } from "../../../shared/ui/icons";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Dictation, type DictationState } from "../model/dictation";
@@ -141,20 +143,14 @@ export function DictationButton({
         <span ref={visual} className={styles.visual} data-state={state} aria-hidden="true">
           {state === "idle" ? (
             <Mic className="icon-sm" strokeWidth={2} />
-          ) : state === "starting" ? (
-            <span className={styles.ring} />
           ) : state === "listening" ? (
             <span className={styles.wave}>
               {[0, 1, 2, 3, 4].map((index) => (
-                <i key={index} />
+                <i key={index} {...motionAttributes({ duration: "instant" })} />
               ))}
             </span>
           ) : (
-            <span className={styles.dots}>
-              <i />
-              <i />
-              <i />
-            </span>
+            <Spinner size="sm" />
           )}
         </span>
       </Button>

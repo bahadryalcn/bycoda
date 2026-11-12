@@ -12,8 +12,6 @@
 }
 .notice {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .listHead {
   display: flex;
@@ -30,8 +28,6 @@
   align-items: center;
   gap: 8px;
   margin-inline-start: auto;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .list {
   display: flex;
@@ -53,7 +49,6 @@
 .check {
   align-self: center;
   opacity: 0;
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .row:hover .check,
 .row:focus-within .check,
@@ -65,19 +60,6 @@
   align-items: center;
   justify-content: center;
   block-size: 1.25rem;
-  color: var(--ui-text-secondary);
-}
-.mark[data-tone="success"] {
-  color: var(--ui-tone-success-fg);
-}
-.mark[data-tone="danger"] {
-  color: var(--ui-tone-danger-fg);
-}
-.mark[data-tone="warning"] {
-  color: var(--ui-tone-warning-fg);
-}
-.mark[data-tone="info"] {
-  color: var(--ui-tone-info-fg);
 }
 .main {
   display: flex;
@@ -94,28 +76,18 @@
 .title {
   flex: 0 1 auto;
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   text-align: start;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
 }
 .project {
   flex: 0 1 auto;
   min-inline-size: 0;
   max-inline-size: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .progressLine {
   display: flex;
   align-items: center;
   gap: 8px;
   min-inline-size: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .progressLine > [role="meter"] {
@@ -124,10 +96,7 @@
 }
 .caption {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   min-inline-size: 0;
 }
@@ -143,7 +112,6 @@
   gap: 8px;
   padding: 32px 16px;
   text-align: center;
-  color: var(--ui-text-secondary);
 }
 .empty p {
   margin: 0;
@@ -186,8 +154,6 @@
 }
 .muted {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .related {
   display: flex;
@@ -203,7 +169,6 @@
   gap: 4px;
   padding-block-end: 8px;
   border-block-end: 1px solid var(--ui-pane-border);
-  font-size: var(--ui-font-caption);
   min-inline-size: 0;
 }
 .noteHit:last-child {
@@ -213,10 +178,7 @@
 /* Dialogs */
 .subtitle {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .form {
@@ -266,13 +228,9 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: var(--ui-font-caption);
 }
 .deleteTasks li {
   display: flex;
   gap: 6px;
   min-inline-size: 0;
-}
-.deleteTasks strong {
-  font-weight: 500;
 }

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useMemo, useState } from "react";
 import type { GitConflictStages } from "../../../platform/tauri/fs";
 import { formatFileSize } from "../../../shared/i18n/format";
@@ -38,15 +39,21 @@ function ImageSide({ stages, side }: { stages: GitConflictStages; side: StageSid
   const label = t(SIDE_LABEL[side]);
   return (
     <figure className="m-0 flex min-h-0 min-w-0 flex-col">
-      <figcaption className="flex shrink-0 items-center gap-2 border-b border-stroke px-4 py-1.5 text-ui-caption">
-        <span className="font-medium text-content">{label}</span>
+      <Text
+        as="figcaption"
+        tone="inherit"
+        className="flex shrink-0 items-center gap-2 border-b border-stroke px-4 py-1.5"
+      >
+        <Text as="span" size="inherit" tone="primary" weight="medium">
+          {label}
+        </Text>
         {image.status === "image" ? (
-          <span className="tabular-nums text-(--ui-text-muted)">
+          <Text size="inherit" tone="muted" className="tabular-nums">
             {size ? `${size.w} × ${size.h} · ` : ""}
             {formatFileSize(image.bytes)}
-          </span>
+          </Text>
         ) : null}
-      </figcaption>
+      </Text>
       {image.status === "image" ? (
         <div
           className="grid min-h-0 flex-1 place-items-center overflow-hidden p-4"
@@ -78,11 +85,16 @@ function ImageSide({ stages, side }: { stages: GitConflictStages; side: StageSid
           />
         </div>
       ) : (
-        <p className="grid flex-1 place-items-center p-6 text-center text-ui-caption text-(--ui-text-secondary)">
+        <Text
+          as="p"
+          size="caption"
+          tone="secondary"
+          className="grid flex-1 place-items-center p-6 text-center"
+        >
           {image.status === "missing"
             ? t("No version on this side")
             : t("This version can’t be shown as an image")}
-        </p>
+        </Text>
       )}
     </figure>
   );

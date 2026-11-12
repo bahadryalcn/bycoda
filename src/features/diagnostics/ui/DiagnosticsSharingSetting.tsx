@@ -4,6 +4,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import {
   getDiagnosticsMode,
@@ -52,7 +53,7 @@ export function DiagnosticsSharingSetting() {
           { value: "auto", label: t("Send automatically") },
         ]}
       />
-      <p className="text-ui-caption text-muted">
+      <Text as="p" tone="inherit">
         {t(
           "Diagnostic logs are the app and Host logs, with secrets, e-mail addresses and your user name removed on this computer. They never include your conversations, prompts or code. They are kept {p0} days.",
           { p0: DIAGNOSTIC_RETENTION_DAYS },
@@ -62,7 +63,7 @@ export function DiagnosticsSharingSetting() {
           : mode === "ask"
             ? t("After a crash you are asked whether to send them.")
             : t("Nothing is sent unless you choose Send logs now.")}
-      </p>
+      </Text>
       <TextField
         label={t("What went wrong? (optional)")}
         value={note}

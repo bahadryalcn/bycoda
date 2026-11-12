@@ -17,9 +17,7 @@
 }
 
 .general-version {
-  color: var(--ui-text-secondary);
   font-family: var(--font-mono);
-  font-size: var(--ui-font-secondary);
 }
 
 /* Setup and help actions share one width, so the column of buttons keeps one right edge. */
@@ -27,14 +25,7 @@
   min-inline-size: 7.5rem;
 }
 
-/* About: the developer name and the links use one type size and the same inline inset, so their
-   right edges match. */
-.general-about-value,
-.general-settings .general-about-link {
-  font-size: var(--ui-font-secondary);
-  line-height: 1.5;
-}
+/* Match the developer name's inline inset to the shared Button links. */
 .general-about-value {
   padding-inline: var(--space-1);
-  color: var(--color-content);
 }

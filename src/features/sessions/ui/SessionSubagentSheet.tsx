@@ -13,7 +13,7 @@ import { getSessions, useSession, useSessionsSelector } from "../model/sessionsS
 import { DelegatedSessionRequests } from "../../connections/public/DelegatedSessionRequests";
 import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { useHostSessionBindingReader } from "../../connections/public/useHostSessionBinding";
-import { remoteSessionFor } from "../../connections/public/connections";
+import { useRemoteSessionBindings } from "../../connections/public/useRemoteSessionBinding";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
 import {
   captureRemoteSessionActions,
@@ -33,6 +33,21 @@ function isHostChild(session: NonNullable<ReturnType<typeof useSession>>): boole
     return !!hostSessionBinding(session) || !!parseRemotePath(session.cwd);
   } catch {
     return true;
+  }
+}
+
+function canOwnDelegatedSession(
+  session: NonNullable<ReturnType<typeof useSession>>,
+  readHostBinding: ReturnType<typeof useHostSessionBindingReader>,
+  remoteBindings: ReturnType<typeof useRemoteSessionBindings>,
+): boolean {
+  try {
+    return (
+      !!readHostBinding(session) ||
+      (!!parseRemotePath(session.cwd) && !!remoteBindings.sessionFor(session.id))
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -265,16 +280,9 @@ export function SessionSubagentSheet({
     (a, b) => a.length === b.length && a.every((entry, index) => entry === b[index]),
   );
   const readHostBinding = useHostSessionBindingReader();
-  const canOwn = (session: NonNullable<typeof child>) => {
-    try {
-      return (
-        !!readHostBinding(session) ||
-        (!!parseRemotePath(session.cwd) && !!remoteSessionFor(session.id))
-      );
-    } catch {
-      return false;
-    }
-  };
+  const remoteBindings = useRemoteSessionBindings();
+  const canOwn = (session: NonNullable<typeof child>) =>
+    canOwnDelegatedSession(session, readHostBinding, remoteBindings);
   const owners = pending
     .filter(canOwn)
     .map((session) => (

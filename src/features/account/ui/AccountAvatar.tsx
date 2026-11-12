@@ -1,5 +1,7 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useState, type ReactNode } from "react";
 import { UserRound } from "../../../shared/ui/icons";
+import { Text } from "../../../shared/ui/Text";
 import styles from "./AccountAvatar.module.css";
 
 export type AccountAvatarUser = {
@@ -42,12 +44,26 @@ export function AccountAvatar({
         {photo ? (
           <img src={photo} alt="" referrerPolicy="no-referrer" onError={() => setBroken(photo)} />
         ) : initial ? (
-          initial
+          <Text
+            as="span"
+            size={size === "lg" ? "title" : "caption"}
+            tone={user ? "accent-on-solid" : "secondary"}
+            weight="medium"
+            leading="none"
+          >
+            {initial}
+          </Text>
         ) : (
-          <UserRound className="icon-sm" aria-hidden />
+          <UserRound
+            className="icon-sm"
+            tone={user ? "accent-on-solid" : "secondary"}
+            aria-hidden
+          />
         )}
       </span>
-      {badge ? <span className={styles.badge}>{badge}</span> : null}
+      {badge ? (
+        <span {...surfaceAttributes({ variant: "panel" }, styles.badge)}>{badge}</span>
+      ) : null}
     </span>
   );
 }

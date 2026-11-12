@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -382,10 +384,12 @@ export function GitHistoryGraph({
       ariaLabel={t("Commit actions")}
       width={264}
       header={
-        <div className="px-2 py-1.5 text-ui-caption text-(--ui-text-secondary)">
-          <code className="mr-2">{menu.commit.shortSha}</code>
-          <span className="block truncate text-content">{menu.commit.subject}</span>
-        </div>
+        <Text as="div" size="caption" tone="secondary" className="px-2 py-1.5">
+          <Code className="mr-2">{menu.commit.shortSha}</Code>
+          <Text as="span" size="inherit" tone="primary" truncate className="block">
+            {menu.commit.subject}
+          </Text>
+        </Text>
       }
       items={commitMenuItems(menu.commit, !actions || !!busy)}
       onPick={(id) => {

@@ -1,3 +1,6 @@
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -332,14 +335,17 @@ export function SshRunbooks({
         }
       >
         <div className="flex min-w-0 flex-col gap-3">
-          <p className="text-ui-caption text-(--ui-text-muted)">
+          <Text as="p" tone="muted">
             {t("Target")}: {server.name}
-          </p>
+          </Text>
           {error ? <Alert tone="danger">{error}</Alert> : null}
           {intents.length ? (
-            <section
+            <Text
+              as="section"
+              size="caption"
+              tone="inherit"
               aria-label={t("Pending execution reviews")}
-              className="flex min-w-0 flex-col gap-2 text-ui-caption"
+              className="flex min-w-0 flex-col gap-2"
             >
               {intents.map((intent) => (
                 <div key={intent.id} className="flex min-w-0 flex-wrap items-center gap-2">
@@ -382,16 +388,19 @@ export function SshRunbooks({
                   </Button>
                 </div>
               ))}
-            </section>
+            </Text>
           ) : null}
           {runId ? (
-            <section
+            <Text
+              as="section"
+              size="caption"
+              tone="inherit"
               aria-label={t("SSH execution status")}
-              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3 text-ui-caption"
+              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="min-w-0 break-all">
-                  {t("Run")}: <code>{runId}</code>
+                  {t("Run")}: <Code>{runId}</Code>
                 </p>
                 <Button disabled={busy} onClick={() => void operation(() => refreshStatus(runId))}>
                   {t("Refresh status")}
@@ -445,10 +454,10 @@ export function SshRunbooks({
                     {target.exitCode != null ? ` · ${target.exitCode}` : ""}
                   </p>
                   {target.reason ? (
-                    <div className="w-full min-w-0 text-(--ui-text-muted)">
+                    <Text as="div" size="inherit" tone="muted" className="w-full min-w-0">
                       <p>{t(sshRunReasonMessage(target.reason))}</p>
-                      <code className="break-all">{target.reason}</code>
-                    </div>
+                      <Code className="break-all">{target.reason}</Code>
+                    </Text>
                   ) : null}
                   {target.state === "queued" || target.state === "running" ? (
                     <Button
@@ -478,7 +487,7 @@ export function SshRunbooks({
                   {t("Cancel run")}
                 </Button>
               ) : null}
-            </section>
+            </Text>
           ) : null}
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <div className="min-w-48 flex-1">
@@ -581,72 +590,77 @@ export function SshRunbooks({
                   onChange={(event) => change({ timeoutSeconds: event.target.value })}
                 />
               </div>
-              <Disclosure size="sm" className="text-ui-caption" summary={t("Runbook triggers")}>
-                <div className="flex min-w-0 flex-col gap-3">
-                  <TextField
-                    label={t("Schedule interval (minutes)")}
-                    inputMode="numeric"
-                    value={draft.intervalMinutes ?? ""}
-                    onChange={(event) => change({ intervalMinutes: event.target.value })}
-                  />
-                  <SearchableSelect
-                    multiple
-                    label={t("Review after connecting to")}
-                    value={draft.triggers?.startupServerIds ?? []}
-                    options={choices
-                      .filter((item) => draft.targetIds.includes(item.id))
-                      .map((item) => ({ value: item.id, label: item.name }))}
-                    onChange={(ids) =>
-                      change({ triggers: { ...draft.triggers, startupServerIds: ids } })
-                    }
-                  />
-                  <p className="text-(--ui-text-muted)">
-                    {t(
-                      "Triggers create pending reviews. Connecting, restoring or reaching a schedule never runs a script automatically.",
-                    )}
-                  </p>
-                  <p className="text-(--ui-text-muted)">
-                    {t(
-                      "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.",
-                    )}
-                  </p>
-                  {saved?.triggers?.nextRunAt ? (
-                    <p>
-                      {t("Next review")}:{" "}
-                      {formatDate(new Date(saved.triggers.nextRunAt), DATE_TIME)}
-                    </p>
-                  ) : null}
-                </div>
+              <Disclosure size="sm" textSize="caption" summary={t("Runbook triggers")}>
+                <Text as="div" size="caption" tone="inherit">
+                  <div className="flex min-w-0 flex-col gap-3">
+                    <TextField
+                      label={t("Schedule interval (minutes)")}
+                      inputMode="numeric"
+                      value={draft.intervalMinutes ?? ""}
+                      onChange={(event) => change({ intervalMinutes: event.target.value })}
+                    />
+                    <SearchableSelect
+                      multiple
+                      label={t("Review after connecting to")}
+                      value={draft.triggers?.startupServerIds ?? []}
+                      options={choices
+                        .filter((item) => draft.targetIds.includes(item.id))
+                        .map((item) => ({ value: item.id, label: item.name }))}
+                      onChange={(ids) =>
+                        change({ triggers: { ...draft.triggers, startupServerIds: ids } })
+                      }
+                    />
+                    <Text as="p" size="inherit" tone="muted">
+                      {t(
+                        "Triggers create pending reviews. Connecting, restoring or reaching a schedule never runs a script automatically.",
+                      )}
+                    </Text>
+                    <Text as="p" size="inherit" tone="muted">
+                      {t(
+                        "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.",
+                      )}
+                    </Text>
+                    {saved?.triggers?.nextRunAt ? (
+                      <p>
+                        {t("Next review")}:{" "}
+                        {formatDate(new Date(saved.triggers.nextRunAt), DATE_TIME)}
+                      </p>
+                    ) : null}
+                  </div>
+                </Text>
               </Disclosure>
             </div>
           </FieldGroup>
-          <p className="text-ui-caption text-(--ui-text-muted)">
+          <Text as="p" tone="muted">
             {t(
               "Choose up to 16 saved SSH targets, 1–4 concurrent processes and a 1–86400 second timeout. Scripts are saved definitions; keep secrets in the remote environment or a credential provider. Output is not captured. Saving never runs a script.",
             )}
-          </p>
+          </Text>
           {!profile ? (
             <InlineError live="polite">
               {t("Enter a name, script, valid targets and execution limits.")}
             </InlineError>
           ) : null}
           {activeReview ? (
-            <section
+            <Text
+              as="section"
+              size="caption"
+              tone="inherit"
               aria-label={t("SSH execution review")}
-              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3 text-ui-caption"
+              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3"
             >
               <p>{t(selectedIntent ? "Pending review" : "Manual execution")}</p>
-              <p className="font-medium">
+              <Text as="p" size="inherit" tone="inherit" weight="medium">
                 {activeReview.value.profile.name} · r{activeReview.value.profile.revision}
-              </p>
+              </Text>
               <p>
                 {t("Concurrency")}: {activeReview.value.profile.limits.concurrency} ·{" "}
                 {t("Timeout per target (seconds)")}:{" "}
                 {activeReview.value.profile.limits.timeoutSeconds}
               </p>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all">
+              <OutputBlock tone="inherit" scroll className="max-h-40 break-all">
                 {activeReview.value.profile.script}
-              </pre>
+              </OutputBlock>
               {activeReview.value.targets.map((target) => (
                 <div key={target.serverId} className="min-w-0">
                   <p className="break-all">
@@ -724,20 +738,20 @@ export function SshRunbooks({
                     <Disclosure size="sm" summary={t("Remote environment")}>
                       {target.configuration.environment.map((entry) => (
                         <p className="break-all" key={entry.name}>
-                          <code>
+                          <Code>
                             {entry.name}={entry.value}
-                          </code>
+                          </Code>
                         </p>
                       ))}
                     </Disclosure>
                   ) : null}
                 </div>
               ))}
-              <p className="text-(--ui-text-muted)">
+              <Text as="p" size="inherit" tone="muted">
                 {t(
                   "This runs the saved script on every reviewed target. Approval expires shortly; no retry or reconnect runs it again.",
                 )}
-              </p>
+              </Text>
               <Button
                 variant="primary"
                 disabled={busy || frozen}
@@ -813,7 +827,7 @@ export function SshRunbooks({
               >
                 {t("Approve and run")}
               </Button>
-            </section>
+            </Text>
           ) : review && !activeReview ? (
             <InlineMessage tone="warning">
               {t("Execution review expired or changed. Review again.")}

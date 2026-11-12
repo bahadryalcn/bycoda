@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
@@ -37,9 +40,11 @@ export function InboxApprovalPreview({
   const review = details.review;
   const event = review ? EVENTS[review.event] : undefined;
   return (
-    <div className="flex min-w-0 flex-col gap-3 text-ui-body">
+    <Text as="div" size="body" tone="inherit" className="flex min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <strong className="min-w-0 truncate">{details.target}</strong>
+        <Text as="strong" size="inherit" tone="inherit" truncate className="min-w-0">
+          {details.target}
+        </Text>
         <Badge size="xs" tone="neutral">
           {details.provider}
         </Badge>
@@ -73,17 +78,22 @@ export function InboxApprovalPreview({
         ) : null}
       </DescriptionList>
       {details.thread ? (
-        <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-card-border) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+        <OutputBlock
+          size="caption"
+          tone="secondary"
+          frame="card"
+          className="max-h-32 overflow-auto break-words"
+        >
           {details.thread}
-        </pre>
+        </OutputBlock>
       ) : null}
       {details.body ? <Body text={details.body} cwd={details.project} /> : null}
       {review?.body ? <Body text={review.body} cwd={details.project} /> : null}
       {review?.comments.length ? (
         <section aria-label={t("Line comments")} className="flex flex-col gap-2">
-          <span className="text-ui-caption text-(--ui-text-secondary)">
+          <Text size="caption" tone="secondary">
             {t("Line comments")} · {review.comments.length}
-          </span>
+          </Text>
           {review.comments.map((comment, index) => (
             <Surface
               key={`${comment.path}:${comment.line}:${index}`}
@@ -92,17 +102,27 @@ export function InboxApprovalPreview({
               padding="none"
               className="min-w-0 overflow-hidden"
             >
-              <header className="flex min-w-0 items-center gap-2 border-b border-(--ui-pane-border) px-3 py-1.5 font-mono text-ui-caption">
+              <Text
+                as="header"
+                size="caption"
+                tone="inherit"
+                {...surfaceAttributes(
+                  { frame: "pane", edge: "bottom" },
+                  "flex min-w-0 items-center gap-2 border-(--ui-pane-border) px-3 py-1.5 font-mono",
+                )}
+              >
                 <MiddleTruncate mode="path" className="min-w-0">
                   {comment.path}
                 </MiddleTruncate>
-                <span className="shrink-0 text-(--ui-text-secondary)">{lines(comment)}</span>
+                <Text size="inherit" tone="secondary" className="shrink-0">
+                  {lines(comment)}
+                </Text>
                 {comment.side === "LEFT" ? (
                   <Badge size="xs" tone="neutral">
                     {t("Old side")}
                   </Badge>
                 ) : null}
-              </header>
+              </Text>
               <div className="px-3 py-2">
                 <Body text={comment.body} cwd={details.project} />
               </div>
@@ -111,10 +131,10 @@ export function InboxApprovalPreview({
         </section>
       ) : null}
       <Disclosure size="sm" summary={t("Exact request text")}>
-        <pre className="whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+        <OutputBlock size="caption" tone="secondary" className="break-words">
           {message}
-        </pre>
+        </OutputBlock>
       </Disclosure>
-    </div>
+    </Text>
   );
 }

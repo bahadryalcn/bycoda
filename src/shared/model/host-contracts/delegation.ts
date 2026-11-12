@@ -34,15 +34,18 @@ const RESERVED_KEYS = new Set<string>([
 export const DELEGATION_LIMITS = {
   /** Room for every model of several accounts per provider; refs stay far below valueBytes. */
   subagentModels: 24,
-  runningSubagents: 8,
+  runningSubagents: 16,
   runningAdvisors: 1,
   promptChars: 16_000,
   titleChars: 120,
   resultGraphemes: 12_000,
-  waitSeconds: 50,
+  waitSeconds: 240,
   /** Encoded setting values above this size are ignored, not parsed. */
   valueBytes: 8_192,
 } as const;
+
+/** Reasoning levels from least to most effort, across providers' spellings. */
+export const EFFORT_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
 
 export const DelegateModelRefSchema = z.strictObject({
   harness: SessionProviderSchema,

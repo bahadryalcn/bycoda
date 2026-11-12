@@ -1,5 +1,6 @@
 /** Lucide glyphs behind bycoda's existing action and accessibility contracts. */
 import { forwardRef, useId, type ReactNode } from "react";
+import { textAttributes, type TextTone } from "./Text";
 import {
   AlertCircle as LucideAlertCircle,
   Accessibility as LucideAccessibility,
@@ -14,6 +15,7 @@ import {
   Quote as LucideBlockQuote,
   Bold as LucideBold,
   Bot as LucideBot,
+  Briefcase as LucideBriefcase,
   Brain as LucideBrain,
   ListChecks as LucideCheckList,
   SquareCode as LucideCodeBlock,
@@ -161,7 +163,18 @@ import {
   type LucideProps,
 } from "lucide-react";
 
-export type IconProps = LucideProps & { title?: string };
+/**
+ * Shared glyph props, including Text ink roles without an extra wrapper.
+ * @group icons
+ * @use Apply `tone` to a glyph that needs a shared ink; omit it to inherit.
+ * @avoid Feature-specific ink with no matching Text tone.
+ * @example <Check className="icon-sm" tone="success" />
+ */
+export type IconProps = LucideProps & {
+  title?: string;
+  /** Shared text ink role; unset preserves the inherited icon colour. */
+  tone?: TextTone;
+};
 export type IconComponent = ReturnType<typeof wrap>;
 
 /**
@@ -173,7 +186,7 @@ export type IconComponent = ReturnType<typeof wrap>;
  */
 function wrap(Icon: LucideIcon, name: string) {
   const Component = forwardRef<SVGSVGElement, IconProps>(function BycodaIcon(
-    { size = 24, strokeWidth = 1.75, title, children, ...props },
+    { size = 24, strokeWidth = 1.75, title, tone, className, children, ...props },
     ref,
   ) {
     const id = useId();
@@ -187,6 +200,7 @@ function wrap(Icon: LucideIcon, name: string) {
         aria-hidden={labeled ? undefined : true}
         aria-labelledby={title && !props["aria-label"] ? id : undefined}
         {...props}
+        {...(tone ? textAttributes({ tone }, className) : { className })}
       >
         {title ? <title id={id}>{title}</title> : null}
         {children}
@@ -211,6 +225,8 @@ function custom(name: string, glyph: ReactNode) {
       absoluteStrokeWidth,
       color = "currentColor",
       title,
+      tone,
+      className,
       children,
       ...props
     },
@@ -235,6 +251,7 @@ function custom(name: string, glyph: ReactNode) {
         aria-hidden={labeled ? undefined : true}
         aria-labelledby={title && !props["aria-label"] ? id : undefined}
         {...props}
+        {...(tone ? textAttributes({ tone }, className) : { className })}
       >
         {title ? <title id={id}>{title}</title> : null}
         {glyph}
@@ -388,6 +405,7 @@ export const RotateCcw = wrap(LucideRotateCcw, "RotateCcw");
 export const Save = wrap(LucideSave, "Save");
 export const Search = wrap(LucideSearch, "Search");
 export const Settings = wrap(LucideSettings, "Settings");
+export const Briefcase = wrap(LucideBriefcase, "Briefcase");
 export const UserRound = wrap(LucideUserRound, "UserRound");
 export const Share = wrap(LucideShare, "Share");
 export const Shield = wrap(LucideShield, "Shield");

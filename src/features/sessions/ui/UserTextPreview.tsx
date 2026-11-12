@@ -1,3 +1,5 @@
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useLocale, useT } from "../../../shared/i18n";
 import { memo, useRef, useState, type ReactNode } from "react";
@@ -59,33 +61,39 @@ function TextCard({
         onClick={showFull}
         className="my-1 block w-full min-w-0 text-left"
       >
-        <span className="flex items-center justify-between gap-6 text-ui-caption">
-          <span className="font-medium text-(--ui-text-secondary)">{label}</span>
-          <span className="text-(--ui-text-secondary)">
+        <Text size="caption" tone="inherit" className="flex items-center justify-between gap-6">
+          <Text as="span" size="inherit" weight="medium">
+            {label}
+          </Text>
+          <Text size="inherit" tone="secondary">
             {part.text.length.toLocaleString(locale)}
             {t(" characters")}
-          </span>
-        </span>
-        <span
-          className={`mt-1 block whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
+          </Text>
+        </Text>
+        <Text
+          size="caption"
+          tone="secondary"
+          className={`mt-1 block whitespace-pre-wrap break-words   ${part.kind === "json" ? "font-mono" : "font-sans"}`}
         >
           {boundedTextPreview(part.text, 160, 2)}
-        </span>
-        <span className="mt-1.5 block text-ui-caption text-(--ui-text-secondary)">
+        </Text>
+        <Text size="caption" tone="secondary" className="mt-1.5 block">
           {t("Show full content ↗")}
-        </span>
+        </Text>
       </Button>
       {hover.card(() => (
         <div className="p-3">
-          <div className="mb-2 text-ui-caption font-medium text-(--ui-text-secondary)">
+          <Text as="div" weight="medium" className="mb-2">
             {label}
             {t(" preview")}
-          </div>
-          <pre
-            className={`max-h-56 select-text overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
+          </Text>
+          <OutputBlock
+            scroll
+            face={part.kind === "json" ? "mono" : "sans"}
+            className="max-h-56 select-text break-words"
           >
             {boundedTextPreview(part.text)}
-          </pre>
+          </OutputBlock>
           <div className="mt-2 flex flex-wrap items-center gap-1">{renderActions(dismiss)}</div>
           <Button motion="none" variant="ghost" type="button" onClick={showFull} className="mt-2">
             {t("Show full content")}
@@ -97,12 +105,15 @@ function TextCard({
           <div className="sticky top-0 z-1 flex flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-4 py-3">
             {renderActions(dismiss, true)}
           </div>
-          <pre
+          <OutputBlock
             data-selectable-agent-response={messageId}
-            className={`m-4 max-h-[65dvh] select-text overflow-auto whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-4 text-ui-body text-(--ui-tone-neutral-fg) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
+            size="body"
+            tone="neutral"
+            face={part.kind === "json" ? "mono" : "sans"}
+            className="m-4 max-h-[65dvh] overflow-auto rounded-lg bg-(--ui-surface-raised) p-4"
           >
             <AttachmentTokenText text={part.text} attachments={attachments} citations={citations} />
-          </pre>
+          </OutputBlock>
         </Modal>
       ) : null}
     </>
@@ -124,7 +135,7 @@ export const UserTextPreview = memo(function UserTextPreview({
 }) {
   useLocale();
   return (
-    <div className="min-w-0 text-ui-body">
+    <Text as="div" size="body" tone="inherit" className="min-w-0">
       {parts.map((part, index) =>
         part.compact ? (
           <TextCard
@@ -145,6 +156,6 @@ export const UserTextPreview = memo(function UserTextPreview({
           </pre>
         ),
       )}
-    </div>
+    </Text>
   );
 });

@@ -1,7 +1,10 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { Text } from "../../../../../shared/ui/Text";
 import { useContext, useId, useState, type ReactNode } from "react";
 import { Button } from "../../../../../shared/ui/Button";
+import { motionAttributes } from "../../../../../shared/ui/Motion";
 import { ChevronRight } from "../../../../../shared/ui/icons";
-import { RevealedSetting, settingDomId, Toggle } from "../../settingsControls";
+import { LayerEditorHeadings, RevealedSetting, settingDomId, Toggle } from "../../settingsControls";
 import styles from "./LayerStack.module.css";
 
 export type BackgroundLayer = {
@@ -68,10 +71,11 @@ function LayerRow({
   onOpen: () => void;
 }) {
   const contentId = useId();
+  const dimmed = layer.dimmed ?? !layer.enabled;
   return (
     <li
-      className={styles.layer}
-      data-disabled={(layer.dimmed ?? !layer.enabled) || undefined}
+      {...surfaceAttributes({ radius: "panel", variant: "plain" }, styles.layer)}
+      data-disabled={dimmed || undefined}
       data-open={open || undefined}
     >
       {layer.anchorIds?.map((id) => (
@@ -94,13 +98,45 @@ function LayerRow({
               {layer.thumbnail}
             </span>
             <span className={styles.text}>
-              <span className={styles.name}>{layer.name}</span>
+              <Text
+                as="span"
+                size="inherit"
+                tone={dimmed ? "secondary" : "primary"}
+                truncate
+                className={styles.name}
+              >
+                {layer.name}
+              </Text>
               {layer.description ? (
-                <span className={styles.description}>{layer.description}</span>
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  truncate
+                  className={styles.description}
+                >
+                  {layer.description}
+                </Text>
               ) : null}
             </span>
-            <span className={styles.strength}>{layer.strength}</span>
-            <ChevronRight aria-hidden className={styles.chevron} data-open={open || undefined} />
+            <Text
+              size="inherit"
+              tone="secondary"
+              leading="inherit"
+              truncate
+              className={styles.strength}
+            >
+              {layer.strength}
+            </Text>
+            <ChevronRight
+              aria-hidden
+              tone="secondary"
+              {...motionAttributes(
+                { transition: "transform", duration: "standard", easing: "sheen" },
+                styles.chevron,
+              )}
+              data-open={open || undefined}
+            />
           </span>
         </Button>
         <span className={styles.toggle}>
@@ -113,7 +149,7 @@ function LayerRow({
         </span>
       </div>
       <div id={contentId} className={styles.content} hidden={!open} inert={!open}>
-        {layer.content}
+        <LayerEditorHeadings.Provider value>{layer.content}</LayerEditorHeadings.Provider>
       </div>
     </li>
   );

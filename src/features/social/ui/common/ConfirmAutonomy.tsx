@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import type { AutonomyAction, AutonomyLevel } from "../../model/autonomy";
 import "./common.css";
@@ -52,12 +53,18 @@ export function ConfirmAutonomy({ accountName, action, level, dailyLimit }: Conf
             p2: accountName,
           });
   return (
-    <div className="social-confirm-autonomy">
+    <Text
+      as="div"
+      size="secondary"
+      tone="secondary"
+      leading="inherit"
+      className="social-confirm-autonomy"
+    >
       <p>{sentence}</p>
       <ul>
         <li>{t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}</li>
         {dailyLimit !== undefined ? <li>{t("Up to {p1} per day.", { p1: dailyLimit })}</li> : null}
       </ul>
-    </div>
+    </Text>
   );
 }

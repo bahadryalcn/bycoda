@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -98,11 +99,11 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
             <div className="audience-rule-text">
               <span>{t("Add the people who comment on my posts to the Commenters list.")}</span>
               {!commenters ? (
-                <span className="audience-caption">
+                <Text as="span" tone="muted" leading="inherit">
                   {commentersList
                     ? t("This rule is not set up on this computer yet.")
                     : t("The Commenters list is not set up on this computer yet.")}
-                </span>
+                </Text>
               ) : null}
             </div>
             {commenters ? (
@@ -128,7 +129,9 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
 
       {error ? <InlineError>{error}</InlineError> : null}
       {rules === undefined && !error ? (
-        <p className="audience-muted">{t("Loading rules…")}</p>
+        <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
+          {t("Loading rules…")}
+        </Text>
       ) : null}
       {rules && !others.length ? (
         <EmptyHint message={t("No rules yet. A rule adds people to a list as they interact.")} />
@@ -142,14 +145,23 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
             return (
               <li key={rule.id} className="audience-rule">
                 <div className="audience-rule-text">
-                  <strong className="audience-strong">{rule.name}</strong>
-                  <span className="audience-caption audience-trigger">
+                  <Text
+                    as="strong"
+                    size="inherit"
+                    tone="primary"
+                    leading="inherit"
+                    weight="medium"
+                    className="audience-strong"
+                  >
+                    {rule.name}
+                  </Text>
+                  <Text as="span" tone="muted" leading="inherit" className="audience-trigger">
                     {platform ? <PlatformMark platform={platform} size="xs" tooltip /> : null}
                     {t("{p0} → {p1}", {
                       p0: captureSourceLabel(rule.source.kind),
                       p1: listName(rule.targetListId) || t("No list"),
                     })}
-                  </span>
+                  </Text>
                 </div>
                 <Button
                   variant="ghost"

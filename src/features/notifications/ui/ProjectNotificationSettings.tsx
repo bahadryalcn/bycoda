@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Text } from "../../../shared/ui/Text";
 import { useLocale, useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight, Folder } from "../../../shared/ui/icons";
@@ -265,7 +268,7 @@ export function ProjectNotificationSettings({
             {selecting ? (
               <div className="settings-collection-row">
                 <ProjectSelection
-                  className="flex cursor-pointer items-center gap-2.5 text-ui-caption text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg)"
+                  className="flex cursor-pointer items-center gap-2.5 hover:text-(--ui-tone-neutral-fg)"
                   label={t("Select all known projects")}
                   text={
                     selectedIds.length
@@ -289,7 +292,8 @@ export function ProjectNotificationSettings({
                 ) : null}
               </div>
             ) : null}
-            <div
+            <ScrollArea
+              gutter="stable"
               className="project-notification-list settings-collection-list"
               role="region"
               aria-label={t("Project notifications")}
@@ -386,28 +390,40 @@ export function ProjectNotificationSettings({
                                 className="icon-xs"
                               />
                             ) : (
-                              <Folder
-                                className="icon-md text-(--ui-text-secondary)"
-                                aria-hidden="true"
-                              />
+                              <Folder className="icon-md" tone="secondary" aria-hidden="true" />
                             )}
                           </span>
                           <div className="flex min-w-0 flex-1 items-center gap-2">
                             <Tooltip label={project.name} details={[project.detail]}>
-                              <p className="project-notification-name min-w-0 flex-1">
+                              <Text
+                                as="p"
+                                size="secondary"
+                                tone="primary"
+                                weight="medium"
+                                leading="inherit"
+                                truncate
+                                className="project-notification-name min-w-0 flex-1"
+                              >
                                 {project.name.replace(/^\s*\u21b3\s*/, "")}
-                              </p>
+                              </Text>
                             </Tooltip>
-                            <p className="project-notification-summary shrink-0">
+                            <Text
+                              as="p"
+                              size="caption"
+                              tone="secondary"
+                              leading="normal"
+                              className="project-notification-summary shrink-0"
+                            >
                               {muted
                                 ? t("Muted")
                                 : enabledCount === categories.length
                                   ? t("All")
                                   : t("{p0} categories", { p0: enabledCount })}
-                            </p>
+                            </Text>
                           </div>
                           <ChevronRight
-                            className={`icon-sm shrink-0 text-(--ui-text-secondary) ${isExpanded ? "rotate-90" : ""}`}
+                            className={`icon-sm shrink-0 ${isExpanded ? "rotate-90" : ""}`}
+                            tone="secondary"
                             aria-hidden="true"
                           />
                         </Button>
@@ -448,14 +464,27 @@ export function ProjectNotificationSettings({
                     <div
                       id={panelId}
                       hidden={!isExpanded}
-                      className="project-notification-categories"
+                      {...surfaceAttributes(
+                        { radius: "control", variant: "panel" },
+                        "project-notification-categories",
+                      )}
                     >
-                      <MiddleTruncate className="project-notification-summary">
-                        {project.detail}
-                      </MiddleTruncate>
+                      <Text
+                        as="p"
+                        size="caption"
+                        tone="secondary"
+                        leading="normal"
+                        className="project-notification-summary"
+                      >
+                        <MiddleTruncate>{project.detail}</MiddleTruncate>
+                      </Text>
                       <div className="project-notification-category-grid">
                         {muted ? (
-                          <p
+                          <Text
+                            as="p"
+                            size="caption"
+                            tone="secondary"
+                            leading="inherit"
                             id={muteHintId}
                             role="status"
                             className="project-notification-mute-hint"
@@ -463,12 +492,13 @@ export function ProjectNotificationSettings({
                             {t(
                               "Your category choices apply when notifications resume. You can edit them while muted.",
                             )}
-                          </p>
+                          </Text>
                         ) : null}
                         {categories.map((category) => (
                           <Switch
                             key={category.id}
                             className="project-notification-category"
+                            labelText={{ size: "secondary", tone: "primary", leading: "inherit" }}
                             label={t(category.label)}
                             labelPosition="start"
                             aria-label={t("{p0} for {p1}", {
@@ -488,7 +518,7 @@ export function ProjectNotificationSettings({
                   </FieldGroup>
                 );
               })}
-            </div>
+            </ScrollArea>
           </>
         ) : null}
       </div>
@@ -517,6 +547,8 @@ function ProjectSelection({
     <Checkbox
       aria-label={label}
       label={text}
+      size="caption"
+      tone="secondary"
       className={className}
       checked={checked}
       indeterminate={mixed}

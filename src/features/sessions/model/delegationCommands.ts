@@ -1,3 +1,4 @@
+import { DELEGATION_LIMITS } from "../../../shared/model/host-contracts/delegation";
 import { t } from "../../../shared/i18n";
 import type { BuiltinSkill } from "../../skills/model/skills";
 
@@ -31,7 +32,7 @@ export type DelegationCommand = {
   prompt: string;
 };
 
-const MAX_SUBAGENTS = 16;
+const MAX_SUBAGENTS = DELEGATION_LIMITS.runningSubagents;
 
 /**
  * Codex only delegates on an explicit request below its highest effort, so the
@@ -41,7 +42,7 @@ function subagentsPrompt(request: string, count?: number): string {
   return [
     request,
     [
-      "Delegation requested by the owner (/subagents): split this request into independent parts and run them in parallel with your native subagents",
+      "Delegation requested by the owner (/subagents): split this request into independent parts and run them in parallel with the subagent tools this session offers (built-in or agents.delegate)",
       count ? `, using up to ${count} at once.` : ".",
       " Give each subagent a self-contained brief (goal, relevant files, constraints, what to return).",
       " Keep dependent steps in order and give each file at most one writer at a time.",

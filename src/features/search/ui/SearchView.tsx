@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { terminalText } from "../../../shared/lib/terminalText";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -7,6 +9,7 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Spinner } from "../../../shared/ui/Spinner";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { Modal } from "../../../shared/ui/Modal";
 import "./search.css";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
@@ -515,23 +518,26 @@ export function SearchView({
     ) : null;
   const indexNotice =
     pendingIndex > 0 && !conversationError && conversationMode ? (
-      <p className="px-2.5 py-1 text-ui-micro text-(--ui-text-muted)">
+      <Text as="p" size="micro" tone="muted" className="px-2.5 py-1">
         {t("Application-wide indexing")}: {t("Indexing ")}
         {pendingIndex}
         {t(" conversation")}
         {pendingIndex === 1 ? "" : "s"}
         {t(". Results may be incomplete.")}
-      </p>
+      </Text>
     ) : null;
 
   const content = (
-    <div
+    <Text
+      as="div"
+      size="inherit"
+      tone="primary"
       role="search"
       aria-label={t("Search")}
       data-app-search
       data-search-empty={empty || undefined}
       data-search-size={capacity <= 4 ? "small" : capacity <= 10 ? "medium" : "large"}
-      className={`app-search @container/search flex min-h-0 min-w-0 flex-1 flex-col text-content ${presentation === "dialog" ? "app-search-dialog" : ""}`}
+      className={`app-search @container/search flex min-h-0 min-w-0 flex-1 flex-col ${presentation === "dialog" ? "app-search-dialog" : ""}`}
     >
       <div className="flex shrink-0 flex-col">
         <PaneHeader
@@ -585,9 +591,7 @@ export function SearchView({
                 data-tauri-drag-region="false"
                 className="min-w-0 flex-1 select-text"
               />
-              {loading ? (
-                <Spinner size="sm" className="shrink-0 text-(--ui-text-secondary)" />
-              ) : null}
+              {loading ? <Spinner size="sm" className="shrink-0" tone="secondary" /> : null}
             </SearchInputGroup>
           </div>
         </PaneHeader>
@@ -611,10 +615,18 @@ export function SearchView({
         </div>
       </div>
 
-      <div className="app-search-scope-summary">
-        <p id={scopeId}>{scopeCopy}</p>
+      <Text
+        as="div"
+        size="caption"
+        tone="muted"
+        leading="inherit"
+        className="app-search-scope-summary"
+      >
+        <Text as="p" size="inherit" tone="inherit" leading="inherit" truncate id={scopeId}>
+          {scopeCopy}
+        </Text>
         {limitNotice}
-      </div>
+      </Text>
 
       {!empty && (error || conversationError) ? (
         <Alert tone="danger" className="mx-2 mt-2 max-h-40 shrink-0 overflow-auto break-words">
@@ -658,9 +670,9 @@ export function SearchView({
         }
       >
         {!empty && loading && rowCount === 0 ? (
-          <p role="status" className="px-2 py-1.5 text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary" role="status" className="px-2 py-1.5">
             {t("Searching…")}
-          </p>
+          </Text>
         ) : null}
         {empty ? (
           <EmptyState
@@ -670,9 +682,9 @@ export function SearchView({
           />
         ) : noResults ? (
           <>
-            <p role="status" className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">
+            <Text as="p" size="caption" tone="muted" role="status" className="px-2 py-1.5">
               {t(indexing ? "No indexed matches yet" : "No results")}
-            </p>
+            </Text>
             {indexNotice}
           </>
         ) : chatMode ? (
@@ -706,19 +718,36 @@ export function SearchView({
           </>
         )}
       </div>
-      <footer className="app-search-footer">
+      <Text
+        as="footer"
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, "app-search-footer")}
+      >
         <span>
-          <ShortcutKbd size="xs">↑</ShortcutKbd> <ShortcutKbd size="xs">↓</ShortcutKbd>{" "}
+          <ShortcutKbd size="xs" tone="primary">
+            ↑
+          </ShortcutKbd>{" "}
+          <ShortcutKbd size="xs" tone="primary">
+            ↓
+          </ShortcutKbd>{" "}
           {t("Navigate")}
         </span>
         <span>
-          <ShortcutKbd size="xs">Enter</ShortcutKbd> {t("Open")}
+          <ShortcutKbd size="xs" tone="primary">
+            Enter
+          </ShortcutKbd>{" "}
+          {t("Open")}
         </span>
         <span>
-          <ShortcutKbd size="xs">Esc</ShortcutKbd> {t("Close")}
+          <ShortcutKbd size="xs" tone="primary">
+            Esc
+          </ShortcutKbd>{" "}
+          {t("Close")}
         </span>
-      </footer>
-    </div>
+      </Text>
+    </Text>
   );
   return presentation === "dialog" ? (
     <Modal
@@ -821,16 +850,20 @@ function ResultList({
         return (
           <div key={hit.id} role="presentation">
             {index === 0 || hits[index - 1].kind !== hit.kind ? (
-              <div
+              <Text
+                as="div"
+                size="caption"
+                tone="secondary"
+                weight="medium"
                 role="presentation"
-                className="flex items-center gap-2 px-2.5 pb-1 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)"
+                className="flex items-center gap-2 px-2.5 pb-1 pt-2"
               >
                 <span>{heading}</span>
                 <span className="tabular-nums">
                   {count.shown} {t("shown")}
                   {count.omitted > 0 ? ` · ${count.omitted} ${t("more loaded matches")}` : ""}
                 </span>
-              </div>
+              </Text>
             ) : null}
             <Button
               variant="item"
@@ -853,16 +886,56 @@ function ResultList({
                 {row.icon}
               </span>
               <span className="app-search-result-copy">
-                <span className="app-search-result-title">{row.title}</span>
+                <Text
+                  as="span"
+                  size="inherit"
+                  tone="inherit"
+                  weight="medium"
+                  leading="inherit"
+                  truncate
+                  className="app-search-result-title"
+                >
+                  {row.title}
+                </Text>
                 {row.preview ? (
-                  <span className="app-search-result-preview">{row.preview}</span>
+                  <Text
+                    size="inherit"
+                    tone="secondary"
+                    leading="inherit"
+                    {...motionAttributes(
+                      { transition: "size", duration: "standard" },
+                      "app-search-result-preview",
+                    )}
+                  >
+                    {row.preview}
+                  </Text>
                 ) : null}
-                <span className="app-search-result-meta">{row.meta}</span>
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  truncate
+                  className="app-search-result-meta"
+                >
+                  {row.meta}
+                </Text>
                 {highlighted ? (
-                  <span className="app-search-result-identity">{fullIdentity}</span>
+                  <Text
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    className="app-search-result-identity"
+                  >
+                    {fullIdentity}
+                  </Text>
                 ) : null}
               </span>
-              <span className="app-search-result-kind sr-only">
+              <Text
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className="app-search-result-kind sr-only"
+              >
                 {t(
                   hit.kind === "conversation"
                     ? "Conversation"
@@ -872,7 +945,7 @@ function ResultList({
                         ? "Project"
                         : "File",
                 )}
-              </span>
+              </Text>
             </Button>
           </div>
         );

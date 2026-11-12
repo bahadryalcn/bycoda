@@ -1,9 +1,10 @@
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Group, Row, SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
-import { MoreHorizontal, Plus } from "../../../shared/ui/icons";
+import { MoreHorizontal, Plus, UserRound, Briefcase, Check } from "../../../shared/ui/icons";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
@@ -16,7 +17,7 @@ import {
   providerAccounts,
   PROVIDER_ACCOUNT_PROVIDERS,
   removeProviderAccount,
-  renameProviderAccount,
+  editProviderAccount,
   setDefaultProviderAccount,
   DEFAULT_PROVIDER_ACCOUNT_ID,
   isTerminalProviderAccount,
@@ -80,9 +81,11 @@ const providerAccountsSnapshot = () =>
 export function ProviderAccountsSettings({
   harness,
   onBusyChange,
+  onStandaloneSignIn,
 }: {
   harness?: HarnessId;
   onBusyChange?: (busy: boolean) => void;
+  onStandaloneSignIn?: (provider: HarnessId | null) => void;
 }) {
   useLocale();
   const accountsRevision = useSyncExternalStore(
@@ -106,7 +109,6 @@ export function ProviderAccountsSettings({
     account: ProviderAccount;
     anchor: HTMLElement;
   } | null>(null);
-  const [completedSignIn, setCompletedSignIn] = useState<HarnessId | null>(null);
   const busy = useRef(false);
   const pendingAccount = useRef<ProviderAccount | null>(null);
   const registrationAbort = useRef<AbortController | null>(null);
@@ -141,7 +143,7 @@ export function ProviderAccountsSettings({
     setWorking(key);
     onBusyChange?.(true);
     setError(null);
-    setCompletedSignIn(null);
+    onStandaloneSignIn?.(null);
     return true;
   };
   const finish = () => {
@@ -164,6 +166,8 @@ export function ProviderAccountsSettings({
       provider: account.provider,
       accountId: account.id,
       label: account.label,
+      color: account.color,
+      kind: account.kind,
     });
   };
 
@@ -176,7 +180,7 @@ export function ProviderAccountsSettings({
     if (!begin(key)) return;
     try {
       if (editor.accountId) {
-        if (!renameProviderAccount(editor.provider, editor.accountId, editor.label))
+        if (!editProviderAccount(editor.provider, editor.accountId, editor))
           throw new Error("Account no longer exists");
       } else {
         const account = pendingAccount.current ?? newProviderAccount(editor.provider, editor.label);
@@ -280,7 +284,7 @@ export function ProviderAccountsSettings({
     if (!begin(`signin:${provider}`)) return;
     try {
       await loginHarness(provider);
-      setCompletedSignIn(provider);
+      onStandaloneSignIn?.(provider);
       try {
         await probeHarnessAvailability({ force: true });
         await refreshHarnessCatalogs([provider], { force: true });
@@ -314,7 +318,7 @@ export function ProviderAccountsSettings({
     : PROVIDER_ACCOUNT_PROVIDERS[0];
 
   const accountMenuItems = (account: ProviderAccount): DropdownMenuItem[] => [
-    { kind: "item", id: "rename", label: t("Rename account") },
+    { kind: "item", id: "rename", label: t("Edit account") },
     ...(account.isDefault
       ? []
       : [{ kind: "item" as const, id: "default", label: t("Make default") }]),
@@ -383,7 +387,12 @@ export function ProviderAccountsSettings({
                   const removing = working === `remove:${provider}:${account.id}`;
                   const signingIn = working === `signin:${provider}:${account.id}`;
                   const identity = identities[identityKey(account)];
-                  const orgTag = identityOrganizationTag(identity);
+                  const orgTag =
+                    account.kind === "personal"
+                      ? t("Personal")
+                      : account.kind === "work"
+                        ? t("Work")
+                        : identityOrganizationTag(identity);
                   const limits = usage.usage[accountUsageKey(account)];
                   const signedOut = Boolean(limits && canSignIn(limits));
                   const duplicateOf = duplicates[identityKey(account)];
@@ -392,36 +401,79 @@ export function ProviderAccountsSettings({
                   const menuOpen =
                     menu?.account.id === account.id && menu.account.provider === provider;
                   return editing ? (
-                    <ProviderAccountEditor
+                    <Modal
                       key={account.id}
-                      editor={editor}
-                      working={Boolean(working)}
-                      onLabel={(label) =>
-                        setEditorState((current) => (current ? { ...current, label } : current))
-                      }
-                      onCancel={cancelEditor}
-                      onSubmit={submitEditor}
-                    />
+                      size="sm"
+                      title={t("Edit account")}
+                      onClose={cancelEditor}
+                    >
+                      <ProviderAccountEditor
+                        key={account.id}
+                        editor={editor}
+                        identity={identity}
+                        existingLabels={accounts
+                          .filter((other) => other.id !== account.id)
+                          .map((other) => other.label)}
+                        working={Boolean(working)}
+                        onLabel={(label) =>
+                          setEditorState((current) => (current ? { ...current, label } : current))
+                        }
+                        onMetadata={(metadata) =>
+                          setEditorState((current) =>
+                            current ? { ...current, ...metadata } : current,
+                          )
+                        }
+                        onCancel={cancelEditor}
+                        onSubmit={submitEditor}
+                      />
+                    </Modal>
                   ) : (
                     <div key={account.id} className="provider-account-row">
                       <AccountColorDot account={account} className="size-2.5" />
                       <div className="provider-account-main">
                         <div className="provider-account-identity">
                           <OverflowTooltip label={account.label}>
-                            <span className="provider-account-name">{displayLabel}</span>
+                            <Text
+                              as="span"
+                              size="secondary"
+                              tone="primary"
+                              weight="medium"
+                              leading="inherit"
+                              className="provider-account-name"
+                            >
+                              {displayLabel}
+                            </Text>
                           </OverflowTooltip>
                           {account.isDefault && !autoDefaultLabel ? (
-                            <Badge size="sm" className="shrink-0">
+                            <Badge size="sm" tone="accent" className="shrink-0">
+                              <Check className="icon-xs" aria-hidden />
                               {t("Default account")}
                             </Badge>
                           ) : null}
                           {orgTag ? (
-                            <Badge size="sm" className="max-w-[8rem] shrink-0 truncate">
+                            <Badge
+                              size="sm"
+                              appearance="subtle"
+                              truncate
+                              className="max-w-[8rem] shrink-0"
+                            >
+                              {account.kind === "work" ||
+                              (account.kind !== "personal" && orgTag !== t("Personal")) ? (
+                                <Briefcase className="icon-xs" aria-hidden />
+                              ) : (
+                                <UserRound className="icon-xs" aria-hidden />
+                              )}
                               {orgTag}
                             </Badge>
                           ) : null}
                         </div>
-                        <div className="provider-account-meta">
+                        <Text
+                          as="div"
+                          size="caption"
+                          tone="inherit"
+                          leading="inherit"
+                          className="provider-account-meta"
+                        >
                           {signedOut ? (
                             <Badge size="sm" tone="warning" className="shrink-0">
                               {t("Signed out")}
@@ -438,20 +490,35 @@ export function ProviderAccountsSettings({
                                   ? t("Shared CLI profile")
                                   : t("Isolated profile")
                             }
-                            className="provider-account-subtitle"
+                            tone="secondary"
+                            truncate
                           />
-                        </div>
+                        </Text>
                         {exhausted ? (
-                          <p className="provider-account-note" role="note">
+                          <Text
+                            as="p"
+                            size="caption"
+                            tone="secondary"
+                            leading="normal"
+                            className="provider-account-note"
+                            role="note"
+                          >
                             {exhaustedExplanation(limits, usage.now)}
-                          </p>
+                          </Text>
                         ) : null}
                         {duplicateOf ? (
-                          <p className="provider-account-note text-warning" role="note">
+                          <Text
+                            leading="normal"
+                            as="p"
+                            size="caption"
+                            tone="warning"
+                            className="provider-account-note"
+                            role="note"
+                          >
                             {t("Same sign-in as ")}
                             {duplicateOf.label}
                             {t(". Remove this account if you do not need it separately.")}
-                          </p>
+                          </Text>
                         ) : null}
                       </div>
                       <div className="provider-account-actions">
@@ -497,9 +564,15 @@ export function ProviderAccountsSettings({
                   );
                 })}
                 {accounts.length === 0 ? (
-                  <p className="provider-account-empty">
+                  <Text
+                    as="p"
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    className="provider-account-empty"
+                  >
                     {t("No accounts. Add an account to sign in.")}
-                  </p>
+                  </Text>
                 ) : null}
                 {adding && editor ? (
                   <ProviderAccountEditor
@@ -524,16 +597,11 @@ export function ProviderAccountsSettings({
               }
             >
               {hasProbedHarnessAvailability() && !isHarnessAvailable(standaloneHarness) ? (
-                <span className="text-ui-micro text-(--ui-text-secondary)">
+                <Text size="micro" tone="secondary">
                   {t("Install the CLI first, then sign in.")}
-                </span>
+                </Text>
               ) : (
                 <>
-                  {completedSignIn === standaloneHarness ? (
-                    <span role="status" className="text-ui-micro text-success">
-                      {t("CLI sign-in completed")}
-                    </span>
-                  ) : null}
                   <Button
                     reserveLabels={[t("Signing in…")]}
                     variant="secondary"

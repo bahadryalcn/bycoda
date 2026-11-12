@@ -12,14 +12,7 @@
 }
 
 .hint {
-  color: var(--ui-text-secondary);
   margin: 0;
-  line-height: 1.5;
-}
-
-.confirmed {
-  color: var(--ui-tone-success-fg);
-  font-size: var(--ui-font-caption);
 }
 
 .level {
@@ -37,14 +30,11 @@
 .transcript {
   margin: 0;
   padding: 12px;
-  background: var(--ui-surface);
   border-inline-start: 2px solid var(--ui-tone-success-border);
   overflow-wrap: anywhere;
-  line-height: 1.5;
 }
 
 .error {
   margin: 0;
-  color: var(--ui-tone-danger-fg);
   overflow-wrap: anywhere;
 }

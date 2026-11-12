@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { BtwStatusDot } from "./BtwStatusDot";
 import { Alert } from "../../../shared/ui/Alert";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
@@ -523,14 +525,21 @@ export function BtwSheet({
       title={t("By-the-way conversations")}
       escapeScope="[data-session-drop]"
       className="btw-sheet"
-      bodyClassName="font-sans text-ui-body"
+      bodyClassName="font-sans"
+      bodyText={{ size: "body" }}
       onClose={btw.close}
       header={
-        <div className="flex h-11 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) pr-2 pl-2.5">
+        <div
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "bottom" },
+            "flex h-11 shrink-0 items-center gap-1  border-(--ui-tone-neutral-border) pr-2 pl-2.5",
+          )}
+        >
           <Tabs value={activeTabId ?? ""} onValueChange={btw.selectTab} panels="none">
             <TabList
               label={t("Side questions")}
-              className="scrollbar-none min-w-0 flex-1 overflow-x-auto"
+              scrollbar="hidden"
+              className="min-w-0 flex-1 overflow-x-auto"
             >
               {tabs.map((tab) => {
                 const selected = tab.id === activeTabId;
@@ -543,7 +552,9 @@ export function BtwSheet({
                   >
                     <Tab value={tab.id} tooltip={tab.question} className="min-w-0">
                       {tab.status ? <BtwStatusDot status={tab.status} /> : null}
-                      <span className="truncate">{label}</span>
+                      <Text size="inherit" tone="inherit" truncate>
+                        {label}
+                      </Text>
                     </Tab>
                     <InlineAction
                       className="mr-1 shrink-0"
@@ -608,15 +619,15 @@ export function BtwSheet({
         <div className="shrink-0 px-5 pb-3">
           <Alert tone="danger">
             <div className="min-w-0">
-              <div className="text-ui-caption font-medium text-(--ui-tone-danger-fg)">
+              <Text as="div" size="caption" tone="danger" weight="medium">
                 {t("Couldn’t finish")}
-              </div>
-              <div className="mt-1 text-ui-caption leading-4.5 text-(--ui-tone-danger-fg)">
+              </Text>
+              <Text as="div" tone="danger" leading="normal" className="mt-1">
                 {persisted.error ||
                   t("{p0} could not answer this side question.", {
                     p0: HARNESS_TITLE[harness],
                   })}
-              </div>
+              </Text>
             </div>
             <Button variant="ghost" type="button" onClick={btw.retry} className="shrink-0">
               <RefreshCw className="icon-xs" strokeWidth={1.75} />

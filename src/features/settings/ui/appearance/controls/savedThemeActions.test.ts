@@ -95,6 +95,17 @@ describe("applyAppearanceSnapshot", () => {
     });
   });
 
+  it("captures and restores the chat image layer with saved looks", () => {
+    const { appearance, fns } = mockAppearance();
+    applyAppearanceSnapshot(appearance, {
+      preferences: { ...APPEARANCE_DEFAULTS, chatBackgroundLayer: false },
+    });
+    expect(fns.onPreferences).toHaveBeenCalledWith(
+      expect.objectContaining({ chatBackgroundLayer: false }),
+    );
+    expect(captureAppearanceSnapshot().preferences?.chatBackgroundLayer).toBe(true);
+  });
+
   it("captures and restores surface contrast with the preferences record", () => {
     const { appearance, fns } = mockAppearance();
     applyAppearanceSnapshot(appearance, {

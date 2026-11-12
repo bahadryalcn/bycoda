@@ -28,16 +28,11 @@
 }
 
 .needs-human-reason {
-  color: var(--color-content);
-  font-size: var(--ui-font-body);
-  font-weight: 500;
 }
 
 .needs-human-platform,
 .needs-human-note {
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 .needs-human-note {

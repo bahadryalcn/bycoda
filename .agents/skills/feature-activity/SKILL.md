@@ -1,6 +1,6 @@
 ---
 name: feature-activity
-description: Develop the local active-time measure (foreground plus recent input), its Host store, the seven-day bars and the daily-summary line; central upload and account screens belong to the account feature.
+description: "Use when changing the local active-time measure, its Host store and the seven-day bars. Not for the Today view; see feature-today."
 ---
 
 # Activity

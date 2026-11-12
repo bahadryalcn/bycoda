@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import "./task-form.css";
 import type { ReactNode } from "react";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -153,13 +154,17 @@ export function TaskFormRow({
   children: ReactNode;
 }) {
   return (
-    <div className="task-form-row">
+    <Text as="div" size="secondary" tone="primary" leading="inherit" className="task-form-row">
       <span className="task-form-row-text">
         <span>{label}</span>
-        {description ? <span className="task-form-row-desc">{description}</span> : null}
+        {description ? (
+          <Text size="micro" tone="secondary" leading="inherit" className="task-form-row-desc">
+            {description}
+          </Text>
+        ) : null}
       </span>
       <span className="task-form-row-control">{children}</span>
-    </div>
+    </Text>
   );
 }
 
@@ -173,6 +178,9 @@ export function ContinueUntilDoneField({
   return (
     <Checkbox
       className="task-form-row task-form-check"
+      size="secondary"
+      tone="primary"
+      leading="inherit"
       label={t("Continue until complete")}
       description={t("Keeps correcting while progress is made; asks for input when needed.")}
       checked={checked}
@@ -224,6 +232,9 @@ export function AutoMergeField({
   return (
     <Checkbox
       className="task-form-row task-form-check"
+      size="secondary"
+      tone="primary"
+      leading="inherit"
       label={t("Merge automatically")}
       description={t("Automatic merge is suspended. Review changes to renew approval.")}
       checked={checked}

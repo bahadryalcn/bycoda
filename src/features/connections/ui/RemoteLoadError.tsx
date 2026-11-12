@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
@@ -129,10 +130,10 @@ export function RemoteLoadError({
         </div>
         {reconnectFailed ? (
           <p className="mt-1 flex min-w-0 items-baseline gap-2">
-            <span className="min-w-0 truncate">
+            <Text size="inherit" tone="inherit" truncate className="min-w-0">
               {t("Reconnecting failed: ")}
               {reconnectError}
-            </span>
+            </Text>
             <ErrorDetails
               className="shrink-0"
               title={t("Reconnecting failed: ")}

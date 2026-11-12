@@ -25,7 +25,6 @@
   border: 1px solid var(--ui-pane-border);
   border-radius: 50%;
   background: var(--ui-fill-subtle);
-  color: var(--ui-text-secondary);
 }
 
 .social-activity-icon[data-tone="success"],
@@ -76,8 +75,6 @@
 }
 
 .social-activity-title {
-  color: var(--color-content);
-  font-size: var(--ui-font-body);
   overflow-wrap: anywhere;
 }
 
@@ -86,8 +83,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.375rem;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 .social-activity-time {
@@ -104,8 +99,6 @@
 .social-activity-details {
   margin-inline-start: 3rem;
   padding: 0 0.5rem 0.5rem 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 /* Timeline: a thin connector joins the status circles of consecutive rows. */

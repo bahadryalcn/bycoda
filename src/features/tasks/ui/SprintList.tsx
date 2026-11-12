@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -59,10 +60,10 @@ export function SprintList({
                 {sprint.name}
               </Button>
               {sprint.startsAt !== undefined || sprint.endsAt !== undefined ? (
-                <span className="sprint-row-dates">
+                <Text tone="muted" size="caption" leading="inherit" className="sprint-row-dates">
                   {displayDate(sprint.startsAt, t("No start date"))} ·{" "}
                   {displayDate(sprint.endsAt, t("No end date"))}
-                </span>
+                </Text>
               ) : null}
             </div>
             <BadgeList

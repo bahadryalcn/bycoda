@@ -17,7 +17,6 @@
   min-block-size: 2rem;
   padding: 0 0.625rem;
   border-radius: var(--ui-control-radius);
-  font-size: var(--ui-font-secondary);
   cursor: default;
 }
 .state-preview-row[data-state="hover"] {
@@ -37,14 +36,8 @@
 }
 .state-preview-name {
   flex: 1;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .state-preview-badge {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

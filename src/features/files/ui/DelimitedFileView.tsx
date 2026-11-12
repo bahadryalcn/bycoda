@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { useCallback, useState, type ComponentProps } from "react";
 import { lazySurface } from "../../../shared/ui/lazySurface";
@@ -55,9 +56,9 @@ export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) 
         />
       </div>
       {mode === "preview" && dirty ? (
-        <p role="status" className="px-3 py-1 text-ui-caption text-[var(--ui-text-secondary)]">
+        <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-1">
           {t("Preview shows the saved file. Your source edits are kept in the Source view.")}
-        </p>
+        </Text>
       ) : null}
       <div className="relative min-h-0 flex-1">
         {mode === "preview" ? <DocumentView path={props.path} cwd={props.cwd} /> : null}

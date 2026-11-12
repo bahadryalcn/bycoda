@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { type ReactNode, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -24,17 +25,25 @@ export function GoalPlanSteps({ goal }: { goal: BoardGoal }) {
       <ol aria-label={t("Plan")} className="goal-plan">
         {tasks.map((task, index) => (
           <li key={task.key} title={task.prompt} className="goal-plan-step">
-            <span aria-hidden className="goal-plan-index">
+            <Text
+              size="micro"
+              tone="muted"
+              leading="normal"
+              aria-hidden
+              className="goal-plan-index"
+            >
               {index + 1}
-            </span>
+            </Text>
             <span className="goal-plan-text">
-              <span className="goal-plan-title">{task.title}</span>
-              <span className="goal-plan-meta">
+              <Text tone="primary" size="inherit" leading="inherit" className="goal-plan-title">
+                {task.title}
+              </Text>
+              <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
                 {t("in ")}
                 {projectOf(task.projectId, task.project)}
-              </span>
+              </Text>
               {task.dependsOn.length ? (
-                <span className="goal-plan-meta">
+                <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
                   <span className="shrink-0">{t("· after ")}</span>
                   <BadgeList
                     label={t("After")}
@@ -46,7 +55,7 @@ export function GoalPlanSteps({ goal }: { goal: BoardGoal }) {
                       return { id: `${position}:${title}`, label: title };
                     })}
                   />
-                </span>
+                </Text>
               ) : null}
             </span>
           </li>

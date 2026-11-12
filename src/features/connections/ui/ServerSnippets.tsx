@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { Heading } from "../../../shared/ui/Heading";
 import { copyText } from "../../../platform/tauri/clipboard";
@@ -70,9 +71,9 @@ function ServerSnippetsForm({
       <Heading size="section" level={3}>
         {t("Saved commands")}
       </Heading>
-      <p className="break-words text-ui-caption text-(--ui-text-muted)">
+      <Text as="p" tone="muted" className="break-words">
         {t("Target")}: {serverName ?? serverId}
-      </p>
+      </Text>
       <SearchInput
         appearance="field"
         aria-label={t("Search saved commands")}
@@ -108,8 +109,10 @@ function ServerSnippetsForm({
                     setNotice("");
                   }}
                 >
-                  <span className="min-w-0 flex-1 truncate">{snippet.name}</span>
-                  <span className="text-ui-caption text-(--ui-text-muted)">v{snippet.version}</span>
+                  <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                    {snippet.name}
+                  </Text>
+                  <Text tone="muted">v{snippet.version}</Text>
                 </Button>
               </li>
             ))}
@@ -165,9 +168,9 @@ function ServerSnippetsForm({
               setNotice("");
             }}
           />
-          <p className="text-ui-caption text-(--ui-text-muted)">
+          <Text as="p" tone="muted">
             {t("Commands are saved locally. Do not include secrets.")}
-          </p>
+          </Text>
           <div className="flex flex-wrap justify-end gap-2">
             {selected ? (
               <Button
@@ -256,14 +259,15 @@ function ServerSnippetsForm({
         </form>
       </div>
       {selected && !selected.reviewed ? (
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted">
           {t("This shared template changed. Review and save it before inserting.")}
-        </p>
+        </Text>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
       <LiveText
         text={notice === "inserted" ? t("Inserted. Press Enter in the terminal to run.") : ""}
-        className="text-ui-caption text-(--ui-text-muted)"
+        size="caption"
+        tone="muted"
       />
     </section>
   );

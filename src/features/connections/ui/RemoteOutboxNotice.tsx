@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -77,8 +78,10 @@ export function RemoteOutboxNotice({
     );
   return (
     <Alert tone="warning">
-      <p className="font-medium">{t("An unfinished request needs recovery")}</p>
-      <p className="leading-relaxed text-content">
+      <Text as="p" size="inherit" tone="inherit" weight="medium">
+        {t("An unfinished request needs recovery")}
+      </Text>
+      <Text as="p" size="inherit" tone="primary" leading="relaxed">
         {issues.length === 1
           ? t(
               "1 saved request could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.",
@@ -87,8 +90,10 @@ export function RemoteOutboxNotice({
               "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.",
               { p0: issues.length },
             )}
-      </p>
-      <p className="break-all text-content">{t("Project: {p0}", { p0: issue.project })}</p>
+      </Text>
+      <Text as="p" size="inherit" tone="primary" className="break-all">
+        {t("Project: {p0}", { p0: issue.project })}
+      </Text>
       <Checkbox
         checked={reviewed === issue.key}
         onChange={(event) => setReviewed(event.target.checked ? issue.key : null)}

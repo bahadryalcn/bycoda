@@ -59,6 +59,9 @@ function CheckGroup<T extends string>({
           onChange={() => onToggle(option.value)}
           label={<span>{option.label}</span>}
           key={option.value}
+          tone="primary"
+          size="secondary"
+          leading="inherit"
           className="audience-check"
         />
       ))}

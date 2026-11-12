@@ -16,6 +16,7 @@ import {
   CROSS_SUBAGENTS_KEY,
   DELEGATION_LIMITS,
   DELEGATION_PARENT_KEY,
+  EFFORT_LEVELS,
   decodeAdvisor,
   decodeDelegationParent,
   decodeSubagents,
@@ -37,7 +38,9 @@ import {
 import { lastTurnReply } from "../sessions/turn-reply";
 import type { HostStore } from "../store";
 import { DelegationStore, type DelegationRecord } from "./store";
-import { advisorBrief, subagentBrief } from "./prompts";
+import { advisorBrief, subagentBrief, replyBrief } from "./prompts";
+import { modelEffortSetting } from "../../src/features/sessions/model/models";
+import { logWaitMaxTimeoutSeconds } from "../execution/runtime-log-wait";
 import { childModelSettings } from "./child-settings";
 
 export type DelegationDependencies = {
@@ -66,6 +69,7 @@ const KIND_LABEL: Record<DelegationKind, string> = { subagent: "Subagent", advis
 export class ConversationDelegation {
   readonly store: DelegationStore;
   private chain: Promise<unknown> = Promise.resolve();
+  private readonly continuations = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: DelegationDependencies) {
     this.store = new DelegationStore(deps.directory);
@@ -80,6 +84,7 @@ export class ConversationDelegation {
     if (action === "agents.options") return await this.options(caller);
     if (action === "agents.delegate") return await this.start("subagent", args, caller, locate);
     if (action === "agents.consult") return await this.start("advisor", args, caller, locate);
+    if (action === "agents.reply") return await this.reply(args, caller, locate);
     if (action === "agents.wait") return await this.wait(args, caller, locate);
     if (action === "agents.cancel") return await this.cancel(args, caller, locate);
     throw new Error("Unsupported agents tool.");
@@ -144,12 +149,15 @@ export class ConversationDelegation {
     const running = await this.runningCounts(caller.sessionId);
     const describe = (ref: DelegateModelRef) => {
       const model = this.resolve(ref, catalog);
+      const effort = model && modelEffortSetting(model);
       return {
         ref: delegateRefKey(ref),
         harness: ref.harness,
         model: ref.model,
         label: model?.name ?? ref.model,
         available: model !== undefined,
+        effortLevels: effort?.options.map((option) => option.value) ?? [],
+        ...(effort ? { defaultEffort: effort.value } : {}),
       };
     };
     return {
@@ -170,16 +178,29 @@ export class ConversationDelegation {
     locate: Locate,
   ) {
     const own = await this.caller(caller);
+    if (
+      args.effort !== undefined &&
+      (typeof args.effort !== "string" || !EFFORT_LEVELS.includes(args.effort))
+    )
+      throw new Error("Unknown effort level.");
     const requestKey = `agents:${caller.sessionId}:${String(args.requestId)}`;
     const payloadHash = createHash("sha256")
       .update(
-        JSON.stringify([kind, args.model, args.title, args.prompt, args.question, args.context]),
+        JSON.stringify([
+          kind,
+          args.model,
+          args.title,
+          args.prompt,
+          args.question,
+          args.context,
+          ...(args.effort === undefined ? [] : [args.effort]),
+        ]),
       )
       .digest("hex");
     return await this.serial(async () => {
       const existing = await this.store.findByRequestKey(requestKey);
       if (existing) {
-        if (existing.payloadHash !== payloadHash)
+        if (existing.requestKey !== requestKey || existing.payloadHash !== payloadHash)
           throw new Error("requestId was already used with a different payload.");
         return await this.describe(existing, locate);
       }
@@ -198,17 +219,7 @@ export class ConversationDelegation {
       const catalog = await this.deps.models(caller.projectId);
       const model = this.resolve(ref, catalog);
       if (!model) throw new Error("The selected model is unavailable. Choose another model.");
-      if (ref.harness === "claude" || ref.harness === "codex") {
-        const status = await this.deps.authStatus(ref.harness, ref.providerAccountId);
-        if (status === "signedOut")
-          throw new Error(
-            `The selected ${ref.harness} account (${ref.providerAccountId ?? "default"}) is signed out or its sign-in expired. Sign in again before delegating.`,
-          );
-        if (status === "unknown")
-          throw new Error(
-            `Could not verify sign-in for the selected ${ref.harness} account (${ref.providerAccountId ?? "default"}). Check its sign-in and try again.`,
-          );
-      }
+      await this.verifySignIn(ref);
       const running = await this.runningCounts(caller.sessionId);
       if (kind === "subagent" && running.subagent >= DELEGATION_LIMITS.runningSubagents)
         throw new Error("Running subagent limit reached. Wait for a run to finish or cancel one.");
@@ -228,6 +239,11 @@ export class ConversationDelegation {
         model: model.id,
         startedAt: Date.now(),
       };
+      const modelSettings = childModelSettings(
+        model,
+        kind === "advisor" ? own.session.modelSettings : {},
+        args.effort as string | undefined,
+      );
       const started = await launchSessionRun(this.deps.engine.store, this.deps.engine, {
         requestId: `agents_${createHash("sha256").update(requestKey).digest("hex").slice(0, 40)}`,
         projectId: caller.projectId,
@@ -235,7 +251,7 @@ export class ConversationDelegation {
         ...(ref.providerAccountId ? { providerAccountId: ref.providerAccountId } : {}),
         model: model.id,
         modelSettings: {
-          ...childModelSettings(model, own.session.modelSettings),
+          ...modelSettings,
           [DELEGATION_PARENT_KEY]: JSON.stringify(parent),
         },
         runtimeMode: own.session.runtimeMode,
@@ -261,6 +277,7 @@ export class ConversationDelegation {
         title,
         requestKey,
         payloadHash,
+        modelSettings,
         startedAt: parent.startedAt,
         ...(started.error
           ? { error: started.error, finishedAt: Date.now(), status: "failed" as const }
@@ -271,19 +288,140 @@ export class ConversationDelegation {
     });
   }
 
+  private async verifySignIn(ref: DelegateModelRef) {
+    if (ref.harness === "claude" || ref.harness === "codex") {
+      const status = await this.deps.authStatus(ref.harness, ref.providerAccountId);
+      if (status === "signedOut")
+        throw new Error(
+          `The selected ${ref.harness} account (${ref.providerAccountId ?? "default"}) is signed out or its sign-in expired. Sign in again before delegating.`,
+        );
+      if (status === "unknown")
+        throw new Error(
+          `Could not verify sign-in for the selected ${ref.harness} account (${ref.providerAccountId ?? "default"}). Check its sign-in and try again.`,
+        );
+    }
+  }
+
+  private async reply(args: Record<string, unknown>, caller: AgentsCaller, locate: Locate) {
+    await this.caller(caller);
+    if (typeof args.requestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(args.requestId))
+      throw new Error("Invalid requestId.");
+    if (
+      typeof args.message !== "string" ||
+      args.message.length < 1 ||
+      args.message.length > DELEGATION_LIMITS.promptChars
+    )
+      throw new Error("Invalid message length.");
+    if (typeof args.runId !== "string" || args.runId.length < 1 || args.runId.length > 200)
+      throw new Error("Invalid runId.");
+    const requestKey = `agents:${caller.sessionId}:${args.requestId}`;
+    const payloadHash = createHash("sha256")
+      .update(JSON.stringify(["reply", args.runId, args.message]))
+      .digest("hex");
+    return await this.serial(async () => {
+      let record = await this.follow(await this.owned(args.runId, caller));
+      const existing = await this.store.findByRequestKey(requestKey);
+      if (existing) {
+        const receipt = existing.replies?.find((reply) => reply.requestKey === requestKey);
+        if (existing.runId !== record.runId || receipt?.payloadHash !== payloadHash)
+          throw new Error("requestId was already used with a different payload.");
+        return await this.describe(existing, locate);
+      }
+      const status = await this.statusOf(record);
+      if (status.status === "running") throw new Error("Run is running. Wait or cancel it first.");
+      if (status.status === "needsInput")
+        throw new Error("Answer the approval in the child's own session first.");
+      await this.verifySignIn(record.model);
+      const running = await this.runningCounts(caller.sessionId);
+      const limit =
+        record.kind === "subagent"
+          ? DELEGATION_LIMITS.runningSubagents
+          : DELEGATION_LIMITS.runningAdvisors;
+      if (running[record.kind] >= limit)
+        throw new Error("Running " + record.kind + " limit reached. Wait or cancel first.");
+      // Concurrent waits must not mistake this assistant's send for an owner follow-up.
+      let settled!: () => void;
+      this.continuations.set(
+        record.runId,
+        new Promise<void>((resolve) => {
+          settled = resolve;
+        }),
+      );
+      try {
+        const child = await this.deps.engine.store.session(record.childSessionId);
+        // Restore the recorded model/account if the owner changed this child's settings.
+        await this.deps.engine.command({
+          type: "configure",
+          commandId: `agents_${createHash("sha256").update(requestKey).digest("hex")}:configure`,
+          sessionId: record.childSessionId,
+          expectedRevision: child.revision,
+          harness: record.model.harness,
+          model: record.model.model,
+          providerAccountId: record.model.providerAccountId ?? null,
+          modelSettings: {
+            ...(record.modelSettings ?? child.session.modelSettings),
+            [DELEGATION_PARENT_KEY]: child.session.modelSettings[DELEGATION_PARENT_KEY]!,
+          },
+          runtimeMode: child.session.runtimeMode,
+        });
+        await this.deps.engine.command({
+          type: "send",
+          commandId: `agents_${createHash("sha256").update(requestKey).digest("hex")}:send`,
+          sessionId: record.childSessionId,
+          text: replyBrief(args.message as string),
+          ...(record.kind === "advisor" ? { intent: "plan" as const } : {}),
+        });
+        const latest = await this.deps.engine.store.session(record.childSessionId);
+        await this.store.patch(record.runId, {
+          childRunId: latest.runId,
+          finishedAt: undefined,
+          status: undefined,
+          error: undefined,
+          ownerFollowUp: undefined,
+          replies: [...(record.replies ?? []), { requestKey, payloadHash }],
+        });
+      } finally {
+        this.continuations.delete(record.runId);
+        settled();
+      }
+      record = (await this.store.find(record.runId))!;
+      return await this.describe(record, locate);
+    });
+  }
+
   private async wait(args: Record<string, unknown>, caller: AgentsCaller, locate: Locate) {
-    let record = await this.owned(args.runId, caller);
-    const seconds = Number(args.timeoutSeconds ?? DELEGATION_LIMITS.waitSeconds);
-    const timeoutMs = Math.min(seconds, DELEGATION_LIMITS.waitSeconds) * 1000;
+    const own = await this.deps.featureSession(caller.sessionId);
+    if (own.projectId !== caller.projectId)
+      throw new Error("Conversation belongs to another project.");
+    if ((args.runId !== undefined) === (args.runIds !== undefined))
+      throw new Error("Pass exactly one of runId or runIds.");
+    const ids = args.runIds === undefined ? [args.runId] : args.runIds;
+    if (
+      !Array.isArray(ids) ||
+      ids.length < 1 ||
+      ids.length > 16 ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => typeof id !== "string" || id.length < 1 || id.length > 200)
+    )
+      throw new Error("Expected 1 to 16 unique run IDs.");
+    const maximum = logWaitMaxTimeoutSeconds(own.session.harness);
+    const requested = args.timeoutSeconds ?? maximum;
+    if (typeof requested !== "number" || !Number.isInteger(requested) || requested < 1)
+      throw new Error("timeoutSeconds must be a positive integer.");
+    // A value above the caller's provider deadline is shortened, never an error:
+    // the published schema allows the longest deadline for every provider.
+    const seconds = Math.min(requested, maximum);
+    let records = await Promise.all(ids.map((id) => this.owned(id, caller)));
     const started = monotonicNow();
     for (;;) {
-      record = await this.follow(record);
-      const status = await this.statusOf(record);
-      const remaining = timeoutMs - elapsedSince(started);
-      if (status.status !== "running" || remaining <= 0) break;
+      records = await Promise.all(records.map((record) => this.follow(record)));
+      const statuses = await Promise.all(records.map((record) => this.statusOf(record)));
+      const remaining = seconds * 1000 - elapsedSince(started);
+      if (statuses.every((status) => status.status !== "running") || remaining <= 0) break;
       await new Promise((resolve) => setTimeout(resolve, Math.min(1000, remaining)));
     }
-    return await this.describe(record, locate);
+    const runs = await Promise.all(records.map((record) => this.describe(record, locate)));
+    return args.runIds === undefined ? runs[0] : { runs };
   }
 
   private async cancel(args: Record<string, unknown>, caller: AgentsCaller, locate: Locate) {
@@ -307,6 +445,11 @@ export class ConversationDelegation {
 
   /** An owner follow-up turn moved the child to a new run: wait on that latest run. */
   private async follow(record: DelegationRecord): Promise<DelegationRecord> {
+    const continuation = this.continuations.get(record.runId);
+    if (continuation) {
+      await continuation;
+      record = (await this.store.find(record.runId)) ?? record;
+    }
     let child: HostSession;
     try {
       child = await this.deps.engine.store.session(record.childSessionId);

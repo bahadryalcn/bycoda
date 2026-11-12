@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
@@ -716,10 +717,18 @@ export function JiraBoardView({
               if (!suppressClick.current) onSelect(issue);
             }}
           >
-            <span className="text-ui-secondary font-medium break-words [overflow-wrap:anywhere]">
+            <Text
+              as="span"
+              size="secondary"
+              weight="medium"
+              tone="inherit"
+              className="break-words [overflow-wrap:anywhere]"
+            >
               {issue.title}
-            </span>
-            <span className="text-ui-caption text-(--ui-text-secondary)">{issue.identifier}</span>
+            </Text>
+            <Text size="caption" tone="secondary">
+              {issue.identifier}
+            </Text>
           </Button>
           <Button
             variant="ghost"
@@ -743,7 +752,12 @@ export function JiraBoardView({
             }}
           />
         </ActionHost>
-        <div className="flex min-w-0 items-center gap-1.5 px-3 pb-1 text-ui-caption text-(--ui-text-secondary)">
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          className="flex min-w-0 items-center gap-1.5 px-3 pb-1"
+        >
           <span
             className={`min-w-0 break-words [overflow-wrap:anywhere] ${issue.assignees.length > 0 ? "" : "flex-1"}`}
           >
@@ -761,7 +775,7 @@ export function JiraBoardView({
               className="min-w-0"
             />
           ) : null}
-        </div>
+        </Text>
         {moveKey === id && moveAnchor ? (
           <DropdownMenu
             anchor={moveAnchor}
@@ -854,9 +868,9 @@ export function JiraBoardView({
     return (
       <div className="flex flex-wrap items-center gap-2 py-2">
         {group.stale && group.issues.length ? (
-          <p className="w-full text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary" className="w-full">
             {t("Showing last loaded data. Updates have not been verified.")}
-          </p>
+          </Text>
         ) : null}
         {group.error ? (
           <Alert tone="danger" className="min-w-0 flex-1">
@@ -899,8 +913,10 @@ export function JiraBoardView({
   }
 
   return (
-    <section
-      className="jira-board-view flex min-h-0 min-w-0 flex-1 flex-col text-ui-caption text-(--ui-tone-neutral-fg)"
+    <Text
+      as="section"
+      tone="neutral"
+      className="jira-board-view flex min-h-0 min-w-0 flex-1 flex-col"
       aria-label={t("Jira board")}
       aria-busy={loading || busy}
     >
@@ -992,13 +1008,13 @@ export function JiraBoardView({
         </Button>
       </div>
       {backlogUnavailable ? (
-        <p className="jira-board-hint">
+        <Text as="p" size="inherit" tone="secondary" className="jira-board-hint">
           {t(
             "Backlog is not enabled for this Jira board. Enable it in Jira board settings to use backlog planning. Available board issues remain visible.",
           )}
-        </p>
+        </Text>
       ) : null}
-      <div className="jira-board-status">
+      <Text as="div" size="inherit" tone="secondary" className="jira-board-status">
         <LiveText
           text={
             readingTransitions
@@ -1012,9 +1028,9 @@ export function JiraBoardView({
                     : notice || t("{p0} loaded", { p0: allIssues.length })
           }
         />
-      </div>
+      </Text>
       {!canRank && configuration?.rankFieldId != null ? (
-        <p className="jira-board-hint">
+        <Text as="p" size="inherit" tone="secondary" className="jira-board-hint">
           {search.trim()
             ? t("Ranking is disabled while filtering. Status and sprint moves remain available.")
             : (readHiddenJiraProjectIds()?.length ?? 1)
@@ -1022,7 +1038,7 @@ export function JiraBoardView({
               : t(
                   "Ranking is unavailable until all board groups and pages are loaded and current.",
                 )}
-        </p>
+        </Text>
       ) : null}
       {error ? (
         <Alert tone="danger" className="jira-board-error">
@@ -1037,9 +1053,9 @@ export function JiraBoardView({
           role="group"
           aria-label={t("Choose Jira transition")}
         >
-          <strong>
+          <Text as="strong" size="inherit" tone="inherit" weight="medium">
             {pick.issue.identifier} · {t("Choose Jira transition")}
-          </strong>
+          </Text>
           {pick.choices.length ? (
             pick.choices.map((choice) => (
               <Button
@@ -1194,13 +1210,19 @@ export function JiraBoardView({
                   }}
                   summary={
                     <span className="flex min-w-0 flex-1 items-center gap-2">
-                      <span className="min-w-0 flex-1 whitespace-normal break-words text-ui-secondary font-medium [overflow-wrap:anywhere]">
+                      <Text
+                        as="span"
+                        size="secondary"
+                        weight="medium"
+                        tone="inherit"
+                        className="min-w-0 flex-1 whitespace-normal break-words [overflow-wrap:anywhere]"
+                      >
                         {group.name}
-                      </span>
+                      </Text>
                       {group.state ? (
-                        <span className="text-ui-caption text-(--ui-text-secondary)">
+                        <Text size="caption" tone="secondary">
                           {group.state === "active" ? t("Active sprint") : t("Future sprint")}
-                        </span>
+                        </Text>
                       ) : null}
                       <Badge variant="count" size="xs">
                         {group.loaded
@@ -1214,9 +1236,14 @@ export function JiraBoardView({
                   {open ? (
                     <div id={contentId}>
                       {group.goal ? (
-                        <p className="px-1 pb-2 text-ui-caption text-(--ui-text-secondary) [overflow-wrap:anywhere]">
+                        <Text
+                          as="p"
+                          size="caption"
+                          tone="secondary"
+                          className="px-1 pb-2 [overflow-wrap:anywhere]"
+                        >
                           {group.goal}
-                        </p>
+                        </Text>
                       ) : null}
                       {issueList(group, group.issues)}
                       {group.loaded && !visible(group.issues).length ? (
@@ -1246,10 +1273,10 @@ export function JiraBoardView({
         <div className="shrink-0 px-3">{groupRecovery(groups[0])}</div>
       ) : null}
       {groups.some((group) => group.token || !group.loaded) ? (
-        <p className="jira-board-hint">
+        <Text as="p" size="inherit" tone="secondary" className="jira-board-hint">
           {t("Showing loaded issues. Use Load more issues to continue.")}
-        </p>
+        </Text>
       ) : null}
-    </section>
+    </Text>
   );
 }

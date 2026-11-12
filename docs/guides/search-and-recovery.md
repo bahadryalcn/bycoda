@@ -7,6 +7,13 @@ execution directory, conversations use their existing search scope, and projects
 come from the supplied recent-project list. Read the scope description before
 opening a result.
 
+Ctrl+P opens Go to File with the current project name above the search field and
+one close button. Its file index includes workspace packages, nested Git repositories
+and initialized submodules inside the current directory. Each repository keeps its
+own ignore rules; ignored dependencies and files outside that directory are excluded.
+Results keep their paths relative to the current directory, so equal filenames in
+different packages remain distinct. Local and connected-machine projects use this scope.
+
 Result groups retain their category order. Shown counts describe loaded results;
 display limits and native search limits are separate. Application-wide indexing
 may still be in progress when a query has no indexed match yet. Narrow the result

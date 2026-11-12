@@ -1,3 +1,5 @@
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Text } from "../../../shared/ui/Text";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
@@ -322,7 +324,7 @@ export function SettingsView({
             onChange={(value) => onReveal(value as SettingsSectionId, null)}
           />
         </div>
-        <Heading size="page" className="settings-page-title" tabIndex={-1}>
+        <Heading size="page" truncate className="settings-page-title" tabIndex={-1}>
           {settingsSectionLabel(section)}
         </Heading>
         <div className="bycoda-settings-toolbar-actions">
@@ -385,13 +387,16 @@ export function SettingsView({
   );
 
   return (
-    <div
+    <Text
       role="region"
       aria-label={t("Settings")}
       data-app-settings
       data-settings-embedded={embedded || undefined}
       data-settings-maximized={maximized || undefined}
-      className="bycoda-settings bycoda-settings-workbench flex min-h-0 min-w-0 flex-1 flex-col text-content"
+      as="div"
+      size="inherit"
+      tone="primary"
+      className="bycoda-settings bycoda-settings-workbench flex min-h-0 min-w-0 flex-1 flex-col"
     >
       {embedded ? null : (
         <PaneHeader
@@ -409,7 +414,9 @@ export function SettingsView({
               tooltipWhen="overflow"
             >
               <ArrowLeft aria-hidden="true" strokeWidth={1.75} />
-              <span className="truncate">{t("Back to workspace")}</span>
+              <Text size="inherit" tone="inherit" truncate>
+                {t("Back to workspace")}
+              </Text>
             </Button>
           }
           title={section === "usage" ? t("Provider usage / This machine") : t("Settings")}
@@ -436,9 +443,15 @@ export function SettingsView({
             <SettingsAccountRow section={section} panelId={panelId} onSelect={selectCategory} />
             {navigationGroups(categoryGroups).map((group) => (
               <div key={group.id} className="bycoda-settings-category-group" role="presentation">
-                <span className="bycoda-settings-category-label" aria-hidden="true">
+                <Text
+                  as="span"
+                  weight="medium"
+                  leading="inherit"
+                  className="bycoda-settings-category-label"
+                  aria-hidden="true"
+                >
                   {group.label}
-                </span>
+                </Text>
                 <div
                   className="bycoda-settings-category-tabs"
                   role="group"
@@ -464,7 +477,9 @@ export function SettingsView({
                         data-category-group={category.group}
                         icon={<Icon aria-hidden className="icon-sm" strokeWidth={1.75} />}
                       >
-                        {category.label}
+                        <Text size="inherit" tone="inherit" truncate>
+                          {category.label}
+                        </Text>
                       </Tab>
                     );
                   })}
@@ -494,11 +509,13 @@ export function SettingsView({
               <RevealedSetting.Provider value={revealed}>
                 <PageAutomaticSaveHint.Provider value={AUTOMATIC_SAVE_SECTIONS.includes(section)}>
                   <SettingsPageResetRegistry.Provider value={setRegisteredReset}>
-                    <div
+                    <ScrollArea
+                      axis="both"
+                      gutter="stable"
                       key={section}
                       data-settings-scroller
                       ref={lockOverscroll}
-                      className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
+                      className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none"
                     >
                       {pageBar}
                       <div
@@ -604,7 +621,7 @@ export function SettingsView({
                           />
                         ) : null}
                       </div>
-                    </div>
+                    </ScrollArea>
                   </SettingsPageResetRegistry.Provider>
                 </PageAutomaticSaveHint.Provider>
               </RevealedSetting.Provider>
@@ -613,6 +630,6 @@ export function SettingsView({
         </Tabs>
       </div>
       {pageResetDialog}
-    </div>
+    </Text>
   );
 }

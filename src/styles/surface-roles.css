@@ -1,0 +1,20 @@
+/* Semantic recipes shared by error-bearing panels and native popup grounds.
+   Refer to existing surface roles so themes and workspace preferences remain authoritative. */
+html {
+  --ui-effort-fill: linear-gradient(to top, var(--ui-tone-info-solid), var(--ui-tone-accent-solid));
+  --ui-effort-ultra-fill: linear-gradient(
+    to top,
+    var(--ui-tone-warning-solid),
+    var(--ui-tone-accent-solid)
+  );
+  --ui-radius-xs: 0.125rem;
+  --ui-radius-sm: 0.25rem;
+  --ui-radius-row: 0.375rem;
+  --ui-surface-danger: color-mix(in srgb, var(--ui-tone-danger-subtle) 45%, var(--ui-surface));
+  --ui-surface-danger-floating: color-mix(
+    in srgb,
+    var(--ui-tone-danger-subtle) 45%,
+    var(--ui-surface-floating)
+  );
+  --ui-surface-translucent: color-mix(in oklab, var(--color-background-base) 45%, transparent);
+}

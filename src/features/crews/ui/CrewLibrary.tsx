@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { useRef, useState } from "react";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { t, useLocale } from "../../../shared/i18n";
@@ -136,7 +138,8 @@ export function CrewLibrary({
             ) : null}
             {/* The shared collection list caps its height and scrolls inside; the library
                 grows with its rows and scrolls with the page instead. */}
-            <div
+            <ScrollArea
+              gutter="stable"
               className="settings-collection-list max-h-none! overflow-visible!"
               role="region"
               aria-label={t("Member library")}
@@ -170,9 +173,17 @@ export function CrewLibrary({
                   <div className="settings-collection-main">
                     {/* Identity is data, not help text: it stays visible in the row. */}
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="settings-collection-title min-w-0">
+                      <Text
+                        as="span"
+                        size="secondary"
+                        tone="primary"
+                        weight="medium"
+                        leading="normal"
+                        truncate
+                        className="settings-collection-title min-w-0"
+                      >
                         <CrewMemberIdentity agent={agent} />
-                      </span>
+                      </Text>
                       {agent.groups?.length ? (
                         <div className="max-w-[60%] min-w-0 shrink-0">
                           <BadgeList
@@ -209,7 +220,7 @@ export function CrewLibrary({
                   </div>
                 </div>
               ))}
-            </div>
+            </ScrollArea>
           </div>
         )}
       </Group>
@@ -428,14 +439,14 @@ function LibraryMemberDialog({
             autoFocus={!saved}
           />
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <span className="flex items-center gap-1 text-ui-body font-medium">
+            <Text size="body" tone="inherit" weight="medium" className="flex items-center gap-1">
               {t("Available in")}
               <InfoPopover>
                 {t(
                   "Crews that use this profile unchanged follow it; customized members keep their own edits.",
                 )}
               </InfoPopover>
-            </span>
+            </Text>
             {saved ? (
               <Badge size="md">
                 {saved.projectId ? t("This project") : t("All projects on this host")}
@@ -554,14 +565,14 @@ function GroupDialog({
             onChange={(event) => setName(event.target.value)}
           />
         ) : (
-          <p className="text-ui-body">
+          <Text as="p" size="body" tone="inherit">
             {t(
               members.length === 1
                 ? "{p0} member leaves this group. The member itself is kept."
                 : "{p0} members leave this group. The members themselves are kept.",
               { p0: members.length },
             )}
-          </p>
+          </Text>
         )}
       </div>
     </Modal>

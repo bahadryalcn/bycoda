@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT, formatDate } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -158,23 +159,23 @@ function PendingPresentation({
     }
   };
   return (
-    <article className={styles.card}>
+    <Text as="article" size="inherit" tone="inherit" leading="normal" className={styles.card}>
       <Heading size="section" level={3} className={styles.title}>
         {value.input.title ?? value.input.questions[0].prompt}
       </Heading>
       {error ? (
         <InlineError>{error}</InlineError>
       ) : (
-        <p className={styles.status}>
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.status}>
           {t("Saving this question is unconfirmed. Retry to verify the original card.")}
-        </p>
+        </Text>
       )}
       <div className={styles.footer}>
         <Button size="sm" loading={pending} disabled={pending} onClick={() => void retry()}>
           {t("Retry")}
         </Button>
       </div>
-    </article>
+    </Text>
   );
 }
 function OwnerQuestionCard({
@@ -325,7 +326,7 @@ function OwnerQuestionCard({
     held = !!model?.intentPending;
   if (!creation.model)
     return (
-      <article className={styles.card}>
+      <Text as="article" size="inherit" tone="inherit" leading="normal" className={styles.card}>
         <Heading size="section" level={3} className={styles.title}>
           {question.prompt.title ?? t("Question")}
         </Heading>
@@ -338,13 +339,17 @@ function OwnerQuestionCard({
         <Button size="sm" onClick={notify}>
           {t("Retry")}
         </Button>
-      </article>
+      </Text>
     );
   if (!held && ["answered", "cancelled", "superseded"].includes(value.status)) return null;
   const snoozed = !held && value.status === "snoozed" && !expanded;
   const stale = value.sourceCurrent === false;
   return (
-    <article
+    <Text
+      as="article"
+      size="inherit"
+      tone="inherit"
+      leading="normal"
       className={styles.card}
       data-question-form={(ready && !snoozed && !stale) || undefined}
       aria-label={question.prompt.title ?? t("Question")}
@@ -354,7 +359,7 @@ function OwnerQuestionCard({
           <Heading size="section" level={3} className={styles.title}>
             {question.prompt.title ?? question.prompt.questions[0].prompt}
           </Heading>
-          <p className={styles.status}>
+          <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.status}>
             {stale
               ? t("This question changed with its work. Refresh it before answering.")
               : t("Snoozed until {p0}", {
@@ -363,7 +368,7 @@ function OwnerQuestionCard({
                     timeStyle: "short",
                   }),
                 })}
-          </p>
+          </Text>
           <div className={styles.footer}>
             <Button
               size="sm"
@@ -397,7 +402,9 @@ function OwnerQuestionCard({
           }}
         />
       ) : (
-        <p className={styles.status}>{t("Loading...")}</p>
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.status}>
+          {t("Loading...")}
+        </Text>
       )}
       {error && (!ready || snoozed || stale) ? <InlineError>{t(error)}</InlineError> : null}
       {!ready && error ? (
@@ -410,11 +417,11 @@ function OwnerQuestionCard({
           <Button size="sm" onClick={() => void act()}>
             {t("Retry")}
           </Button>
-          <p className={styles.status}>
+          <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.status}>
             {t("The answer is unconfirmed. Your original choice is kept.")}
-          </p>
+          </Text>
         </div>
       ) : null}
-    </article>
+    </Text>
   );
 }

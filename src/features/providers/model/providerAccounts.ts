@@ -61,6 +61,8 @@ export type ProviderAccount = {
   provider: ProviderAccountProvider;
   label: string;
   isDefault?: boolean;
+  /** Owner label; absent keeps the verified identity-derived category. */
+  kind?: "personal" | "work";
   /** Palette token; unset accounts get a stable colour derived from the id. */
   color?: ProviderAccountColor;
 };
@@ -120,6 +122,7 @@ export function providerAccounts(provider: ProviderAccountProvider): ProviderAcc
         id,
         provider,
         label,
+        ...((account.kind === "personal" || account.kind === "work") ? { kind: account.kind } : {}),
         ...(authoritative && account.isDefault ? { isDefault: true } : {}),
         ...(authoritative && validAccountColor(account.color) ? { color: account.color } : {}),
       },
@@ -161,7 +164,9 @@ export function saveProviderAccount(account: ProviderAccount): void {
   if (!label) return;
   const stored = readRecord<StoredAccounts>(ACCOUNTS_KEY);
   const accounts = providerAccounts(account.provider);
-  const color = account.color ?? accounts.find((entry) => entry.id === account.id)?.color;
+  const previous = accounts.find((entry) => entry.id === account.id);
+  const color = account.color ?? previous?.color;
+  const kind = account.kind ?? previous?.kind;
   const next = accounts.filter((entry) => entry.id !== account.id);
   stored[account.provider] = serializeProviderAccounts([
     ...next,
@@ -170,6 +175,7 @@ export function saveProviderAccount(account: ProviderAccount): void {
       provider: account.provider,
       label,
       ...(color ? { color } : {}),
+      ...(kind ? { kind } : {}),
       ...(next.length === 0 || accounts.find((entry) => entry.id === account.id)?.isDefault
         ? { isDefault: true }
         : {}),
@@ -219,6 +225,22 @@ export function renameProviderAccount(
   return renamed;
 }
 
+/** Edit display metadata atomically; credential identity and session pins stay untouched. */
+export function editProviderAccount(provider: ProviderAccountProvider, accountId: string,
+  metadata: { label: string; color?: ProviderAccountColor; kind?: "personal" | "work" }): boolean {
+  const label = cleanLabel(metadata.label);
+  if (!label || (metadata.color !== undefined && !validAccountColor(metadata.color))) return false;
+  if (metadata.kind !== undefined && metadata.kind !== "personal" && metadata.kind !== "work") return false;
+  const accounts = providerAccounts(provider);
+  if (!accounts.some((account) => account.id === accountId)) return false;
+  const stored = readRecord<StoredAccounts>(ACCOUNTS_KEY);
+  stored[provider] = serializeProviderAccounts(accounts.map((account) => account.id === accountId
+    ? { ...account, label, color: metadata.color, kind: metadata.kind } : account));
+  writeJson(ACCOUNTS_KEY, stored);
+  announceChange();
+  return true;
+}
+
 /** Remove account metadata after native credential cleanup has succeeded. */
 export function removeProviderAccount(
   provider: ProviderAccountProvider,
@@ -247,6 +269,7 @@ function serializeProviderAccounts(accounts: ProviderAccount[]): ProviderAccount
         id: account.id,
         provider: account.provider,
         label,
+        ...((account.kind === "personal" || account.kind === "work") ? { kind: account.kind } : {}),
         ...(account.isDefault ? { isDefault: true } : {}),
         ...(validAccountColor(account.color) ? { color: account.color } : {}),
       },

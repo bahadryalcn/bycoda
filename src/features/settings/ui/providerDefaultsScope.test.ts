@@ -31,3 +31,20 @@ it("shows unsaved product defaults bound to each account without saving override
     expect(accountSessionDefaults("claude", accountId)).toEqual({});
   }
 });
+
+it("uses Global as preview when multi-selection contains Global", async () => {
+  const { selectedTargetValues, parseTargetValue } = await import("../model/providerDefaultsDraft");
+  expect(selectedTargetValues('["project:C:/work", "global", "global"]')).toEqual([
+    "global",
+    "project:C:/work",
+  ]);
+  expect(parseTargetValue('["project:C:/work", "global"]', [])).toEqual({ kind: "global" });
+  expect(selectedTargetValues("[invalid")).toEqual([]);
+});
+
+it("replaces vanished multi-target entries with Global", async () => {
+  const { selectedTargetValues } = await import("../model/providerDefaultsDraft");
+  expect(
+    selectedTargetValues('["project:removed", "project:kept"]', ["global", "project:kept"]),
+  ).toEqual(["global", "project:kept"]);
+});

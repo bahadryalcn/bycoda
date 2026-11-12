@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { MatchText } from "../../../shared/ui/MatchText";
 import { CrewFaces, MemberAvatar, memberTraits, type CrewRole } from "../../crews/public/mentions";
@@ -48,13 +50,15 @@ export function CrewMentionText({
         : t("{p0} members", { p0: count });
   return (
     <>
-      <span className="min-w-0 flex-1 truncate">
+      <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
         <MatchText text={target.name} positions={positions} active={Boolean(query.trim())} />
-        <span className="ps-1.5 font-mono text-ui-micro text-(--ui-text-secondary)">
+        <Code size="micro" tone="secondary" className="ps-1.5">
           @{target.token}
-        </span>
-      </span>
-      <span className="shrink-0 text-ui-micro text-(--ui-text-secondary)">{detail}</span>
+        </Code>
+      </Text>
+      <Text size="micro" tone="secondary" className="shrink-0">
+        {detail}
+      </Text>
     </>
   );
 }

@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { memo, useRef, useState } from "react";
 import { t, getLocale } from "../../../shared/i18n/technical";
@@ -62,16 +64,37 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
         onOpenChange={setExpanded}
         summary={
           <div className="runtime-log-summary">
-            <div className="runtime-log-meta">
-              <span className="runtime-log-kind" data-source={entry.source}>
+            <Text
+              size="caption"
+              tone="inherit"
+              leading="inherit"
+              as="div"
+              className="runtime-log-meta"
+            >
+              <Text
+                size="caption"
+                tone="inherit"
+                leading="inherit"
+                weight="medium"
+                className="runtime-log-kind"
+                data-source={entry.source}
+              >
                 {entry.source === "browser" ? "[BROWSER]" : "[SERVER]"}
-              </span>
+              </Text>
               <Timestamp value={entry.timestamp} format="time-seconds" />
               <span className="runtime-log-level">
                 {LEVEL_LABELS[runtimeLogDisplayLevel(entry)]}
               </span>
               <OverflowTooltip label={sourceLabel}>
-                <span className="runtime-log-source-label">{sourceLabel}</span>
+                <Text
+                  size="inherit"
+                  tone="inherit"
+                  leading="inherit"
+                  truncate
+                  className="runtime-log-source-label"
+                >
+                  {sourceLabel}
+                </Text>
               </OverflowTooltip>
               {group.entries.length > 1 ? (
                 <Tooltip label={t("{p0} repeated events", { p0: group.entries.length })}>
@@ -87,13 +110,28 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
                 </Tooltip>
               ) : null}
               <span className="runtime-log-details-trigger">{t("Details")}</span>
-            </div>
-            <p className="runtime-log-message">{entry.message || t("Empty log message")}</p>
+            </Text>
+            <Text
+              as="p"
+              size="micro"
+              tone="primary"
+              leading="normal"
+              truncate
+              className="runtime-log-message"
+            >
+              {entry.message || t("Empty log message")}
+            </Text>
           </div>
         }
       >
         {expanded ? (
-          <div className="runtime-log-detail-body">
+          <Text
+            size="micro"
+            tone="inherit"
+            leading="inherit"
+            as="div"
+            className="runtime-log-detail-body"
+          >
             <pre className="runtime-log-full-message">{entry.message}</pre>
             {entry.location ? (
               <div className="runtime-log-location">
@@ -113,11 +151,11 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
                       : ""}
                   </Button>
                 ) : (
-                  <code>
+                  <Code>
                     {entry.location.file}
                     {entry.location.line ? ":" + entry.location.line : ""}
                     {entry.location.column ? ":" + entry.location.column : ""}
-                  </code>
+                  </Code>
                 )}
               </div>
             ) : null}
@@ -134,14 +172,20 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
               </div>
             ) : null}
             {group.entries.length > 1 ? (
-              <p className="runtime-logs-hint">
+              <Text
+                size="micro"
+                tone="inherit"
+                leading="normal"
+                as="p"
+                className="runtime-logs-hint"
+              >
                 {t("First seen {p0}; last seen {p1}.", {
                   p0: new Date(group.firstTimestamp).toLocaleTimeString(getLocale()),
                   p1: time,
                 })}
-              </p>
+              </Text>
             ) : null}
-          </div>
+          </Text>
         ) : null}
       </Disclosure>
     </li>

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useEffect } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -38,11 +39,10 @@ export function CrewTaskPicker({
   const unsupported = !value && (crews.error != null || (crews.data != null && !available));
   if (unsupported)
     return (
-      <div
-        data-crew-task-unsupported=""
-        className="flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)"
-      >
-        <span className="min-w-0 truncate">{t("Runs as a single agent")}</span>
+      <Text data-crew-task-unsupported="" as="div" className="flex min-w-0 items-center gap-1">
+        <Text size="inherit" tone="inherit" truncate className="min-w-0">
+          {t("Runs as a single agent")}
+        </Text>
         <InfoPopover label={t("Crews unavailable")} className="shrink-0">
           <p>
             {crews.error
@@ -60,7 +60,7 @@ export function CrewTaskPicker({
             </Button>
           ) : null}
         </InfoPopover>
-      </div>
+      </Text>
     );
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -101,9 +101,9 @@ export function CrewTaskPicker({
         <Alert tone="warning">{t("Connect an updated host and choose an available crew.")}</Alert>
       )}
       {value && valid && (
-        <p className="text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p">
           {t("This task starts its own crew run. The team can also work on other tasks.")}
-        </p>
+        </Text>
       )}
     </div>
   );

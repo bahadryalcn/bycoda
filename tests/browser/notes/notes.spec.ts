@@ -630,3 +630,53 @@ for (const theme of ["light", "dark"] as const) {
     await expect(dropBadge(page)).toHaveCount(0);
   });
 }
+
+test("compact notes refresh captures and tag filtering", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 950 });
+      await page.goto(`/tests/browser/notes/notes.html?theme=${theme}`);
+      await expect(page.getByRole("textbox", { name: "Note title", exact: true })).toBeVisible();
+      const tags = page.getByRole("group", { name: "Filter by tag", exact: true });
+      await expect(tags).toBeVisible();
+      await tags.getByRole("button", { name: "#ideas", exact: true }).click();
+      await expect(tags.getByRole("button", { name: "#ideas", exact: true })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(page.getByRole("textbox", { name: "Note title", exact: true })).toBeVisible();
+      await tags.getByRole("button", { name: "All tags", exact: true }).click();
+      await page.screenshot({
+        path: `temp/verification/notes-refresh/${theme}-${width}-document.png`,
+      });
+      await page
+        .locator(".note-preview-content")
+        .filter({ hasText: "Write the launch summary here." })
+        .click();
+      await expect(page.locator(".note-active-block .cm-editor")).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/notes-refresh/${theme}-${width}-editing.png`,
+      });
+      await page.getByRole("button", { name: "Read document", exact: true }).click();
+      await page.getByRole("button", { name: "Tags", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Tags", exact: true })).toBeVisible();
+      await page.screenshot({ path: `temp/verification/notes-refresh/${theme}-${width}-tags.png` });
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Choose project", exact: true }).click();
+      await page.screenshot({
+        path: `temp/verification/notes-refresh/${theme}-${width}-projects.png`,
+      });
+      await page.keyboard.press("Escape");
+      const split = page.getByRole("tab", { name: "Split", exact: true });
+      if (await split.isVisible()) await split.click();
+      else await page.getByRole("tab", { name: "Source", exact: true }).click();
+      await page.screenshot({
+        path: `temp/verification/notes-refresh/${theme}-${width}-split.png`,
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    }
+  }
+});

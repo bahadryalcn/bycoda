@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { TranscriptVirtualRows, type TranscriptVirtualElement } from "./TranscriptVirtualRows";
 import { useTranscriptRevealTarget } from "./transcriptVirtualization";
 import { useFollowBottom } from "../hooks/useFollowBottom";
@@ -312,7 +313,12 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
   }
 
   return (
-    <div className="transcript-activity-group flex min-w-0 flex-col">
+    <div
+      {...surfaceAttributes(
+        { frame: "none", radius: "none", variant: "transparent" },
+        "transcript-activity-group flex min-w-0 flex-col",
+      )}
+    >
       <Button
         motion="none"
         fullWidth

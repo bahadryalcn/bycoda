@@ -152,6 +152,9 @@ export type TabListProps = Omit<ComponentPropsWithRef<"div">, "role" | "aria-lab
   "aria-labelledby"?: string;
   /** Data-driven tabs, as an alternative to `<Tab>` children. */
   items?: readonly TabItem[];
+  /** `hidden`: the strip scrolls along its axis (a row sideways, a column vertically) with no
+   *  visible bar, for a strip that overflows its row. Unset keeps the surrounding overflow. */
+  scrollbar?: "hidden";
 };
 
 /**
@@ -167,6 +170,7 @@ export type TabListProps = Omit<ComponentPropsWithRef<"div">, "role" | "aria-lab
 export function TabList({
   label,
   items,
+  scrollbar,
   className,
   children,
   onKeyDown,
@@ -231,6 +235,7 @@ export function TabList({
       aria-orientation={tabs.orientation}
       data-fill={tabs.fill || undefined}
       data-responsive={tabs.responsive || undefined}
+      data-scrollbar={scrollbar}
       className={[styles.list, className].filter(Boolean).join(" ")}
       onKeyDown={handleKeyDown}
     >
@@ -281,7 +286,9 @@ export type TabProps = TabBase & TabLabel;
 /**
  * One tab: shared Button `tab` (or `item`) presentation with `role="tab"`, ids,
  * `aria-selected`, `aria-controls` and the roving tab stop. Extra Button props
- * (`tooltip`, `onKeyDown`, `onContextMenu`, `data-*`, `ref`) pass through.
+ * (`tooltip`, `onKeyDown`, `onContextMenu`, `data-*`, `ref`) pass through, including `truncate`
+ * (one-line label, ellipsis on the tab itself, so `tooltipWhen="overflow"` measures the clip) and
+ * `leading` (label line height).
  * @group navigation
  * @status internal
  */

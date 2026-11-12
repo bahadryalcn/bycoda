@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { InboxStatusBadge } from "./InboxStatusBadge";
 import { Alert } from "../../../shared/ui/Alert";
@@ -270,10 +271,11 @@ export function InboxDetail({
   };
 
   const identityRow = (
-    <div
+    <Text
+      as="div"
       data-inbox-detail-identity
       data-inbox-detail-fixed-header={panel ? "" : undefined}
-      className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary) ${
+      className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${
         panel ? "h-9 shrink-0 border-b border-(--ui-tone-neutral-border) px-4 pe-8.5" : ""
       }`}
     >
@@ -299,7 +301,7 @@ export function InboxDetail({
           <span className="@max-[420px]/linked:hidden">{externalActionLabel}</span>
         </Button>
       ) : null}
-    </div>
+    </Text>
   );
 
   return (
@@ -329,7 +331,12 @@ export function InboxDetail({
                   {item.title}
                 </Heading>
                 {panel ? null : identityRow}
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary)">
+                <Text
+                  as="div"
+                  size="caption"
+                  tone="secondary"
+                  className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+                >
                   {authorName ? (
                     <InboxPerson
                       name={authorName}
@@ -410,14 +417,18 @@ export function InboxDetail({
                       {reviewLabel}
                     </Badge>
                   ) : null}
-                </div>
+                </Text>
                 <BadgeList label={t("Labels")} rows={2} items={inboxLabelItems(item.labels)} />
                 {!panel && relatedSessions.length > 0 ? (
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-                    <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)">
+                    <Text
+                      size="micro"
+                      tone="secondary"
+                      className="mr-0.5 inline-flex shrink-0 items-center gap-1"
+                    >
                       <MessageMultiple className="icon-sm" strokeWidth={1.75} />
                       {t("Related")} {relatedSessions.length === 1 ? t("thread") : t("threads")}
-                    </span>
+                    </Text>
                     {relatedSessions.map((session) => {
                       const title = sessionDisplayTitle(session.title, session.harness);
                       return (
@@ -430,11 +441,13 @@ export function InboxDetail({
                           onClick={() => void onOpenSession?.(session.id)}
                           className="min-w-0 max-w-64"
                         >
-                          <span className="truncate">{title}</span>
+                          <Text size="inherit" tone="inherit" truncate>
+                            {title}
+                          </Text>
                           {session.archived ? (
-                            <span className="shrink-0 text-(--ui-text-secondary)">
+                            <Text size="inherit" tone="secondary" className="shrink-0">
                               {t("Archived")}
-                            </span>
+                            </Text>
                           ) : null}
                         </Button>
                       );
@@ -478,15 +491,20 @@ export function InboxDetail({
                           {starting ? t("Sending...") : t("Send to agent")}
                         </Button>
                         {!chooseStartProject && item.repo ? (
-                          <span className="min-w-0 max-w-48 truncate text-ui-caption text-(--ui-text-secondary)">
+                          <Text
+                            size="caption"
+                            tone="secondary"
+                            truncate
+                            className="min-w-0 max-w-48"
+                          >
                             {t("in {p0}", { p0: item.repo })}
-                          </span>
+                          </Text>
                         ) : null}
                         {chooseStartProject ? (
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <span className="text-ui-caption text-(--ui-text-secondary)">
+                            <Text size="caption" tone="secondary">
                               {t("Agent working folder")}
-                            </span>
+                            </Text>
                             <InboxProjectPicker
                               projects={projects}
                               value={startProject}
@@ -604,13 +622,17 @@ export function InboxDetail({
                               ]}
                             />
                             {baseRef && headRef ? (
-                              <span className="inline-flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
+                              <Text
+                                size="caption"
+                                tone="secondary"
+                                className="inline-flex min-w-0 items-center gap-1"
+                              >
                                 <GitCompare className="icon-xs shrink-0" aria-hidden="true" />
                                 <span className="wrap-anywhere">
                                   {baseRef} ← {headRef}
                                 </span>
                                 <CopyBranchNameButton branch={headRef} />
-                              </span>
+                              </Text>
                             ) : null}
                           </div>
                         ) : undefined
@@ -698,7 +720,9 @@ export function InboxDetail({
                       }
                     >
                       <p>{t("Comment sent. Could not refresh the conversation.")}</p>
-                      <p className="wrap-anywhere text-ui-caption">{postRefreshError}</p>
+                      <Text as="p" size="caption" tone="inherit" className="wrap-anywhere">
+                        {postRefreshError}
+                      </Text>
                     </Alert>
                   ) : null}
                   <InboxCommentForm

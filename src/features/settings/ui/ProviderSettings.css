@@ -47,9 +47,7 @@
   gap: 8px 16px;
   padding: 8px 8px 8px 16px;
   /* Opaque: the form scrolls underneath it. */
-  background: var(--color-background-base);
   border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 .provider-save-bar[data-dirty] {
   border-color: var(--ui-tone-warning-fg);
@@ -60,13 +58,6 @@
   gap: 8px;
   min-inline-size: 0;
 }
-.provider-save-bar-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--ui-font-secondary);
-  color: var(--color-content);
-}
 .provider-save-bar-actions {
   display: flex;
   flex-wrap: wrap;
@@ -76,15 +67,11 @@
   min-inline-size: 0;
 }
 .provider-save-bar-label {
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
   white-space: nowrap;
 }
 .provider-save-bar-note {
   flex-basis: 100%;
   margin: 0;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 
 /* Provider list: open rows on the page ground, selection is the shared fill. It stays in view
@@ -125,7 +112,7 @@
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   min-inline-size: 0;
 }
 .provider-cli-option-name {
@@ -133,30 +120,12 @@
   align-items: center;
   gap: 6px;
   min-inline-size: 0;
-  font-size: var(--ui-font-secondary);
-  line-height: 1.35;
-}
-.provider-cli-option-meta {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--ui-font-caption);
-  line-height: 1.35;
-  color: var(--ui-text-secondary);
-}
-.provider-cli-option-meta[data-tone="signedOut"],
-.provider-cli-option-meta[data-tone="low"] {
-  color: var(--ui-tone-warning-fg);
-}
-.provider-cli-option-meta[data-tone="exhausted"] {
-  color: var(--ui-tone-danger-fg);
 }
 .provider-cli-item-action {
   flex-shrink: 0;
 }
 .provider-cli-more {
   margin-block-start: 8px;
-  color: var(--ui-text-secondary);
 }
 .provider-cli-more svg {
   flex-shrink: 0;
@@ -164,12 +133,6 @@
 }
 .provider-cli-more svg[data-open] {
   transform: rotate(90deg);
-}
-.provider-cli-more-count {
-  margin-inline-start: auto;
-  font-size: var(--ui-font-caption);
-  font-variant-numeric: tabular-nums;
-  color: var(--ui-text-muted);
 }
 .provider-cli-missing {
   display: grid;
@@ -181,7 +144,6 @@
 .provider-cli-add {
   margin-block-start: 8px;
   padding-block-start: 8px;
-  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 @media (prefers-reduced-motion: reduce) {
   .provider-cli-more svg {
@@ -220,8 +182,6 @@
 }
 .provider-detail-meta {
   min-inline-size: 0;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .provider-status-actions,
 .provider-updates-actions,
@@ -234,8 +194,6 @@
   gap: 6px;
 }
 .provider-status-checked {
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-muted);
   white-space: nowrap;
 }
 
@@ -250,8 +208,6 @@
   inset-block-start: 0;
   z-index: 1;
   padding: 8px 16px;
-  background: var(--color-background-base);
-  border-block-end: 1px solid var(--ui-settings-hairline);
 }
 .provider-models-search + .settings-row {
   border-block-start: 0;
@@ -264,7 +220,6 @@
 }
 .provider-models-source {
   padding: 10px 16px;
-  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 .provider-models-source:empty {
   display: none;
@@ -294,8 +249,6 @@
 }
 .provider-account-empty {
   margin: 0;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .provider-account-main {
   flex: 1 1 0;
@@ -315,9 +268,6 @@
 }
 .provider-account-name {
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  color: var(--color-content);
 }
 .provider-account-meta {
   display: flex;
@@ -326,22 +276,12 @@
   gap: 8px;
   min-inline-size: 0;
   margin-block-start: 4px;
-  font-size: var(--ui-font-caption);
-}
-.provider-account-subtitle {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ui-text-secondary);
 }
 .provider-account-meta > * {
   max-inline-size: 100%;
 }
 .provider-account-note {
   margin: 4px 0 0;
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
-  color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
 }
 .provider-account-actions {
@@ -392,5 +332,94 @@
   }
   .provider-account-actions {
     margin-inline-start: auto;
+  }
+}
+
+/* Metadata edits wrap as a compact form at narrow widths. */
+.provider-account-editor {
+  flex-wrap: wrap;
+}
+.provider-account-editor > .flex-wrap {
+  flex-basis: 100%;
+}
+
+/* Compact inventory: action column never wraps. Hide freshness before versions. */
+.provider-inventory {
+  min-inline-size: 0;
+}
+.provider-inventory-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) 6rem minmax(10rem, 1fr) 6rem 9rem;
+  align-items: center;
+  gap: 12px;
+  min-block-size: 44px;
+  padding-inline: 8px;
+}
+.provider-inventory-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.provider-inventory-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.provider-inventory-inline-version {
+  display: none;
+}
+.provider-inventory-heading {
+  margin: 12px 8px 4px;
+}
+.provider-cli-option {
+  block-size: 40px;
+}
+.provider-cli-option-name {
+  flex-wrap: nowrap;
+}
+.provider-cli-add .provider-cli-item {
+  inline-size: 100%;
+}
+@media (max-width: 1100px) {
+  .provider-inventory-row {
+    grid-template-columns: minmax(9rem, 1fr) 5rem minmax(10rem, 1fr) 8rem;
+    gap: 8px;
+  }
+  .provider-inventory-checked {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .provider-inventory-row {
+    grid-template-columns: minmax(8rem, 1fr) minmax(0, 1.3fr) 8rem;
+    gap: 6px;
+  }
+  .provider-inventory-version {
+    display: none;
+  }
+  .provider-inventory-inline-version {
+    display: inline;
+  }
+}
+
+.provider-inventory-row > .bycoda-arc {
+  justify-self: start;
+}
+
+.provider-account-dialog-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-inline-size: 0;
+}
+
+.provider-inventory-columns {
+  min-block-size: 28px;
+}
+@media (max-width: 1100px) {
+  .provider-inventory-columns {
+    display: none;
   }
 }

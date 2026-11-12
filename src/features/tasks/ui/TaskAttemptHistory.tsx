@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -45,11 +46,11 @@ export function TaskAttemptHistory({
           <SectionLabel as="h3" count={task.attemptHistory.length}>
             {t("Attempt outcomes")}
           </SectionLabel>
-          <p className="text-ui-micro text-(--ui-text-muted)">
+          <Text as="p" size="micro" tone="muted">
             {t(
               "Worker summaries describe what the agent reported. The review below records verification.",
             )}
-          </p>
+          </Text>
           <Timeline
             label={t("Attempt outcomes")}
             events={task.attemptHistory.map((entry) => ({
@@ -67,7 +68,12 @@ export function TaskAttemptHistory({
               meta: new Date(entry.at).toLocaleString(getLocale()),
               detail: <AttemptDetail summary={entry.workerSummary} note={entry.note} />,
               actions: (
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-ui-micro text-(--ui-tone-info-fg)">
+                <Text
+                  as="div"
+                  size="micro"
+                  tone="info"
+                  className="mt-2 flex flex-wrap gap-x-3 gap-y-1"
+                >
                   {entry.workerSessionId ? (
                     <Button
                       variant="ghost"
@@ -92,7 +98,7 @@ export function TaskAttemptHistory({
                       {t("Open review session")}
                     </Button>
                   ) : null}
-                </div>
+                </Text>
               ),
             }))}
           />
@@ -107,10 +113,10 @@ function AttemptDetail({ summary, note }: { summary: string; note: string }) {
   useLocale();
   const shortNote = firstSentence(note, 160) ?? "";
   const noteLine = (text: string) => (
-    <p className="mt-1.5 whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+    <Text as="p" size="caption" tone="secondary" className="mt-1.5 whitespace-pre-wrap break-words">
       {t("Review: ")}
       {text}
-    </p>
+    </Text>
   );
   return (
     <ClampedMarkdown

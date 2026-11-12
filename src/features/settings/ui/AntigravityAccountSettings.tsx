@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { SettingsFeedback } from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -53,8 +55,11 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
   }
 
   const instructions = (
-    <div
-      className={`space-y-3 text-ui-caption text-(--ui-text-secondary) ${embedded ? "" : "px-4 py-4"}`}
+    <Text
+      as="div"
+      size="caption"
+      tone="secondary"
+      className={`space-y-3 ${embedded ? "" : "px-4 py-4"}`}
     >
       <p>
         {available
@@ -64,18 +69,20 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       {!available && (
         <>
           <p>{t("Windows (PowerShell)")}</p>
-          <code className="block select-text rounded-md bg-(--ui-surface-muted) px-3 py-2 text-content">
+          <Code variant="block" tone="primary">
             {"irm https://antigravity.google/cli/install.ps1 | iex"}
-          </code>
+          </Code>
           <p>{t("macOS / Linux")}</p>
-          <code className="block select-text rounded-md bg-(--ui-surface-muted) px-3 py-2 text-content">
+          <Code variant="block" tone="primary">
             {"curl -fsSL https://antigravity.google/cli/install.sh | bash"}
-          </code>
+          </Code>
         </>
       )}
       <p>
         {t("Run ")}
-        <code className="select-text text-content">{"agy"}</code>
+        <Code tone="primary" className="select-text">
+          {"agy"}
+        </Code>
         {t(
           " in a terminal on that computer and complete Google sign-in in your browser. Then check again here. Installation and model discovery do not confirm account sign-in.",
         )}
@@ -85,17 +92,17 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
         {t(
           " uses the shared Antigravity CLI account on this computer. Separate named Antigravity accounts cannot currently be added here. To change the shared account, run ",
         )}
-        <code>{"/logout"}</code>
+        <Code>{"/logout"}</Code>
         {t(
           " inside agy and complete sign-in again. This affects other Antigravity sessions on the same computer.",
         )}
       </p>
       <p>
         {t("For a Gemini API key, set ")}
-        <code>{"modelProvider"}</code>
-        {t(" to")} <code>{"gemini"}</code>
-        {t(" in")} <code>{"~/.gemini/antigravity-cli/settings.json"}</code>
-        {t(" and provide")} <code>{"GEMINI_API_KEY"}</code>
+        <Code>{"modelProvider"}</Code>
+        {t(" to")} <Code>{"gemini"}</Code>
+        {t(" in")} <Code>{"~/.gemini/antigravity-cli/settings.json"}</Code>
+        {t(" and provide")} <Code>{"GEMINI_API_KEY"}</Code>
         {t(" in the CLI environment.")}
       </p>
       <p>
@@ -110,7 +117,7 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
         <SettingsFeedback state={available ? "success" : "warning"}>{t(status)}</SettingsFeedback>
       ) : null}
       {error && <SettingsFeedback state="error">{t(error)}</SettingsFeedback>}
-    </div>
+    </Text>
   );
   if (embedded)
     return (
@@ -127,12 +134,12 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
               <HarnessIcon harness="antigravity" className="icon-md" />
             </span>
             <span className="min-w-0">
-              <span className="block text-ui-caption font-medium text-content">
+              <Text as="span" tone="primary" weight="medium" className="block">
                 {t("Antigravity CLI account")}
-              </span>
-              <span className="block text-ui-micro text-(--ui-text-muted)">
+              </Text>
+              <Text size="micro" tone="muted" className="block">
                 {t("This machine · shared CLI account · separate profiles unavailable")}
-              </span>
+              </Text>
             </span>
           </span>
         }

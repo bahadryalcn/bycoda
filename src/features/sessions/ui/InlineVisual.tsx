@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
@@ -81,7 +82,9 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
     <>
       {location !== "expanded" ? (
         <OverflowTooltip label={valid.title}>
-          <span className="min-w-0 flex-1 truncate text-ui-caption">{valid.title}</span>
+          <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1">
+            {valid.title}
+          </Text>
         </OverflowTooltip>
       ) : null}
       <Button
@@ -158,7 +161,9 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
       ) : (
         <div className="flex min-w-0 items-center gap-2 px-2 py-1">
           <PanelRight className="icon-sm" />
-          <span className="min-w-0 flex-1 truncate text-ui-caption">{valid.title}</span>
+          <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1">
+            {valid.title}
+          </Text>
           <Button
             variant="ghost"
             size="sm"

@@ -1,23 +1,18 @@
 ---
 name: feature-servers
-description: "Change Servers catalog, SSH forms/identity, details, terminal tabs and saved-tab restore while preserving trust, drafts, explicit connects and terminal lifecycle gates."
+description: "Use when changing SSH targets, forms and saved terminal tabs. Not for PTY execution; see feature-terminal."
 ---
 
 # Servers and SSH changes
-
-## When and scope
 
 Use for saved SSH targets and their terminal workspace. A saved target, connected Host machine and running SSH terminal represent different state. PTY execution and shared tools have separate owners.
 
 ## Source starts
 
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
-
-- `src/features/connections/ui/ServersView.tsx`, `ServersWorkspaceView.tsx`, `ServersConnectionTools.tsx`: catalog and purpose navigation.
-- `src/features/connections/ui/QuickConnect.tsx`, `SshServerEditor.tsx`, `SshIdentityField.tsx`, `SshSettings.tsx`: configuration and trust/identity.
+- `src/features/connections/ui/ServersView.tsx`, `src/features/connections/ui/ServersWorkspaceView.tsx`, `src/features/connections/ui/ServersConnectionTools.tsx`: catalog and purpose navigation.
+- `src/features/connections/ui/QuickConnect.tsx`, `src/features/connections/ui/SshServerEditor.tsx`, `src/features/connections/ui/SshIdentityField.tsx`, `src/features/connections/ui/SshSettings.tsx`: configuration and trust/identity.
 - `src/features/connections/ui/ServersTerminalWorkspace.tsx` and restore controls: tabs, focus and explicit reconnect.
-- `src/features/connections/model/serverInventory.ts`, `serverTerminalRestoreState.ts`, `src/features/terminal/model/terminalClose.ts`: state and lifetime boundaries.
+- `src/features/connections/model/serverInventory.ts`, `src/features/connections/model/serverTerminalRestoreState.ts`, `src/features/terminal/model/terminalClose.ts`: state and lifetime boundaries.
 - `host/conversation/conversation-server-tools.ts`, `host/conversation/conversation-desktop-relay.ts`, `src-tauri/src/conversation_servers.rs`, `src-tauri/src/conversation_ssh_execution.rs`: agent inventory tools and conversation-owned SSH commands.
 
 ## Preserve
@@ -47,7 +42,7 @@ never grants permission to automatically rerun a command.
 Run `pnpm exec vitest run src/features/connections/ui/ServersView.test.ts src/features/connections/ui/SshSettings.test.ts src/features/connections/ui/ServersTerminalWorkspace.test.ts` plus changed identity/editor/restore tests.
 Inspect purpose navigation, free entry, partial inventory, keyboard sash/tab close, X/middle-click/Delete confirmation and retry. Source or fixture checks do not establish live SSH/native acceptance.
 
-## Read when needed
+## References
 
 - [Approval decision](references/decisions.md) for full-access coding-session authority.
 

@@ -23,7 +23,7 @@ export function rowCopy(
   }
   if (hit.kind === "message") {
     return {
-      icon: <MessageSquare className="icon-sm text-(--ui-text-secondary)" strokeWidth={1.75} />,
+      icon: <MessageSquare className="icon-sm" tone="secondary" strokeWidth={1.75} />,
       title: terminalText(hit.title).text,
       preview: <Highlight text={hit.preview || hit.title} query={query} />,
       meta: projectDisplayName(hit.cwd),

@@ -1,3 +1,5 @@
+import sectionStyles from "./accountSections.module.css";
+import { Text } from "../../../shared/ui/Text";
 import type { DataSummary, RetentionKey } from "@bycoda/account-contracts";
 import { useState } from "react";
 import { dateTimeFormat, getLocale, t, useLocale } from "../../../shared/i18n";
@@ -29,41 +31,54 @@ const day = (value: string) =>
 /** One row per stored category: what it holds now and how long it is kept. */
 function StoredData({ summary }: { summary: DataSummary }) {
   // The first key is the category's own rule; backups and grace periods apply to all of them.
-  const kept = (keys: readonly RetentionKey[]) => (keys[0] ? retentionLabel(keys[0]) : undefined);
+  const categories = ["profile", "devices", "activity", "notifications", "support"] as const;
+  const firstRule = summary.retention.profile[0];
+  const commonRule = categories.every((category) => summary.retention[category][0] === firstRule)
+    ? firstRule
+    : undefined;
+  const kept = (keys: readonly RetentionKey[]) =>
+    keys[0] && keys[0] !== commonRule ? retentionLabel(keys[0]) : undefined;
   const activity = summary.activity;
   return (
     <>
       <Row label={t("Profile")} description={kept(summary.retention.profile)}>
-        <span className="text-ui-body text-muted">
+        <Text size="body" tone="muted">
           {t("Name, e-mail, since {p0}", { p0: day(summary.profile.createdAt) })}
-        </span>
+        </Text>
       </Row>
       <Row label={t("Devices")} description={kept(summary.retention.devices)}>
-        <span className="text-ui-body text-muted">
+        <Text size="body" tone="muted">
           {t("{p0} active, {p1} signed out", {
             p0: summary.devices.active,
             p1: summary.devices.revoked,
           })}
-        </span>
+        </Text>
       </Row>
       <Row label={t("Active time")} description={kept(summary.retention.activity)}>
-        <span className="text-ui-body text-muted">
+        <Text size="body" tone="muted">
           {activity.days
             ? t("{p0}, {p1} in total", {
                 p0: formatDays(activity.days),
                 p1: formatDuration(activity.totalMinutes * 60_000),
               })
             : t("Nothing yet")}
-        </span>
+        </Text>
       </Row>
       <Row label={t("Notifications")} description={kept(summary.retention.notifications)}>
-        <span className="text-ui-body text-muted">
+        <Text size="body" tone="muted">
           {t("{p0} in your feed", { p0: summary.notifications.feedItems })}
-        </span>
+        </Text>
       </Row>
       <Row label={t("Support requests")} description={kept(summary.retention.support)}>
-        <span className="text-ui-body text-muted">{summary.support.tickets}</span>
+        <Text size="body" tone="muted">
+          {summary.support.tickets}
+        </Text>
       </Row>
+      {commonRule ? (
+        <Text as="p" size="caption" tone="secondary" className={sectionStyles.retention}>
+          {retentionLabel(commonRule)}
+        </Text>
+      ) : null}
     </>
   );
 }

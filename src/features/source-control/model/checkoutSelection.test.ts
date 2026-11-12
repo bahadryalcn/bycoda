@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it } from "vitest";
 import {
+  checkoutTitle,
+  checkoutTitleWith,
   checkoutOptionLabel,
   checkoutRepositoryPaths,
   checkoutRowLabels,
@@ -12,6 +14,7 @@ import {
   sessionCheckout,
 } from "./checkoutSelection";
 import type { Worktree } from "./worktrees";
+import { t } from "../../../shared/i18n/git";
 
 const tree = (path: string, extra: Partial<Worktree> = {}): Worktree => ({
   path,
@@ -30,6 +33,14 @@ const main = tree("/repo", { isMain: true });
 const byPath = (...trees: Worktree[]) => Object.fromEntries(trees.map((item) => [item.path, item]));
 
 beforeEach(() => localStorage.clear());
+
+it("keeps checkout titles identical with an explicit translator", () => {
+  for (const entry of [main, tree("/detached", { branch: null })])
+    expect(checkoutTitleWith(entry, t)).toBe(checkoutTitle(entry));
+  expect(checkoutTitleWith(tree("/detached", { branch: null }), () => "Detached translated")).toBe(
+    "Detached translated · abcdef1",
+  );
+});
 
 it("keeps checkout children distinct, deduplicates paths and excludes outside targets", () => {
   expect(

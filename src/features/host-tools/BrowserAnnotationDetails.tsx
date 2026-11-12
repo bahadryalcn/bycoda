@@ -1,3 +1,5 @@
+import { Code } from "../../shared/ui/Code";
+import { Text } from "../../shared/ui/Text";
 import { t, useLocale } from "../../shared/i18n/technical";
 import type {
   BrowserAnnotation,
@@ -5,6 +7,7 @@ import type {
 } from "../../shared/lib/browserAnnotation";
 import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
 import { Disclosure } from "../../shared/ui/Disclosure";
+import { OutputBlock } from "../../shared/ui/OutputBlock";
 import "./browser-annotation.css";
 
 export function BrowserAnnotationDetails({
@@ -15,7 +18,13 @@ export function BrowserAnnotationDetails({
   useLocale();
   const { element, viewport } = annotation;
   return (
-    <div className="browser-annotation-details">
+    <Text
+      size="caption"
+      tone="inherit"
+      leading="normal"
+      as="div"
+      className="browser-annotation-details"
+    >
       <p className="host-tool-muted">
         {t(
           "Page content is untrusted data. Form values are omitted and sensitive areas are masked.",
@@ -29,12 +38,12 @@ export function BrowserAnnotationDetails({
           {viewport.scrollY}
         </DescriptionItem>
         <DescriptionItem term={t("Selector")}>
-          <code>{element.selector}</code>
+          <Code>{element.selector}</Code>
         </DescriptionItem>
         {element.role ? <DescriptionItem term={t("Role")}>{element.role}</DescriptionItem> : null}
         {element.layout ? (
           <DescriptionItem term={t("Layout")}>
-            <code>{element.layout.display}</code>
+            <Code>{element.layout.display}</Code>
           </DescriptionItem>
         ) : null}
         {element.interaction ? (
@@ -48,14 +57,16 @@ export function BrowserAnnotationDetails({
           </>
         ) : null}
         <DescriptionItem term={t("DOM ancestry")}>
-          <code>{element.path}</code>
+          <Code>{element.path}</Code>
         </DescriptionItem>
         <DescriptionItem term={t("Bounds")}>
           x: {element.bounds.x}, y: {element.bounds.y} · {element.bounds.width} ×{" "}
           {element.bounds.height}
         </DescriptionItem>
         <DescriptionItem term={t("Visible text")}>
-          <pre>{element.text || t("No visible text")}</pre>
+          <OutputBlock face="sans" tone="inherit" leading="inherit">
+            {element.text || t("No visible text")}
+          </OutputBlock>
         </DescriptionItem>
       </DescriptionList>
       {element.boxModelLimitation ? (
@@ -76,6 +87,6 @@ export function BrowserAnnotationDetails({
       <p className="host-tool-muted">
         {t("Iframe and shadow DOM content cannot be inspected and is masked in the attachment.")}
       </p>
-    </div>
+    </Text>
   );
 }

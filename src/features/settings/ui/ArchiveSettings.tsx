@@ -1,3 +1,5 @@
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
@@ -209,9 +211,9 @@ export function ArchivePage({
         )}`}
       >
         {!onRestoreProject || !onDeleteProject ? (
-          <p className="archive-settings-note">
+          <Text as="p" leading="normal" className="archive-settings-note">
             {t("Some project actions are unavailable in this view. Open the project to manage it.")}
-          </p>
+          </Text>
         ) : null}
         {archivedProjectsUnavailable ? (
           <SettingsFeedback
@@ -235,7 +237,8 @@ export function ArchivePage({
                 p1: archivedProjects.length,
               })}
             />
-            <div
+            <ScrollArea
+              gutter="stable"
               className="settings-collection-list archive-settings-list"
               role="region"
               aria-label={t("Archived projects")}
@@ -246,6 +249,7 @@ export function ArchivePage({
                   size="inline"
                   kind="filtered"
                   className="settings-collection-empty"
+                  descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
                   description={t("No matching archived projects.")}
                   resetLabel={t("Clear search")}
                   onReset={() => setProjectQuery("")}
@@ -254,10 +258,20 @@ export function ArchivePage({
               {matchingProjects.map((project) => (
                 <div key={project.path} className="settings-collection-row">
                   <div className="settings-collection-main">
-                    <p className="settings-collection-title">
+                    <Text
+                      as="p"
+                      size="secondary"
+                      tone="primary"
+                      weight="medium"
+                      leading="normal"
+                      truncate
+                      className="settings-collection-title"
+                    >
                       {archivedProjectLabel(project.path)}
-                    </p>
-                    <p className="settings-collection-meta">{prettyCwd(project.path)}</p>
+                    </Text>
+                    <Text as="p" leading="normal" className="settings-collection-meta">
+                      {prettyCwd(project.path)}
+                    </Text>
                   </div>
                   <div className="settings-collection-actions">
                     {onRestoreProject ? (
@@ -294,7 +308,7 @@ export function ArchivePage({
                   ) : null}
                 </div>
               ))}
-            </div>
+            </ScrollArea>
           </div>
         )}
       </Group>
@@ -358,7 +372,8 @@ export function ArchivePage({
                 </SettingsFeedback>
               </div>
             ) : null}
-            <div
+            <ScrollArea
+              gutter="stable"
               className="settings-collection-list archive-settings-list"
               role="region"
               aria-label={t("Archived conversations")}
@@ -369,6 +384,7 @@ export function ArchivePage({
                   size="inline"
                   kind="filtered"
                   className="settings-collection-empty"
+                  descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
                   description={t("No matching archived conversations.")}
                   resetLabel={t("Clear search")}
                   onReset={() => setSessionQuery("")}
@@ -387,9 +403,9 @@ export function ArchivePage({
                   >
                     {sessionDisplayTitle(session.title, session.harness)}
                   </Button>
-                  <span className="shrink-0 text-ui-caption text-(--ui-text-secondary) tabular-nums">
+                  <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
                     {formatDate(session.updatedAt)}
-                  </span>
+                  </Text>
                   <div className="settings-collection-actions">
                     <Button
                       className="shrink-0"
@@ -422,7 +438,7 @@ export function ArchivePage({
                   ) : null}
                 </div>
               ))}
-            </div>
+            </ScrollArea>
           </div>
         )}
       </Group>

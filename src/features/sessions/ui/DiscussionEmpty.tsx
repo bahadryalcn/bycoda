@@ -7,13 +7,7 @@ export function DiscussionEmpty({ message }: { message: string }) {
     <EmptyState
       context="panel"
       kind="empty"
-      icon={
-        <ProjectMascot
-          project="workspace"
-          name="union"
-          className="size-8 text-(--ui-text-secondary)"
-        />
-      }
+      icon={<ProjectMascot project="workspace" name="union" tone="secondary" className="size-8" />}
       description={message}
     />
   );

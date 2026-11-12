@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -29,14 +31,26 @@ export function VoiceWakeIndicator({
           ? t("Wake phrase needs the local voice pack")
           : t("Wake phrase stopped listening. Check the microphone.");
   return (
-    <div className={styles.indicator} data-state={state.kind}>
+    <Text
+      as="div"
+      size="micro"
+      tone="secondary"
+      leading="inherit"
+      {...surfaceAttributes(
+        { frame: "neutral", edge: "all", radius: "pill", variant: "floating" },
+        styles.indicator,
+      )}
+      data-state={state.kind}
+    >
       <StatusDot
         tone={state.kind === "listening" ? "success" : "warning"}
         appearance="solid"
         size="sm"
       />
       <OverflowTooltip label={text}>
-        <span className={styles.text}>{text}</span>
+        <Text size="inherit" tone="inherit" truncate className={styles.text}>
+          {text}
+        </Text>
       </OverflowTooltip>
       {state.kind === "pack" ? (
         <Button size="sm" variant="ghost" onClick={onSetup}>
@@ -46,6 +60,6 @@ export function VoiceWakeIndicator({
       <Button size="sm" variant="ghost" onClick={onOff}>
         {t("Turn off")}
       </Button>
-    </div>
+    </Text>
   );
 }

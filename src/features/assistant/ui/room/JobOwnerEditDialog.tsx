@@ -11,6 +11,7 @@ import { Select } from "../../../../shared/ui/Select";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LiveText } from "../../../../shared/ui/LiveText";
+import { Text } from "../../../../shared/ui/Text";
 import { assistantJobProjectIds } from "../../model/assistantJobs";
 import rootStyles from "../AssistantView.module.css";
 import styles from "./Jobs.module.css";
@@ -197,7 +198,9 @@ export function JobOwnerEditDialog({
           submit();
         }}
       >
-        <p className={styles.subtitle}>{job.title}</p>
+        <Text as="p" truncate leading="inherit" className={styles.subtitle}>
+          {job.title}
+        </Text>
         {mode === "replan" ? (
           <TextareaField
             label={t("Replan feedback")}
@@ -224,6 +227,9 @@ export function JobOwnerEditDialog({
           />
         )}
         <LiveText
+          size="caption"
+          tone="secondary"
+          leading="inherit"
           className={styles.muted}
           text={
             draft.intent

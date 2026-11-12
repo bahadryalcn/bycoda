@@ -239,7 +239,7 @@ function ProjectQuickActionsFor({
       kind: "item",
       id: "folder",
       label: IS_MAC ? "Finder" : "File Explorer",
-      icon: <FolderOpen className="icon-md text-(--ui-tone-warning-fg)" />,
+      icon: <FolderOpen tone="warning" className="icon-md" />,
     },
   ];
   const actionItems: ExplorerMenuItem[] = [

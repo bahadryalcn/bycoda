@@ -2,6 +2,7 @@ import type { AssistantQuickNoteAction } from "../../../shared/model/assistantQu
 import { normalizeAssistantQuickNoteAction } from "../../../shared/model/assistantQuick";
 import { t } from "../../../shared/i18n";
 import { TextField } from "../../../shared/ui/TextField";
+import { Text } from "../../../shared/ui/Text";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import styles from "./AssistantNoteCard.module.css";
 export function AssistantQuickNoteFields({
@@ -34,9 +35,9 @@ export function AssistantQuickNoteFields({
         disabled={disabled}
         onChange={(event) => update({ body: event.currentTarget.value })}
       />
-      <p className={styles.savedTitle}>
+      <Text as="p" tone="muted" leading="inherit" className={styles.savedTitle}>
         {t("Saved title")}: {normalizeAssistantQuickNoteAction(value).title}
-      </p>
+      </Text>
     </div>
   );
 }

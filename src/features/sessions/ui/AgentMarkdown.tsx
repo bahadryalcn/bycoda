@@ -1,4 +1,5 @@
 import { Skeleton } from "../../../shared/ui/Skeleton";
+import { MarkdownSource as IncrementalMarkdownSource } from "./markdownSource";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Link } from "../../../shared/ui/Link";
@@ -1020,9 +1021,9 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   } = useParsedMarkdown(paced.text, markdownStream);
   const lastBlock = markdownBlocks.length - 1;
   const parseBlocks = useCallback(() => markdownBlocks, [markdownBlocks]);
-  // Streamdown's memo comparator ignores the parser callback. Its children must
-  // change when a worker parse arrives, even when the original source is unchanged.
-  const parsedSource = markdownBlocks.join("");
+  // Worker parses must change children: Streamdown's memo comparator ignores the parser callback.
+  const [markdownSource] = useState(() => new IncrementalMarkdownSource());
+  const parsedSource = markdownSource.read(markdownBlocks);
   const pacedFadeOptions = useWordFadeWindow(paced.text);
   const arrivalFadeOptions = useArrivalFadeWindow(
     text,
@@ -1035,7 +1036,6 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     () => ({ fading, fadeOptions, hardBreaks: !!hardBreaks, lastBlock }),
     [fading, fadeOptions, hardBreaks, lastBlock],
   );
-
   const onFileMenuPick = async (id: string) => {
     if (!fileMenu) return;
     const menuPath = fileMenu.path;

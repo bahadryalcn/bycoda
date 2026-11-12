@@ -28,8 +28,6 @@
   min-inline-size: 0;
 }
 .muted {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   white-space: nowrap;
 }
 .range {
@@ -45,7 +43,6 @@
 }
 .dash {
   flex: 0 0 auto;
-  color: var(--ui-text-secondary);
 }
 .hintRow {
   grid-column: 1 / -1;

@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 
@@ -14,7 +15,7 @@ export function RecoveryVerification({
 }) {
   const t = useT();
   return (
-    <div className="break-words text-ui-caption text-(--ui-text-secondary)">
+    <Text as="div" size="caption" tone="secondary" className="break-words">
       <span>{verification}</span>
       {readError ? (
         <>
@@ -24,6 +25,6 @@ export function RecoveryVerification({
           </Button>
         </>
       ) : null}
-    </div>
+    </Text>
   );
 }

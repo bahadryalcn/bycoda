@@ -7,6 +7,7 @@ import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { Heading } from "../../../shared/ui/Heading";
 import { Popover } from "../../../shared/ui/Popover";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Text } from "../../../shared/ui/Text";
 import { goalKey } from "../model/goalClient";
 import { TASK_COLUMNS } from "../model/hostTasks";
 import { ALL_GOALS } from "./TaskGoals";
@@ -55,7 +56,9 @@ export function TaskToolbarFilters({
     onChange: (v: string) => void,
   ) => (
     <div className="task-filter-field">
-      <span>{label}</span>
+      <Text as="span" leading="inherit">
+        {label}
+      </Text>
       <SearchableSelect
         label={label}
         layer={LAYER.submenu}

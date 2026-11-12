@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -13,15 +15,27 @@ export type SkillMachineCell = { machine: SkillMachine | null; name: string; sta
 export function SkillMachineColumns({ names }: { names: string[] }): ReactNode {
   useLocale();
   return (
-    <div className={styles.columns} aria-hidden="true">
+    <Text
+      as="div"
+      size="caption"
+      tone="secondary"
+      leading="inherit"
+      {...surfaceAttributes(
+        { variant: "workspace-panel", frame: "pane", edge: "block-end" },
+        styles.columns,
+      )}
+      aria-hidden="true"
+    >
       <span className={styles.columnsName}>{t("Skill")}</span>
       {names.map((name) => (
         <OverflowTooltip key={name} label={name}>
-          <span className={styles.cell}>{name}</span>
+          <Text as="span" size="inherit" tone="inherit" truncate className={styles.cell}>
+            {name}
+          </Text>
         </OverflowTooltip>
       ))}
       <span className={styles.menuSlot} />
-    </div>
+    </Text>
   );
 }
 
@@ -86,10 +100,22 @@ export function SkillRow({
         disabled={disabled}
         onClick={onOpen}
       >
-        <span className={styles.skillName}>{entry.name}</span>
+        <Text
+          as="span"
+          size="inherit"
+          tone={off ? "secondary" : "inherit"}
+          truncate
+          className={styles.skillName}
+        >
+          {entry.name}
+        </Text>
         {modified ? <span title={t("Draft")}>·</span> : null}
       </Button>
-      {off ? <span className={styles.offLabel}>{t("Off")}</span> : null}
+      {off ? (
+        <Text size="caption" tone="secondary" leading="inherit" className={styles.offLabel}>
+          {t("Off")}
+        </Text>
+      ) : null}
       {cells?.map((cell) => {
         const key = cell.machine?.environmentId ?? "local";
         if (cell.state === "missing" && copy.transferable) {
@@ -118,7 +144,10 @@ export function SkillRow({
               ? t("Missing on {p0}", { p0: cell.name })
               : t("Checking {p0}", { p0: cell.name });
         return (
-          <span
+          <Text
+            as="span"
+            size="inherit"
+            tone={cell.state === "missing" || cell.state === "unknown" ? "secondary" : "inherit"}
             key={key}
             className={styles.cell}
             data-state={cell.state}
@@ -127,7 +156,7 @@ export function SkillRow({
             title={label}
           >
             {cell.state === "present" ? <Check className="icon-sm" aria-hidden="true" /> : "–"}
-          </span>
+          </Text>
         );
       })}
       <Button

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -292,11 +293,11 @@ export function WorkspaceReview({
         </ModalActions>
       }
     >
-      <div className="space-y-4 text-ui-body">
+      <Text as="div" size="body" tone="inherit" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="min-w-0 break-all text-(--ui-text-secondary)">
+          <Text as="p" size="inherit" tone="secondary" className="min-w-0 break-all">
             {branchName(workspace.branchRef)} → {branchName(workspace.targetBranchRef)}
-          </p>
+          </Text>
           {mode === "merge" && (
             <Button
               variant="secondary"
@@ -325,11 +326,11 @@ export function WorkspaceReview({
         </div>
         {mode === "publish" && (
           <>
-            <p className="text-(--ui-text-secondary)">
+            <Text as="p" size="inherit" tone="secondary">
               {t(
                 "This action pushes the reviewed branch and creates a pull request. Both steps require your approval.",
               )}
-            </p>
+            </Text>
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-3">
               {(
                 [
@@ -417,12 +418,12 @@ export function WorkspaceReview({
                 {plan.expectedRevision}
               </DescriptionItem>
             </DescriptionList>
-            <p className="break-all text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="secondary" className="break-all">
               {t("Target status fingerprint")}: {plan.targetStatusFingerprint}
-            </p>
-            <p className="text-(--ui-text-secondary)">
+            </Text>
+            <Text as="p" size="inherit" tone="secondary">
               {t("Approval applies only to these revisions. Changes require a fresh review.")}
-            </p>
+            </Text>
             {expired && (
               <InlineMessage tone="warning" live="assertive">
                 {t("This review expired. Refresh review before approving.")}
@@ -476,9 +477,9 @@ export function WorkspaceReview({
                 </Heading>
                 <ul>
                   {plan.changedPaths.map((path) => (
-                    <li key={path} className="break-all text-(--ui-text-secondary)">
+                    <Text as="li" size="inherit" tone="secondary" key={path} className="break-all">
                       {path}
-                    </li>
+                    </Text>
                   ))}
                 </ul>
               </section>
@@ -523,7 +524,9 @@ export function WorkspaceReview({
                   ))}
                 </ul>
               ) : (
-                <p className="text-(--ui-text-secondary)">{t("No check results recorded.")}</p>
+                <Text as="p" size="inherit" tone="secondary">
+                  {t("No check results recorded.")}
+                </Text>
               )}
             </section>
             <section>
@@ -533,18 +536,26 @@ export function WorkspaceReview({
               {plan.visualEvidence.length ? (
                 <ul>
                   {plan.visualEvidence.map((evidence) => (
-                    <li key={evidence} className="break-all text-(--ui-text-secondary)">
+                    <Text
+                      as="li"
+                      size="inherit"
+                      tone="secondary"
+                      key={evidence}
+                      className="break-all"
+                    >
                       {evidence}
-                    </li>
+                    </Text>
                   ))}
                 </ul>
               ) : (
-                <p className="text-(--ui-text-secondary)">{t("No visual evidence recorded.")}</p>
+                <Text as="p" size="inherit" tone="secondary">
+                  {t("No visual evidence recorded.")}
+                </Text>
               )}
             </section>
           </>
         )}
-      </div>
+      </Text>
     </Modal>
   );
 }

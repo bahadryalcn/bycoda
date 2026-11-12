@@ -1,6 +1,8 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { kindLabel, platformLabel, platformVersionLabel, stateLabel } from "../model/deviceLabels";
@@ -37,7 +39,12 @@ export function DeviceBar({
 }) {
   const device = devices.find((item) => item.id === selected);
   return (
-    <div className="device-panel-bar">
+    <div
+      {...surfaceAttributes(
+        { frame: "pane", edge: "block-end", variant: "workspace-panel" },
+        "device-panel-bar",
+      )}
+    >
       {devices.length ? (
         <div className="device-panel-choice">
           <SearchableSelect
@@ -81,13 +88,20 @@ export function DeviceBar({
           />
         </div>
       ) : (
-        <p className="host-tool-muted device-panel-bar-text" role="status">
+        <Text
+          as="p"
+          size="caption"
+          tone="inherit"
+          leading="relaxed"
+          className="host-tool-muted device-panel-bar-text"
+          role="status"
+        >
           {loading
             ? t("Loading devices…")
             : t(
                 "No devices found. Connect an Android phone with USB debugging enabled, or create an emulator or simulator, then refresh.",
               )}
-        </p>
+        </Text>
       )}
       <span className="device-panel-bar-actions">
         <Button

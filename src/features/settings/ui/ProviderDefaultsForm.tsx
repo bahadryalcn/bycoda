@@ -1,3 +1,8 @@
+import { HarnessIcon } from "../../sessions/public/HarnessIcon";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RUNTIME_MODE_ICONS } from "../../sessions/public/runtimeModeOptions";
+import { WandSparkles } from "../../../shared/ui/icons";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -132,6 +137,40 @@ export function ProviderDefaultsForm({
     refreshProviderCatalog(harness).catch(() => undefined);
   }, [available, harness]);
 
+  const effortOptions = effort
+    ? [
+        {
+          value: "",
+          icon: <WandSparkles className="icon-sm" />,
+          label: inheritedChoiceLabel(
+            inheritedDefaults?.effort
+              ? t(
+                  effort.options.find((option) => option.value === inheritedDefaults.effort)
+                    ?.label ?? inheritedDefaults.effort,
+                )
+              : undefined,
+            Boolean(validInheritedEffort),
+          ),
+        },
+        ...(scopeDefaults.effort && !validEffort
+          ? [
+              {
+                value: scopeDefaults.effort,
+                label: `${scopeDefaults.effort} (${t("Unavailable")})`,
+              },
+            ]
+          : []),
+        ...effort.options.map((option, index) => ({
+          ...option,
+          label: t(option.label),
+          icon: (
+            <Text size="caption" tone="accent">
+              {"▁▂▄▆█"[Math.round((index * 4) / Math.max(1, effort.options.length - 1))]}
+            </Text>
+          ),
+        })),
+      ]
+    : [];
   return (
     <Group
       id="agent-clis"
@@ -191,14 +230,15 @@ export function ProviderDefaultsForm({
               value: item.id,
               label: item.name,
               description: item.id,
+              icon: <HarnessIcon harness={harness} className="icon-sm" />,
             }))}
           />
         </Row>
       ) : (
         <Row label={t("Model")}>
-          <span className="text-ui-caption text-(--ui-text-muted)">
+          <Text size="caption" tone="muted">
             {available ? t("Loading models…") : t("Available after CLI setup")}
-          </span>
+          </Text>
         </Row>
       )}
       {effort ? (
@@ -208,37 +248,31 @@ export function ProviderDefaultsForm({
           onReset={() => onSessionDefaultsChange({ ...scopeDefaults, effort: undefined })}
           resetLabel={resetLabel}
         >
-          <Select
-            hideLabel
-            label={t("{p0} default effort", { p0: HARNESS_TITLE[harness] })}
-            value={scopeDefaults.effort && validEffort ? scopeDefaults.effort : ""}
-            options={[
-              {
-                value: "",
-                label: inheritedChoiceLabel(
-                  inheritedDefaults?.effort
-                    ? t(
-                        effort.options.find((option) => option.value === inheritedDefaults.effort)
-                          ?.label ?? inheritedDefaults.effort,
-                      )
-                    : undefined,
-                  Boolean(validInheritedEffort),
-                ),
-              },
-              ...(scopeDefaults.effort && !validEffort
-                ? [
-                    {
-                      value: scopeDefaults.effort,
-                      label: `${scopeDefaults.effort} (${t("Unavailable")})`,
-                    },
-                  ]
-                : []),
-              ...effort.options.map((option) => ({ ...option, label: t(option.label) })),
-            ]}
-            onChange={(next) =>
-              onSessionDefaultsChange({ ...scopeDefaults, effort: next || undefined })
-            }
-          />
+          <div className="provider-effort">
+            <div className="provider-effort-segments">
+              <SegmentedControl
+                label={t("{p0} default effort", { p0: HARNESS_TITLE[harness] })}
+                value={scopeDefaults.effort && validEffort ? scopeDefaults.effort : ""}
+                compact
+                options={effortOptions.map((option) => ({
+                  ...option,
+                  tooltip: option.label,
+                  label:
+                    option.value === ""
+                      ? t("Auto")
+                      : option.value === "xhigh"
+                        ? t("X-high")
+                        : option.label,
+                }))}
+                onValueChange={(next) =>
+                  onSessionDefaultsChange({ ...scopeDefaults, effort: next || undefined })
+                }
+              />
+            </div>
+            <Text size="caption" tone="muted" className="provider-effort-selected">
+              {effortOptions.find((option) => option.value === (scopeDefaults.effort ?? ""))?.label}
+            </Text>
+          </div>
         </Row>
       ) : null}
       <Row
@@ -258,6 +292,7 @@ export function ProviderDefaultsForm({
                 inheritedRuntimeMode ? t(RUNTIME_MODE_LABEL[inheritedRuntimeMode]) : undefined,
                 validInheritedRuntimeMode,
               ),
+              icon: <WandSparkles className="icon-sm" />,
             },
             ...(scopeDefaults.runtimeMode &&
             runtimeModeUnavailableReason(harness, scopeDefaults.runtimeMode)
@@ -269,7 +304,19 @@ export function ProviderDefaultsForm({
                 ]
               : []),
             ...RUNTIME_MODES.filter((mode) => !runtimeModeUnavailableReason(harness, mode)).map(
-              (mode) => ({ value: mode, label: t(RUNTIME_MODE_LABEL[mode]) }),
+              (mode) => {
+                const Icon = RUNTIME_MODE_ICONS[mode];
+                return {
+                  value: mode,
+                  label: t(RUNTIME_MODE_LABEL[mode]),
+                  icon: (
+                    <Icon
+                      className="icon-sm"
+                      tone={mode === "full-access" ? "warning" : "secondary"}
+                    />
+                  ),
+                };
+              },
             ),
           ]}
           onChange={(next) =>

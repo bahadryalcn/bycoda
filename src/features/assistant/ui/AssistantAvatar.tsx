@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { AssistantProfilePatch } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { optionalTextAttributes, Text, type TextRoles } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import {
   ASSISTANT_AVATAR_PRESETS,
@@ -61,16 +62,21 @@ export function AssistantAvatarMark({
   value,
   name,
   className,
+  size,
+  tone,
+  weight,
+  leading,
 }: {
   value: string | undefined;
   name: string;
+  /** Placement only (box size, radius, background); type roles are props. */
   className?: string;
-}) {
+} & Pick<TextRoles, "size" | "tone" | "weight" | "leading">) {
   const view = assistantAvatarView(value);
   const [failed, setFailed] = useState("");
   return (
     <span
-      className={className}
+      {...optionalTextAttributes({ size, tone, weight, leading }, className)}
       aria-hidden="true"
       data-initial={Array.from(name)[0]?.toLocaleUpperCase() ?? ""}
       data-avatar={view.kind}
@@ -149,7 +155,7 @@ export function AssistantAvatarPicker({
         onChange={(event) => onChange({ avatar: event.currentTarget.value })}
       />
       <div className={styles.generate}>
-        <span className={styles.generateTitle}>{t("Generate with AI")}</span>
+        <Text leading="inherit">{t("Generate with AI")}</Text>
         <AvatarGenerator
           onGenerated={(avatar) => {
             setDrawn((list) => (list.includes(avatar) ? list : [...list, avatar]));

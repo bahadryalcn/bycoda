@@ -1,0 +1,25 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+.code {
+  font-family: var(--font-mono);
+}
+
+/* A quiet filled box that sits in a line of text without changing its height. */
+.code[data-variant="chip"] {
+  padding-block: 0.0625rem;
+  padding-inline: var(--space-1);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-muted);
+}
+
+/* The value on its own line, selectable as a whole. */
+.code[data-variant="block"] {
+  display: block;
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-muted);
+  overflow-wrap: anywhere;
+  user-select: text;
+}

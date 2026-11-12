@@ -2,10 +2,23 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useT } from "../i18n";
 import { MiddleTruncate } from "./MiddleTruncate";
 import { OverflowTooltip } from "./Tooltip";
+import {
+  optionalTextAttributes,
+  type TextLeading,
+  type TextSize,
+  type TextTone,
+  type TextRoles,
+} from "./Text";
 
 export type TabLabelProps = {
   children: string;
   className?: string;
+  /** Text roles; unset preserves existing styling. */
+  size?: TextSize;
+  tone?: TextTone;
+  weight?: TextRoles["weight"];
+  /** Line height; unset keeps the surrounding one. Replaces `leading-*` classes. */
+  leading?: TextLeading;
   /** `end` fades only text that is actually clipped; `middle` keeps the end of the name (file extension, suffix). */
   truncate?: "end" | "middle";
   /** Characters kept visible at the end when `truncate="middle"`. */
@@ -28,6 +41,10 @@ export function TabLabel({
   truncate = "end",
   tail,
   title,
+  size,
+  tone,
+  weight,
+  leading,
 }: TabLabelProps) {
   const ref = useRef<HTMLSpanElement>(null);
   const [overflow, setOverflow] = useState(false);
@@ -55,7 +72,10 @@ export function TabLabel({
         mode="text"
         tail={tail}
         title={full ?? false}
-        className={`tab-label ${className}`}
+        {...optionalTextAttributes(
+          { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading },
+          `tab-label ${className}`,
+        )}
       >
         {children}
       </MiddleTruncate>
@@ -67,7 +87,10 @@ export function TabLabel({
       <span
         ref={ref}
         data-overflow={overflow || undefined}
-        className={`tab-label min-w-0 truncate ${className}`}
+        {...optionalTextAttributes(
+          { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading },
+          `tab-label min-w-0 truncate ${className}`,
+        )}
       >
         {children}
       </span>

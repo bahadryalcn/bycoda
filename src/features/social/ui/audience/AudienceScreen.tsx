@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -283,7 +284,15 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
               ) : null}
 
               {data.loading && !people.length ? (
-                <p className="audience-muted">{t("Loading people…")}</p>
+                <Text
+                  as="p"
+                  size="caption"
+                  tone="muted"
+                  leading="inherit"
+                  className="audience-muted"
+                >
+                  {t("Loading people…")}
+                </Text>
               ) : null}
               {data.error ? (
                 <InlineError retry={{ onRetry: data.reload, label: t("Try again") }}>

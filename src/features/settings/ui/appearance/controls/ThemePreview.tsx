@@ -39,7 +39,10 @@ export function ThemePreview({ appearance }: { appearance: AppearanceSettings })
             src={image}
             alt=""
             style={{
-              opacity: appearance.chatBackgroundSessionOpacity,
+              opacity:
+                appearance.preferences?.chatBackgroundLayer === false
+                  ? 1
+                  : appearance.chatBackgroundSessionOpacity,
               filter: `blur(${appearance.chatBackgroundBlur}px)`,
             }}
           />

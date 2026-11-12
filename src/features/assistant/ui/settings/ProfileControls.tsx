@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState, type ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
@@ -42,7 +43,9 @@ export function ProfileSelect({
   return (
     <div className={workStyles.field}>
       {select}
-      <p className={workStyles.hint}>{t(hint)}</p>
+      <Text as="p" leading="snug" className={workStyles.hint}>
+        {t(hint)}
+      </Text>
     </div>
   );
 }
@@ -88,7 +91,11 @@ export function ProfileNumber({
   onChange: (value: number) => void;
 }) {
   const [raw, setRaw] = useState(String(value ?? ""));
-  const endAdornment: ReactNode = unit ? <span className={styles.unit}>{t(unit)}</span> : undefined;
+  const endAdornment: ReactNode = unit ? (
+    <Text size="micro" tone="secondary" leading="inherit" className={styles.unit}>
+      {t(unit)}
+    </Text>
+  ) : undefined;
   return (
     <ProfileRow label={t(label)}>
       {(hideLabel) => (

@@ -62,7 +62,7 @@ describe("title tab response status", () => {
 
     const doneTab = container.querySelector('[data-title-tab-id="done"]')!;
     expect(doneTab.querySelector('[data-harness-status="done"]')).not.toBeNull();
-    expect(doneTab.querySelector("svg")?.classList.contains("text-success")).toBe(true);
+    expect(doneTab.querySelector("svg")?.getAttribute("data-tone")).toBe("success");
     expect(doneTab.querySelector("button")?.getAttribute("aria-label")).toContain(
       "Response complete",
     );

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { memo, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -38,7 +39,8 @@ export const ResumeTurnRow = memo(function ResumeTurnRow({
         variant="ghost"
         size="sm"
         aria-expanded={expanded}
-        className="max-w-full text-(--ui-text-secondary)"
+        className="max-w-full"
+        textTone="secondary"
         startIcon={<img src={PRODUCT_IDENTITY.smallLogoSrc} alt="" className="icon-sm shrink-0" />}
         endIcon={<Chevron className="icon-sm" aria-hidden />}
         onClick={() => setExpanded((open) => !open)}
@@ -46,9 +48,14 @@ export const ResumeTurnRow = memo(function ResumeTurnRow({
         {summary}
       </Button>
       {expanded ? (
-        <p className="mt-1 ps-7 whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+        <Text
+          as="p"
+          size="caption"
+          tone="secondary"
+          className="mt-1 ps-7 whitespace-pre-wrap break-words"
+        >
           {block.text}
-        </p>
+        </Text>
       ) : null}
     </div>
   );

@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useFormat, useT } from "../../shared/i18n";
@@ -50,7 +51,7 @@ export function SessionDetailTimes({
       : finished + (runningSince !== undefined ? Math.max(0, now - runningSince) : 0);
 
   return (
-    <div className="mt-2 grid gap-0.5 text-ui-caption text-(--ui-text-secondary)">
+    <Text as="div" size="caption" tone="secondary" className="mt-2 grid gap-0.5">
       <p>
         {t("Last activity: {p0}", {
           p0: format.formatDate(session.lastActivityAt ?? session.updatedAt, {
@@ -67,6 +68,6 @@ export function SessionDetailTimes({
           {t("Total work time: {p0}", { p0: format.formatDuration(worked) })}
         </p>
       ) : null}
-    </div>
+    </Text>
   );
 }

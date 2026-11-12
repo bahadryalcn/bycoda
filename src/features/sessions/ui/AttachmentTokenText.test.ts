@@ -90,7 +90,7 @@ describe("AttachmentTokenText", () => {
 
   it("shows the attachment size beside the token without adding it to the text", () => {
     render("see [image1]", [image]);
-    expect(container.querySelector("[data-size]")?.getAttribute("data-size")).toBe("3 B");
+    expect(container.querySelector('[data-attachment-kind] > [data-size="3 B"]')).not.toBeNull();
     expect(container.textContent).toBe("see [image1]");
   });
 

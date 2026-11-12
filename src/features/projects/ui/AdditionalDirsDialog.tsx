@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -100,12 +101,12 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
                   label={
                     <>
                       <span className="flex min-w-0 flex-col">
-                        <span className="truncate text-ui-secondary text-content">
+                        <Text truncate size="secondary" tone="primary">
                           {basename(path)}
-                        </span>
-                        <span className="truncate text-ui-micro text-(--ui-text-muted)">
+                        </Text>
+                        <Text truncate size="micro" tone="muted">
                           {prettyCwd(path)}
-                        </span>
+                        </Text>
                       </span>
                     </>
                   }

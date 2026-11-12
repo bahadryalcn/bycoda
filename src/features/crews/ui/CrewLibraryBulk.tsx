@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -104,7 +105,7 @@ export function CrewLibraryBulkBar({
           noun="profiles"
           suggested={commonCandidate(targets)}
           leading={
-            <div className="flex items-center gap-2 text-ui-body">
+            <Text as="div" size="body" tone="inherit" className="flex items-center gap-2">
               <Checkbox
                 aria-label={t("Select all")}
                 checked={visible.length > 0 && chosen === visible.length}
@@ -117,7 +118,7 @@ export function CrewLibraryBulkBar({
                 }
               />
               <span aria-hidden>{t("Select all")}</span>
-            </div>
+            </Text>
           }
         />
         {assignment.supported ? (

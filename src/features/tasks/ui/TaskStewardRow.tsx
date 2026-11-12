@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
@@ -47,18 +48,30 @@ export function StewardRow({
     >
       <div className="task-ops-row-text">
         <div className="task-ops-title-line">
-          <Bot className="icon-sm shrink-0 text-(--ui-text-secondary)" />
-          <Heading size="item" title={steward.focus || undefined} className="task-ops-title">
+          <Bot className="icon-sm shrink-0" tone="secondary" />
+          <Heading
+            size="section"
+            level={3}
+            leading="inherit"
+            truncate
+            title={steward.focus || undefined}
+          >
             {stewardProjectName(steward)}
           </Heading>
           {!steward.enabled ? <Badge size="xs">{t("Paused")}</Badge> : null}
         </div>
-        <p className="task-ops-caption">
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className="task-ops-caption">
           {t("on ")}
           {steward.machineName}
           {steward.stale ? t(" (offline, last known)") : ""} · {automationScheduleLabel(steward)}
-        </p>
-        <p className="task-ops-caption flex flex-wrap items-center gap-1">
+        </Text>
+        <Text
+          as="p"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className="task-ops-caption flex flex-wrap items-center gap-1"
+        >
           {steward.lastRunStatus ? (
             <>
               {t("Last run: ")}
@@ -79,18 +92,22 @@ export function StewardRow({
             t("Has not run yet")
           )}
           {steward.enabled ? ` · ${nextRunPreview(steward.nextRunAt)}` : ""}
-        </p>
+        </Text>
         {steward.lastRunError && failedOrSkipped ? (
-          <p
+          <Text
+            as="p"
+            size="caption"
+            tone={steward.lastRunStatus === "failed" ? "danger" : "secondary"}
+            leading="inherit"
             className="task-ops-caption"
             data-tone={steward.lastRunStatus === "failed" ? "danger" : undefined}
           >
             {steward.lastRunError}
-          </p>
+          </Text>
         ) : null}
       </div>
       <div className="task-ops-actions">
-        {pending ? <Spinner size="xs" className="mx-1.5 text-(--ui-text-secondary)" /> : null}
+        {pending ? <Spinner size="xs" tone="secondary" className="mx-1.5" /> : null}
         <Switch
           aria-label={t("Enabled")}
           checked={steward.enabled}

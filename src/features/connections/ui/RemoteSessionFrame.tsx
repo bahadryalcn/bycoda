@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -20,7 +21,7 @@ export function MissingRemoteMachine({
           : "flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
       }
     >
-      <p className="text-ui-secondary text-(--ui-text-muted)">
+      <Text as="p" size="secondary" tone="muted">
         {!project
           ? t(
               "This project’s machine details are missing. Add the project again from the project rail.",
@@ -28,7 +29,7 @@ export function MissingRemoteMachine({
           : loaded
             ? t("The machine for this project isn’t connected on this computer.")
             : t("Connecting to the machine…")}
-      </p>
+      </Text>
       {project && loaded ? (
         <Button
           type="button"

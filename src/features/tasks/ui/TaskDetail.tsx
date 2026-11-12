@@ -1,4 +1,8 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
+import { Code } from "../../../shared/ui/Code";
 import { Heading } from "../../../shared/ui/Heading";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -242,9 +246,9 @@ export function TaskDetail({
           <TaskOwnerNotices task={task} />
           <TaskOutcomeSummary task={task} />
           {task.deliveryNote ? (
-            <p role="status" className="break-words text-ui-caption text-(--ui-tone-warning-fg)">
+            <Text as="p" size="caption" tone="warning" role="status" className="break-words">
               {task.deliveryNote}
-            </p>
+            </Text>
           ) : null}
           {taskWorkspaceState(task).needsRenewedApproval ? (
             <Alert tone="warning">
@@ -285,13 +289,18 @@ export function TaskDetail({
             />
           ) : null}
           {goal ? (
-            <p className="flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
+            <Text
+              as="p"
+              size="caption"
+              tone="secondary"
+              className="flex min-w-0 items-center gap-1"
+            >
               <Sparkles className="icon-xs shrink-0" />
-              <span className="min-w-0 truncate">
+              <Text truncate size="inherit" tone="inherit" className="min-w-0">
                 {t("Part of the goal “")}
                 {goal}”
-              </span>
-            </p>
+              </Text>
+            </Text>
           ) : null}
           <section className="task-detail-section">
             <SectionLabel as="h3">{t("Details")}</SectionLabel>
@@ -352,21 +361,26 @@ export function TaskDetail({
               <DetailRow label={t("Duration")}>{taskTimeLabel(task, now)}</DetailRow>
               {task.verifyCommand ? (
                 <DetailRow label={t("Check command")}>
-                  <code className="font-mono text-ui-micro">{task.verifyCommand}</code>
+                  <Code size="micro">{task.verifyCommand}</Code>
                 </DetailRow>
               ) : null}
             </DescriptionList>
           </section>
           {task.diffStat ? (
-            <pre
+            <OutputBlock
               aria-label={t("Diff stat")}
-              className="max-h-48 overflow-auto rounded bg-(--ui-surface-raised) px-2 py-1.5 font-mono text-ui-micro text-(--ui-text-secondary)"
+              size="micro"
+              tone="secondary"
+              frame="none"
+              scroll
+              wrap={false}
+              className="max-h-48 rounded bg-(--ui-surface-raised) px-2 py-1.5"
             >
               {task.diffStat}
-            </pre>
+            </OutputBlock>
           ) : null}
         </div>
-        <div className="task-detail-footer">
+        <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-detail-footer")}>
           <TaskActions task={task} {...actions} />
         </div>
       </aside>

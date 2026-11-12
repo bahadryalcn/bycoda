@@ -6,15 +6,10 @@
 }
 .pageHeading h2 {
   margin: 0 0 4px;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
 }
 .pageHeading p,
 .description {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 /* One column on the canvas: the supervision status row, then the job sessions. */
@@ -70,12 +65,6 @@
 }
 .groupTitle {
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
 }
 /* The skeleton fills the same slot as the title/meter lines, so the row keeps its height. */
 .skeleton {
@@ -120,8 +109,6 @@
 }
 .caption {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
 }
 .titleLine {
@@ -133,8 +120,6 @@
 }
 .titleLine strong {
   min-inline-size: 0;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
   overflow-wrap: anywhere;
 }
 .model {
@@ -142,14 +127,9 @@
   align-items: center;
   gap: 4px;
   min-inline-size: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-micro);
 }
 .modelName {
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .jobMeter {
   display: flex;
@@ -162,19 +142,9 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .percent {
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  color: var(--ui-text-secondary);
-}
-.percent[data-tone="warning"] {
-  color: var(--ui-tone-warning-fg);
-}
-.percent[data-tone="danger"] {
-  color: var(--ui-tone-danger-fg);
 }
 .jobStatus {
   display: flex;
@@ -189,9 +159,6 @@
 }
 .muted {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-micro);
-  line-height: 16px;
   overflow-wrap: anywhere;
 }
 @container (max-width: 640px) {

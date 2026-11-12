@@ -12,7 +12,6 @@
   gap: 16px;
   min-inline-size: 0;
   overflow-y: auto;
-  scrollbar-gutter: stable;
 }
 
 .policy-toolbar {
@@ -21,8 +20,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  font-size: var(--ui-font-secondary);
-  color: var(--ui-text-muted);
 }
 
 .policy-navigation {
@@ -38,9 +35,6 @@
 
 .policy-context,
 .policy-reader-context {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
-  line-height: 1.6;
   margin: 0;
 }
 
@@ -49,7 +43,6 @@
   min-inline-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   /* Reading canvas: no extra surface, only the structural pane edge. */
   border-inline-start: 1px solid var(--color-stroke);
   padding-inline-start: clamp(1rem, 3cqi, 2rem);
@@ -69,8 +62,6 @@
   margin-inline: 0;
   overflow-wrap: anywhere;
   user-select: text;
-  font-size: var(--ui-font-body);
-  line-height: 1.6;
 }
 @container (max-width: 620px) {
   .policies-settings {

@@ -4,13 +4,13 @@ import {
   modelEffortSetting,
   type AgentModel,
 } from "../../src/features/sessions/model/models";
-import { providerModelSettings } from "../../src/shared/model/host-contracts/delegation";
-
-/** Reasoning levels from least to most effort, across providers' spellings. */
-const LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+import {
+  EFFORT_LEVELS,
+  providerModelSettings,
+} from "../../src/shared/model/host-contracts/delegation";
 
 function rank(value: string): number {
-  const index = LEVELS.indexOf(value.toLowerCase());
+  const index = EFFORT_LEVELS.indexOf(value.toLowerCase());
   return index < 0 ? -1 : index;
 }
 
@@ -22,15 +22,18 @@ export function parentEffort(settings: Readonly<Record<string, string>>): string
 }
 
 /**
- * A child's own model defaults, with its reasoning level matched to the parent's:
- * the same level when offered, otherwise the closest one the child offers.
+ * Own model defaults, optionally matching a parent's effort (advisors) or an explicit
+ * effort (subagents). Use the closest offered level when an exact match is unavailable.
  */
 export function childModelSettings(
   model: AgentModel,
-  parentSettings: Readonly<Record<string, string>>,
+  parentSettings: Readonly<Record<string, string>> = {},
+  explicitEffort?: string,
 ): Record<string, string> {
   const settings = providerModelSettings(defaultModelSettings(model));
-  const wanted = parentEffort(parentSettings);
+  if (explicitEffort !== undefined && rank(explicitEffort) < 0)
+    throw new Error("Unknown effort level.");
+  const wanted = explicitEffort ?? parentEffort(parentSettings);
   const effort = modelEffortSetting(model);
   if (!wanted || !effort) return settings;
   const target = rank(wanted);

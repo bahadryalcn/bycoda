@@ -99,6 +99,9 @@ export type NoteComposerCard = NoteCardMeta & {
   body: string;
 };
 
+/** One navigation request; destination is never persisted in note context. */
+export type NoteChatRequest = NoteComposerCard & { targetCwd?: string };
+
 export function noteCardMeta(card: NoteComposerCard): NoteCardMeta {
   return noteContextMeta(card);
 }
@@ -604,12 +607,15 @@ export function noteComposerCard(note: Note): NoteComposerCard {
   };
 }
 
-export function requestAddNoteToChat(note: Note) {
+export function requestAddNoteToChat(note: Note, targetCwd?: string) {
   if (typeof window === "undefined") return;
   if (!note.body.replace(/\r\n?/g, "\n").trim()) return;
   window.dispatchEvent(
-    new CustomEvent<NoteComposerCard>(ADD_NOTE_TO_CHAT_EVENT, {
-      detail: noteComposerCard(note),
+    new CustomEvent<NoteChatRequest>(ADD_NOTE_TO_CHAT_EVENT, {
+      detail: {
+        ...noteComposerCard(note),
+        ...(targetCwd && looksLikeProject(targetCwd) ? { targetCwd } : {}),
+      },
     }),
   );
 }

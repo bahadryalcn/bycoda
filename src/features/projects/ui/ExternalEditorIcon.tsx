@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text, textAttributes } from "../../../shared/ui/Text";
 import cursorIcon from "../../../assets/providers/cursor.svg";
 import { CodeBlock } from "../../../shared/ui/icons";
 
@@ -7,7 +9,7 @@ export function ExternalEditorIcon({ id }: { id: string }) {
     return (
       <svg
         viewBox="0 0 24 24"
-        className={`size-4 ${id === "vscode" ? "text-(--ui-tone-info-fg)" : "text-(--ui-tone-success-fg)"}`}
+        {...textAttributes({ tone: id === "vscode" ? "info" : "success" }, "size-4")}
         fill="currentColor"
         aria-hidden="true"
       >
@@ -17,12 +19,18 @@ export function ExternalEditorIcon({ id }: { id: string }) {
   const jetbrains = { intellij: "IJ", webstorm: "WS", pycharm: "PC" };
   if (id in jetbrains)
     return (
-      <span
+      <Text
         aria-hidden="true"
-        className="grid size-4 place-items-center rounded-sm border border-(--ui-pane-border) bg-(--ui-fill-subtle) text-ui-micro font-medium text-content"
+        size="micro"
+        tone="primary"
+        weight="medium"
+        {...surfaceAttributes(
+          { radius: "sm", frame: "pane", edge: "all" },
+          "grid size-4 place-items-center border-(--ui-pane-border) bg-(--ui-fill-subtle)",
+        )}
       >
         {jetbrains[id as keyof typeof jetbrains]}
-      </span>
+      </Text>
     );
-  return <CodeBlock className="icon-md text-(--ui-tone-accent-fg)" />;
+  return <CodeBlock tone="accent" className="icon-md" />;
 }

@@ -334,3 +334,15 @@ describe("canonical tool contracts", () => {
     expect(resize.invalidates).toEqual(["browser.annotation"]);
   });
 });
+
+it("reports reply execution, cancellation and idempotency", () => {
+  const entries = createManagedToolCatalog("conversation", [
+    tool("agents.reply", false, { requestId: text, runId: text, message: text }),
+    tool("agents.cancel", false),
+  ]);
+  expect(entries.find((entry) => entry.action === "agents.reply")).toMatchObject({
+    effects: ["execution", "local-state"],
+    cancellation: ["conversation:agents.cancel"],
+    retry: { mode: "same-request" },
+  });
+});

@@ -1,3 +1,5 @@
+import { Code } from "../../../../shared/ui/Code";
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Surface } from "../../../../shared/ui/Surface";
@@ -26,16 +28,42 @@ export function PlanSteps({ plan, results, approved, busy, onApprove, onRun }: P
           return (
             <li key={step.id} className="command-step">
               <div className="command-step-head">
-                <span className="command-step-summary">{step.summary}</span>
-                <span className="command-step-status">
+                <Text
+                  size="secondary"
+                  tone="primary"
+                  leading="inherit"
+                  className="command-step-summary"
+                >
+                  {step.summary}
+                </Text>
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className="command-step-status"
+                >
                   {stepStatusLabel(step, result, isApproved)}
-                </span>
+                </Text>
               </div>
               {result?.message ? (
-                <span className="command-step-reason">{result.message}</span>
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className="command-step-reason"
+                >
+                  {result.message}
+                </Text>
               ) : null}
               {!result && step.reason ? (
-                <span className="command-step-reason">{step.reason}</span>
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className="command-step-reason"
+                >
+                  {step.reason}
+                </Text>
               ) : null}
               {pending.includes(step.id) ? (
                 <Button variant="secondary" size="sm" onClick={() => onApprove([step.id])}>
@@ -43,7 +71,7 @@ export function PlanSteps({ plan, results, approved, busy, onApprove, onRun }: P
                 </Button>
               ) : null}
               <TechnicalDetails>
-                <code>{step.action}</code>
+                <Code>{step.action}</Code>
               </TechnicalDetails>
             </li>
           );

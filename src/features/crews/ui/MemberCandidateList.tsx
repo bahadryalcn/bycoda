@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Surface } from "../../../shared/ui/Surface";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -82,13 +83,21 @@ export function MemberCandidateList({
             return (
               <li key={c.id} className="flex min-w-0 flex-col gap-2 px-3 py-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="min-w-0 flex-1 text-ui-body font-medium" title={name}>
-                    <span className="block truncate">{candidateLabel(catalog, c)}</span>
-                    <span className="block truncate text-ui-caption font-normal text-(--ui-text-secondary)">
+                  <Text
+                    size="body"
+                    tone="inherit"
+                    weight="medium"
+                    className="min-w-0 flex-1"
+                    title={name}
+                  >
+                    <Text size="inherit" tone="inherit" truncate className="block">
+                      {candidateLabel(catalog, c)}
+                    </Text>
+                    <Text weight="regular" truncate className="block">
                       {c.harness}
-                    </span>
-                  </span>
-                  <span className="text-ui-caption text-(--ui-text-secondary)">{t("Cost")}</span>
+                    </Text>
+                  </Text>
+                  <Text>{t("Cost")}</Text>
                   <Select
                     hideLabel
                     label={t("Cost of {p0}", { p0: name })}
@@ -98,7 +107,7 @@ export function MemberCandidateList({
                       update(c.id, { cost: value ? Number(value) : undefined })
                     }
                   />
-                  <span className="text-ui-caption text-(--ui-text-secondary)">{t("Quality")}</span>
+                  <Text>{t("Quality")}</Text>
                   <Select
                     hideLabel
                     label={t("Quality of {p0}", { p0: name })}
@@ -130,7 +139,12 @@ export function MemberCandidateList({
                           }
                         />
                       ) : (
-                        <div key={setting.id} className="flex items-center gap-2 text-ui-caption">
+                        <Text
+                          key={setting.id}
+                          as="div"
+                          tone="inherit"
+                          className="flex items-center gap-2"
+                        >
                           {setting.label}
                           <Toggle
                             label={setting.label}
@@ -141,7 +155,7 @@ export function MemberCandidateList({
                               })
                             }
                           />
-                        </div>
+                        </Text>
                       ),
                     )}
                   </div>

@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { PlatformIcon, type SocialChannel } from "./PlatformIcon";
 import "./common.css";
@@ -49,12 +50,21 @@ export function SocialAvatar({
           onError={() => setFailedUrl(avatarUrl)}
         />
       ) : (
-        <span className="social-avatar-initials">{avatarInitials(name)}</span>
+        <Text
+          as="span"
+          size="inherit"
+          tone="secondary"
+          weight="medium"
+          leading="none"
+          className="social-avatar-initials"
+        >
+          {avatarInitials(name)}
+        </Text>
       )}
       {platform ? (
-        <span className="social-avatar-platform">
+        <Text size="inherit" tone="primary" leading="inherit" className="social-avatar-platform">
           <PlatformIcon platform={platform} className="social-avatar-platform-glyph" />
-        </span>
+        </Text>
       ) : null}
     </span>
   );

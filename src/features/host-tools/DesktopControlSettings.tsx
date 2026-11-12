@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
+import { Text } from "../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
@@ -402,7 +404,12 @@ export function DesktopControlSettings({
     </>
   );
   const errorLine = error && (
-    <div className={embedded ? styles.embeddedError : undefined}>
+    <div
+      {...surfaceAttributes(
+        { frame: embedded ? "settings" : undefined, edge: "block-start" },
+        embedded ? styles.embeddedError : undefined,
+      )}
+    >
       <InlineError>{error}</InlineError>
     </div>
   );
@@ -439,7 +446,9 @@ export function DesktopControlSettings({
       </AdvancedSettings>
       {!saveRef && (
         <div className={styles.saveArea}>
-          <p>{t("Computer controls save separately from assistant settings.")}</p>
+          <Text as="p" leading="normal">
+            {t("Computer controls save separately from assistant settings.")}
+          </Text>
           <div className={styles.actions}>
             <Button
               type="button"

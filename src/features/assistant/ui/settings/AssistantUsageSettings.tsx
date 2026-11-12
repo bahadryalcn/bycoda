@@ -1,7 +1,9 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { LiveText } from "../../../../shared/ui/LiveText";
+import { Text } from "../../../../shared/ui/Text";
 import { Select } from "../../../../shared/ui/Select";
 import { Row } from "../../../settings/public/settingsControls";
 import styles from "./costUsage.module.css";
@@ -26,11 +28,17 @@ export function AssistantRetentionField({
         description={t("Older messages move to Recently deleted for seven days.")}
         info={
           <InfoPopover label={t("About conversation retention")}>
-            <p className={viewStyles.muted}>
+            <Text
+              as="p"
+              size="micro"
+              tone="secondary"
+              leading="inherit"
+              className={viewStyles.muted}
+            >
               {t(
                 "Summaries and unsent drafts are kept. Choosing Forever does not restore deleted messages.",
               )}
-            </p>
+            </Text>
           </InfoPopover>
         }
       >
@@ -90,46 +98,89 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
     <div className={styles.usage}>
       <ul className={styles.chips} aria-label={t("Today's usage")}>
         {chips.map(([label, value]) => (
-          <li key={label} className={styles.chip}>
-            <span>{label}:</span> <strong>{value}</strong>
-          </li>
+          <Text
+            as="li"
+            key={label}
+            leading="inherit"
+            {...surfaceAttributes({ frame: "pane", edge: "all", radius: "pill" }, styles.chip)}
+          >
+            <span>{label}:</span>{" "}
+            <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
+              {value}
+            </Text>
+          </Text>
         ))}
       </ul>
       <LiveText
+        size="micro"
+        tone="secondary"
+        leading="inherit"
         className={viewStyles.muted}
         text={usage.workerUsageIncomplete ? t("Usage unavailable. No zero usage is assumed.") : ""}
       />
       {cache ? (
         <>
           {!cache.complete && (
-            <p className={`${viewStyles.muted} ${styles.note}`}>
+            <Text
+              as="p"
+              size="micro"
+              tone="secondary"
+              leading="inherit"
+              className={`${viewStyles.muted} ${styles.note}`}
+            >
               {t("Partial cache usage. Missing values are unavailable, not zero.")}
-            </p>
+            </Text>
           )}
           <InfoPopover label={t("About usage")}>
-            <p className={viewStyles.muted}>
+            <Text
+              as="p"
+              size="micro"
+              tone="secondary"
+              leading="inherit"
+              className={viewStyles.muted}
+            >
               {t("{p0} of {p1} worker turns measured", {
                 p0: formatNumber(cache.measuredTurns),
                 p1: formatNumber(cache.totalTurns),
               })}
-            </p>
-            <p className={viewStyles.muted}>
+            </Text>
+            <Text
+              as="p"
+              size="micro"
+              tone="secondary"
+              leading="inherit"
+              className={viewStyles.muted}
+            >
               {t(
                 "Budgets count cache reads at one tenth of a new token. Cache reads re-read earlier context and cost far less than new tokens.",
               )}
-            </p>
+            </Text>
             {cache.cacheHitPercent !== undefined && (
-              <p className={viewStyles.muted}>
+              <Text
+                as="p"
+                size="micro"
+                tone="secondary"
+                leading="inherit"
+                className={viewStyles.muted}
+              >
                 {t(
                   "Average of {p0} provider-reported worker percentages. This is not a billing discount.",
                   { p0: formatNumber(cache.percentageTurns) },
                 )}
-              </p>
+              </Text>
             )}
           </InfoPopover>
         </>
       ) : (
-        <p className={`${viewStyles.muted} ${styles.note}`}>{t("Cache usage unavailable")}</p>
+        <Text
+          as="p"
+          size="micro"
+          tone="secondary"
+          leading="inherit"
+          className={`${viewStyles.muted} ${styles.note}`}
+        >
+          {t("Cache usage unavailable")}
+        </Text>
       )}
     </div>
   );

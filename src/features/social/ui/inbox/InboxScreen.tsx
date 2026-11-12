@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { InlineError } from "../../../../shared/ui/InlineError";
@@ -79,7 +80,13 @@ export function InboxScreen({ client, active, target }: SocialScreenProps) {
       {settingsError ? <InlineError>{settingsError}</InlineError> : null}
       <UnreadableNotice accounts={unreadable} names={names} />
       <InboxFilters value={filter} accounts={accountOptions} onChange={setFilter}>
-        <div className="inbox-refresh">
+        <Text
+          as="div"
+          size="secondary"
+          tone="secondary"
+          leading="inherit"
+          className="inbox-refresh"
+        >
           <span>{t("Auto-refresh")}</span>
           <Switch
             aria-label={t("Auto-refresh")}
@@ -88,7 +95,7 @@ export function InboxScreen({ client, active, target }: SocialScreenProps) {
             disabled={autoRefresh === undefined}
             onCheckedChange={(next) => void toggleAutoRefresh(next).catch(() => undefined)}
           />
-        </div>
+        </Text>
       </InboxFilters>
 
       {list.isError ? <InlineError>{t("Could not load the inbox. Try again.")}</InlineError> : null}

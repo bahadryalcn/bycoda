@@ -6,6 +6,7 @@ export type { TagInputProps } from "./arc/tag-input/tag-input";
 /**
  * Editable token list: type and press Enter to add, Backspace to select then remove, with localized labels and
  * screen-reader announcements. The consumer owns the tag array and validation.
+ * `fieldVariant="compact"` uses the shared compact field height for toolbar metadata.
  * @group fields
  * @use Free-form list of short values (labels, aliases, keywords, rules).
  * @avoid Choosing from a fixed set: Select or SearchableSelect. One value: TextField.

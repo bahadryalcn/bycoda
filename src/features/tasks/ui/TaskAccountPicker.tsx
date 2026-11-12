@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import {
@@ -28,11 +29,11 @@ export function TaskAccountPicker({
   if (!supportsProviderAccounts(harness)) return null;
   if (!local)
     return (
-      <span className="task-account-context text-ui-caption text-(--ui-text-secondary)">
+      <Text size="caption" tone="secondary" className="task-account-context">
         {accountId && accountId !== "default"
           ? t("Account selected on the host")
           : t("Host default account")}
-      </span>
+      </Text>
     );
   const missing =
     accountId !== undefined &&
@@ -40,11 +41,8 @@ export function TaskAccountPicker({
     !providerAccounts(harness).some((account) => account.id === accountId);
   if (!missing) return null;
   return (
-    <span
-      role="status"
-      className="task-account-context text-ui-caption text-(--ui-tone-warning-fg)"
-    >
+    <Text size="caption" tone="warning" role="status" className="task-account-context">
       {t("Unavailable account")}
-    </span>
+    </Text>
   );
 }

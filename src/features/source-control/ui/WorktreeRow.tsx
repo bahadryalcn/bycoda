@@ -1,8 +1,10 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/git";
 import { prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
+import { Heading } from "../../../shared/ui/Heading";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -54,7 +56,9 @@ export function WorktreeRow({
       <div className={`settings-collection-main ${styles.identity}`}>
         <div className={styles.line}>
           <Tooltip label={identityHint} when={identityHint === folderName ? "overflow" : "always"}>
-            <span className={styles.title}>{folderName}</span>
+            <Heading size="item" leading="inherit" truncate className={styles.title}>
+              {folderName}
+            </Heading>
           </Tooltip>
           <Badge size="sm" tone={statusTone}>
             {tree.missing
@@ -100,10 +104,14 @@ export function WorktreeRow({
           )}
         </div>
         <Tooltip label={caption} when="overflow">
-          <span className={styles.caption}>{caption}</span>
+          <Text size="caption" tone="muted" leading="inherit" truncate className={styles.caption}>
+            {caption}
+          </Text>
         </Tooltip>
         <Tooltip label={prettyCwd(tree.path)} when="overflow">
-          <span className={styles.caption}>{prettyCwd(tree.path)}</span>
+          <Text size="caption" tone="muted" leading="inherit" truncate className={styles.caption}>
+            {prettyCwd(tree.path)}
+          </Text>
         </Tooltip>
         {warning && <InlineMessage tone="warning">{warning}</InlineMessage>}
         {revealError && <DetailedInlineError error={revealError} retry={{ onRetry: onReveal }} />}

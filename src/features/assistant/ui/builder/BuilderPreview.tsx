@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useMemo, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
@@ -49,8 +50,10 @@ export function BuilderPreview({
   const nothing = checked.size === 0 && !(avatar && useAvatar);
 
   return (
-    <div className={styles.stage}>
-      <p className={styles.summary}>{proposal.summary}</p>
+    <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.stage}>
+      <Text as="p" size="body" tone="inherit" leading="normal" className={styles.summary}>
+        {proposal.summary}
+      </Text>
       <SectionLabel as="h3">{t("Proposed settings")}</SectionLabel>
       {entries.length > 0 ? (
         <Surface as="ul" variant="card" padding="none" className={styles.fields}>
@@ -66,11 +69,19 @@ export function BuilderPreview({
                       t("Currently: {p0}", { p0: entry.before })
                     )
                   ) : (
-                    <span className={styles.change}>
+                    <Text size="inherit" tone="secondary" className={styles.change}>
                       <span>{entry.before}</span>
                       <span aria-hidden="true">→</span>
-                      <strong>{entry.after}</strong>
-                    </span>
+                      <Text
+                        as="strong"
+                        size="inherit"
+                        tone="inherit"
+                        weight="medium"
+                        leading="inherit"
+                      >
+                        {entry.after}
+                      </Text>
+                    </Text>
                   )
                 }
               />
@@ -89,9 +100,9 @@ export function BuilderPreview({
           ))}
         </Surface>
       ) : (
-        <p className={styles.muted}>
+        <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.muted}>
           {t("The proposal matches your current settings. Nothing to change.")}
-        </p>
+        </Text>
       )}
       <section className={styles.avatarSection} aria-label={t("Avatar")}>
         <SectionLabel as="h3">{t("Avatar (optional)")}</SectionLabel>
@@ -120,11 +131,11 @@ export function BuilderPreview({
       <ModalFooter>
         <ModalActions
           start={
-            <p className={styles.note}>
+            <Text as="p" leading="snug" className={styles.note}>
               {t(
                 "Permissions stay manual: jobs and autonomy, execution access, projects and computer use are not changed here.",
               )}
-            </p>
+            </Text>
           }
         >
           <Button variant="ghost" type="button" onClick={onBack}>
@@ -147,6 +158,6 @@ export function BuilderPreview({
           </Button>
         </ModalActions>
       </ModalFooter>
-    </div>
+    </Text>
   );
 }

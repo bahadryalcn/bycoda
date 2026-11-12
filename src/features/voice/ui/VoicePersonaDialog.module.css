@@ -23,8 +23,5 @@
   align-items: flex-start;
   gap: 8px;
   min-width: 0;
-  color: var(--color-content);
-  font-size: var(--text-ui-body);
-  line-height: var(--text-ui-body--line-height);
   cursor: pointer;
 }

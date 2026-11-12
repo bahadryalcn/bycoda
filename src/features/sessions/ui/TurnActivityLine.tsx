@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { memo, useEffect, useState, type ReactNode } from "react";
 import { useLocale } from "../../../shared/i18n";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -105,17 +106,26 @@ function TurnActivityRow({
 }) {
   useLocale();
   return (
-    <div
+    <Text
       data-turn-activity={phase}
-      className="turn-activity-line flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans text-ui-body text-(--ui-text-secondary)"
+      as="div"
+      size="body"
+      tone="secondary"
+      className="turn-activity-line flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans"
     >
       <TurnActivityIcon phase={phase} />
       {/* One live signal: the label breathes; the icon and the clock stay still. */}
-      <span role="status" className="zen-thinking-pulse min-w-0 truncate">
+      <Text
+        role="status"
+        size="inherit"
+        tone="inherit"
+        truncate
+        className="zen-thinking-pulse min-w-0"
+      >
         {label}
-      </span>
+      </Text>
       {children}
-    </div>
+    </Text>
   );
 }
 
@@ -123,15 +133,16 @@ function TurnActivityRow({
 function TurnActivityClock({ origin }: { origin?: number }) {
   const elapsed = formatElapsed(useElapsedFrom(origin, false));
   return (
-    <span aria-hidden className="shrink-0 text-ui-micro tabular-nums">
+    <Text aria-hidden size="micro" tone="inherit" className="shrink-0 tabular-nums">
       {elapsed}
-    </span>
+    </Text>
   );
 }
 
 function TurnActivityIcon({ phase }: { phase: TurnActivityPhase }) {
   const props = {
-    className: "size-3.5 shrink-0 text-(--ui-text-secondary)",
+    className: "size-3.5 shrink-0",
+    tone: "secondary",
     strokeWidth: 1.75,
   } as const;
   if (phase === "thinking") return <Brain {...props} />;

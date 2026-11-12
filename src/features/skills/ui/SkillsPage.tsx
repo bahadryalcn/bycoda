@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
+import { Code } from "../../../shared/ui/Code";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -759,7 +762,6 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       </Alert>,
     ];
   });
-
   const feedbackBusy = busy
     ? t("Creating…")
     : deleting
@@ -769,7 +771,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         : "";
   const actionFeedback =
     actionError || actionResult || feedbackBusy ? (
-      <div className={styles.feedback}>
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.feedback)}>
         {actionError ? (
           <Alert inline tone="danger" onDismiss={clearFeedback}>
             {actionError}
@@ -785,7 +787,6 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         )}
       </div>
     ) : null;
-
   const filterField = (
     <TextField
       ref={filterInput}
@@ -802,15 +803,18 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       autoComplete="off"
     />
   );
-
   const shownCopy: SkillCopy | null = previewSkill
     ? { skill: previewSkill, machine: previewMachine }
     : null;
   const shownOn = previewMachine?.environmentId ?? "local";
   const showMachines = machines.length > 0 && detailTab === "machines";
-
   return (
-    <div className={styles.page}>
+    <Text
+      as="div"
+      size="inherit"
+      tone="primary"
+      {...surfaceAttributes({ variant: "canvas" }, styles.page)}
+    >
       {showRecommended ? (
         <RecommendedSkills
           cwd={cwd}
@@ -832,7 +836,10 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           onCreate={onCreate}
         />
       ) : null}
-      <section className={styles.library} aria-label={t("Skills")}>
+      <section
+        {...surfaceAttributes({ variant: "workspace-panel" }, styles.library)}
+        aria-label={t("Skills")}
+      >
         <header className={styles.libraryHeader}>
           <div className={styles.headingRow}>
             {/* Embedded in Settings the frame header already names the page: no second title row. */}
@@ -872,14 +879,14 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             ]}
             onChange={setListFilter}
           />
-          <div className={styles.count}>
+          <Text as="div" size="caption" tone="secondary" leading="inherit" className={styles.count}>
             <Button variant="secondary" size="sm" disabled={busy} onClick={() => setCreating(true)}>
               {t("New skill")}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setShowRecommended(true)}>
               {t("Discover skills")}
             </Button>
-          </div>
+          </Text>
         </header>
         <div ref={lockOverscroll} className={styles.list} aria-busy={localLoading}>
           {machineAlerts}
@@ -901,9 +908,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                 resetLabel={t("Clear filters")}
               />
             ) : skills !== null ? (
-              <p className={styles.message}>
+              <Text as="p" size="secondary" leading="relaxed" className={styles.message}>
                 {t("No skills yet. New skill creates a starter SKILL.md.")}
-              </p>
+              </Text>
             ) : null
           ) : null}
           {machines.length && groups.length ? <SkillMachineColumns names={machineNames} /> : null}
@@ -931,7 +938,10 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             </Disclosure>
           ))}
           <Disclosure size="sm" summary={t("Advanced: skill controls and folders")}>
-            <p
+            <Text
+              as="p"
+              size="secondary"
+              leading="relaxed"
               id="setting-skill-folders"
               data-setting-id="skill-folders"
               tabIndex={-1}
@@ -945,17 +955,17 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                   p2: "~/.agents/skills",
                 },
               )}
-            </p>
-            <p className={styles.message}>
+            </Text>
+            <Text as="p" size="secondary" leading="relaxed" className={styles.message}>
               {t(
                 "Changes apply to subsequent turns. Running turns and previously loaded context cannot be erased. Enabling in bycoda does not override provider restrictions.",
               )}
-            </p>
-            <p className={styles.message}>
+            </Text>
+            <Text as="p" size="secondary" leading="relaxed" className={styles.message}>
               {t(
                 "Native skill controls: Codex, Claude, OpenCode, Pi and OMP. Cursor, Grok, FX, Hermes, Antigravity and generic ACP receive current restrictions as instructions; their native skill loading cannot be controlled individually through the connected protocol.",
               )}
-            </p>
+            </Text>
           </Disclosure>
         </div>
       </section>
@@ -997,7 +1007,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                   <X className="icon-sm" aria-hidden="true" />
                 </Button>
               </div>
-              <p className={styles.meta}>
+              <Text as="p" size="caption" tone="secondary" leading="inherit">
                 {previewSkill.scope === "user"
                   ? t("Personal")
                   : previewSkill.scope === "builtin"
@@ -1016,18 +1026,30 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                     </Badge>
                   </>
                 ) : null}
-              </p>
-              <p className={styles.path}>{previewSkill.path}</p>
+              </Text>
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className={styles.path}
+              >
+                {previewSkill.path}
+              </Text>
               {previewSkill.description ? (
-                <p className={styles.description}>{previewSkill.description}</p>
+                <Text as="p" size="secondary" leading="relaxed" className={styles.description}>
+                  {previewSkill.description}
+                </Text>
               ) : null}
               {!canDeleteSkill(previewSkill) ? (
-                <p className={styles.meta}>
+                <Text as="p" size="caption" tone="secondary" leading="inherit">
                   {t("Managed skill: deletion is controlled by the provider, plugin or app.")}
-                </p>
+                </Text>
               ) : null}
               {previewMachine ? (
-                <p className={styles.meta}>{t("Copy this skill to this computer to edit it.")}</p>
+                <Text as="p" size="caption" tone="secondary" leading="inherit">
+                  {t("Copy this skill to this computer to edit it.")}
+                </Text>
               ) : null}
               {machines.length ? (
                 <Tabs value={detailTab} onValueChange={setDetailTab} panels="none">
@@ -1039,7 +1061,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               ) : null}
               {showMachines ? null : (
                 <div className={styles.toolbar}>
-                  <span className={styles.fileLabel}>{machines.length ? null : "SKILL.md"}</span>
+                  <Code size="caption" className={styles.fileLabel}>
+                    {machines.length ? null : "SKILL.md"}
+                  </Code>
                   <Segmented
                     label={t("Markdown view")}
                     value={split ? "split" : editingSource ? "edit" : previewMode}
@@ -1184,7 +1208,13 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                     <MarkdownSource text={draft} />
                   )}
                 </div>
-                <footer className={styles.detailFooter}>
+                <Text
+                  as="footer"
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className={styles.detailFooter}
+                >
                   <span>
                     {previewError
                       ? t("Could not read skill")
@@ -1201,7 +1231,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                   <span>
                     {editingSource || (split && editable) ? t("Ctrl/Cmd+S to save") : t("Markdown")}
                   </span>
-                </footer>
+                </Text>
               </>
             )}
           </aside>
@@ -1280,6 +1310,6 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           ]}
         />
       ) : null}
-    </div>
+    </Text>
   );
 }

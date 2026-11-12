@@ -11,18 +11,12 @@
   gap: 6px;
   padding-inline-start: 8px;
   min-inline-size: 0;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 .path {
   min-inline-size: 0;
   overflow: hidden;
-  font-size: var(--ui-font-secondary);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .empty {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }

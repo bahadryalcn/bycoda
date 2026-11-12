@@ -1,13 +1,24 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { StatusDot } from "../../../shared/ui/StatusDot";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Badge } from "../../../shared/ui/Badge";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Button } from "../../../shared/ui/Button";
-import { ArrowDownCircle } from "../../../shared/ui/icons";
+import { Check, Bot } from "../../../shared/ui/icons";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { Toggle } from "../../settings/ui/settingsControls";
-import type { ProviderAuthState } from "./providerStatus";
+import type { ProviderAuthState, ProviderAuthTone } from "./providerStatus";
+
+/** Ink of the auth line: a warning for a sign-in or quota problem, danger when exhausted. */
+function authMetaTone(tone: ProviderAuthTone | undefined) {
+  if (tone === "exhausted") return "danger";
+  if (tone === "signedOut" || tone === "low") return "warning";
+  return "secondary";
+}
 
 /** Everything the list needs to draw one provider, resolved by the page. */
 export type ProviderListEntry = {
@@ -22,18 +33,14 @@ export type ProviderListEntry = {
   version?: string;
   updateAvailable: boolean;
   auth: ProviderAuthState | null;
+  accountSummary?: string;
 };
 
 /** The one-line summary under a provider's name: version, sign-in and picker state. */
 export function providerMetaLine(entry: ProviderListEntry, probed: boolean): string {
   if (!probed) return t("Checking CLI…");
   if (!entry.available) return entry.harness === "acp" ? t("Add provider") : t("Not installed");
-  const parts = [
-    entry.version,
-    entry.auth?.label,
-    entry.pickerLocked ? t("Hidden globally") : !entry.inPicker ? t("Hidden") : undefined,
-  ].filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? parts.join(" · ") : t("CLI detected");
+  return entry.accountSummary ?? entry.auth?.label ?? "";
 }
 
 function ProviderListItem({
@@ -77,37 +84,70 @@ function ProviderListItem({
           .join(", ")}
         onClick={() => onSelect(harness)}
       >
-        <HarnessIcon harness={harness} className="icon-md shrink-0" />
+        {harness === "acp" ? (
+          <Bot className="icon-md shrink-0" aria-hidden />
+        ) : (
+          <HarnessIcon harness={harness} className="icon-md shrink-0" />
+        )}
         <span className="provider-cli-option-copy">
-          <span className="provider-cli-option-name">
-            <span className="truncate">{title}</span>
+          <Text
+            as="span"
+            size="secondary"
+            tone="inherit"
+            leading="snug"
+            className="provider-cli-option-name"
+          >
+            <Text size="inherit" tone="inherit" truncate>
+              {title}
+            </Text>
             {entry.isDefault ? (
-              <Badge size="sm" className="shrink-0">
-                {t("Default")}
-              </Badge>
+              <Tooltip label={t("New conversations start with this provider")}>
+                <Badge size="xs" tone="accent" className="shrink-0">
+                  <Check className="icon-xs" aria-hidden />
+                  {t("Default")}
+                </Badge>
+              </Tooltip>
             ) : null}
-          </span>
-          <span className="provider-cli-option-meta" data-tone={entry.auth?.tone}>
-            {meta}
-          </span>
+          </Text>
+          {meta ? (
+            <Text
+              as="span"
+              size="caption"
+              tone={authMetaTone(entry.auth?.tone)}
+              leading="snug"
+              truncate
+              className="provider-cli-option-meta"
+            >
+              {meta}
+            </Text>
+          ) : null}
         </span>
-        {entry.updateAvailable ? (
-          <ArrowDownCircle
-            className="icon-sm shrink-0 text-accent"
-            aria-hidden
-            strokeWidth={1.75}
-          />
+        {entry.auth ? (
+          <Tooltip label={entry.auth.label}>
+            <StatusDot
+              tone={
+                entry.auth.tone === "ready"
+                  ? "success"
+                  : entry.auth.tone === "exhausted"
+                    ? "danger"
+                    : "warning"
+              }
+              label={entry.auth.label}
+            />
+          </Tooltip>
         ) : null}
       </Button>
       {available ? (
-        <span className="provider-cli-item-action">
-          <Toggle
-            label={t("Show {p0} in the model picker", { p0: title })}
-            on={entry.inPicker}
-            onChange={(visible) => onPickerVisible(harness, visible)}
-            disabled={entry.pickerLocked || disabled}
-          />
-        </span>
+        <Tooltip label={t("Show {p0} in the model picker", { p0: title })}>
+          <span className="provider-cli-item-action">
+            <Toggle
+              label={t("Show {p0} in the model picker", { p0: title })}
+              on={entry.inPicker}
+              onChange={(visible) => onPickerVisible(harness, visible)}
+              disabled={entry.pickerLocked || disabled}
+            />
+          </span>
+        </Tooltip>
       ) : probed && harness !== "acp" ? (
         <Button
           size="sm"
@@ -174,6 +214,7 @@ export function ProviderList({
           variant="row"
           size="sm"
           className="provider-cli-more"
+          tone="secondary"
           summary={t("Available to install")}
           count={missing.length}
           open={open}
@@ -182,7 +223,11 @@ export function ProviderList({
           <div className="provider-cli-missing">{missing.map(item)}</div>
         </Disclosure>
       ) : null}
-      {generic ? <div className="provider-cli-add">{item(generic)}</div> : null}
+      {generic ? (
+        <div {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "provider-cli-add")}>
+          {item(generic)}
+        </div>
+      ) : null}
     </nav>
   );
 }

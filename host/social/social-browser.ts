@@ -1,5 +1,4 @@
 import { SocialBrowserLaunch, launchArgs } from "./social-browser-launch";
-import { hideBrowserFromTaskbar } from "./social-browser-taskbar";
 import type { BrowserVisibility } from "./browser-layers/types";
 import type { ScreencastPort } from "./browser-layers/live-view";
 import { existsSync, watch } from "node:fs";
@@ -53,7 +52,7 @@ export interface BrowserSession {
   profileReleased?(): Promise<void>;
   screencast?: ScreencastPort;
 }
-/** `background` starts a real off-screen window without a taskbar button: headless is easier for X to flag. */
+/** Hidden background execution uses Chrome's current headless engine without a desktop window. */
 export type BrowserLauncher = (
   profile: string,
   background: boolean,
@@ -271,21 +270,11 @@ export function systemPlainLauncher(executable = findBrowser()): PlainBrowserLau
   };
 }
 
-/** Best effort: the off-screen window stays usable when its taskbar button cannot be removed. */
-function hideFromTaskbar(cdp: Cdp): void {
-  if (process.platform !== "win32") return;
-  void cdp
-    .send<{ processInfo: { type: string; id: number }[] }>("SystemInfo.getProcessInfo")
-    .then(({ processInfo }) =>
-      hideBrowserFromTaskbar(processInfo.find((item) => item.type === "browser")?.id),
-    )
-    .catch(() => undefined);
-}
-
 /** Launches system Chrome/Edge on a dedicated profile owned by this host. */
 export function systemBrowserLauncher(executable = findBrowser()): BrowserLauncher | undefined {
   if (!executable) return undefined;
   return async (profile, background, visibility = "hidden") => {
+    const hidden = background && visibility === "hidden";
     const original = await SocialBrowserLaunch.reserve(profile, { inUse: profileInUse });
     const portFile = join(original.profile, "DevToolsActivePort");
     let cdp: Cdp | undefined;
@@ -352,6 +341,13 @@ export function systemBrowserLauncher(executable = findBrowser()): BrowserLaunch
         connected.send<T>(method, params, sessionId);
       await send("Page.enable");
       await send("Network.enable");
+      if (hidden)
+        await send("Emulation.setDeviceMetricsOverride", {
+          width: 1100,
+          height: 860,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
       // Closing the window may leave the browser running in the background, so
       // the page target going away also counts as closed.
       const closed = new Promise<void>((resolve) => {
@@ -366,7 +362,6 @@ export function systemBrowserLauncher(executable = findBrowser()): BrowserLaunch
       });
       await connected.send("Target.setDiscoverTargets", { discover: true });
       original.markEstablished();
-      if (background && visibility === "hidden") hideFromTaskbar(connected);
       return {
         page: cdpPage(connected, sessionId, send),
         screencast: { sessionId, send, on: (listener) => connected.on(listener) },

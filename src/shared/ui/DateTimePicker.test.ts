@@ -3,7 +3,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as i18n from "../i18n";
-import { DateTimePicker, parseLocalDateTime, toLocalDateTime } from "./DateTimePicker";
+import { parseLocalDateTime, toLocalDateTime } from "./DateTimePicker";
+import { DateTimePanel as DateTimePicker } from "./date-time/DateTimePanel";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -72,9 +73,9 @@ it("navigates the calendar by keyboard with one tab stop, month clamping and min
   key("ArrowUp");
   expect(document.activeElement).toBe(day("2028-02-23"));
   key("Home");
-  expect(document.activeElement).toBe(day("2028-02-21"));
+  expect(document.activeElement).toBe(day("2028-02-20"));
   key("End");
-  expect(document.activeElement).toBe(day("2028-02-27"));
+  expect(document.activeElement).toBe(day("2028-02-26"));
   key("PageUp");
   expect(document.activeElement).toBe(day("2028-01-30"));
   key("ArrowLeft");
@@ -228,7 +229,7 @@ it("marks today, the chosen day and disabled days with attributes that do not de
 it("shows the danger frame for a malformed time only after the field is left", () => {
   const onChange = vi.fn();
   act(() => root.render(createElement(DateTimePicker, { value: "2028-02-20T1", onChange })));
-  const time = container.querySelector<HTMLInputElement>('input[placeholder="HH:mm"]')!;
+  const time = container.querySelector<HTMLInputElement>('input[placeholder$="14:30"]')!;
   expect(time.getAttribute("aria-invalid")).toBeNull();
   act(() => {
     time.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));

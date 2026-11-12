@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { t } from "../../../../shared/i18n";
+import { Text } from "../../../../shared/ui/Text";
 import type { VoiceChatTurn } from "./voiceCompanionTypes";
 import styles from "./VoiceCompanionParts.module.css";
 
@@ -15,10 +16,10 @@ export function VoiceChatTranscript({ turns }: { turns: readonly VoiceChatTurn[]
     <div ref={list} className={styles.chat} role="list" aria-label={t("Conversation")}>
       {turns.map((turn) => (
         <div className={styles.row} data-role={turn.role} key={turn.id} role="listitem">
-          <div className={styles.bubble}>
+          <Text as="div" size="secondary" tone="inherit" leading="normal" className={styles.bubble}>
             <span className="sr-only">{turn.role === "owner" ? t("You") : t("Reply")}: </span>
             {turn.text}
-          </div>
+          </Text>
         </div>
       ))}
     </div>

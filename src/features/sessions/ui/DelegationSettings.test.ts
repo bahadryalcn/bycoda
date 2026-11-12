@@ -267,3 +267,32 @@ it("advisor: the current model is offered, and an unavailable saved advisor stay
     "Unavailable · Pi · pi:gone",
   );
 });
+
+it("shows the automatic wand in an image-model field and its menu", () => {
+  const imageSetting: ModelSetting = {
+    id: "imageModels",
+    label: "Image models",
+    kind: "select",
+    value: "",
+    options: [{ value: "", label: "Automatic" }],
+  };
+  act(() =>
+    root.render(
+      createElement(DelegationSubagentsControl, {
+        label: "Image models",
+        setting: imageSetting,
+        values: {},
+        disabled: false,
+        appearance: "field",
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  expect(container.querySelector("button .lucide-wand-sparkles")).not.toBeNull();
+  expect(openMenu().querySelector(".lucide-wand-sparkles")).not.toBeNull();
+});
+
+it("keeps explicit Off distinct from Automatic", () => {
+  renderControl({});
+  expect(rowFor(openMenu(), "Off").querySelector(".lucide-wand-sparkles")).toBeNull();
+});

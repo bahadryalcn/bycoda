@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { NoteSaveStatus } from "./NoteSaveStatus";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -5,6 +7,7 @@ import { NoteBodyField } from "./NoteBodyField";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Sash } from "../../../shared/ui/Sash";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -314,13 +317,19 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
   const hasNotes = offered.session.length + offered.project.length > 0;
 
   return (
-    <aside
+    <Text
+      as="aside"
+      size="inherit"
+      tone="primary"
       ref={setPaneRef}
       role="complementary"
       aria-label={t("Session notes")}
       data-notes-panel
       onKeyDown={onKeyDown}
-      className="relative flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--ui-pane-border) bg-transparent text-content"
+      {...surfaceAttributes(
+        { frame: "pane", edge: "left", variant: "transparent" },
+        "relative flex h-full min-h-0 min-w-0 shrink-0 flex-col",
+      )}
     >
       <Sash
         {...sashProps}
@@ -344,12 +353,16 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           }}
           className="min-w-0 flex-1"
         >
-          <File className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-          <span className="min-w-0 flex-1 truncate">{selected?.title ?? t("Notes")}</span>
+          <File className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+            {selected?.title ?? t("Notes")}
+          </Text>
           <ChevronDown
-            className={`icon-xs shrink-0 text-(--ui-text-secondary) transition-transform ${
-              listOpen ? "rotate-180" : ""
-            }`}
+            {...motionAttributes(
+              { transition: "transform", duration: "standard" },
+              `icon-xs shrink-0 ${listOpen ? "rotate-180" : ""}`,
+            )}
+            tone="secondary"
             strokeWidth={1.75}
           />
         </Button>
@@ -402,6 +415,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
               <ContinuousList
                 fill
                 className="session-note-picker-list"
+                gutter="stable"
                 label={t("Switch note")}
                 items={pickerRows}
                 stateKey={`session-notes:${sessionId}:${project}`}
@@ -442,11 +456,13 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
                         selected={row.note.id === selected?.id}
                         className="flex w-full items-center gap-2"
                       >
-                        <span className="min-w-0 flex-1 truncate">{row.note.title}</span>
+                        <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                          {row.note.title}
+                        </Text>
                         {time ? (
-                          <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
+                          <Text size="micro" tone="secondary" className="shrink-0 tabular-nums">
                             {time}
-                          </span>
+                          </Text>
                         ) : null}
                       </Button>
                     </div>
@@ -527,7 +543,12 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           {t("Loading notes…")}
         </LoadingText>
       )}
-      <div className="session-notes-library-link">
+      <div
+        {...surfaceAttributes(
+          { frame: "stroke", edge: "block-start" },
+          "session-notes-library-link",
+        )}
+      >
         <Button
           variant="ghost"
           fullWidth
@@ -538,7 +559,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           {t("Open note library")}
         </Button>
       </div>
-    </aside>
+    </Text>
   );
 }
 

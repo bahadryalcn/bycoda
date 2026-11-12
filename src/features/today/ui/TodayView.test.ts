@@ -24,7 +24,13 @@ vi.mock("../../activity", async (importOriginal) => ({
     scope: "machines",
     setScope: () => {},
     canChooseScope: false,
-    summary: { today: 42, week: 90, month: 120, year: 500, last7Days: [] },
+    summary: {
+      today: 42,
+      week: 90,
+      month: 120,
+      year: 500,
+      last7Days: [{ date: "2026-11-12", minutes: 207 }],
+    },
     failed: false,
     machines: [],
     devices: [],
@@ -38,4 +44,7 @@ it("keeps active time and its scope note when there is no agent activity", () =>
   expect(markup).toContain("Active time");
   expect(markup).toContain("42");
   expect(markup).toContain("This machine only");
+  expect(markup).toContain("Active time, last 7 days");
+  expect(markup).toContain("3h 27m");
+  expect(markup).not.toContain("Activity on this computer");
 });

@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useCallback, useEffect, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -105,14 +106,16 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
         </DescriptionItem>
       </DescriptionList>
       {stats.failed > 0 ? (
-        <p className="audience-caption">
+        <Text as="p" tone="muted" leading="inherit">
           {t("{p0} could not be sent.", { p0: formatNumber(stats.failed) })}
-        </p>
+        </Text>
       ) : null}
 
       {error ? <InlineError>{error}</InlineError> : null}
       {sequences === undefined && !error ? (
-        <p className="audience-muted">{t("Loading sequences…")}</p>
+        <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
+          {t("Loading sequences…")}
+        </Text>
       ) : null}
       {sequences && !sequences.length ? (
         <EmptyHint

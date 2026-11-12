@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { useLocale, useT } from "../../shared/i18n";
 import { useEffect, useRef, type KeyboardEvent } from "react";
@@ -87,10 +88,10 @@ export function SettingsNav({ section, onSelect, onClose }: Props) {
         className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-none px-2 py-3"
       >
         {groups.map((group) => (
-          <div key={group.id} className="flex flex-col gap-px">
-            <div className="px-2 pb-1 text-ui-caption font-medium text-(--ui-text-secondary) @max-[140px]/rail:hidden">
+          <div key={group.id} className="flex flex-col gap-0">
+            <Text as="div" weight="medium" className="px-2 pb-1 @max-[140px]/rail:hidden">
               {group.label}
-            </div>
+            </Text>
             {group.sections.map((item) => (
               <NavRow
                 key={item.id}
@@ -124,7 +125,7 @@ export function SettingsNav({ section, onSelect, onClose }: Props) {
           </div>
         ))}
       </div>
-      <div className="flex shrink-0 flex-col gap-px p-2">
+      <div className="flex shrink-0 flex-col gap-0 p-2">
         <NavRow label={t("Back")} icon={ArrowLeft} onClick={onClose} />
         <AccountRailRow active={section === "account"} onSelect={() => onSelect("account")} />
       </div>
@@ -169,12 +170,20 @@ function NavRow({
     >
       <Icon
         aria-hidden="true"
-        className={`icon-sm shrink-0 ${active ? "" : "text-(--ui-text-secondary)"}`}
+        className="icon-sm shrink-0"
+        tone={active ? "inherit" : "secondary"}
         strokeWidth={1.75}
       />
-      <span className="min-w-0 flex-1 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden">
+      <Text
+        size="body"
+        tone="inherit"
+        weight="medium"
+        leading="tight"
+        truncate
+        className="min-w-0 flex-1 @max-[140px]/rail:hidden"
+      >
         {label}
-      </span>
+      </Text>
     </Button>
   );
 }

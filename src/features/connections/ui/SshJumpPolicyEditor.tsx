@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { t } from "../../../shared/i18n";
@@ -38,9 +39,9 @@ export function SshJumpPolicyEditor({
   };
   return (
     <section aria-label={t("Per-hop SSH policy")} className="flex min-w-0 flex-col gap-2">
-      <p className="text-ui-caption text-(--ui-text-muted)">
+      <Text as="p" tone="muted">
         {t("Strict host-key verification is always enabled for every hop.")}
-      </p>
+      </Text>
       {value.map((hop, index) => (
         <FieldGroup
           key={ids[index]}
@@ -111,43 +112,46 @@ export function SshJumpPolicyEditor({
           </div>
           <Disclosure
             size="sm"
-            className="text-ui-caption text-(--ui-text-muted)"
+            textSize="caption"
+            tone="muted"
             summary={t("Hop identity and trust references")}
           >
-            <div className="flex min-w-0 flex-col gap-2">
-              <SshIdentityField
-                label={`${t("Jump host")} ${index + 1}: ${t("Choose SSH key")}`}
-                pathLabel={`${t("Jump host")} ${index + 1}: ${t("Identity file")}`}
-                value={hop.identityFile}
-                disabled={disabled}
-                onChange={(value) => update(index, "identityFile", value)}
-              />
-              {(
-                [
-                  ["certificateFile", "Certificate file"],
-                  ["knownHostsFile", "Known hosts file"],
-                ] as const
-              ).map(([field, label]) => (
-                <TextField
-                  key={field}
-                  label={t(label)}
-                  aria-label={`${t("Jump host")} ${index + 1}: ${t(label)}`}
-                  value={hop[field]}
-                  maxLength={4096}
-                  onChange={(event) => update(index, field, event.target.value)}
+            <Text as="div" size="caption" tone="muted">
+              <div className="flex min-w-0 flex-col gap-2">
+                <SshIdentityField
+                  label={`${t("Jump host")} ${index + 1}: ${t("Choose SSH key")}`}
+                  pathLabel={`${t("Jump host")} ${index + 1}: ${t("Identity file")}`}
+                  value={hop.identityFile}
+                  disabled={disabled}
+                  onChange={(value) => update(index, "identityFile", value)}
                 />
-              ))}
-              <p>
-                {t(
-                  "Use absolute paths or ~/ for hop file references. Relative paths are not supported.",
-                )}
-              </p>
-              <p>
-                {t(
-                  "File references only. Empty identity uses the SSH agent or default identity; empty known-hosts reference uses the existing native trust store.",
-                )}
-              </p>
-            </div>
+                {(
+                  [
+                    ["certificateFile", "Certificate file"],
+                    ["knownHostsFile", "Known hosts file"],
+                  ] as const
+                ).map(([field, label]) => (
+                  <TextField
+                    key={field}
+                    label={t(label)}
+                    aria-label={`${t("Jump host")} ${index + 1}: ${t(label)}`}
+                    value={hop[field]}
+                    maxLength={4096}
+                    onChange={(event) => update(index, field, event.target.value)}
+                  />
+                ))}
+                <p>
+                  {t(
+                    "Use absolute paths or ~/ for hop file references. Relative paths are not supported.",
+                  )}
+                </p>
+                <p>
+                  {t(
+                    "File references only. Empty identity uses the SSH agent or default identity; empty known-hosts reference uses the existing native trust store.",
+                  )}
+                </p>
+              </div>
+            </Text>
           </Disclosure>
         </FieldGroup>
       ))}

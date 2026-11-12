@@ -2,6 +2,7 @@ import type { AssistantProfilePatch } from "../../../shared/model/host-contracts
 import { t } from "../../../shared/i18n";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Text } from "../../../shared/ui/Text";
 import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -123,6 +124,7 @@ export function AssistantProfileFields({
           label={t("Allow profanity")}
           description={t("Style only. Never aimed at anyone.")}
           hintClassName={styles.muted}
+          hintSize="micro"
           checked={value.allowProfanity === true}
           onCheckedChange={(allowProfanity) => onChange({ allowProfanity })}
         />
@@ -165,9 +167,15 @@ export function AssistantProfileFields({
           }
         />
         {!rows && (
-          <p className={`${styles.muted} ${roleStyles.wide}`}>
+          <Text
+            as="p"
+            size="micro"
+            tone="secondary"
+            leading="inherit"
+            className={`${styles.muted} ${roleStyles.wide}`}
+          >
             {t("The microphone opens only when you choose to talk.")}
-          </p>
+          </Text>
         )}
       </>
     );
@@ -199,10 +207,10 @@ function ShowTitle({
   const preview = name ? (
     <InfoPopover label={t("Preview")}>
       {" "}
-      <p className={styles.muted}>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
         {value.showTitle ? t("Assistant {p0}", { p0: name }) : name} ·{" "}
         {t("Room · {p0}", { p0: name })} · {t("{p0} wrote", { p0: name })}
-      </p>
+      </Text>
     </InfoPopover>
   ) : undefined;
   const rows = useProfileRows();
@@ -271,7 +279,9 @@ function ProfileLanguage({
         onValueChange={onValueChange}
       />
       <InfoPopover label={t("About language")}>
-        <p className={styles.muted}>{help}</p>
+        <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
+          {help}
+        </Text>
       </InfoPopover>
     </div>
   );

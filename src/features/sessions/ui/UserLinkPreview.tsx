@@ -1,3 +1,7 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { ClampText } from "../../../shared/ui/ClampText";
+import { motionAttributes } from "../../../shared/ui/Motion";
+import { Text, type TextTone } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -90,7 +94,15 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
         className="user-link-preview group mx-0.5"
         onClick={(event) => event.stopPropagation()}
       >
-        <span className="mr-1 inline-flex size-4 items-center justify-center overflow-hidden rounded bg-(--ui-surface) align-[-0.125em] text-ui-micro font-medium uppercase text-(--ui-text-secondary)">
+        <Text
+          as="span"
+          size="micro"
+          weight="medium"
+          {...surfaceAttributes(
+            { radius: "sm", variant: "plain" },
+            "mr-1 inline-flex size-4 items-center justify-center overflow-hidden   align-[-0.125em] uppercase",
+          )}
+        >
           {favicon ? (
             <img
               src={favicon}
@@ -102,8 +114,16 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
           ) : (
             link.host.charAt(0)
           )}
-        </span>
-        <span className="user-link-preview-title font-medium group-hover:underline">{title}</span>
+        </Text>
+        <Text
+          as="span"
+          size="inherit"
+          tone="inherit"
+          weight="medium"
+          className="user-link-preview-title group-hover:underline"
+        >
+          {title}
+        </Text>
       </Link>
     </Tooltip>
   );
@@ -179,7 +199,7 @@ function GithubWorkItemPreview({
     side: "top",
     align: "start",
     width: 360,
-    className: "p-3.5 font-sans text-(--ui-tone-neutral-fg)",
+    className: "p-3.5 font-sans",
     "aria-label": t("Work item preview"),
     onOpenChange: (open) => {
       if (open) load();
@@ -205,24 +225,25 @@ function GithubWorkItemPreview({
           p2: workItem.repo,
           p3: itemTitle ? `: ${itemTitle}` : "",
         })}
-        className={`group mx-px inline-flex max-w-full items-center gap-1 rounded-md border-0 bg-transparent p-0 text-(--ui-text-secondary) no-underline shadow-none transition-[color,transform] duration-[140ms] ease-[var(--motion-ease-out)] hover:text-(--ui-tone-neutral-fg) focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color) active:scale-[0.98] motion-reduce:transition-none pb-px ${
-          compact
-            ? "align-middle text-ui-caption leading-4"
-            : "align-[-0.25em] text-ui-micro leading-4"
-        }`}
+        {...motionAttributes(
+          { transition: "transform", duration: "fast" },
+          `group mx-px inline-flex max-w-full items-center gap-1 rounded-md border-0 bg-transparent p-0 no-underline shadow-none focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color) active:scale-[0.98] pb-px ${
+            compact ? "align-middle" : "align-[-0.25em]"
+          }`,
+        )}
         onClick={(event) => {
           hover.close();
           event.stopPropagation();
         }}
       >
-        <span
-          className={` inline-flex shrink-0 items-center font-medium ${
-            compact ? "h-4.5 gap-0.5 rounded-md px-1.5" : "h-5 gap-1 rounded-md px-1.5"
-          } ${
-            workItem.kind === "pr"
-              ? "bg-(--ui-tone-accent-subtle) text-(--ui-tone-accent-fg)"
-              : "bg-(--ui-tone-success-subtle) text-(--ui-tone-success-fg)"
-          }`}
+        <Text
+          size={compact ? "caption" : "micro"}
+          tone={workItem.kind === "pr" ? "accent" : "success"}
+          weight="medium"
+          {...surfaceAttributes(
+            { radius: "row" },
+            ` inline-flex shrink-0 items-center  ${compact ? "h-4.5 gap-0.5  px-1.5" : "h-5 gap-1  px-1.5"} ${workItem.kind === "pr" ? "bg-(--ui-tone-accent-subtle) " : "bg-(--ui-tone-success-subtle) "}`,
+          )}
         >
           {workItem.kind === "pr" ? (
             <GitPullRequest className={compact ? "icon-xs" : "icon-sm"} aria-hidden="true" />
@@ -230,10 +251,17 @@ function GithubWorkItemPreview({
             <CircleDot className={compact ? "icon-xs" : "icon-sm"} aria-hidden="true" />
           )}
           {compactKind} #{workItem.number}
-        </span>
+        </Text>
       </Link>
       {hover.card(() => (
-        <GithubWorkItemCard parsed={workItem} item={item} details={details} loadState={loadState} />
+        <Text as="div" size="inherit" tone="neutral">
+          <GithubWorkItemCard
+            parsed={workItem}
+            item={item}
+            details={details}
+            loadState={loadState}
+          />
+        </Text>
       ))}
     </>
   );
@@ -260,27 +288,29 @@ function GithubWorkItemCard({
 
   return (
     <div className="min-w-0 text-left">
-      <div className="flex min-w-0 items-center gap-2 text-ui-micro">
-        <status.Icon className={`size-4 shrink-0 ${status.className}`} aria-hidden="true" />
-        <span className="min-w-0 truncate font-medium text-(--ui-text-secondary)">
+      <Text as="div" size="micro" tone="inherit" className="flex min-w-0 items-center gap-2">
+        <status.Icon className="size-4 shrink-0" tone={status.tone} aria-hidden="true" />
+        <Text size="inherit" tone="secondary" weight="medium" truncate className="min-w-0">
           {parsed.repo}
-        </span>
-        <span className="shrink-0 text-(--ui-text-secondary)">·</span>
-        <span className="shrink-0 font-mono tabular-nums text-(--ui-text-secondary)">
+        </Text>
+        <Text size="inherit" tone="secondary" className="shrink-0">
+          ·
+        </Text>
+        <Text size="inherit" tone="secondary" className="shrink-0 font-mono tabular-nums">
           #{parsed.number}
-        </span>
+        </Text>
         <Badge tone="neutral">{status.label}</Badge>
-      </div>
+      </Text>
 
       {item ? (
         <>
-          <Heading size="item" className="mt-2 line-clamp-2">
+          <Heading size="item" lines={2} className="mt-2">
             {item.title}
           </Heading>
           {summary ? (
-            <p className="mt-1.5 line-clamp-3 text-ui-micro leading-[1.45] text-(--ui-text-secondary)">
+            <ClampText as="p" lines={3} expandable={false} size="micro" className="mt-1.5">
               {summary}
-            </p>
+            </ClampText>
           ) : null}
         </>
       ) : loadState === "idle" || loadState === "loading" ? (
@@ -291,19 +321,24 @@ function GithubWorkItemCard({
             {parsed.kind === "pr" ? t("Pull request") : t("Issue")} #{parsed.number}
           </Heading>
           {summary ? (
-            <p className="mt-1.5 line-clamp-3 text-ui-micro leading-[1.45] text-(--ui-text-secondary)">
+            <ClampText as="p" lines={3} expandable={false} size="micro" className="mt-1.5">
               {summary}
-            </p>
+            </ClampText>
           ) : (
-            <p className="mt-1 text-ui-micro leading-relaxed text-(--ui-text-secondary)">
+            <Text as="p" size="micro" tone="secondary" leading="relaxed" className="mt-1">
               {t("Details aren't available here, but the link can still be opened on GitHub.")}
-            </p>
+            </Text>
           )}
         </div>
       )}
 
       {details?.author || updated ? (
-        <div className="mt-2.5 flex min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          className="mt-2.5 flex min-w-0 items-center gap-1.5"
+        >
           {details?.author ? (
             <GithubPerson name={details.author} avatarUrl={details.authorAvatarUrl} />
           ) : null}
@@ -314,16 +349,24 @@ function GithubWorkItemCard({
               {updated}
             </span>
           ) : null}
-        </div>
+        </Text>
       ) : null}
 
       {hasBranches ? (
-        <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-(--ui-tone-neutral-solid)/[0.045] px-2 py-1.5 text-ui-caption text-(--ui-text-secondary)">
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          {...surfaceAttributes(
+            { radius: "row" },
+            "mt-2 flex min-w-0 items-center gap-1.5  bg-(--ui-tone-neutral-solid)/[0.045] px-2 py-1.5",
+          )}
+        >
           <GitCompare className="icon-sm shrink-0" aria-hidden="true" />
-          <span className="min-w-0 truncate font-mono">
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 font-mono">
             {details.baseRefName} ← {details.headRefName}
-          </span>
-        </div>
+          </Text>
+        </Text>
       ) : null}
 
       {labels.length > 0 || assignees.length > 0 ? (
@@ -338,7 +381,7 @@ function GithubWorkItemCard({
               icon: (
                 <span
                   aria-hidden="true"
-                  className="size-1.5 shrink-0 rounded-full"
+                  {...surfaceAttributes({ radius: "pill" }, "size-1.5 shrink-0 ")}
                   style={{ backgroundColor: labelColor(label.color) }}
                 />
               ),
@@ -364,10 +407,15 @@ function GithubWorkItemCard({
         </div>
       ) : null}
 
-      <div className="mt-3 flex items-center gap-1.5 border-t border-(--ui-tone-neutral-border)/[0.07] pt-2 text-ui-caption text-(--ui-text-secondary)">
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
+        className="mt-3 flex items-center gap-1.5 border-t border-(--ui-tone-neutral-border)/[0.07] pt-2"
+      >
         <ExternalLink className="icon-xs" aria-hidden="true" />
         {t("Click the chip to open on GitHub")}
-      </div>
+      </Text>
     </div>
   );
 }
@@ -382,7 +430,9 @@ function GithubPerson({ name, avatarUrl }: { name: string; avatarUrl?: string })
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <GithubAvatar name={name} avatarUrl={avatarUrl} size={16} />
-      <span className="min-w-0 truncate font-medium text-(--ui-text-secondary)">{name}</span>
+      <Text size="inherit" tone="secondary" weight="medium" truncate className="min-w-0">
+        {name}
+      </Text>
     </span>
   );
 }
@@ -400,9 +450,16 @@ function GithubAvatar({
   const [failed, setFailed] = useState(!avatarUrl);
   if (!avatarUrl || failed) {
     return (
-      <span
+      <Text
+        as="span"
+        size="inherit"
+        tone="secondary"
+        weight="medium"
         aria-hidden="true"
-        className="grid shrink-0 place-items-center rounded-full border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-medium text-(--ui-text-secondary)"
+        {...surfaceAttributes(
+          { radius: "pill", frame: "neutral", edge: "all", variant: "raised" },
+          "grid shrink-0 place-items-center   border-(--ui-tone-neutral-border) ",
+        )}
         style={{
           width: size,
           height: size,
@@ -410,7 +467,7 @@ function GithubAvatar({
         }}
       >
         {name.trim().charAt(0).toUpperCase() || "?"}
-      </span>
+      </Text>
     );
   }
   return (
@@ -434,39 +491,39 @@ function workItemStatus(
   kind: GithubWorkItemLink["kind"],
   item: GithubWorkItem | null,
   t: Translate,
-): { Icon: IconComponent; label: string; className: string } {
+): { Icon: IconComponent; label: string; tone: TextTone } {
   if (!item) {
     return {
       Icon: kind === "pr" ? GitPullRequest : CircleDot,
       label: kind === "pr" ? "Pull request" : "Issue",
-      className: "text-(--ui-text-secondary)",
+      tone: "secondary",
     };
   }
   if (item?.draft) {
     return {
       Icon: GitPullRequestDraft,
       label: t("Draft"),
-      className: "text-(--ui-text-secondary)",
+      tone: "secondary",
     };
   }
   if (item?.state === "merged") {
     return {
       Icon: GitMerge,
       label: t("Merged"),
-      className: "text-(--ui-tone-accent-fg)",
+      tone: "accent",
     };
   }
   if (item?.state === "closed") {
     return {
       Icon: kind === "pr" ? GitPullRequestClosed : CircleX,
       label: t("Closed"),
-      className: "text-(--ui-tone-danger-fg)",
+      tone: "danger",
     };
   }
   return {
     Icon: kind === "pr" ? GitPullRequest : CircleDot,
     label: t("Open"),
-    className: "text-(--ui-tone-success-fg)",
+    tone: "success",
   };
 }
 

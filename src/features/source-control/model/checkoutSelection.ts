@@ -134,7 +134,12 @@ export function groupCheckouts(trees: readonly Worktree[], cwd: string): Checkou
 }
 
 export function checkoutTitle(tree: Worktree): string {
-  return tree.branch ?? `${t("Detached")} · ${tree.head.slice(0, 7)}`;
+  return checkoutTitleWith(tree, t);
+}
+
+/** Checkout title using the caller's reactive translator. */
+export function checkoutTitleWith(tree: Worktree, translate: (message: string) => string): string {
+  return tree.branch ?? `${translate("Detached")} · ${tree.head.slice(0, 7)}`;
 }
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");

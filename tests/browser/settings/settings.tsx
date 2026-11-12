@@ -1,3 +1,4 @@
+import { seedProvidersFixture, providersFixtureCommand } from "./settings-providers-fixture";
 import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initAppearancePreferences } from "../../../src/features/settings/model/appearancePreferences";
@@ -113,6 +114,8 @@ const mcpConnections = Array.from({ length: 25 }, (_, index) => ({
 }));
 mockIPC(
   (command, args) => {
+    const providerFixture = providersFixtureCommand(command, args);
+    if (providerFixture !== undefined) return providerFixture;
     if (command.startsWith("canonical_store_")) return canonicalFixture(command, args);
     const activity = activityFixture(command, args);
     if (activity !== undefined) return activity;
@@ -476,6 +479,7 @@ mockIPC(
   { shouldMockEvents: true },
 );
 
+seedProvidersFixture();
 const params = new URLSearchParams(location.search);
 const theme = params.get("theme") === "light" ? "light" : "dark";
 saveThemePreference(theme);

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
@@ -260,10 +261,12 @@ export function TabGroupMenu({
             />
           </Button>
           <div className="min-w-0 flex-1">
-            <p className="text-ui-caption text-(--ui-text-muted)">{t("Project logo")}</p>
-            <p className="truncate text-ui-secondary text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="muted">
+              {t("Project logo")}
+            </Text>
+            <Text as="p" size="secondary" tone="secondary" truncate>
               {logoPath ? t("Shown in tabs and composer") : t("Optional — replaces folder icon")}
-            </p>
+            </Text>
           </div>
           {logoPath ? (
             <Button
@@ -474,7 +477,16 @@ function MenuRow({
       onClick={onPick}
     >
       <Icon className="icon-sm shrink-0" strokeWidth={1.75} />
-      <span className="min-w-0 flex-1 truncate leading-label">{item.label}</span>
+      <Text
+        as="span"
+        size="inherit"
+        tone="inherit"
+        leading="snug"
+        truncate
+        className="min-w-0 flex-1"
+      >
+        {item.label}
+      </Text>
     </SharedMenuRow>
   );
 }

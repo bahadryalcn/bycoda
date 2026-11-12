@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import "./phone-pairing.css";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -167,7 +168,9 @@ export function PhonePairingFlow({
           }))}
         />
       ) : inline ? null : (
-        <p className="text-ui-secondary font-medium text-content">{machineLabel}</p>
+        <Text as="p" size="secondary" tone="primary" weight="medium">
+          {machineLabel}
+        </Text>
       )}
 
       {!fixedEndpoint ? (
@@ -297,7 +300,13 @@ export function PhonePairingFlow({
               className="h-auto w-[min(260px,65vw)]"
             />
           </div>
-          <div className="phone-pairing-instructions">
+          <Text
+            as="div"
+            size="secondary"
+            tone="inherit"
+            leading="normal"
+            className="phone-pairing-instructions"
+          >
             <p>{t("On your phone, open Connections and choose Scan QR code.")}</p>
             <div className="flex items-center justify-center gap-2">
               <Badge size="sm" minWidth="8ch">
@@ -311,7 +320,7 @@ export function PhonePairingFlow({
                   : t("Use the same Tailscale account on this machine and your phone.")}
               </InfoPopover>
             </div>
-          </div>
+          </Text>
           {state.statusError ? (
             <Alert tone="danger">
               {t(
@@ -343,11 +352,17 @@ export function PhonePairingFlow({
 
       {state.stage === "paired" ? (
         <div role="status" className="flex flex-col items-start gap-3">
-          <div className="flex items-center gap-2 text-ui-body font-medium text-content">
-            <CheckCircle className="icon-lg text-(--ui-tone-success-fg)" />
+          <Text
+            as="div"
+            size="body"
+            tone="primary"
+            weight="medium"
+            className="flex items-center gap-2"
+          >
+            <CheckCircle className="icon-lg" tone="success" />
             {t("Your phone is connected")}
-          </div>
-          <p className="text-ui-secondary leading-relaxed text-(--ui-text-muted)">
+          </Text>
+          <Text as="p" size="secondary" tone="muted" leading="relaxed">
             {state.deviceName
               ? t("{p0} can now manage {p1}.", {
                   p0: state.deviceName,
@@ -356,7 +371,7 @@ export function PhonePairingFlow({
               : t("You can now manage {p0} from your phone.", {
                   p0: machineLabel,
                 })}
-          </p>
+          </Text>
           {inline ? (
             <Button
               stableWidth

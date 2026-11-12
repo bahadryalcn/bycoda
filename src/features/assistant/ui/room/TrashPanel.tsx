@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type { AssistantTrash } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t } from "../../../../shared/i18n";
@@ -48,17 +50,23 @@ export function TrashPanel({
   return (
     <Modal title={t("Recently deleted")} onClose={onClose} size="md" fitViewport>
       <div className={styles.stack}>
-        <p className={styles.hint}>
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.hint}>
           {t("Deleted records are kept for seven days. Restoring a job does not restart it.")}
-        </p>
-        {!entries.length && <p className={styles.empty}>{t("Nothing deleted recently")}</p>}
+        </Text>
+        {!entries.length && (
+          <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.empty}>
+            {t("Nothing deleted recently")}
+          </Text>
+        )}
         {entries.length > 0 && (
-          <ul className={styles.list}>
+          <ul {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.list)}>
             {entries.map((entry) => (
               <ActionHost as="li" className={styles.row} key={entry.id}>
                 <div className={styles.text}>
-                  <strong>{entry.title}</strong>
-                  <span className={styles.meta}>
+                  <Text as="strong" size="body" tone="inherit" weight="medium" leading="inherit">
+                    {entry.title}
+                  </Text>
+                  <Text size="caption" tone="muted" leading="inherit" className={styles.meta}>
                     <Badge size="xs">
                       {t(
                         entry.kind === "jobs"
@@ -74,13 +82,13 @@ export function TrashPanel({
                     </Badge>
                     <span>{when(entry.deletedAt)}</span>
                     <span>{t("Kept until {p0}", { p0: when(entry.expiresAt) })}</span>
-                  </span>
+                  </Text>
                   {entry.kind === "jobs" && entry.deletedTaskCount !== undefined && (
-                    <span className={styles.meta}>
+                    <Text size="caption" tone="muted" leading="inherit" className={styles.meta}>
                       {t("Includes {p0} deleted tasks. Restoring keeps them stopped.", {
                         p0: entry.deletedTaskCount,
                       })}
-                    </span>
+                    </Text>
                   )}
                 </div>
                 <Button

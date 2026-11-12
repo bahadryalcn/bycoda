@@ -11,6 +11,7 @@ import { Alert } from "./Alert";
 import { Button } from "./Button";
 import { Spinner } from "./Spinner";
 import styles from "./ContinuousList.module.css";
+import { scrollAreaAttributes, type ScrollAreaProps } from "./ScrollArea";
 
 export type CollectionFooterProps = {
   loading?: boolean;
@@ -87,6 +88,8 @@ export type ContinuousListProps<T> = CollectionFooterProps & {
    */
   stateKey: string;
   estimateSize?: number;
+  /** Reserve scrollbar space without changing the virtualizer's scroll owner. Unset keeps its gutter. */
+  gutter?: ScrollAreaProps["gutter"];
   className?: string;
   /** Fill an already bounded flex pane instead of imposing a settings-list height. */
   fill?: boolean;
@@ -111,6 +114,7 @@ function ContinuousListWindow<T>({
   renderItem,
   stateKey,
   estimateSize = 64,
+  gutter,
   className,
   requiredKey,
   fill,
@@ -153,7 +157,9 @@ function ContinuousListWindow<T>({
   return (
     <div
       ref={ref}
-      className={[styles.scroller, className].filter(Boolean).join(" ")}
+      {...(gutter
+        ? scrollAreaAttributes({ gutter }, [styles.scroller, className].filter(Boolean).join(" "))
+        : { className: [styles.scroller, className].filter(Boolean).join(" ") })}
       data-continuous-list={stateKey}
       data-fill={fill || undefined}
       // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Native scroll viewport must remain keyboard-focusable.

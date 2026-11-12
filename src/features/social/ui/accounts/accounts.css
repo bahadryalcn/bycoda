@@ -67,7 +67,6 @@
   flex: none;
   max-width: none;
   overflow: visible;
-  text-overflow: clip;
 }
 
 .social-account-row-head {
@@ -86,25 +85,15 @@
 
 .social-account-row-name {
   min-width: 0;
-  overflow: hidden;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .social-account-row-mode,
 .social-account-row-caps {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   white-space: nowrap;
 }
 
 .social-account-row-caps {
   padding-block-start: 0.5rem;
-  border-block-start: 1px solid var(--ui-settings-hairline);
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .social-detail-status {
@@ -118,8 +107,6 @@
 .social-detail-name {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
 }
 
 /* Section inside an account detail: a title above content, separated by spacing and a hairline. */
@@ -129,7 +116,6 @@
   gap: 0.75rem;
   min-width: 0;
   padding-block-start: 1rem;
-  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 
 .social-card .social-card {
@@ -163,9 +149,6 @@
 
 .social-card-description,
 .social-muted {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
-  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
@@ -185,7 +168,6 @@
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: var(--ui-font-secondary);
 }
 
 .social-autonomy-row {
@@ -198,12 +180,9 @@
 
 .social-autonomy-row > span {
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-secondary);
 }
 
 .social-capability-empty {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
 }
 
 .social-live-view {

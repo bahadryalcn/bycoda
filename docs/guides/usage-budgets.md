@@ -1,5 +1,10 @@
 # Usage budgets
 
+Custom periods use the shared date/time range field. Select two calendar days or a
+preset, adjust the Start or End hour/minute columns, then Apply. The end instant is
+exclusive. Typing local `YYYY-MM-DDTHH:mm` endpoints remains available; invalid or
+reversed endpoints cannot be applied. Escape or Cancel discards the draft.
+
 **Projects** starts with ranked usage and provider shares. Expand **Show as table**
 for sortable exact values and further drilldown. **Export CSV** downloads the current
 filtered breakdown.

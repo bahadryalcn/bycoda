@@ -14,45 +14,46 @@ import { ProfileNumber } from "./ProfileControls";
 import { useProfileRows } from "./SettingsProfileRow";
 import styles from "./costUsage.module.css";
 import viewStyles from "../AssistantView.module.css";
+import { Text } from "../../../../shared/ui/Text";
 import roleStyles from "../AssistantProfileFields.module.css";
 
 /** The cost and context explanation, shown beside the section title. */
 export function AssistantCostInfo() {
   return (
     <InfoPopover label={t("About cost and context")}>
-      <p className={viewStyles.muted}>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t("Local scheduling limits, not a provider billing cap.")}
-      </p>
-      <p className={viewStyles.muted}>
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
           "Zero disables follow-ups and automatic recovery. Manual conversations always wait for you after their limit.",
         )}
-      </p>
-      <p className={viewStyles.muted}>
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
           "Reservations guide local scheduling. Provider charges are not capped when usage or output limits are unavailable.",
         )}
-      </p>
-      <p className={viewStyles.muted}>
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
           "Claude utility requests include an output token allowance. Codex uses a local text limit because its integration cannot set an output token limit. These are not total billing caps.",
         )}
-      </p>
-      <p className={viewStyles.muted}>
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
           "These limits estimate retained text. Summaries, daily renewal, review reservations and a 1 MB safety limit can shorten it earlier. They do not guarantee the provider's context window or charges.",
         )}
-      </p>
-      <p className={viewStyles.muted}>
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
           "Messages to workers also use the worker's context. Unknown usage is not counted as zero.",
         )}
-      </p>
-      <p className={viewStyles.muted}>
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
           "Worker limits use the first threshold reached: token count or percentage of the provider context window.",
         )}
-      </p>
+      </Text>
     </InfoPopover>
   );
 }

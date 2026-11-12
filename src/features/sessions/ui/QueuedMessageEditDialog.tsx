@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { PromptField } from "../../../shared/ui/PromptField";
 import { Button } from "../../../shared/ui/Button";
@@ -536,9 +537,9 @@ function QueueEditContent({
         {loadingAttachments > 0 ? <p role="status">{t("Loading…")}</p> : null}
 
         {draft.attachments.some((file) => file.missing) ? (
-          <p className="text-ui-micro leading-4 text-(--ui-tone-warning-fg)">
+          <Text as="p" size="micro" tone="warning">
             {t("Missing files are dropped from the message when you save.")}
-          </p>
+          </Text>
         ) : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
 

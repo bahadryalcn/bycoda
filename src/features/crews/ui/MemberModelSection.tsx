@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Heading } from "../../../shared/ui/Heading";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -115,11 +116,11 @@ export function MemberModelSection({
             </Disclosure>
           ) : null}
           {policy && pool.length && eligible < pool.length ? (
-            <p className="text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p">
               {eligible
                 ? t("{p0} of {p1} pass the crew's limits.", { p0: eligible, p1: pool.length })
                 : t("The crew's limits exclude every model here, so this member cannot work.")}
-            </p>
+            </Text>
           ) : null}
         </>
       )}

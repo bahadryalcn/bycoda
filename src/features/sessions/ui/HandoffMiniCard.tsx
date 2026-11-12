@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { ChevronRight, Replace, X } from "../../../shared/ui/icons";
@@ -26,26 +27,37 @@ export function HandoffMiniCard({ card, onDismiss }: Props) {
   return (
     <div className="px-3 pt-2" data-handoff-card>
       <div className="flex min-w-0 items-center gap-2 rounded-(--ui-radius-card) border border-(--ui-card-border) bg-(--ui-card-surface) px-2 py-1">
-        <Replace className="icon-sm shrink-0 text-(--ui-text-secondary)" aria-hidden />
-        <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">{t("Handoff")}</span>
-        <span className="flex min-w-0 items-center gap-1.5 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+        <Replace className="icon-sm shrink-0" tone="secondary" aria-hidden />
+        <Text size="caption" tone="secondary" className="shrink-0">
+          {t("Handoff")}
+        </Text>
+        <Text
+          size="secondary"
+          tone="neutral"
+          weight="medium"
+          className="flex min-w-0 items-center gap-1.5"
+        >
           <HarnessIcon harness={card.from} className="icon-sm shrink-0" />
-          <span className="min-w-0 truncate">{HARNESS_TITLE[card.from]}</span>
-          <ChevronRight className="icon-sm shrink-0 text-(--ui-text-secondary)" aria-hidden />
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {HARNESS_TITLE[card.from]}
+          </Text>
+          <ChevronRight className="icon-sm shrink-0" tone="secondary" aria-hidden />
           <HarnessIcon harness={card.to} className="icon-sm shrink-0" />
-          <span className="min-w-0 truncate">{HARNESS_TITLE[card.to]}</span>
-        </span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {HARNESS_TITLE[card.to]}
+          </Text>
+        </Text>
         {card.request ? (
-          <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
+          <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1">
             {card.request}
-          </span>
+          </Text>
         ) : (
           <span className="flex-1" />
         )}
         {files ? (
-          <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+          <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
             {files}
-          </span>
+          </Text>
         ) : null}
         {onDismiss ? (
           <Button

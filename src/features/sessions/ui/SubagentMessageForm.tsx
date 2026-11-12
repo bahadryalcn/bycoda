@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -23,7 +25,9 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
   const direct = relay.mode === "direct";
   const canSend = !relay.blockedReason && !!relay.draft.trim();
   return (
-    <form
+    <ScrollArea
+      as="form"
+      gutter="stable"
       className={`${styles.composer} flex shrink-0 flex-col gap-2 border-t border-(--ui-pane-border) px-4 py-3`}
       onSubmit={(event) => {
         event.preventDefault();
@@ -48,16 +52,21 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
         }}
       />
       {relay.openError ? (
-        <p className="text-ui-caption text-(--ui-tone-danger-fg)">{relay.openError}</p>
+        <Text as="p" size="caption" tone="danger">
+          {relay.openError}
+        </Text>
       ) : null}
       {relay.blockedReason ? (
-        <p className="text-ui-caption text-(--ui-text-secondary)">{relay.blockedReason}</p>
+        <Text as="p" size="caption" tone="secondary">
+          {relay.blockedReason}
+        </Text>
       ) : null}
-      <p
+      <Text
         role="status"
-        className={`text-ui-caption empty:hidden ${
-          relay.status === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"
-        }`}
+        as="p"
+        size="caption"
+        tone={relay.status === "rejected" ? "danger" : "secondary"}
+        className={` empty:hidden `}
       >
         {relay.status === "accepted"
           ? direct
@@ -66,10 +75,10 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
           : relay.status === "rejected"
             ? t("Request was not accepted. Your message is kept here; try again.")
             : null}
-      </p>
+      </Text>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <InfoPopover className="mr-auto" label={t("How messaging works")}>
-          <p className="text-ui-secondary">
+          <Text as="p" size="secondary" tone="inherit">
             {direct
               ? t(
                   "Sent straight to this agent. While it runs, the message steers it; once it has finished, the message starts a new turn.",
@@ -77,7 +86,7 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
               : t(
                   "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
                 )}
-          </p>
+          </Text>
         </InfoPopover>
         {relay.onOpenConversation ? (
           <Button variant="ghost" onClick={relay.onOpenConversation}>
@@ -88,6 +97,6 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
           {direct ? t("Send") : t("Relay via main agent")}
         </Button>
       </div>
-    </form>
+    </ScrollArea>
   );
 }

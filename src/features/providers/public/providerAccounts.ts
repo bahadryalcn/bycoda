@@ -9,3 +9,6 @@ export {
   subscribeProviderAccounts,
 } from "../model/providerAccounts";
 export type { ProviderAccount, ProviderAccountProvider } from "../model/providerAccounts";
+
+export { PROVIDER_ACCOUNT_COLORS } from "../model/providerAccounts";
+export type { ProviderAccountColor } from "../model/providerAccounts";

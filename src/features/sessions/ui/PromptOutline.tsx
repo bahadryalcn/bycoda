@@ -1,3 +1,5 @@
+import { ClampText } from "../../../shared/ui/ClampText";
+import { Text } from "../../../shared/ui/Text";
 import "./PromptOutline.css";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -332,13 +334,20 @@ export const PromptOutline = memo(function PromptOutline({
           aria-label={t("Prompt preview")}
           className="pointer-events-none flex flex-col gap-1 p-3 font-sans"
         >
-          <p className="truncate text-ui-body font-medium leading-snug text-(--color-content)">
+          <Text as="p" size="body" tone="primary" weight="medium" leading="snug" truncate>
             {preview.title}
-          </p>
+          </Text>
           {preview.reply ? (
-            <p className="line-clamp-2 text-ui-body leading-snug text-(--ui-text-secondary)">
+            <ClampText
+              as="p"
+              lines={2}
+              expandable={false}
+              size="body"
+              tone="secondary"
+              leading="snug"
+            >
               {[preview.reply, preview.detail].filter(Boolean).join(" ")}
-            </p>
+            </ClampText>
           ) : null}
         </Popover>
       ) : null}

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useRef } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -32,11 +33,11 @@ export function ForgotLockPasswordDialog({ onClose }: Props) {
     requireText: { text: PHRASE, label: `${t("Type “")}${PHRASE}${t("” to confirm")}` },
     body: (
       <>
-        <p className="text-ui-caption leading-snug">
+        <Text as="p" size="caption" tone="inherit" leading="snug">
           {t(
             "The password cannot be recovered. Resetting removes it and unlocks all groups. Their projects stay in the groups and nothing is deleted. You can set a new password afterwards and lock groups again.",
           )}
-        </p>
+        </Text>
         <Alert tone="warning">
           {PRODUCT_IDENTITY.displayName}
           {t(

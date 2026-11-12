@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -63,15 +64,15 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
   const [pathQuery, setPathQuery] = useState("");
   if (!recovery.visible)
     return (
-      <p role="status" className="p-3 text-ui-secondary text-(--ui-text-secondary)">
+      <Text role="status" as="p" size="secondary" tone="secondary" className="p-3">
         {t("Unlock project groups to inspect earlier file reports.")}
-      </p>
+      </Text>
     );
   if (!recovery.available)
     return (
-      <p role="status" className="p-3 text-ui-secondary text-(--ui-text-secondary)">
+      <Text role="status" as="p" size="secondary" tone="secondary" className="p-3">
         {t("Earlier file reports are available in the desktop application.")}
-      </p>
+      </Text>
     );
   const details = recovery.details;
   const needle = query.trim().toLocaleLowerCase();
@@ -88,10 +89,10 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
     return (
       <section className="recovery-pane" aria-label={t("Earlier file report details")}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-ui-secondary font-medium">
+          <Text as="p" size="secondary" tone="inherit" weight="medium">
             {details.record.windowLabel ?? t("Earlier window")} · {t("Report")}{" "}
             {details.record.reportVersion}
-          </p>
+          </Text>
           <Button variant="ghost" size="sm" onClick={recovery.closeDetails}>
             {t("Back to reports")}
           </Button>
@@ -113,10 +114,10 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             placeholder={t("Search reported files")}
           />
         </SearchInputGroup>
-        <div role="status" className="recovery-status text-ui-caption text-(--ui-text-secondary)">
+        <Text role="status" as="div" size="caption" tone="secondary" className="recovery-status">
           <span>{t("{p0} reported files", { p0: details.buffers.length })}</span>
           {pathQuery ? <span>{t("{p0} match", { p0: matched.length })}</span> : null}
-        </div>
+        </Text>
         <div className="recovery-body">
           {pathRows.length ? (
             <ContinuousList
@@ -127,29 +128,33 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
               label={t("Reported files")}
               renderItem={({ buffer }) => (
                 <div role="listitem" className="flex flex-wrap items-start gap-2 py-2">
-                  <span className="min-w-0 flex-1 select-text text-ui-secondary [overflow-wrap:anywhere]">
+                  <Text
+                    size="secondary"
+                    tone="inherit"
+                    className="min-w-0 flex-1 select-text [overflow-wrap:anywhere]"
+                  >
                     {buffer.path}
-                  </span>
-                  <span className="text-ui-caption text-(--ui-text-secondary)">
+                  </Text>
+                  <Text size="caption" tone="secondary">
                     {buffer.dirty ? t("Unsaved changes reported") : t("No changes reported")}
-                  </span>
+                  </Text>
                 </div>
               )}
             />
           ) : (
-            <p role="status" className="py-3 text-ui-secondary text-(--ui-text-secondary)">
+            <Text role="status" as="p" size="secondary" tone="secondary" className="py-3">
               {pathQuery
                 ? t("No matching reported files.")
                 : t("This report has no file list. Its state remains unknown.")}
-            </p>
+            </Text>
           )}
         </div>
         <div className="recovery-footer border-t border-stroke">
-          <p className="text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary">
             {t(
               "Check recovery copies or the original window for edited text. Matching file names alone do not settle this report.",
             )}
-          </p>
+          </Text>
           <div className="recovery-actions">
             {onShowCopies && details.buffers.length ? (
               <Button
@@ -202,7 +207,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           {recovery.loaded ? t("Refresh reports") : t("Check reports")}
         </Button>
       </div>
-      <div role="status" className="recovery-status text-ui-caption text-(--ui-text-secondary)">
+      <Text role="status" as="div" size="caption" tone="secondary" className="recovery-status">
         {recovery.loaded ? (
           <>
             <span>
@@ -218,7 +223,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
         ) : (
           <span>{t("Reports are not loaded yet.")}</span>
         )}
-      </div>
+      </Text>
       <div className="recovery-body">
         {rows.length ? (
           <ContinuousList
@@ -234,25 +239,35 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
               return (
                 <div role="listitem" className="flex flex-wrap items-start gap-2 py-2">
                   <div className="min-w-0 basis-48 flex-1">
-                    <p className="break-words text-ui-secondary font-medium">
+                    <Text
+                      as="p"
+                      size="secondary"
+                      tone="inherit"
+                      weight="medium"
+                      className="break-words"
+                    >
                       {row.windowLabel ?? t("Earlier window")} · {t("Report")} {row.reportVersion}
-                    </p>
-                    <p className="text-ui-caption text-(--ui-text-secondary)">
-                      <span className={row.held ? "font-medium text-warning" : ""}>
+                    </Text>
+                    <Text as="p" size="caption" tone="secondary">
+                      <Text
+                        size="inherit"
+                        tone={row.held ? "warning" : "inherit"}
+                        weight={row.held ? "medium" : undefined}
+                      >
                         {row.held
                           ? t("Needs recovery")
                           : row.current
                             ? t("Current report")
                             : t("Earlier report")}
-                      </span>{" "}
+                      </Text>{" "}
                       · {time ?? t("Time unavailable")}
-                    </p>
+                    </Text>
                     {!row.inspectable ? (
-                      <p className="text-ui-caption text-(--ui-text-secondary)">
+                      <Text as="p" size="caption" tone="secondary">
                         {t(
                           "This report cannot be inspected in this version. It remains protected.",
                         )}
-                      </p>
+                      </Text>
                     ) : null}
                     {recovery.readError === key ? (
                       <InlineError>
@@ -325,9 +340,9 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
         )}
       </div>
       <div className="recovery-footer border-t border-stroke">
-        <p className="text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary">
           {t("Inspect earlier file reports without changing files or removing their protection.")}
-        </p>
+        </Text>
         <CollectionFooter
           loading={recovery.loading}
           error={

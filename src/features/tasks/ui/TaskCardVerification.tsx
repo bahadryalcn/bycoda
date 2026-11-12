@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import "./task-board.css";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t, useLocale } from "../../../shared/i18n";
@@ -11,16 +13,14 @@ export function VerificationSummary({ verification }: { verification: TaskVerifi
   if (!command && !review) return null;
   const passed = command && !command.timedOut && command.exitCode === 0;
   return (
-    <div className="mt-1.5 space-y-1 text-ui-micro text-(--ui-text-secondary)">
+    <Text as="div" size="micro" tone="secondary" className="mt-1.5 space-y-1">
       {command ? (
         <Disclosure
           defaultOpen={!passed}
           summary={
             <>
               {t("Check command")}{" "}
-              <span
-                className={passed ? "text-(--ui-tone-success-fg)" : "text-(--ui-tone-danger-fg)"}
-              >
+              <Text size="inherit" tone={passed ? "success" : "danger"}>
                 {passed
                   ? t("passed")
                   : command.timedOut
@@ -28,30 +28,24 @@ export function VerificationSummary({ verification }: { verification: TaskVerifi
                     : command.exitCode === null
                       ? t("could not run")
                       : t("failed (exit code {p0})", { p0: command.exitCode })}
-              </span>
+              </Text>
             </>
           }
         >
-          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-card-border) px-2 py-1 font-mono text-ui-caption text-(--ui-text-secondary)">
+          <OutputBlock frame="card" scroll className="mt-1 max-h-40 break-words">
             {command.output.trim() || t("No output.")}
-          </pre>
+          </OutputBlock>
         </Disclosure>
       ) : null}
       {review ? (
         <p className="break-words">
           {t("Reviewer")}{" "}
-          <span
-            className={
-              review.verdict === "pass"
-                ? "text-(--ui-tone-success-fg)"
-                : "text-(--ui-tone-danger-fg)"
-            }
-          >
+          <Text size="inherit" tone={review.verdict === "pass" ? "success" : "danger"}>
             {review.verdict === "pass" ? t("passed") : t("failed")}
-          </span>
+          </Text>
           {review.note ? ` · ${review.note}` : null}
         </p>
       ) : null}
-    </div>
+    </Text>
   );
 }

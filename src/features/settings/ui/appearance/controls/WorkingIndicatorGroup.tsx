@@ -1,9 +1,11 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { themePalette } from "../../../../../shared/theme/palette";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { ColorPickerPopover } from "../../../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../../../shared/ui/Popover";
+import { Text } from "../../../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../../../shared/ui/WorkingIndicator";
 import {
   WORKING_INDICATOR_DEFAULT,
@@ -69,7 +71,10 @@ export function WorkingIndicatorGroup() {
               aria-label={t("Custom color")}
               onClick={() => setOpen(true)}
             >
-              <span className="state-custom-dot" style={{ background: customColor }} />
+              <span
+                {...surfaceAttributes({ frame: "stroke", edge: "all" }, "state-custom-dot")}
+                style={{ background: customColor }}
+              />
             </Button>
           )}
           {open && (
@@ -118,15 +123,23 @@ export function WorkingIndicatorGroup() {
         />
       </Row>
       <Row stacked label={t("Preview")}>
-        <div
+        <Text
+          as="div"
+          size="inherit"
+          tone="primary"
           aria-hidden="true"
           data-project-row=""
           data-project-working="true"
-          className="relative flex h-(--ui-control-height-compact) w-56 max-w-full items-center gap-2 rounded-md px-2 text-content"
+          {...surfaceAttributes(
+            { radius: "row" },
+            "relative flex h-(--ui-control-height-compact) w-56 max-w-full items-center gap-2 px-2",
+          )}
         >
           <WorkingIndicator size="xs" />
-          <span className="truncate">{t("Project")}</span>
-        </div>
+          <Text as="span" size="inherit" tone="inherit" truncate>
+            {t("Project")}
+          </Text>
+        </Text>
       </Row>
     </Group>
   );

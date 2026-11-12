@@ -1,6 +1,7 @@
 import type { ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -60,11 +61,11 @@ export function UsageRecordedSessions({
       />
       {selectedSession &&
         sessionRows.map((row) => (
-          <p className="usage-muted" key={row.key}>
+          <Text as="p" leading="inherit" className="usage-muted" key={row.key}>
             {row.title} · <UsageProviderIdentity provider={row.provider} /> · {row.timedTurns}/
             {row.turns} {t("turns with duration")} · {row.meteredTurns}/{row.turns}{" "}
             {t("turns with tokens")} · {row.unpricedTurns} {t("unpriced turns")}
-          </p>
+          </Text>
         ))}
       {selectedSession && (
         <ContinuousUsageTable caption={t("Recorded turns")} rows={turnRows} metric="duration" />

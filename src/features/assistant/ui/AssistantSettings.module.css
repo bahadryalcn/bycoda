@@ -10,7 +10,6 @@
 .navigation {
   flex: none;
   padding: 0 20px 8px;
-  border-block-end: 1px solid var(--ui-tone-neutral-border);
   overflow-x: auto;
   overscroll-behavior-inline: contain;
 }
@@ -22,11 +21,8 @@
 .content {
   flex: 1;
   min-block-size: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
   overscroll-behavior: contain;
   padding: 14px 20px 20px;
-  scrollbar-gutter: stable;
   scroll-padding-block: 14px;
   container-type: inline-size;
 }

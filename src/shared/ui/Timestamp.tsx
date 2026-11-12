@@ -3,6 +3,7 @@ import { useLocale, useT } from "../i18n";
 import { formatRelativeTime } from "../i18n/format";
 import { dateTimeFormat } from "../lib/intl";
 import { useToday } from "./arc/lib/use-today";
+import { optionalTextAttributes, type TextRoles, type TextSize, type TextTone } from "./Text";
 
 export type TimestampFormat =
   | "auto"
@@ -28,10 +29,19 @@ export function Timestamp({
   prefix,
   relativeStyle,
   tooltip,
+  size,
+  tone,
+  leading,
   className,
   ...props
 }: Omit<ComponentProps<"time">, "dateTime" | "children"> & {
   value: number;
+  /** Type size from the shared scale; unset keeps the surrounding size. */
+  size?: TextSize;
+  /** Line height role; `inherit` keeps the line height of the row the time sits in. */
+  leading?: TextRoles["leading"];
+  /** Ink; unset keeps the surrounding colour. */
+  tone?: TextTone;
   format?: TimestampFormat;
   /** Visible label before the time ("Created", "Updated"); also leads the title. */
   prefix?: string;
@@ -107,7 +117,10 @@ export function Timestamp({
     <time
       title={showTitle ? (prefix ? `${prefix}: ${full}` : full) : undefined}
       {...props}
-      className={className ? `tabular-nums ${className}` : "tabular-nums"}
+      {...optionalTextAttributes(
+        { size, tone, leading },
+        className ? `tabular-nums ${className}` : "tabular-nums",
+      )}
       dateTime={date.toISOString()}
     >
       {prefix ? `${prefix} ${text}` : text}

@@ -6,12 +6,6 @@
   gap: 0.25rem;
 }
 
-.social-disabled-reason-text {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.3;
-}
-
 .social-empty-hint-actions {
   display: inline-flex;
   flex-wrap: wrap;
@@ -20,8 +14,6 @@
 }
 
 .social-technical-details {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
 }
 
@@ -43,8 +35,6 @@
 
 .social-screen-description {
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 .social-screen-actions {
@@ -73,11 +63,6 @@
 
 .social-capability-mark {
   display: inline-flex;
-  color: var(--ui-text-muted);
-}
-
-.social-capability-row[data-available="true"] .social-capability-mark {
-  color: var(--ui-tone-success-fg);
 }
 
 .social-capability-name {
@@ -86,22 +71,16 @@
 }
 
 .social-capability-reason {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 .social-capability-empty {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
 }
 
 .social-confirm-autonomy {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
 }
 
 .social-confirm-autonomy p,
@@ -125,9 +104,6 @@
   place-items: center;
   inline-size: var(--social-mark-box);
   block-size: var(--social-mark-box);
-  border-radius: var(--radius-control);
-  background: var(--ui-fill-subtle);
-  color: var(--color-content);
 }
 
 .social-platform-mark[data-size="xs"] {
@@ -189,10 +165,7 @@
 .social-avatar-initials {
   display: grid;
   place-items: center;
-  color: var(--ui-text-secondary);
   font-size: calc(var(--social-avatar-box) * 0.38);
-  font-weight: 500;
-  line-height: 1;
 }
 
 .social-avatar-platform {
@@ -208,7 +181,6 @@
   border: 1.5px solid var(--color-background-base);
   border-radius: var(--radius-pill);
   background: var(--ui-surface-raised);
-  color: var(--color-content);
 }
 
 .social-avatar-platform-glyph {

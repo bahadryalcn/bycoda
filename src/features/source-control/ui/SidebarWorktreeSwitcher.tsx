@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -193,7 +194,7 @@ export function SidebarWorktreeSwitcher({
           event.preventDefault();
           openPicker();
         }}
-        className="flex h-6.5 w-fit min-w-0 max-w-full items-center gap-2 leading-tight"
+        className="flex h-6.5 w-fit min-w-0 max-w-full items-center gap-2"
       >
         {projectIcon ? (
           <span className="grid size-4 shrink-0 place-items-center">{projectIcon}</span>
@@ -202,17 +203,18 @@ export function SidebarWorktreeSwitcher({
           {project}
         </MiddleTruncate>
         {copyName ? (
-          <MiddleTruncate mode="text" className="min-w-0 text-(--ui-text-muted)">
+          <MiddleTruncate mode="text" tone="muted" className="min-w-0">
             {copyName}
           </MiddleTruncate>
         ) : null}
         {pending || creating ? (
           <Spinner
             label={creating ? t("Creating worktree") : t("Switching working copy")}
-            className="shrink-0 text-(--ui-text-muted)"
+            className="shrink-0"
+            tone="muted"
           />
         ) : (
-          <ChevronsUpDown className="icon-sm shrink-0 text-(--ui-text-muted)" />
+          <ChevronsUpDown className="icon-sm shrink-0" tone="muted" />
         )}
       </Button>
       {open ? (
@@ -284,18 +286,15 @@ export function SidebarWorktreeSwitcher({
                   }   `}
                 >
                   {tree.isMain ? (
-                    <GitBranch className="icon-sm shrink-0 text-(--ui-text-secondary)" />
+                    <GitBranch className="icon-sm shrink-0" tone="secondary" />
                   ) : (
-                    <FolderTree className="icon-sm shrink-0 text-(--ui-text-secondary)" />
+                    <FolderTree className="icon-sm shrink-0" tone="secondary" />
                   )}
                   <span className="min-w-0 flex-1">
-                    <MiddleTruncate mode="text" className="text-ui-body">
+                    <MiddleTruncate mode="text" size="body">
                       {tree.label}
                     </MiddleTruncate>
-                    <MiddleTruncate
-                      mode="path"
-                      className="text-ui-caption text-(--ui-text-secondary)"
-                    >
+                    <MiddleTruncate mode="path" size="caption" tone="secondary">
                       {tree.detail}
                     </MiddleTruncate>
                   </span>
@@ -344,10 +343,10 @@ export function SidebarWorktreeSwitcher({
                 tooltip={t("Create worktree {p0}", { p0: createName })}
                 tooltipWhen="overflow"
               >
-                <span className="min-w-0 truncate">
+                <Text size="inherit" tone="inherit" truncate className="min-w-0">
                   {t("Create worktree ")}
                   {createName}
-                </span>
+                </Text>
               </Button>
             </div>
           ) : null}
@@ -364,13 +363,15 @@ function OpenTabs({ stats }: { stats?: { tabs: number; busy: boolean } }) {
   const label = `${stats.tabs} open tab${stats.tabs === 1 ? "" : "s"}${stats.busy ? ", working" : ""}`;
   return (
     <Tooltip label={label}>
-      <span
+      <Text
         aria-label={label}
-        className="flex shrink-0 items-center gap-1 text-ui-caption tabular-nums text-(--ui-text-secondary)"
+        size="caption"
+        tone="secondary"
+        className="flex shrink-0 items-center gap-1 tabular-nums"
       >
         {stats.busy ? <Spinner size="xs" /> : null}
         {stats.tabs}
-      </span>
+      </Text>
     </Tooltip>
   );
 }

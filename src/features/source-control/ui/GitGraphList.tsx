@@ -1,9 +1,12 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
   useCallback,
+  memo,
   useEffect,
   useMemo,
   useState,
@@ -14,6 +17,7 @@ import {
 } from "react";
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { GRAPH_ROW_PX, SWIMLANE_WIDTH, type HistoryItemViewModel } from "../model/gitGraph";
 import {
   formatAbsoluteTime,
@@ -119,6 +123,18 @@ export function GitGraphList({
   const [firstRow, setFirstRow] = useState(0);
   const [viewport, setViewport] = useState(0);
   const now = useNow();
+  const openRow = useStableCallback((sha: string, pin?: boolean) => {
+    const commit = items.find((item) => item.commit.sha === sha)?.commit;
+    if (commit) onOpen(commit, pin);
+  });
+  const menuRow = useStableCallback(
+    onMenu
+      ? (sha: string, x: number, y: number) => {
+          const commit = items.find((item) => item.commit.sha === sha)?.commit;
+          if (commit) onMenu(x, y, commit);
+        }
+      : undefined,
+  );
 
   const attach = useCallback(
     (el: HTMLDivElement | null) => {
@@ -194,20 +210,26 @@ export function GitGraphList({
       ) : (
         <>
           {wide ? (
-            <div
-              className={`sticky top-0 z-1 grid items-center border-b border-(--ui-pane-border) bg-(--ui-surface-panel) text-ui-caption text-(--ui-text-secondary) ${workspace ? styles.workspaceHeader : "font-medium"}`}
+            <Text
+              as="div"
+              weight={workspace ? "regular" : "medium"}
+              className={`sticky top-0 z-1 grid items-center border-b border-(--ui-pane-border) bg-(--ui-surface-panel) ${workspace ? styles.workspaceHeader : ""}`}
               style={{
                 height: WIDE_HEADER_PX,
                 gridTemplateColumns: workspace ? undefined : columns,
                 minWidth: workspace ? 360 + graphWidth : undefined,
               }}
             >
-              {!workspace ? <span className="truncate pl-3">{t("Branch / Tag")}</span> : null}
-              <span className="truncate">
+              {!workspace ? (
+                <Text size="inherit" tone="inherit" truncate className="pl-3">
+                  {t("Branch / Tag")}
+                </Text>
+              ) : null}
+              <Text size="inherit" tone="inherit" truncate>
                 <span className={workspace && graphWidth < 44 ? "sr-only" : undefined}>
                   {plain ? "" : t("Graph")}
                 </span>
-              </span>
+              </Text>
               <span className="min-w-0 ps-1">
                 {filters && onFilters ? (
                   <GitGraphColumnFilter
@@ -220,7 +242,12 @@ export function GitGraphList({
                   t("Commit Message")
                 )}
               </span>
-              <span className={workspace ? styles.author : "truncate"}>
+              <Text
+                size="inherit"
+                tone={workspace ? "secondary" : "inherit"}
+                truncate
+                className={workspace ? styles.author : undefined}
+              >
                 {filters && onFilters ? (
                   <GitGraphColumnFilter
                     label={t("Author")}
@@ -231,7 +258,7 @@ export function GitGraphList({
                 ) : (
                   t("Author")
                 )}
-              </span>
+              </Text>
               <span className="min-w-0">
                 {filters && onFilters ? (
                   <GitGraphColumnFilter
@@ -256,7 +283,7 @@ export function GitGraphList({
                   "SHA"
                 )}
               </span>
-            </div>
+            </Text>
           ) : null}
           {empty}
           <ul
@@ -275,8 +302,8 @@ export function GitGraphList({
                 active: selectedSha === commit.sha,
                 suspendHover,
                 side: wide ? ("bottom" as const) : ("right" as const),
-                onOpen: (pin?: boolean) => onOpen(commit, pin),
-                onMenu: onMenu ? (x: number, y: number) => onMenu(x, y, commit) : undefined,
+                onOpen: openRow,
+                onMenu: menuRow,
               };
               return wide ? (
                 <WideRow key={commit.sha} {...rowProps} columns={columns} workspace={workspace} />
@@ -312,8 +339,8 @@ type RowProps = {
   /** A context menu is open: no hover card while it is. */
   suspendHover: boolean;
   side: "right" | "bottom";
-  onOpen: (pin?: boolean) => void;
-  onMenu?: (x: number, y: number) => void;
+  onOpen: (sha: string, pin?: boolean) => void;
+  onMenu?: (sha: string, x: number, y: number) => void;
 };
 
 /**
@@ -328,7 +355,7 @@ function useRowHoverCard({ side, suspendHover }: RowProps) {
     width: 320,
     disabled: suspendHover,
     "aria-label": t("Commit details"),
-    className: "space-y-2 p-3 text-ui-caption text-content",
+    className: "space-y-2 p-3",
   });
 }
 
@@ -342,17 +369,17 @@ function rowButtonProps(
     ...hover.trigger,
     onClick: () => {
       hover.close();
-      onOpen();
+      onOpen(item.commit.sha);
     },
     onDoubleClick: () => {
       hover.close();
-      onOpen(true);
+      onOpen(item.commit.sha, true);
     },
     onContextMenu: onMenu
       ? (event: ReactMouseEvent) => {
           event.preventDefault();
           hover.close();
-          onMenu(event.clientX, event.clientY);
+          onMenu(item.commit.sha, event.clientX, event.clientY);
         }
       : undefined,
     "aria-pressed": active,
@@ -362,18 +389,25 @@ function rowButtonProps(
   };
 }
 
-function subjectClass(item: GraphListItem): string {
+/** The commit subject on one line: HEAD in medium weight, merges dimmed, the row's own height. */
+function Subject({ item, className }: { item: GraphListItem; className?: string }) {
   const { commit, row } = item;
-  return `min-w-0 truncate text-ui-caption leading-(--git-graph-row) ${
-    row.kind === "HEAD"
-      ? "font-medium"
-      : isMergeCommit(commit)
-        ? "text-[var(--ui-text-secondary)]"
-        : ""
-  }`;
+  return (
+    <Text
+      as="span"
+      size="caption"
+      leading="relaxed"
+      weight={row.kind === "HEAD" ? "medium" : undefined}
+      tone={row.kind !== "HEAD" && isMergeCommit(commit) ? "secondary" : "inherit"}
+      truncate
+      className={className}
+    >
+      {commit.subject || commit.shortSha}
+    </Text>
+  );
 }
 
-function CompactRow(props: RowProps) {
+const CompactRow = memo(function CompactRow(props: RowProps) {
   useLocale();
   const { item, plain, now } = props;
   const { commit, row } = item;
@@ -391,7 +425,7 @@ function CompactRow(props: RowProps) {
       >
         {plain ? null : <GraphLane row={row} />}
         <span className="ml-1 flex min-w-0 flex-1 items-center">
-          <span className={subjectClass(item)}>{commit.subject || commit.shortSha}</span>
+          <Subject item={item} />
         </span>
         <RefPills
           refs={refs}
@@ -400,19 +434,23 @@ function CompactRow(props: RowProps) {
           className="ml-1 shrink-0 self-center"
         />
         <GraphAvatar name={commit.author} className="git-graph-author ml-1.5 self-center" />
-        <span
+        <Text
+          as="span"
+          size="caption"
+          tone="secondary"
+          leading="relaxed"
           title={formatAbsoluteTime(commit.timestamp)}
-          className="git-graph-date ml-1.5 w-7 shrink-0 text-right text-ui-caption leading-(--git-graph-row) text-(--ui-text-secondary)"
+          className="git-graph-date ml-1.5 w-7 shrink-0 text-right"
         >
           {formatRelativeTime(commit.timestamp, now)}
-        </span>
+        </Text>
       </Button>
       {hover.card(<GitGraphHoverCard commit={commit} row={row} />)}
     </li>
   );
-}
+});
 
-function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
+const WideRow = memo(function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
   useLocale();
   const { item, plain, now, columns, workspace } = props;
   const { commit, row } = item;
@@ -440,37 +478,42 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
         {workspace ? (
           <span className={styles.subject}>
             <RefPills refs={refs} budgetPx={200} maxWidth="40%" className="shrink-0" />
-            <span className={subjectClass(item)}>{commit.subject || commit.shortSha}</span>
+            <Subject item={item} />
           </span>
         ) : (
-          <span className={`${subjectClass(item)} pl-1`}>{commit.subject || commit.shortSha}</span>
+          <Subject item={item} className="pl-1" />
         )}
         {workspace ? (
           <OverflowTooltip label={commit.author}>
-            <span className={styles.author}>{commit.author}</span>
+            <Text size="inherit" tone="secondary" truncate className={styles.author}>
+              {commit.author}
+            </Text>
           </OverflowTooltip>
         ) : null}
         {!workspace ? (
           <span className={`flex min-w-0 items-center gap-1.5 pr-2 ${dim}`}>
             <GraphAvatar name={commit.author} />
-            <span className="min-w-0 truncate text-ui-caption text-(--ui-text-secondary)">
+            <Text size="caption" tone="secondary" truncate className="min-w-0">
               {commit.author}
-            </span>
+            </Text>
           </span>
         ) : null}
         {
-          <span
+          <Text
             title={formatAbsoluteTime(commit.timestamp)}
-            className={`truncate text-ui-caption text-(--ui-text-secondary) ${workspace ? styles.date : ""}`}
+            size="caption"
+            tone="secondary"
+            truncate
+            className={`${workspace ? styles.date : ""}`}
           >
             {formatRelativeTime(commit.timestamp, now)}
-          </span>
+          </Text>
         }
-        <span className="truncate font-mono text-ui-micro text-(--ui-text-secondary)">
-          {commit.shortSha}
-        </span>
+        <Text as="span" size="micro" tone="secondary" truncate>
+          <Code size="inherit">{commit.shortSha}</Code>
+        </Text>
       </Button>
       {hover.card(<GitGraphHoverCard commit={commit} row={row} />)}
     </li>
   );
-}
+});

@@ -10,6 +10,32 @@ import {
 } from "./appearancePreferences";
 
 describe("appearance preferences", () => {
+  it("defaults the image layer on, persists off and restores its default DOM state", () => {
+    expect(normalizeAppearancePreferences({}).chatBackgroundLayer).toBe(true);
+    expect(
+      normalizeAppearancePreferences({ chatBackgroundLayer: "false" as never }).chatBackgroundLayer,
+    ).toBe(true);
+    const base = loadAppearancePreferences();
+    saveAppearancePreferences({ ...base, chatBackgroundLayer: false }, base);
+    expect(loadAppearancePreferences().chatBackgroundLayer).toBe(false);
+    expect(document.documentElement.classList.contains("chat-background-layer-off")).toBe(true);
+    applyAppearancePreferences({ ...APPEARANCE_DEFAULTS });
+    expect(document.documentElement.classList.contains("chat-background-layer-off")).toBe(false);
+  });
+
+  it("merges image layer edits with sibling appearance changes", () => {
+    const base = loadAppearancePreferences();
+    localStorage.setItem(
+      "bycoda.appearancePreferences.v1",
+      JSON.stringify({ ...base, codeTheme: "dracula" }),
+    );
+    saveAppearancePreferences({ ...base, chatBackgroundLayer: false }, base);
+    expect(loadAppearancePreferences()).toMatchObject({
+      codeTheme: "dracula",
+      chatBackgroundLayer: false,
+    });
+  });
+
   it("reuses normalized snapshots and sees direct storage changes", () => {
     localStorage.setItem(
       "bycoda.appearancePreferences.v1",

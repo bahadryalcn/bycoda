@@ -2,6 +2,7 @@ import {
   EmptyState as ArcEmptyState,
   type EmptyStateProps as ArcEmptyStateProps,
 } from "./arc/empty-state/empty-state";
+import { optionalTextAttributes } from "./Text";
 import { Button } from "./Button";
 import { CircleAlert, Search } from "./icons";
 import { useT } from "../i18n";
@@ -59,6 +60,7 @@ function InlineEmptyState({
   icon,
   title,
   description,
+  descriptionText,
   label,
   context: _context,
   ...props
@@ -83,7 +85,7 @@ function InlineEmptyState({
           {icon}
         </span>
       ) : null}
-      <span className="min-w-0 break-words">
+      <span {...optionalTextAttributes(descriptionText ?? {}, "min-w-0 break-words")}>
         {title ? (
           <strong className="font-medium text-(--ui-tone-neutral-fg)">{title} </strong>
         ) : null}

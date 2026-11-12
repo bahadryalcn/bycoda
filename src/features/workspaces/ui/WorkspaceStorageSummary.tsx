@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
@@ -41,7 +42,9 @@ export function WorkspaceStorageSummary({
         layout="full"
         dependency={
           <OverflowTooltip label={storage.root} wide>
-            <span className={styles.rootPath}>{storage.root}</span>
+            <Text as="span" size="inherit" tone="inherit" truncate className={styles.rootPath}>
+              {storage.root}
+            </Text>
           </OverflowTooltip>
         }
         scope={
@@ -75,25 +78,33 @@ export function WorkspaceStorageSummary({
           </Button>
         }
       >
-        <div className={styles.storageBody}>
+        <Text
+          as="div"
+          size="secondary"
+          tone="inherit"
+          leading="inherit"
+          className={styles.storageBody}
+        >
           <div className={styles.storageLine}>
             <span>
-              <strong className={styles.used}>{measure(storage.materializedBytes)}</strong>{" "}
-              <span className={styles.muted}>
+              <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
+                {measure(storage.materializedBytes)}
+              </Text>{" "}
+              <Text as="span" size="caption" tone="secondary" weight="regular" leading="inherit">
                 {"/ "}
                 {t("{p0} budget", {
                   p0: workspaceStorageSize(storage.budgetBytes),
                 })}
-              </span>
+              </Text>
             </span>
             {warning && (
               <Badge size="sm" tone="warning">
                 {t("Storage warning")}
               </Badge>
             )}
-            <span className={styles.free}>
+            <Text size="inherit" tone="secondary" leading="inherit" className={styles.free}>
               {t("Free on disk {p0}", { p0: measure(storage.freeBytes) })}
-            </span>
+            </Text>
           </div>
           <Progress
             aria-label={t("Directory budget")}
@@ -110,7 +121,7 @@ export function WorkspaceStorageSummary({
               {measure(storage.recoveryBytes)}
             </DescriptionItem>
           </DescriptionList>
-        </div>
+        </Text>
         {storage.materialization !== "allowed" && (
           <SettingsFeedback
             state="warning"

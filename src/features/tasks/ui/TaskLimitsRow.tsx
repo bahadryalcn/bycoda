@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import "./task-ops.css";
 
@@ -34,8 +35,14 @@ export function SettingRow({
   return (
     <Tag {...props} className={["task-ops-setting", props.className].filter(Boolean).join(" ")}>
       <div className="task-ops-setting-text">
-        <span className="task-ops-title">{title}</span>
-        {description ? <span className="task-ops-caption">{description}</span> : null}
+        <Text as="span" size="body" weight="medium" tone="primary" leading="inherit" truncate>
+          {title}
+        </Text>
+        {description ? (
+          <Text size="caption" tone="secondary" leading="inherit" className="task-ops-caption">
+            {description}
+          </Text>
+        ) : null}
       </div>
       {children ? <div className="task-ops-setting-control">{children}</div> : null}
     </Tag>

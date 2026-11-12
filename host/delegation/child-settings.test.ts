@@ -47,3 +47,11 @@ describe("childModelSettings", () => {
     expect(parentEffort({ fast: "true" })).toBeUndefined();
   });
 });
+
+it("defaults subagents independently and maps explicit effort", () => {
+  const child = model(levels("effort", ["low", "medium", "high"], "low"));
+  expect(childModelSettings(child)).toEqual({ effort: "low" });
+  expect(childModelSettings(child, {}, "high")).toEqual({ effort: "high" });
+  expect(childModelSettings(child, {}, "ultra")).toEqual({ effort: "high" });
+  expect(() => childModelSettings(child, {}, "expensive")).toThrow("Unknown effort");
+});

@@ -32,9 +32,6 @@
   place-items: center;
   inline-size: 1.75rem;
   block-size: 1.75rem;
-  border-radius: var(--radius-control);
-  background: var(--ui-fill-subtle);
-  color: var(--ui-text-secondary);
 }
 .goal-card-main {
   display: grid;
@@ -55,13 +52,6 @@
 }
 .goal-card-title {
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.goal-card-meta {
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .goal-card-progress {
   display: flex;
@@ -82,7 +72,6 @@
 .goal-card-machine {
   min-inline-size: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .goal-card-actions {
@@ -94,16 +83,12 @@
 .goal-card-reason {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-tone-danger-fg);
 }
 .goal-card-body {
   display: grid;
   min-inline-size: 0;
   gap: 0.5rem;
   padding-block-start: 0.5rem;
-  border-block-start: 1px solid var(--ui-pane-border);
-  font-size: var(--ui-font-caption);
 }
 .goal-card-body p {
   margin: 0;
@@ -128,10 +113,7 @@
   gap: 0.5rem;
 }
 .goal-plan-index {
-  font-size: var(--ui-font-micro);
   font-variant-numeric: tabular-nums;
-  color: var(--ui-text-muted);
-  line-height: 1.5;
 }
 .goal-plan-text {
   display: flex;
@@ -140,16 +122,11 @@
   align-items: baseline;
   gap: 0.125rem 0.5rem;
 }
-.goal-plan-title {
-  color: var(--color-content);
-}
 .goal-plan-meta {
   display: flex;
   min-inline-size: 0;
   align-items: center;
   gap: 0.25rem;
-  font-size: var(--ui-font-micro);
-  color: var(--ui-text-secondary);
 }
 .goal-replan {
   display: flex;
@@ -180,8 +157,6 @@
 .goal-section-rows {
   display: grid;
   min-inline-size: 0;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 .goal-section-rows > * + * {
   border-block-start: 1px solid var(--ui-card-border);
@@ -203,26 +178,11 @@
   display: grid;
   min-inline-size: 0;
 }
-.goal-option-title {
-  font-size: var(--ui-font-secondary);
-  color: var(--color-content);
-}
-.goal-option-description,
-.goal-option-reason {
-  font-size: var(--ui-font-micro);
-  color: var(--ui-text-secondary);
-}
-.goal-option-reason {
-  color: var(--ui-text-muted);
-}
 .goal-option-control {
   display: flex;
   min-inline-size: 0;
   max-inline-size: 16rem;
   justify-content: flex-end;
-}
-.goal-option[data-disabled] .goal-option-title {
-  color: var(--ui-text-disabled);
 }
 .goal-option-wide {
   padding: 0.5rem 0.75rem;
@@ -233,8 +193,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .goal-project-chip {
   display: inline-flex;
@@ -243,9 +201,6 @@
   gap: 0.25rem;
   block-size: 1.5rem;
   padding-inline: 0.5rem 0.25rem;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--radius-pill);
-  color: var(--ui-text-secondary);
 }
 .goal-session-task {
   display: grid;
@@ -267,7 +222,6 @@
   min-inline-size: 0;
   flex: 1;
   overflow-wrap: anywhere;
-  font-weight: 500;
 }
 .goal-card-body:empty {
   display: none;

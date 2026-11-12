@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import {
   createContext,
   useContext,
@@ -21,6 +23,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { SettingsOperationFeedback, type SettingsFeedbackProps } from "./SettingsFeedback";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { ChevronRight, RotateCcw } from "../../../shared/ui/icons";
 
 import { playCue } from "../model/sounds";
@@ -34,6 +37,9 @@ export const settingDomId = (id: string) => `setting-${id}`;
 
 /** The row or group Settings just jumped to, so it can flash where you landed. */
 export const RevealedSetting = createContext<string | null>(null);
+
+/** Layer editors use secondary subheadings within their parent section. */
+export const LayerEditorHeadings = createContext(false);
 
 /** The page already explains automatic saving; keep operation feedback local. */
 export const PageAutomaticSaveHint = createContext(false);
@@ -66,6 +72,7 @@ export function SettingResetButton({
       iconOnly
       label={name}
       className="settings-reset shrink-0"
+      textTone="secondary"
       onClick={onReset}
     >
       <RotateCcw aria-hidden className="icon-xs" strokeWidth={1.75} />
@@ -127,9 +134,27 @@ function InfoSlot({ info }: { info: ReactNode }) {
 function SettingContext({ scope, dependency }: Pick<SettingDetails, "scope" | "dependency">) {
   return (
     <>
-      {scope ? <div className="settings-description settings-scope">{scope}</div> : null}
+      {scope ? (
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          leading="normal"
+          className="settings-description settings-scope"
+        >
+          {scope}
+        </Text>
+      ) : null}
       {dependency ? (
-        <div className="settings-description settings-dependency">{dependency}</div>
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          leading="normal"
+          className="settings-description settings-dependency"
+        >
+          {dependency}
+        </Text>
       ) : null}
     </>
   );
@@ -142,7 +167,7 @@ function SettingStatus({ persistence }: Pick<SettingDetails, "persistence">) {
   const showSaveHint = persistence?.mode === "explicit";
   if (!persistence || !(showSaveHint || (state && state !== "idle"))) return null;
   return (
-    <div className="settings-hint">
+    <Text as="div" size="caption" tone="secondary" leading="normal" className="settings-hint">
       {showSaveHint ? <span>{t("Changes require saving")}</span> : null}
       {state && state !== "idle" ? (
         <Badge
@@ -165,7 +190,7 @@ function SettingStatus({ persistence }: Pick<SettingDetails, "persistence">) {
           {state === "error" ? (persistence.error ?? t("Could not save changes")) : null}
         </Badge>
       ) : null}
-    </div>
+    </Text>
   );
 }
 
@@ -267,7 +292,13 @@ export function AdvancedSettings({
       aria-labelledby={headingId}
       tabIndex={-1}
     >
-      <Heading size="item" level={3} id={headingId} className="settings-subheading">
+      <Heading
+        size="item"
+        level={3}
+        id={headingId}
+        tone="secondary"
+        className="settings-subheading"
+      >
         <Button
           type="button"
           variant="ghost"
@@ -282,8 +313,8 @@ export function AdvancedSettings({
         >
           <ChevronRight
             aria-hidden
-            className="icon-xs"
             strokeWidth={1.75}
+            {...motionAttributes({ transition: "transform" }, "icon-xs")}
             data-open={open || undefined}
           />
           {title ?? t("Advanced")}
@@ -396,6 +427,7 @@ export function Group({
   const flash = id != null && revealed === id;
   const headingId = useId();
   const descriptionId = useId();
+  const layerEditor = useContext(LayerEditorHeadings);
   const hasInfo = Boolean(description) && !descriptionVisible;
   const hasDescription = Boolean(description || scope || dependency || persistence);
   const controls = useControlDescriptions(hasDescription ? descriptionId : undefined);
@@ -410,12 +442,18 @@ export function Group({
       tabIndex={-1}
       aria-labelledby={headingId}
       aria-describedby={hasDescription ? descriptionId : undefined}
-      className="settings-group"
+      {...surfaceAttributes({ frame: "none", radius: "card" }, "settings-group")}
     >
       <div className="settings-group-heading">
         <div className="settings-group-title">
           <div className="settings-title-line">
-            <Heading id={headingId} className="settings-section-title">
+            <Heading
+              id={headingId}
+              size={layerEditor ? "item" : "section"}
+              tone="primary"
+              leading={layerEditor ? "normal" : undefined}
+              className="settings-section-title"
+            >
               {title}
             </Heading>
             {hasInfo ? (
@@ -431,7 +469,15 @@ export function Group({
           <div id={descriptionId}>
             {hasInfo ? <p className="sr-only">{description}</p> : null}
             {descriptionVisible && description ? (
-              <p className="settings-description settings-help-text">{description}</p>
+              <Text
+                as="p"
+                size="caption"
+                tone="muted"
+                leading="normal"
+                className="settings-description settings-help-text"
+              >
+                {description}
+              </Text>
             ) : null}
             <SettingContext scope={scope} dependency={dependency} />
             <SettingDescriptionText persistence={persistence} />
@@ -442,7 +488,16 @@ export function Group({
       </div>
       <div ref={controls} className="settings-group-content">
         {children}
-        {feedback ? <div className="settings-group-feedback">{feedback}</div> : null}
+        {feedback ? (
+          <div
+            {...surfaceAttributes(
+              { frame: "settings", edge: "block-start" },
+              "settings-group-feedback",
+            )}
+          >
+            {feedback}
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -538,13 +593,29 @@ export function Row({
       <div className="settings-row-label">
         <div className="settings-title-line">
           {controlId ? (
-            <FieldLabel id={labelId} htmlFor={controlId} className="settings-row-title">
+            <FieldLabel
+              size="secondary"
+              tone="primary"
+              weight="regular"
+              leading="normal"
+              id={labelId}
+              htmlFor={controlId}
+              className="settings-row-title"
+            >
               {label}
             </FieldLabel>
           ) : (
-            <div id={labelId} className="settings-row-title">
+            <Text
+              as="div"
+              size="secondary"
+              tone="primary"
+              weight="regular"
+              leading="normal"
+              id={labelId}
+              className="settings-row-title"
+            >
               {label}
-            </div>
+            </Text>
           )}
           {hasInfo ? (
             <InfoPopover className="shrink-0">
@@ -557,7 +628,15 @@ export function Row({
         <div id={descriptionId}>
           {hasInfo ? <p className="sr-only">{description}</p> : null}
           {descriptionVisible && description ? (
-            <p className="settings-description settings-help-text">{description}</p>
+            <Text
+              as="p"
+              size="caption"
+              tone="secondary"
+              leading="normal"
+              className="settings-description settings-help-text"
+            >
+              {description}
+            </Text>
           ) : null}
           <SettingContext scope={scope} dependency={dependency} />
           {inactive && disabledReason ? <span className="sr-only">{disabledReason}</span> : null}
@@ -657,11 +736,13 @@ export function Slider({
         onValueChange={onChange}
         onValueCommit={onValueCommit}
       />
-      <span
-        className={`min-w-[5ch] shrink-0 text-right text-ui-caption tabular-nums ${disabled ? "text-(--ui-text-disabled)" : "text-content"}`}
+      <Text
+        size="caption"
+        tone={disabled ? "disabled" : "primary"}
+        className="min-w-[5ch] shrink-0 text-right tabular-nums"
       >
         {display}
-      </span>
+      </Text>
     </div>
   );
 }

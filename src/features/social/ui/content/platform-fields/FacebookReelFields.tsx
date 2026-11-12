@@ -1,3 +1,4 @@
+import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../../shared/ui/NumberField";
@@ -17,12 +18,12 @@ export function FacebookReelFields({ value, media, disabled, onChange }: Platfor
     : t("Enter the frame rate, at least {p0} fps.", { p0: REEL_MIN_FPS });
   return (
     <FieldGroup legend={t("Reel")} className="content-platform" disabled={disabled}>
-      <p className="content-platform-note">
+      <Text as="p" size="caption" tone="muted" leading="inherit" className="content-platform-note">
         {probe?.durationSeconds
           ? t("Video length {p0} seconds.", { p0: Math.round(probe.durationSeconds) })
           : t("Attach one 9:16 video to continue.")}
         {probe?.width && probe.height ? ` · ${probe.width} × ${probe.height}` : ""}
-      </p>
+      </Text>
       <NumberField
         label={t("Video frame rate (fps)")}
         min={REEL_MIN_FPS}

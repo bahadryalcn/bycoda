@@ -115,7 +115,7 @@ export function AccountDevices({
           key={device.id}
           label={
             <span className="flex min-w-0 items-center gap-2">
-              <Icon className="icon-sm shrink-0 text-muted" aria-hidden />
+              <Icon className="icon-sm shrink-0" aria-hidden />
               <InlineEdit
                 label={t("Device name")}
                 value={device.name}

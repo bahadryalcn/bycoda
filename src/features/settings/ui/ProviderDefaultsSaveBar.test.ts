@@ -48,3 +48,39 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
     container.remove();
   }
 });
+
+it("summarizes Global and multiple targets without losing project count", async () => {
+  const { defaultsTargetsSummary } = await import("./providerDefaultsTargetsPicker");
+  const options = [
+    { value: "global", label: "Global" },
+    { value: "project:a", label: "A" },
+    { value: "project:b", label: "B" },
+  ];
+  expect(defaultsTargetsSummary(["project:a", "project:b"], options)).toBe("All projects (2)");
+  expect(defaultsTargetsSummary(["global", "project:a"], options)).toBe("Global + 1 targets");
+});
+
+it("keeps group apply details available when the draft is clean", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ProviderDefaultsSaveBar, {
+          target: { kind: "group", id: "team", workspace: false },
+          options: [{ value: "group:team", label: "Team" }],
+          pending: 0,
+          saveState: { state: "idle" },
+          onSave: vi.fn(),
+          onDiscard: vi.fn(),
+          onTargetChange: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.querySelector('[aria-label="Apply details"]')).not.toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});

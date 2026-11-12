@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useId, type ReactNode } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
@@ -100,9 +101,9 @@ function Line({
     >
       <div className={`min-w-0 ${stacked ? "" : "flex-1 basis-40"}`}>
         <div className="flex min-w-0 items-center gap-1">
-          <span id={labelId} className="text-ui-secondary">
+          <Text id={labelId} size="secondary" tone="inherit">
             {label}
-          </span>
+          </Text>
           {info}
           {description ? (
             <InfoPopover label={t("About {p0}", { p0: label })}>
@@ -228,7 +229,7 @@ export function CrewWorkingSettings({
           </Alert>
         ) : null}
         {impact.narrowed.length ? (
-          <div className="flex min-w-0 flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
+          <Text as="div" className="flex min-w-0 flex-col gap-1">
             <span>{narrowedLead}</span>
             <BadgeList
               label={narrowedLead.replace(/\s*[:：]$/, "")}
@@ -239,7 +240,7 @@ export function CrewWorkingSettings({
                 label: `${agent.name || t("Unnamed member")} (${eligible}/${pool})`,
               }))}
             />
-          </div>
+          </Text>
         ) : null}
       </div>
     ) : null;

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
@@ -177,20 +179,27 @@ export function ModelExtrasPanel({
     return (
       <div
         key={setting.id}
-        className={dependent ? "ml-2 border-l border-(--ui-tone-neutral-border) pl-2.5" : undefined}
+        {...surfaceAttributes(
+          { frame: dependent ? "neutral" : undefined, edge: "left" },
+          dependent ? "ml-2  border-(--ui-tone-neutral-border) pl-2.5" : undefined,
+        )}
       >
-        <div className="flex min-h-8 items-center gap-2 text-ui-caption">
-          <span
-            className={`flex min-w-0 flex-1 items-center gap-1 ${inactive ? "text-(--ui-text-secondary)" : ""}`}
+        <Text as="div" size="caption" tone="inherit" className="flex min-h-8 items-center gap-2">
+          <Text
+            size="inherit"
+            tone={inactive ? "secondary" : "inherit"}
+            className={`flex min-w-0 flex-1 items-center gap-1 `}
           >
-            <span className="min-w-0 leading-4 break-words">{label}</span>
+            <Text as="span" size="caption" tone="inherit" className="min-w-0 break-words">
+              {label}
+            </Text>
             {modified && (
               <span
-                className="size-1.5 shrink-0 rounded-full bg-(--color-accent)"
+                {...surfaceAttributes({ radius: "pill" }, "size-1.5 shrink-0  bg-(--color-accent)")}
                 title={t("Changed from default")}
               />
             )}
-          </span>
+          </Text>
           {setting.kind === "toggle" ? (
             <Switch
               aria-label={label}
@@ -233,7 +242,8 @@ export function ModelExtrasPanel({
               value={value}
               disabled={disabled || inactive}
               onChange={(e) => update(e.target.value)}
-              className="w-[52%] max-w-[11.5rem] min-w-0 shrink-0 truncate"
+              className="w-[52%] max-w-[11.5rem] min-w-0 shrink-0"
+              truncate
             >
               {setting.options.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -242,14 +252,11 @@ export function ModelExtrasPanel({
               ))}
             </NativeSelect>
           )}
-        </div>
+        </Text>
         {setting.description && (
-          <p
-            id={descriptionId}
-            className="mb-1 px-1.5 text-ui-caption leading-4 text-(--ui-text-muted)"
-          >
+          <Text id={descriptionId} as="p" size="caption" tone="muted" className="mb-1 px-1.5">
             {t(setting.description)}
-          </p>
+          </Text>
         )}
       </div>
     );
@@ -258,12 +265,24 @@ export function ModelExtrasPanel({
     <>
       {/* z-10: in-popover sticky header over the scrolling list; no in-pane layer scale exists, so the literal stays. */}
       {!compact && (
-        <div className="sticky top-0 z-(--layer-pane-sheet) border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-3 pt-2.5 pb-2">
+        <div
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "bottom" },
+            "sticky top-0 z-(--layer-pane-sheet)  border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-3 pt-2.5 pb-2",
+          )}
+        >
           <div className="flex items-center justify-between gap-2">
             {leading}
-            <span className="min-w-0 flex-1 truncate text-ui-caption font-medium">
+            <Text
+              as="span"
+              size="caption"
+              tone="inherit"
+              weight="medium"
+              truncate
+              className="min-w-0 flex-1"
+            >
               {title ?? `${HARNESS_TITLE[harness]} · ${t("Extras")}`}
-            </span>
+            </Text>
             <Button
               variant="ghost"
               type="button"
@@ -276,9 +295,9 @@ export function ModelExtrasPanel({
               {t("Reset extras")}
             </Button>
           </div>
-          <p className="mt-0.5 text-ui-caption leading-4 text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary" className="mt-0.5">
             {t("Extras apply to this model selection. They do not change the main model.")}
-          </p>
+          </Text>
         </div>
       )}
       <div className="space-y-3 px-3 pt-2 pb-3">
@@ -358,14 +377,14 @@ export function ModelExtras({
         <SlidersHorizontal className="icon-xs shrink-0" strokeWidth={1.75} />
         <span data-extras-label>{t("Extras")}</span>
         {changed > 0 && (
-          <span className="rounded bg-selection px-1 text-ui-caption text-(--ui-tone-neutral-fg)">
+          <Text as="span" tone="neutral" className="rounded bg-selection px-1">
             {changed}
-          </span>
+          </Text>
         )}
         {showSummary && changed > 0 && (
-          <span data-extras-summary className="max-w-40 truncate text-(--ui-text-secondary)">
+          <Text data-extras-summary size="inherit" tone="secondary" truncate className="max-w-40">
             {active.map((s) => t(settingValueLabel(s, effective))).join(" · ")}
-          </span>
+          </Text>
         )}
         <ChevronDown className="icon-xs" />
       </Button>
@@ -419,9 +438,9 @@ export function TogglePill({
       onClick={() => onSettingsChange({ ...values, [setting.id]: on ? "false" : "true" })}
       className="max-w-28"
     >
-      <span className={`min-w-0 truncate text-ui-micro ${on ? "" : "text-(--ui-text-secondary)"}`}>
+      <Text size="micro" tone={on ? "inherit" : "secondary"} truncate className={`min-w-0   `}>
         {setting.label}
-      </span>
+      </Text>
     </Button>
   );
 }

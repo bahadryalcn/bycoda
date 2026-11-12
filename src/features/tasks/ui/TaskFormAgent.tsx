@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import "./task-form.css";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -52,9 +53,15 @@ export function TaskFormAgent({
         <>
           {t("Agent settings")}
           {open ? null : (
-            <span className="task-form-summary-hint">
+            <Text
+              truncate
+              size="caption"
+              tone="muted"
+              leading="inherit"
+              className="task-form-summary-hint"
+            >
               {resolveModel(draft.harness, draft.model).name}
-            </span>
+            </Text>
           )}
         </>
       }
@@ -62,9 +69,9 @@ export function TaskFormAgent({
       {open ? (
         <div className="task-form-agent">
           {machine && hasProject ? (
-            <p className="task-form-hint">
+            <Text as="p" size="micro" tone="secondary" leading="inherit" className="task-form-hint">
               {t("Used when this task runs in {p0} on {p1}.", { p0: projectName, p1: machine })}
-            </p>
+            </Text>
           ) : null}
           <div className="task-form-agent-picks">
             <ModelPicker
@@ -115,6 +122,9 @@ export function TaskFormAgent({
             </TaskFormRow>
             <Checkbox
               className="task-form-row task-form-check"
+              size="secondary"
+              tone="primary"
+              leading="inherit"
               label={t("Review with a second agent")}
               checked={draft.review}
               onChange={(event) => update("review", event.target.checked)}
@@ -138,6 +148,9 @@ export function TaskFormAgent({
               <div className="task-form-agent">
                 <Checkbox
                   className="task-form-row task-form-check"
+                  size="secondary"
+                  tone="primary"
+                  leading="inherit"
                   label={t("Use a separate reviewer profile")}
                   checked={Boolean(draft.reviewerConfig)}
                   onChange={(event) =>

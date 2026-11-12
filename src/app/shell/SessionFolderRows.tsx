@@ -1,3 +1,5 @@
+import { Text } from "../../shared/ui/Text";
+import { motionAttributes } from "../../shared/ui/Motion";
 import {
   useEffect,
   useRef,
@@ -84,9 +86,12 @@ export function FolderRow({
       }}
       className="group relative flex min-h-7 w-full min-w-0 touch-none items-center gap-1.5 px-2.5 py-1 text-start"
     >
-      <span
+      <Text
+        as="span"
+        size="inherit"
+        tone={accent ? "inherit" : "muted"}
         aria-hidden
-        className={`relative grid size-4 shrink-0 place-items-center ${accent ? "" : "text-(--ui-text-muted)"}`}
+        className="relative grid size-4 shrink-0 place-items-center"
         style={accent ? { color: accent } : undefined}
       >
         <span className="contents group-hover:hidden group-focus-visible:hidden">
@@ -98,14 +103,30 @@ export function FolderRow({
             ))}
         </span>
         <ChevronRight
-          className={`hidden icon-sm text-(--ui-text-secondary) transition-transform duration-150 ease-out motion-reduce:transition-none group-hover:block group-focus-visible:block ${expanded ? "rotate-90" : ""}`}
+          tone="secondary"
           strokeWidth={1.75}
+          {...motionAttributes(
+            { transition: "transform", duration: "standard", easing: "rise" },
+            `hidden icon-sm group-hover:block group-focus-visible:block ${expanded ? "rotate-90" : ""}`,
+          )}
         />
-      </span>
-      <span className="relative min-w-0 flex-1 truncate text-ui-secondary font-medium leading-snug text-(--ui-text-secondary) group-hover:text-content group-focus-visible:text-content">
+      </Text>
+      <Text
+        as="span"
+        truncate
+        size="secondary"
+        tone="secondary"
+        weight="medium"
+        leading="snug"
+        className="relative min-w-0 flex-1 group-hover:text-content group-focus-visible:text-content"
+      >
         {nameNode ?? folder.name}
-      </span>
-      <span className="relative flex shrink-0 items-center gap-1.5 text-ui-micro tabular-nums text-(--ui-text-muted)">
+      </Text>
+      <Text
+        size="micro"
+        tone="muted"
+        className="relative flex shrink-0 items-center gap-1.5 tabular-nums"
+      >
         {busy ? (
           <span role="img" aria-label={t("Working")}>
             <TerminalSpinner />
@@ -113,10 +134,10 @@ export function FolderRow({
         ) : null}
         {needsApproval ? (
           <span role="img" aria-label={t("Needs input")}>
-            <CircleAlert className="icon-xs text-warning" strokeWidth={1.75} />
+            <CircleAlert className="icon-xs" tone="warning" strokeWidth={1.75} />
           </span>
         ) : !expanded && !busy && done ? (
-          <Check className="icon-xs text-success" strokeWidth={2} />
+          <Check className="icon-xs" tone="success" strokeWidth={2} />
         ) : null}
         <span
           data-action-yield={actionCount ? "" : undefined}
@@ -124,7 +145,7 @@ export function FolderRow({
         >
           {count}
         </span>
-      </span>
+      </Text>
     </Button>
   );
   if (!actionCount) return header;
@@ -202,13 +223,20 @@ export function FolderRenameRow({
     onCancel();
   };
   return (
-    <div
+    <Text
       data-folder-row=""
-      className="relative flex min-h-7 w-full items-center gap-1.5 px-2.5 py-0.5 text-content"
+      as="div"
+      size="inherit"
+      tone="primary"
+      className="relative flex min-h-7 w-full items-center gap-1.5 px-2.5 py-0.5"
     >
-      <span className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-muted)">
+      <Text
+        size="inherit"
+        tone="muted"
+        className="relative grid size-4 shrink-0 place-items-center"
+      >
         <FolderOpen className="icon-sm" strokeWidth={1.75} />
-      </span>
+      </Text>
       <TextField
         fieldClassName="min-w-0 flex-1"
         hideLabel
@@ -226,11 +254,12 @@ export function FolderRenameRow({
             finish(false);
           }
         }}
-        className="relative min-w-0 flex-1 leading-snug"
+        leading="snug"
+        className="relative min-w-0 flex-1"
       />
-      <span className="relative shrink-0 text-ui-micro tabular-nums text-(--ui-text-muted)">
+      <Text size="micro" tone="muted" className="relative shrink-0 tabular-nums">
         {memberCount}
-      </span>
-    </div>
+      </Text>
+    </Text>
   );
 }

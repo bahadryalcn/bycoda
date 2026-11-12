@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
@@ -170,26 +172,26 @@ export function RemoteShellSuggestions({
         }}
       >
         {snapshot && selectionMode ? (
-          <p className={styles.hint}>
+          <Text as="p" size="caption" tone="muted" className={styles.hint}>
             {snapshot.user}@{snapshot.host} ·{" "}
             {snapshot.shell === "zsh"
               ? "Zsh"
               : snapshot.shell === "powershell"
                 ? "PowerShell"
                 : "Bash"}{" "}
-            · {t("Prefix")}: <code>{snapshot.prefix || "∅"}</code>
-          </p>
+            · {t("Prefix")}: <Code>{snapshot.prefix || "∅"}</Code>
+          </Text>
         ) : null}
         {/* Passive previews stay a fixed list; status text would resize them per pause. */}
         {selectionMode && shell.waiting ? (
-          <p role="status" className={styles.hint}>
+          <Text as="p" size="caption" tone="muted" role="status" className={styles.hint}>
             {t("Waiting for the shell prompt…")}
-          </p>
+          </Text>
         ) : null}
         {(selectionMode && shell.error) || error ? (
-          <p role="status" className={styles.hint}>
+          <Text as="p" size="caption" tone="muted" role="status" className={styles.hint}>
             {t((selectionMode && shell.error) || error)}
-          </p>
+          </Text>
         ) : null}
         {snapshot || retained?.suggestions.length ? (
           <div
@@ -212,26 +214,30 @@ export function RemoteShellSuggestions({
                 onClick={snapshot ? () => void accept(value) : undefined}
               >
                 <OverflowTooltip label={value}>
-                  <span className={styles.text}>
-                    <span className={styles.match}>{value.slice(0, shownPrefix.length)}</span>
+                  <Text as="span" size="inherit" tone="inherit" truncate className={styles.text}>
+                    <Text size="inherit" tone="accent" weight="medium" className={styles.match}>
+                      {value.slice(0, shownPrefix.length)}
+                    </Text>
                     {value.slice(shownPrefix.length)}
-                  </span>
+                  </Text>
                 </OverflowTooltip>
               </Button>
             ))}
             {snapshot && !suggestions.length ? (
-              <p className={styles.hint}>{t("No safe matching suggestions.")}</p>
+              <Text as="p" size="caption" tone="muted" className={styles.hint}>
+                {t("No safe matching suggestions.")}
+              </Text>
             ) : null}
           </div>
         ) : null}
         {selectionMode ? (
-          <p className={styles.hint}>
+          <Text as="p" size="caption" tone="muted" className={styles.hint}>
             {t(
               selectionMode
                 ? "↑/↓ select · Tab/Enter insert only · Esc returns to the shell. Press Enter in the terminal to run."
                 : "Tab/→ complete · Enter runs the typed command · ↑/↓ browse shell history.",
             )}
-          </p>
+          </Text>
         ) : null}
       </div>
     </>

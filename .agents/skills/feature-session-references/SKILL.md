@@ -1,15 +1,13 @@
 ---
 name: feature-session-references
-description: "Change stable local conversation links/citations, origin resolution, sessions.list/read references, copy actions, lazy previews and cited-turn navigation."
+description: "Use when changing conversation links, citations and previews. Not for file links; see feature-generated-file-links."
 ---
 
 # Local session references
 
 Own a versioned address to existing authorized content. Link activation is not a send, unarchive, migration, execution-workspace change or public upload. Mobile, remote and OS activation preserve exact origin checks and existing authority.
 
-## Source entry points
-
-Code paths below are repository-root relative.
+## Source starts
 
 - `src/features/sessions/model/localSessionReference.ts`
 - `src/app/workspace/sessions/useLocalSessionReferences.ts`
@@ -36,13 +34,16 @@ Code paths below are repository-root relative.
 - Selected-message citations retain exact session/block identity, source snapshot and occurrence. Hover/focus must not scroll; click may reveal the existing source. A changed/missing source preserves its saved excerpt and must never resolve by matching a different message. Reduced motion keeps a static brief highlight.
 - Preview caches retain only appropriate in-flight work and invalidate on privacy-context change. Worker references navigate to the worker transcript/turn rather than silently focusing its lead.
 
-## Verification and references
+## Focused checks
 
 Citation parsing skips prose without its marker and bounds labels to 200 characters.
 Keep malformed or unsupported links as exact editable draft text.
 
 - Select URI/parser, actual Markdown/sanitizer/Notes interaction, navigation/visibility race, worker and Sidebar copy tests; new Native metadata needs read-only wrong-origin coverage.
 - Use the session-references browser family for changed UI, then isolated Host/Native origin and history-loading checks. Existing binaries cannot establish acceptance of a new IPC command.
-- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
-- [Reference behavior and URI format](../../../docs/guides/local-session-references.md)
-- [Host origin authority](../../../docs/reference/host-runtime.md)
+
+## References
+
+- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners.
+- [Reference behavior and URI format](../../../docs/guides/local-session-references.md) when changing the linked contract.
+- [Host origin authority](../../../docs/reference/host-runtime.md) when changing the linked contract.

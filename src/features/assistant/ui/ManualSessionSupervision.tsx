@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -184,9 +186,9 @@ export function ManualSessionSupervision({
               </Heading>
               <Badge size="sm">{t("Off")}</Badge>
             </div>
-            <p className={sessionStyles.description}>
+            <Text as="p" leading="normal" className={sessionStyles.description}>
               {t("Only enrolled conversations in selected projects are supervised.")}
-            </p>
+            </Text>
           </div>
           <div className={sessionStyles.actions}>
             {onSettings && <Button onClick={onSettings}>{t("Settings")}</Button>}
@@ -231,9 +233,18 @@ export function ManualSessionSupervision({
           />
         </Row>
         <div className={panelStyles.notices}>
-          <LiveText className={styles.muted} text={chiefNotice} />
+          <LiveText
+            size="micro"
+            tone="secondary"
+            leading="inherit"
+            className={styles.muted}
+            text={chiefNotice}
+          />
           {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
           <LiveText
+            size="micro"
+            tone="secondary"
+            leading="inherit"
             className={styles.muted}
             text={
               !data
@@ -246,10 +257,16 @@ export function ManualSessionSupervision({
             }
           />
           <LiveText
+            size="micro"
+            tone="secondary"
+            leading="inherit"
             className={styles.muted}
             text={scopeChanged ? t("Project scope changed. Your unsaved selection is kept.") : ""}
           />
           <LiveText
+            size="micro"
+            tone="secondary"
+            leading="inherit"
             className={styles.muted}
             text={
               !visible.length
@@ -314,12 +331,17 @@ export function ManualSessionSupervision({
           </div>
         </Row>
         {!saveRef && (
-          <div className={panelStyles.footerAction}>
-            <p className={styles.muted}>
+          <div
+            {...surfaceAttributes(
+              { frame: "settings", edge: "block-start" },
+              panelStyles.footerAction,
+            )}
+          >
+            <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
               {t(
                 "Saving project scope does not enroll conversations. Choose each conversation in Sessions.",
               )}
-            </p>
+            </Text>
             <Button
               loading={pending === "policy"}
               disabled={!!pending || stopping || !chief || !data}
@@ -349,9 +371,9 @@ export function ManualSessionSupervision({
               {t(status)}
             </Badge>
           </div>
-          <p className={sessionStyles.description}>
+          <Text as="p" leading="normal" className={sessionStyles.description}>
             {t("Only enrolled conversations in selected projects are supervised.")}
-          </p>
+          </Text>
         </div>
         <div className={sessionStyles.actions}>
           {onSettings && <Button onClick={onSettings}>{t("Choose projects in Settings")}</Button>}
@@ -359,9 +381,18 @@ export function ManualSessionSupervision({
           {refresh}
         </div>
       </div>
-      <LiveText className={styles.muted} text={chiefNotice} />
+      <LiveText
+        size="micro"
+        tone="secondary"
+        leading="inherit"
+        className={styles.muted}
+        text={chiefNotice}
+      />
       {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
       <LiveText
+        size="micro"
+        tone="secondary"
+        leading="inherit"
         className={styles.muted}
         text={
           !data
@@ -370,6 +401,9 @@ export function ManualSessionSupervision({
         }
       />
       <LiveText
+        size="micro"
+        tone="secondary"
+        leading="inherit"
         className={styles.muted}
         text={data && !enabled ? t("Manual session supervision is off.") : ""}
       />
@@ -387,14 +421,30 @@ export function ManualSessionSupervision({
           const effective =
             enabled && chief && data?.policy.projectIds.includes(grant.source.projectId);
           return (
-            <div className={panelStyles.row} key={grant.id}>
+            <div
+              {...surfaceAttributes({ frame: "settings", edge: "block-end" }, panelStyles.row)}
+              key={grant.id}
+            >
               <div className={panelStyles.rowText}>
-                <strong>{title}</strong>
-                <p>{visible.find((project) => project.id === grant.source.projectId)?.name}</p>
-                <span className={styles.muted}>
+                <Text as="strong" size="body" tone="inherit" weight="medium" leading="inherit">
+                  {title}
+                </Text>
+                <Text as="p" leading="inherit">
+                  {visible.find((project) => project.id === grant.source.projectId)?.name}
+                </Text>
+                <Text
+                  as="span"
+                  size="micro"
+                  tone="secondary"
+                  leading="inherit"
+                  className={styles.muted}
+                >
                   {t(effective ? "Enrollment saved" : "Supervision paused")}
-                </span>
+                </Text>
                 <LiveText
+                  size="micro"
+                  tone="secondary"
+                  leading="inherit"
                   className={styles.muted}
                   text={
                     candidate?.enrolledSourceChanged
@@ -403,9 +453,15 @@ export function ManualSessionSupervision({
                   }
                 />
                 {candidate && !candidate.eligible && (
-                  <p className={styles.muted}>
+                  <Text
+                    as="p"
+                    size="micro"
+                    tone="secondary"
+                    leading="inherit"
+                    className={styles.muted}
+                  >
                     {t(candidate.reason ?? "This conversation is not eligible for supervision.")}
-                  </p>
+                  </Text>
                 )}
               </div>
               {onOpenSession && (
@@ -445,19 +501,38 @@ export function ManualSessionSupervision({
         .map((candidate) => {
           const inScope = data?.policy.projectIds.includes(candidate.projectId);
           return (
-            <div className={panelStyles.row} key={candidate.sessionId}>
+            <div
+              {...surfaceAttributes({ frame: "settings", edge: "block-end" }, panelStyles.row)}
+              key={candidate.sessionId}
+            >
               <div className={panelStyles.rowText}>
-                <strong>{candidate.title || t("Untitled session")}</strong>
-                <p>{visible.find((project) => project.id === candidate.projectId)?.name}</p>
+                <Text as="strong" size="body" tone="inherit" weight="medium" leading="inherit">
+                  {candidate.title || t("Untitled session")}
+                </Text>
+                <Text as="p" leading="inherit">
+                  {visible.find((project) => project.id === candidate.projectId)?.name}
+                </Text>
                 {!candidate.eligible && (
-                  <p className={styles.muted}>
+                  <Text
+                    as="p"
+                    size="micro"
+                    tone="secondary"
+                    leading="inherit"
+                    className={styles.muted}
+                  >
                     {t(candidate.reason ?? "This conversation is not eligible for supervision.")}
-                  </p>
+                  </Text>
                 )}
                 {candidate.eligible && !inScope && (
-                  <p className={styles.muted}>
+                  <Text
+                    as="p"
+                    size="micro"
+                    tone="secondary"
+                    leading="inherit"
+                    className={styles.muted}
+                  >
                     {t("Select this project in Settings before enrolling.")}
-                  </p>
+                  </Text>
                 )}
               </div>
               <Button
@@ -473,9 +548,9 @@ export function ManualSessionSupervision({
           );
         })}
       {data && !grants.length && !candidates.length && (
-        <p className={styles.empty}>
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.empty}>
           {t("No visible conversations are available for enrollment.")}
-        </p>
+        </Text>
       )}
       {openError && <InlineError className={styles.error}>{t(openError)}</InlineError>}
     </Surface>

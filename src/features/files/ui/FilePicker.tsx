@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { FilePickerError } from "./FilePickerError";
 import { projectFilesTruncated } from "../../../platform/tauri/fs";
@@ -7,6 +8,7 @@ import { t, useLocale } from "../../../shared/i18n/technical";
 import { Search } from "../../../shared/ui/icons";
 import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { appName } from "../../../shared/lib/appName";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import {
   useEffect,
   useId,
@@ -130,6 +132,7 @@ export function FilePicker({
   onClose,
 }: Props) {
   useLocale();
+  const projectLabels = useProjectLabels();
   const peekFiles = () => peekProjectFiles(cwd);
   const search = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -294,8 +297,8 @@ export function FilePicker({
     <Modal
       padding="none"
       title={pickerLabel}
+      context={looksLikeProject(cwd) ? projectDisplayNameFrom(cwd, projectLabels) : undefined}
       size="md"
-      minimalHeader
       fitViewport={false}
       className="max-h-[80dvh]"
       motion="none"
@@ -308,10 +311,16 @@ export function FilePicker({
         className="flex flex-col"
       >
         <div className="pb-1.5">
-          <div className="flex items-center gap-2 border-b border-stroke py-2.5 ps-2 pe-12 text-[var(--ui-text-secondary)]">
+          <Text
+            as="div"
+            size="inherit"
+            tone="secondary"
+            className="flex items-center gap-2 border-b border-stroke py-2.5 px-2"
+          >
             <Search className="icon-sm shrink-0" strokeWidth={1.75} />
             <SearchInput
               ref={search}
+              clearable={false}
               type="text"
               value={query}
               placeholder={t("Go to File (type > for commands)")}
@@ -335,10 +344,15 @@ export function FilePicker({
               }}
               onKeyDown={onSearchKey}
             />
-          </div>
+          </Text>
         </div>
         {!paletteMode && (error || retrying) ? (
-          <div className="flex min-w-0 items-start gap-2 px-3 py-2 text-ui-caption">
+          <Text
+            as="div"
+            size="caption"
+            tone="inherit"
+            className="flex min-w-0 items-start gap-2 px-3 py-2"
+          >
             {error ? <FilePickerError error={error} /> : null}
             <Button
               variant="ghost"
@@ -351,25 +365,22 @@ export function FilePicker({
             >
               {t("Retry")}
             </Button>
-          </div>
+          </Text>
         ) : null}
         {!paletteMode &&
         !loading &&
         looksLikeProject(cwd) &&
         projectFilesTruncated(files) !== false ? (
-          <p className="px-3 pb-2 text-ui-caption text-[var(--ui-text-secondary)]">
+          <Text as="p" size="caption" tone="secondary" className="px-3 pb-2">
             {projectFilesTruncated(files)
               ? t("File index is incomplete; some files may not appear.")
               : t("File index completeness is unknown; some files may not appear.")}
-          </p>
+          </Text>
         ) : null}
         {empty && !(error && !files.length) ? (
-          <p
-            role="status"
-            className="px-3 pb-3 pt-1 text-ui-caption text-[var(--ui-text-secondary)]"
-          >
+          <Text role="status" as="p" size="caption" tone="secondary" className="px-3 pb-3 pt-1">
             {empty}
-          </p>
+          </Text>
         ) : paletteMode ? (
           <ActionList
             id={listId}

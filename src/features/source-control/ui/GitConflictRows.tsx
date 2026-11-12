@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { FileDiff } from "../../../shared/ui/icons";
@@ -58,7 +59,7 @@ export function GitConflictRows({
           <li key={row.relative} data-conflict={row.relative}>
             <ActionHost
               selected={selected === row.relative}
-              className="h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 pl-2 leading-none"
+              className="h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 pl-2"
             >
               <Button
                 variant="item"
@@ -73,12 +74,22 @@ export function GitConflictRows({
                 className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
               >
                 <FileTypeIcon name={name} isDir={false} />
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="text-ui-secondary font-medium">{name}</span>
+                <Text
+                  size="inherit"
+                  tone="inherit"
+                  leading="none"
+                  truncate
+                  className="min-w-0 flex-1"
+                >
+                  <Text size="secondary" tone="inherit" weight="medium">
+                    {name}
+                  </Text>
                   {dir ? (
-                    <span className="ml-1.5 text-ui-micro text-(--ui-text-muted)">{dir}</span>
+                    <Text size="micro" tone="muted" className="ml-1.5">
+                      {dir}
+                    </Text>
                   ) : null}
-                </span>
+                </Text>
               </Button>
               {canCompare && conflictCanCompare(row.kind) ? (
                 <InlineAction
@@ -98,13 +109,16 @@ export function GitConflictRows({
                 expanded={menu?.row.relative === row.relative}
                 onOpen={(anchor) => setMenu({ row, anchor })}
               />
-              <span
+              <Text
                 title={info.title}
                 aria-label={info.label}
-                className="w-5 shrink-0 text-right font-mono text-ui-micro font-medium text-(--ui-tone-danger-fg)"
+                size="micro"
+                tone="danger"
+                weight="medium"
+                className="w-5 shrink-0 text-right font-mono"
               >
                 {info.letter}
-              </span>
+              </Text>
             </ActionHost>
           </li>
         );

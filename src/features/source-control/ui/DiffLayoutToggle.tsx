@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -122,7 +123,7 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
           onDismiss={() => setFailed(undefined)}
           autoFocus
         >
-          <div className="flex flex-col gap-2 p-3 text-ui-secondary">
+          <Text as="div" size="secondary" tone="inherit" className="flex flex-col gap-2 p-3">
             <InlineError>{t("Could not save changes")}</InlineError>
             <div className="flex justify-end gap-1">
               <Button size="sm" variant="ghost" onClick={() => setFailed(undefined)}>
@@ -132,7 +133,7 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
                 {t("Retry")}
               </Button>
             </div>
-          </div>
+          </Text>
         </Popover>
       ) : null}
     </>

@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { errorText } from "../../../shared/lib/errors";
@@ -189,19 +190,18 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
         {isCurrent ? (
           <Check className="icon-sm shrink-0" strokeWidth={1.75} />
         ) : (
-          <GitBranch
-            className="icon-sm shrink-0 text-[var(--ui-text-secondary)]"
-            strokeWidth={1.75}
-          />
+          <GitBranch className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
         )}
         <OverflowTooltip label={reference}>
-          <span
-            className={`min-w-0 flex-1 truncate text-ui-secondary text-content ${
-              isCurrent ? "font-medium" : ""
-            }`}
+          <Text
+            size="secondary"
+            tone="primary"
+            weight={isCurrent ? "medium" : undefined}
+            truncate
+            className="min-w-0 flex-1"
           >
             {reference}
-          </span>
+          </Text>
         </OverflowTooltip>
         {isCurrent ? null : (
           <Button

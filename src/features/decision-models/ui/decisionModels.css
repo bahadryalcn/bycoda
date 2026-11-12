@@ -1,0 +1,38 @@
+.decision-models-page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--space-1);
+}
+.decision-discovery-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.decision-routing-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) 8rem;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+}
+.decision-routing-task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  .decision-routing-row {
+    grid-template-columns: minmax(0, 1fr) 8rem;
+  }
+  .decision-routing-task {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .decision-source-duplicate {
+    max-width: 7rem;
+  }
+}

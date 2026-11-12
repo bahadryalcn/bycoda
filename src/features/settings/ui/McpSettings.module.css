@@ -20,25 +20,11 @@
   flex: none;
 }
 .filterLabel {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .filterPanel {
   display: grid;
   gap: 12px;
   padding: 12px;
-  color: var(--color-content);
-  font-size: var(--ui-font-secondary);
-}
-.healthError {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  overflow-wrap: anywhere;
-}
-.healthError h3 {
-}
-.healthError p {
-  padding-block-start: 8px;
 }
 .actions,
 .pagination {
@@ -77,32 +63,17 @@
   flex: none;
   align-items: center;
 }
-.name {
-  min-inline-size: 0;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .scope {
   flex: none;
   margin-inline-end: auto;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 .signIn {
   flex: none;
-  color: var(--ui-tone-warning-fg);
 }
 .toggle,
 .rowMenu {
   display: flex;
   flex: none;
-}
-.pagination {
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .continuation {
   display: flex;
@@ -113,15 +84,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 .clamp {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
   overflow-wrap: anywhere;
 }
 .clamp[data-expanded] {

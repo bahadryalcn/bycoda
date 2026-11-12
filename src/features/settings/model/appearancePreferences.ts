@@ -51,6 +51,7 @@ export const APPEARANCE_DEFAULTS = {
   chatWidth: "comfortable",
   wordWrap: false,
   wheelZoom: true,
+  chatBackgroundLayer: true,
 } as const;
 export type AppearancePreferences = {
   interfaceFont: string;
@@ -78,6 +79,8 @@ export type AppearancePreferences = {
   wordWrap: boolean;
   /** Ctrl+wheel outside self-zooming viewers changes the interface scale. */
   wheelZoom: boolean;
+  /** Readability veil over chat images; off shows artwork without attenuation. */
+  chatBackgroundLayer: boolean;
 };
 function bounded(value: unknown, fallback: number, min: number, max: number) {
   return typeof value === "number" && Number.isFinite(value)
@@ -157,6 +160,7 @@ export function normalizeAppearancePreferences(
       value.chatWidth === "wide" || value.chatWidth === "full" ? value.chatWidth : "comfortable",
     wordWrap: value.wordWrap === true,
     wheelZoom: value.wheelZoom !== false,
+    chatBackgroundLayer: value.chatBackgroundLayer !== false,
   };
 }
 let lastKnownPreferences: AppearancePreferences | null = null;
@@ -208,6 +212,7 @@ export function terminalFontFamily(
 
 export function applyAppearancePreferences(value: AppearancePreferences) {
   const root = document.documentElement;
+  root.classList.toggle("chat-background-layer-off", value.chatBackgroundLayer === false);
   root.dataset.controlDensity = value.controlDensity;
   root.dataset.codeTheme = value.codeTheme;
   root.dataset.accentReadability = value.accentReadability;

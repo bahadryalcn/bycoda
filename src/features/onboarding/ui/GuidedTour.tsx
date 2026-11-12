@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ACTIONS, EVENTS, Joyride, STATUS, type EventData, type Step } from "react-joyride";
 import { useLocale } from "../../../shared/i18n";
@@ -156,10 +157,24 @@ export default function GuidedTour({
     title: step.title,
     data: { compact: true },
     content: (
-      <div className="usage-guide-content" data-usage-guide-tooltip>
-        <p id="usage-guide-description" className="usage-guide-description">
+      <Text
+        as="div"
+        size="body"
+        tone="inherit"
+        weight="regular"
+        leading="inherit"
+        className="usage-guide-content"
+        data-usage-guide-tooltip
+      >
+        <Text
+          as="p"
+          size="inherit"
+          tone="secondary"
+          id="usage-guide-description"
+          className="usage-guide-description"
+        >
           {step.body}
-        </p>
+        </Text>
         {step.tryIt ? (
           <Button
             className="usage-guide-tryit"
@@ -171,7 +186,7 @@ export default function GuidedTour({
             {step.tryIt.label}
           </Button>
         ) : null}
-      </div>
+      </Text>
     ),
   }));
 

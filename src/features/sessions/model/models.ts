@@ -343,8 +343,8 @@ function foldFastVariants(models: AgentModel[]): AgentModel[] {
 }
 
 /** A historical fast id retains its launch identity and resolves to base + Fast. */
-function savedFastVariant(id: string): AgentModel | undefined {
-  const base = allModels().find(
+function savedFastVariant(id: string, catalog: AgentModel[]): AgentModel | undefined {
+  const base = catalog.find(
     (model) => model.fastVariant?.id === id || model.fastVariant?.nativeId === id,
   );
   return base
@@ -357,7 +357,6 @@ function savedFastVariant(id: string): AgentModel | undefined {
       }
     : undefined;
 }
-
 /** Resolve a catalog Fast toggle to the actual CLI model identity. */
 export function nativeModelIdWithSettings(
   modelId: string,
@@ -371,7 +370,6 @@ export function nativeModelIdWithSettings(
   const base = allModels().find((item) => item.id === model.id);
   return nativeModelId(base ?? model);
 }
-
 function sameModelCatalog(a: AgentModel[], b: AgentModel[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
@@ -381,12 +379,10 @@ function sameModelCatalog(a: AgentModel[], b: AgentModel[]): boolean {
     return false;
   }
 }
-
 /** True after a live CLI catalog (not a `live = false` stand-in) replaced the bundled list. */
 export function hasLiveCatalog(harness: HarnessId): boolean {
   return overlays[harness] != null && !provisional.has(harness);
 }
-
 /** Test seam. */
 export function resetHarnessModelOverlays() {
   overlays = {};
@@ -405,7 +401,6 @@ let baseByHarness: Partial<Record<HarnessId, AgentModel[]>> | null = null;
 let allCache: AgentModel[] | null = null;
 let indexById: Map<string, AgentModel> | null = null;
 let indexByIdentity: Map<string, AgentModel> | null = null;
-
 function baseModelsFor(harness: HarnessId): AgentModel[] {
   if (!baseByHarness) {
     const grouped: Partial<Record<HarnessId, AgentModel[]>> = {};
@@ -416,14 +411,11 @@ function baseModelsFor(harness: HarnessId): AgentModel[] {
   }
   return baseByHarness[harness] ?? EMPTY_MODELS;
 }
-
 /** Every model the harness reports, including ones the user turned off. */
 export function catalogModelsFor(harness: HarnessId): AgentModel[] {
   return overlays[harness] ?? baseModelsFor(harness);
 }
-
 let enabledByHarness: Partial<Record<HarnessId, AgentModel[]>> = {};
-
 /**
  * Models offered for new work: the catalog minus the ones turned off in
  * Settings. A harness with everything turned off keeps its full list, since an
@@ -438,15 +430,12 @@ export function modelsFor(harness: HarnessId): AgentModel[] {
     disabled.size === 0 ? catalog : catalog.filter((model) => isModelEnabled(model.id));
   return (enabledByHarness[harness] = enabled.length > 0 ? enabled : catalog);
 }
-
 // Native host helpers also use this module without browser storage.
 // Access stays inside each owner catch so browser SecurityError is reported.
 function modelPreferenceStorage(): Storage | undefined {
   return "localStorage" in globalThis ? globalThis.localStorage : undefined;
 }
-
 let disabledCache: Set<string> | null = null;
-
 function disabledModels(): Set<string> {
   if (disabledCache) return disabledCache;
   let ids: string[] = [];
@@ -463,18 +452,15 @@ function disabledModels(): Set<string> {
   }
   return (disabledCache = new Set(ids));
 }
-
 /** Ids turned off in Settings, for publishing to the Host. */
 export function disabledModelIds(): string[] {
   return [...disabledModels()].sort();
 }
-
 function modelPreferenceKey(value: string): string {
   return value.startsWith("claude:")
     ? value.replace(/^claude:claude-/, "claude:").replace(/\./g, "-")
     : value;
 }
-
 export function isModelEnabled(id: string): boolean {
   const disabled = disabledModels();
   if (disabled.has(id)) return false;
@@ -484,7 +470,6 @@ export function isModelEnabled(id: string): boolean {
     ![...disabled].some((value) => modelPreferenceKey(value) === modelPreferenceKey(id))
   );
 }
-
 export function saveModelEnabled(id: string, enabled: boolean) {
   const next = new Set(disabledModels());
   if (enabled) {
@@ -500,13 +485,11 @@ export function saveModelEnabled(id: string, enabled: boolean) {
   disabledCache = next;
   emit();
 }
-
 /** Test seam. */
 export function resetDisabledModels() {
   disabledCache = null;
   emit();
 }
-
 // Another window (Settings, quick composer) may change the list.
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
@@ -515,12 +498,10 @@ if (typeof window !== "undefined") {
     emit();
   });
 }
-
 /** Includes turned-off models so existing conversations still resolve theirs. */
 export function allModels(): AgentModel[] {
   return (allCache ??= HARNESS_ORDER.flatMap(catalogModelsFor));
 }
-
 export function findModel(id: string): AgentModel | undefined {
   if (!indexById) {
     const index = new Map<string, AgentModel>();
@@ -530,9 +511,8 @@ export function findModel(id: string): AgentModel | undefined {
     }
     indexById = index;
   }
-  return indexById.get(id) ?? savedFastVariant(id);
+  return indexById.get(id) ?? savedFastVariant(id, allModels());
 }
-
 /** Match id OR nativeId in catalog order, preserving the old linear-find collision precedence. */
 export function findModelIdentity(id: string): AgentModel | undefined {
   if (!indexByIdentity) {
@@ -544,12 +524,10 @@ export function findModelIdentity(id: string): AgentModel | undefined {
     }
     indexByIdentity = index;
   }
-  return indexByIdentity.get(id) ?? savedFastVariant(id);
+  return indexByIdentity.get(id) ?? savedFastVariant(id, allModels());
 }
-
 /** The bundled list never changes, so index it once for `lookupModel`. */
 const bundledById = new Map(MODELS.map((model) => [model.id, model]));
-
 /**
  * Catalog entry for a saved model id, live list first and bundled list second.
  *
@@ -562,7 +540,6 @@ const bundledById = new Map(MODELS.map((model) => [model.id, model]));
 function lookupModel(id: string): AgentModel | undefined {
   return findModel(id) ?? bundledById.get(id);
 }
-
 function withAliasSettings(model: AgentModel, available: AgentModel[]): AgentModel {
   if (model.settings) return model;
   const native = comparableNativeId(model.harness, model.nativeId ?? nativeIdFrom(model.id));
@@ -576,10 +553,34 @@ function withAliasSettings(model: AgentModel, available: AgentModel[]): AgentMod
   return alias ? { ...model, settings: alias.settings } : model;
 }
 
+export type ModelResolutionCatalog = {
+  all: AgentModel[];
+  available: AgentModel[];
+  fallback: AgentModel;
+};
+/** Snapshot of the inputs for one harness's saved model identity. */
+export function modelResolutionCatalog(harness: HarnessId): ModelResolutionCatalog {
+  const fallbackId = defaultModelId(harness);
+  return {
+    all: allModels(),
+    available: catalogModelsFor(harness),
+    fallback: (fallbackId ? findModel(fallbackId) : undefined) ?? modelsFor(harness)[0],
+  };
+}
+
 export function resolveModel(harness: HarnessId, id?: string): AgentModel {
-  const available = catalogModelsFor(harness);
+  return resolveModelFromCatalog(modelResolutionCatalog(harness), harness, id);
+}
+
+/** Pure resolver; retains saved identities and the catalog's enabled default. */
+export function resolveModelFromCatalog(
+  catalog: ModelResolutionCatalog,
+  harness: HarnessId,
+  id?: string,
+): AgentModel {
+  const { available } = catalog;
   if (id) {
-    const exact = findModel(id);
+    const exact = catalog.all.find((model) => model.id === id) ?? savedFastVariant(id, catalog.all);
     if (exact && exact.harness === harness) return exact;
     const slug = nativeIdFrom(id);
     const byNative = available.find((model) => (model.nativeId ?? nativeIdFrom(model.id)) === slug);
@@ -651,8 +652,7 @@ export function resolveModel(harness: HarnessId, id?: string): AgentModel {
       nativeId,
     };
   }
-  const fallbackId = defaultModelId(harness);
-  return (fallbackId ? findModel(fallbackId) : undefined) ?? modelsFor(harness)[0];
+  return catalog.fallback;
 }
 
 /** Budget fallback, not a provider limit: modern Codex/Claude get 128k; other

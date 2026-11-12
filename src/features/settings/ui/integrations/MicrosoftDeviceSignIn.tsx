@@ -1,3 +1,5 @@
+import { Text } from "../../../../shared/ui/Text";
+import { Code } from "../../../../shared/ui/Code";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
@@ -118,10 +120,21 @@ export function MicrosoftDeviceSignIn({
     const { start } = phase;
     return (
       <div className="integration-device">
-        <p className="text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary">
           {t("Open the Microsoft sign-in page and enter this code:")}
+        </Text>
+        <p>
+          <Code
+            variant="plain"
+            size="title"
+            weight="medium"
+            tracking="wider"
+            tone="primary"
+            className="integration-device-code"
+          >
+            {start.userCode}
+          </Code>
         </p>
-        <p className="integration-device-code">{start.userCode}</p>
         <div className="integration-actions">
           <Button
             stableWidth

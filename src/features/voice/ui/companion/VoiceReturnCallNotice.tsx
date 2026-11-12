@@ -7,7 +7,13 @@ import styles from "./VoiceCompanionParts.module.css";
 export function VoiceReturnCallNotice({ notice, onTalk }: { notice: string; onTalk: () => void }) {
   return (
     <>
-      <LiveText className={styles.caption} text={notice} />
+      <LiveText
+        className={styles.caption}
+        size="caption"
+        tone="secondary"
+        leading="snug"
+        text={notice}
+      />
       {notice ? <Button onClick={onTalk}>{t("Talk now")}</Button> : null}
     </>
   );

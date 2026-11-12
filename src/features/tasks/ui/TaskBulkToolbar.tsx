@@ -1,9 +1,11 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useRef, useState } from "react";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Text } from "../../../shared/ui/Text";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { deleteTask, moveTask, startTask, type BoardTask } from "../model/taskClient";
 import {
@@ -112,10 +114,19 @@ export function TaskBulkToolbar({
   };
 
   return (
-    <section className="task-bulk-tools" aria-label={t("Selected task actions")} aria-busy={busy}>
+    <Text
+      as="section"
+      size="secondary"
+      tone="inherit"
+      leading="inherit"
+      {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "task-bulk-tools")}
+      aria-label={t("Selected task actions")}
+      aria-busy={busy}
+    >
       <div className="task-bulk-actions">
         <Checkbox
           className="task-bulk-select"
+          tone="secondary"
           label={t("Select all results")}
           checked={tasks.length > 0 && chosen.length === tasks.length}
           indeterminate={chosen.length > 0 && chosen.length < tasks.length}
@@ -162,6 +173,9 @@ export function TaskBulkToolbar({
       {progress ? (
         <LiveText
           className="task-bulk-status"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
           text={
             activeAction
               ? t("Processed {p0} of {p1}", {
@@ -178,7 +192,7 @@ export function TaskBulkToolbar({
       ) : null}
       {results.some((row) => row.status !== "succeeded") ? (
         <div className="task-bulk-results">
-          <ul>
+          <Text as="ul" size="caption" tone="inherit" leading="inherit">
             {results
               .filter((row) => row.status !== "succeeded")
               .map((row) => (
@@ -188,7 +202,7 @@ export function TaskBulkToolbar({
                   {row.reason ? t(row.reason) : null}
                 </li>
               ))}
-          </ul>
+          </Text>
         </div>
       ) : null}
       {failures.length || activeAction === "retry-failed" ? (
@@ -202,6 +216,6 @@ export function TaskBulkToolbar({
         </Button>
       ) : null}
       {dialog}
-    </section>
+    </Text>
   );
 }

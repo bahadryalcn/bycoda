@@ -1,0 +1,250 @@
+/* Layout only; controls and typography retain their shared owners. */
+.provider-save-bar-actions {
+  flex: 1 1 auto;
+}
+.provider-save-bar-status {
+  flex: 1 1 12rem;
+}
+.provider-targets-popover {
+  inline-size: min(26rem, calc(100vw - var(--space-6)));
+}
+.provider-targets-tools,
+.provider-targets-section {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.provider-targets-quick,
+.provider-target-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.provider-cli-container:has(#setting-agent-clis) .settings-row-control {
+  inline-size: min(28rem, 55%);
+  min-inline-size: 0;
+}
+.provider-cli-container:has(#setting-agent-clis) .settings-row-control > * {
+  max-inline-size: 100%;
+}
+.provider-cli-container:has(#setting-enabled-models),
+.provider-cli-container:has(#setting-enabled-models) > *,
+.provider-tab-panel:has(#setting-enabled-models),
+.provider-cli-workspace:has(#setting-enabled-models),
+.provider-cli-detail:has(#setting-enabled-models),
+.provider-cli-section:has(#setting-enabled-models) {
+  min-block-size: 0;
+  block-size: 100%;
+}
+.provider-cli-workspace:has(#setting-enabled-models) {
+  align-items: stretch;
+}
+.provider-cli-section:has(#setting-enabled-models) {
+  overflow: hidden;
+}
+#setting-enabled-models {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  block-size: 100%;
+}
+#setting-enabled-models > .settings-group-heading {
+  flex-shrink: 0;
+}
+#setting-enabled-models > .settings-group-content {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  flex: 1;
+  overflow: hidden;
+}
+#setting-enabled-models .provider-models-search,
+#setting-enabled-models .provider-models-source {
+  flex-shrink: 0;
+}
+.provider-models-list {
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex: 1;
+}
+@container provider-page (max-width: 640px) {
+  .provider-cli-container:has(#setting-agent-clis) .settings-row-control {
+    inline-size: min(24rem, 60%);
+  }
+  .provider-save-bar-actions {
+    justify-content: flex-start;
+  }
+}
+
+[data-settings-scroller]:has(#setting-enabled-models) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+[data-settings-section]:has(#setting-enabled-models),
+[data-settings-section]:has(#setting-enabled-models) > .settings-topics {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-block-size: 0;
+}
+.provider-tab-panel:has(#setting-enabled-models),
+.provider-cli-container:has(#setting-enabled-models) {
+  flex: 1;
+  min-block-size: 0;
+  overflow: hidden;
+}
+.provider-cli-container:has(#setting-agent-clis) .settings-row-control {
+  max-inline-size: min(28rem, 60%);
+}
+.provider-cli-container:has(#setting-agent-clis) .settings-row-control > .bycoda-arc-select {
+  inline-size: 100%;
+}
+
+#setting-enabled-models > .settings-group-content {
+  align-self: stretch;
+  inline-size: 100%;
+}
+
+.provider-cli-container:has(#setting-agent-clis) .settings-row-control > div {
+  inline-size: 100%;
+}
+/* Defaults owns its viewport; the form alone scrolls above the apply row. */
+[data-settings-scroller]:has(.provider-defaults-save-bar) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+[data-settings-section]:has(.provider-defaults-save-bar),
+[data-settings-section]:has(.provider-defaults-save-bar) > .settings-topics,
+.provider-tab-panel:has(.provider-defaults-save-bar) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-block-size: 0;
+  overflow: hidden;
+}
+.provider-cli-container:has(#setting-agent-clis) {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+}
+.provider-defaults-save-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  flex-shrink: 0;
+}
+.provider-defaults-save-bar .provider-save-bar-status {
+  flex: 1 1 auto;
+}
+.provider-defaults-save-bar .provider-save-bar-actions {
+  flex: 0 1 auto;
+}
+.provider-defaults-notes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.provider-targets-popover {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.provider-targets-tools,
+.provider-targets-footer {
+  flex-shrink: 0;
+}
+.provider-targets-list {
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.provider-targets-section {
+  gap: 0;
+  padding: 0 var(--space-3);
+}
+.provider-target-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--ui-control-height);
+  padding-block: var(--space-1);
+}
+.provider-target-label {
+  flex: 1;
+  flex-wrap: nowrap;
+  min-inline-size: 0;
+}
+.provider-target-label > :last-child {
+  margin-inline-start: auto;
+}
+.provider-targets-footer,
+.provider-target-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+.provider-target-search > span {
+  flex: 1;
+  min-inline-size: 0;
+}
+.provider-targets-footer > :first-child {
+  margin-inline-end: auto;
+}
+.provider-effort {
+  container: provider-effort / inline-size;
+}
+.provider-effort {
+  inline-size: 100%;
+}
+.provider-effort-selected {
+  display: none;
+}
+@container provider-effort (max-width: 21rem) {
+  .provider-effort-selected {
+    display: block;
+    margin-block-start: var(--space-1);
+  }
+}
+/* Defaults scrolls internally, so the rail must not inherit the page-sticky inset. */
+.provider-cli-container:has(#setting-agent-clis) .provider-cli-selector {
+  inset-block-start: 0;
+}
+#setting-enabled-models .provider-models-list .settings-row {
+  padding-block: var(--space-1);
+  min-block-size: var(--ui-control-height);
+}
+.provider-defaults-save-bar .provider-save-bar-actions {
+  display: contents;
+}
+.provider-defaults-save-bar .provider-save-bar-status {
+  flex: 0 1 auto;
+}
+.provider-defaults-field,
+.provider-defaults-buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.provider-defaults-buttons {
+  margin-inline-start: auto;
+}
+.provider-defaults-field:has([aria-label="Save in"]) {
+  margin-inline-start: auto;
+}
+
+.provider-defaults-save-bar {
+  position: relative;
+}
+.provider-defaults-boundary {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: calc(100% + var(--space-4));
+  pointer-events: none;
+}

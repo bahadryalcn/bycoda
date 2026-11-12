@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -135,15 +137,18 @@ export default function OnboardingDialog({
       size="lg"
       minimalHeader
       className="onboarding-panel"
+      bodyText={{ size: "secondary", leading: "inherit" }}
       onClose={busy ? () => undefined : onFinish}
     >
       <div className="onboarding-layout" ref={body}>
-        <header className="onboarding-header">
+        <header {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "onboarding-header")}>
           <div className="onboarding-topline">
             <div className="onboarding-brand">
               <img src={PRODUCT_IDENTITY.logoSrc} alt="" />
               <span>{PRODUCT_IDENTITY.displayName}</span>
-              <small>{t("Quick setup")}</small>
+              <small {...surfaceAttributes({ frame: "stroke", edge: "inline-start" })}>
+                {t("Quick setup")}
+              </small>
             </div>
             <div className="onboarding-topline-actions">
               {onStartGuide && !busy ? (
@@ -176,13 +181,20 @@ export default function OnboardingDialog({
               disabled={busy}
               onStepSelect={goTo}
             />
-            <p className="onboarding-step-caption" aria-hidden="true">
+            <Text
+              as="p"
+              size="caption"
+              tone="secondary"
+              leading="inherit"
+              className="onboarding-step-caption"
+              aria-hidden="true"
+            >
               {t("Step {p0} of {p1} · {p2}", {
                 p0: step + 1,
                 p1: steps.length,
                 p2: t(current),
               })}
-            </p>
+            </Text>
           </div>
         </header>
         {current !== "Projects" ? (
@@ -413,11 +425,11 @@ function Projects({
           <Heading size="page" level={3}>
             {t("Choose your projects")}
           </Heading>
-          <p>
+          <Text as="p" size="inherit" tone="muted" leading="normal">
             {t(
               "Import local projects and conversations from Claude Code and Codex, or choose a folder.",
             )}
-          </p>
+          </Text>
         </div>
         <div className="onboarding-scroll">
           {error ? (
@@ -428,7 +440,9 @@ function Projects({
           ) : null}
           {loading ? (
             <div className="onboarding-scan">
-              <p role="status">{t("Scanning this computer’s conversation history…")}</p>
+              <Text as="p" size="inherit" tone="muted" leading="normal" role="status">
+                {t("Scanning this computer’s conversation history…")}
+              </Text>
               {[0, 1, 2, 3].map((row) => (
                 <Skeleton key={row} aria-hidden className="h-9 w-full" />
               ))}
@@ -436,7 +450,16 @@ function Projects({
           ) : null}
           {listing && folders.length > 0 ? (
             <div className="onboarding-projects-frame">
-              <div className="onboarding-selection">
+              <Text
+                as="div"
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                {...surfaceAttributes(
+                  { frame: "stroke", edge: "block-end" },
+                  "onboarding-selection",
+                )}
+              >
                 <Checkbox
                   aria-label={t("Select all")}
                   disabled={busy}
@@ -457,11 +480,17 @@ function Projects({
                   {t(" selected")}
                 </span>
                 {hiddenTemporary > 0 ? (
-                  <small className="onboarding-selection-note">
+                  <Text
+                    as="small"
+                    size="micro"
+                    tone="muted"
+                    leading="normal"
+                    className="onboarding-selection-note"
+                  >
                     {t("{p0} temporary folders hidden", { p0: hiddenTemporary })}
-                  </small>
+                  </Text>
                 ) : null}
-              </div>
+              </Text>
               <div className="onboarding-projects">
                 {folders.map((folder) => {
                   const parent = parentPath(folder.path);
@@ -480,18 +509,38 @@ function Projects({
                       }}
                       label={
                         <>
-                          <Folder aria-hidden className="icon-sm onboarding-project-icon" />
-                          <strong>{projectName(folder.path)}</strong>
+                          <Folder
+                            aria-hidden
+                            tone="muted"
+                            className="icon-sm onboarding-project-icon"
+                          />
+                          <Text
+                            as="strong"
+                            size="inherit"
+                            tone="inherit"
+                            weight="medium"
+                            leading="inherit"
+                            truncate
+                          >
+                            {projectName(folder.path)}
+                          </Text>
                           {parent && parent !== folder.path ? (
                             <MiddleTruncate
                               mode="path"
+                              size="caption"
+                              tone="muted"
                               title={folder.path}
                               className="onboarding-project-path"
                             >
                               {prettyCwd(parent)}
                             </MiddleTruncate>
                           ) : (
-                            <span className="onboarding-project-path" />
+                            <Text
+                              as="span"
+                              size="caption"
+                              tone="muted"
+                              className="onboarding-project-path"
+                            />
                           )}
                           <span className="onboarding-provider-icons">
                             {[...new Set(folder.items.map((item) => item.provider))].map(
@@ -504,9 +553,15 @@ function Projects({
                               ),
                             )}
                           </span>
-                          <span className="onboarding-project-count" title={t("Conversations")}>
+                          <Text
+                            size="caption"
+                            tone="muted"
+                            leading="inherit"
+                            className="onboarding-project-count"
+                            title={t("Conversations")}
+                          >
                             {folder.items.length}
-                          </span>
+                          </Text>
                         </>
                       }
                       className="onboarding-project"
@@ -535,11 +590,11 @@ function Projects({
                 max={progress?.total || 1}
                 compact
               />
-              <p>
+              <Text as="p" size="inherit" tone="muted" leading="normal">
                 <LiveText
                   text={`${t("Importing conversations: ")}${progress?.done ?? 0} / ${progress?.total ?? 0}`}
                 />
-              </p>
+              </Text>
               <Button onClick={() => abort.current?.abort()} variant="secondary" type="button">
                 {t("Cancel import")}
               </Button>
@@ -547,31 +602,31 @@ function Projects({
           ) : null}
           {summary ? (
             <div role="status">
-              <p>
+              <Text as="p" size="inherit" tone="muted" leading="normal">
                 {summary.imported}
                 {t(" conversations imported across ")}
                 {summary.projects} {t("projects.")}
                 {summary.cancelled ? t(" Import cancelled.") : ""}
-              </p>
+              </Text>
               {summary.failed.length ? (
                 <Alert tone="danger">
-                  <p>
+                  <Text as="p" size="inherit" tone="muted" leading="normal">
                     {summary.failed.length}
                     {t(" conversations could not be imported.")}
-                  </p>
+                  </Text>
                   {summary.failed.map((failure, index) => (
-                    <p key={index}>
+                    <Text as="p" key={index} size="inherit" tone="muted" leading="normal">
                       {failure.candidate.cwd}: {failure.error}
-                    </p>
+                    </Text>
                   ))}
                 </Alert>
               ) : null}
               {summary.readOnly || summary.truncated ? (
-                <p>
+                <Text as="p" size="inherit" tone="muted" leading="normal">
                   {summary.readOnly}
                   {t(" history-only conversations ·")} {summary.truncated}
                   {t(" shortened transcripts")}
-                </p>
+                </Text>
               ) : null}
             </div>
           ) : null}
@@ -583,9 +638,23 @@ function Projects({
               </p>
               {addedFolders.map((path) => (
                 <div className="onboarding-project" key={path}>
-                  <Check aria-hidden className="icon-sm onboarding-project-icon" />
-                  <strong>{projectName(path)}</strong>
-                  <MiddleTruncate mode="path" className="onboarding-project-path">
+                  <Check aria-hidden tone="muted" className="icon-sm onboarding-project-icon" />
+                  <Text
+                    as="strong"
+                    size="inherit"
+                    tone="inherit"
+                    weight="medium"
+                    leading="inherit"
+                    truncate
+                  >
+                    {projectName(path)}
+                  </Text>
+                  <MiddleTruncate
+                    mode="path"
+                    size="caption"
+                    tone="muted"
+                    className="onboarding-project-path"
+                  >
                     {path}
                   </MiddleTruncate>
                 </div>

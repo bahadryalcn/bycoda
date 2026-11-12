@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { Text } from "../../../../../shared/ui/Text";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { themePalette } from "../../../../../shared/theme/palette";
 import { t, useLocale } from "../../../../../shared/i18n";
@@ -99,7 +101,7 @@ export function StateLadder() {
                   onClick={() => setOpen(true)}
                 >
                   <span
-                    className="state-custom-dot"
+                    {...surfaceAttributes({ frame: "stroke", edge: "all" }, "state-custom-dot")}
                     style={{ background: value.customColor ?? themePalette.hexA3ACB8 }}
                   />
                 </Button>
@@ -144,14 +146,32 @@ export function StateLadder() {
           >
             <ul className="state-preview" aria-label={t("Interaction states")}>
               {rows.map((row) => (
-                <li key={row.state} className="state-preview-row" data-state={row.state}>
+                <Text
+                  as="li"
+                  size="secondary"
+                  tone="inherit"
+                  leading="inherit"
+                  key={row.state}
+                  className="state-preview-row"
+                  data-state={row.state}
+                >
                   <row.Icon size={14} aria-hidden="true" />
-                  <span className="state-preview-name">{row.item}</span>
+                  <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    truncate
+                    className="state-preview-name"
+                  >
+                    {row.item}
+                  </Text>
                   <small className="state-preview-badge">
-                    {row.label}
-                    {row.mix ? ` ${row.mix}` : ""}
+                    <Text as="span" size="caption" tone="secondary" leading="inherit">
+                      {row.label}
+                      {row.mix ? ` ${row.mix}` : ""}
+                    </Text>
                   </small>
-                </li>
+                </Text>
               ))}
             </ul>
           </Row>

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
@@ -312,10 +313,12 @@ function AddRemoteProjectForm({
               searchable={false}
             />
           ) : (
-            <p className="text-ui-caption text-(--ui-text-muted)">
+            <Text as="p" tone="muted">
               {t("On ")}
-              <span className="text-content">{machine.name}</span>
-            </p>
+              <Text size="inherit" tone="primary">
+                {machine.name}
+              </Text>
+            </Text>
           )}
           <TextField
             aria-label={t("Folder path on the machine")}
@@ -528,9 +531,11 @@ function FolderRow({
   useLocale();
   return (
     <Button type="button" onClick={onOpen} disabled={disabled} variant="item" fullWidth>
-      <Folder className="icon-sm shrink-0 text-(--ui-text-muted)" strokeWidth={1.75} />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
-      <ChevronRight className="icon-xs shrink-0 text-(--ui-text-muted)" />
+      <Folder className="icon-sm shrink-0" tone="muted" strokeWidth={1.75} />
+      <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+        {name}
+      </Text>
+      <ChevronRight className="icon-xs shrink-0" tone="muted" />
     </Button>
   );
 }

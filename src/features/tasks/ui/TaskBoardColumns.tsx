@@ -1,6 +1,7 @@
 import type { BadgeTone } from "../../../shared/ui/Badge";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Text } from "../../../shared/ui/Text";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { type BoardTask, taskTimeLabel } from "../model/taskClient";
 import { canMoveTask, TASK_COLUMNS, taskColumn, type TaskColumn } from "../model/hostTasks";
@@ -278,7 +279,15 @@ export function TaskBoardColumns({
                   ))}
                   {column.length === 0 && visibleTasks.length > 0 ? (
                     <li>
-                      <p className="task-column-empty">{t(COLUMN_EMPTY[status])}</p>
+                      <Text
+                        as="p"
+                        size="caption"
+                        tone="muted"
+                        leading="inherit"
+                        className="task-column-empty"
+                      >
+                        {t(COLUMN_EMPTY[status])}
+                      </Text>
                     </li>
                   ) : null}
                 </ul>

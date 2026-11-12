@@ -38,7 +38,7 @@ export function turnCarriesRuntimeHint(
 
 /** Introduce the skill tools; the model decides when a skill helps. */
 const SELECTION_GUIDANCE =
-  "Skills: skills.search lists installed skills and skills.read reads one; use them when a task benefits, preferring the narrowest project-scoped match (the bycoda-skill-router skill helps choose when unsure). Search is an inventory: it does not enable disabled skills, and nothing may be installed, enabled or granted without owner authorization. Owner instructions and project contracts override skill advice.";
+  "Ordinary code work needs no skill search. Use skills.search and skills.read only to find needed expertise absent from context or when the owner requests skills. Search is an inventory; it does not enable disabled skills. Nothing may be installed, enabled or granted without owner authorization. Owner instructions and project contracts override skill advice.";
 
 const emptyHints = new Map<string, number>();
 

@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
@@ -37,9 +38,15 @@ function listItem(
         aria-current={current ? "true" : undefined}
         onClick={() => onSelect(list.id)}
       >
-        <span className="audience-list-name">
+        <Text
+          size="inherit"
+          tone="inherit"
+          leading="inherit"
+          truncate
+          className="audience-list-name"
+        >
           {isCommentersList(list) ? t("Commenters") : list.name}
-        </span>
+        </Text>
         {isCommentersList(list) ? (
           <Badge size="xs" tone="neutral">
             {t("Automatic")}

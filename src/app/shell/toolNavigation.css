@@ -7,7 +7,6 @@
   block-size: 100%;
   gap: 8px;
   padding-inline: 8px;
-  font-size: var(--ui-font-caption);
 }
 .tool-picker {
   display: none;

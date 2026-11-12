@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useHostAutomations } from "../hooks/useHostAutomations";
 import { useAutomationHistory } from "../hooks/useAutomationHistory";
@@ -32,7 +34,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { Surface } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
@@ -178,12 +180,15 @@ export function AutomationsView({
   // Inside the workspace the tool switcher takes the title's place.
   const toolNavigation = useContext(ToolNavigationContext)?.active != null;
   return (
-    <div
+    <Text
+      as="div"
+      size="inherit"
+      tone="neutral"
       role="region"
       aria-label={t("Automations")}
       data-app-automations
       style={{ containerType: "inline-size", containerName: "automations" }}
-      className="flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <PaneHeader
         chromeInset={besideRail ? (compactRail ? "compact" : false) : true}
@@ -207,7 +212,7 @@ export function AutomationsView({
         onOpenBackgroundSession={onOpenBackgroundSession}
         onLaunchAssistant={onLaunchAssistant}
       />
-    </div>
+    </Text>
   );
 }
 
@@ -447,15 +452,21 @@ function AutomationsContent({
     !hasAutomations;
 
   return (
-    <div
-      className="automation-layout flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
+    <Text
+      as="div"
+      size="inherit"
+      tone="neutral"
+      className="automation-layout flex min-h-0 min-w-0 flex-1 flex-col"
       data-list-open={compactListOpen || undefined}
     >
       {confirmDialog}
       {revealStatus && revealAutomation && (
-        <div
+        <Text
+          as="div"
+          size="secondary"
+          tone="inherit"
           role="status"
-          className="flex flex-wrap items-center gap-2 px-4 py-2 text-ui-secondary"
+          className="flex flex-wrap items-center gap-2 px-4 py-2"
         >
           <span>
             {t(
@@ -480,7 +491,7 @@ function AutomationsContent({
           >
             {t("Dismiss")}
           </Button>
-        </div>
+        </Text>
       )}
       {assistantOpen && onLaunchAssistant ? (
         <AutomationAssistant
@@ -508,9 +519,9 @@ function AutomationsContent({
                   {!compactListOpen ? ` · ${automations.length}` : null}
                 </Button>
               </div>
-              <span className="automation-count px-1 text-ui-caption text-(--ui-text-muted)">
+              <Text size="caption" tone="muted" className="automation-count px-1">
                 {t("Automations")} · {automations.length}
-              </span>
+              </Text>
               <Button
                 ref={filterButton}
                 type="button"
@@ -787,7 +798,7 @@ function AutomationsContent({
           )}
         </main>
       </div>
-    </div>
+    </Text>
   );
 }
 
@@ -850,23 +861,25 @@ function AutomationCard({
         selected={active}
         layout="stacked"
       >
-        <span
-          className={`flex min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-muted) ${otherTriggers.length > 0 ? "pr-24" : "pr-14"}`}
+        <Text
+          size="caption"
+          tone="muted"
+          className={`flex min-w-0 items-center gap-1.5 ${otherTriggers.length > 0 ? "pr-24" : "pr-14"}`}
         >
           <TriggerMark
             kind={automationTriggers(automation)[0]?.kind ?? automation.triggerKind}
             className="icon-xs"
           />
-          <span className="min-w-0 truncate">
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
             {triggerLabel(automation)}
             {automation.host ? t(" · on {p0}", { p0: automation.host.machineName }) : ""}
             {automation.host?.stale ? t(" (offline, last known)") : ""}
-          </span>
-        </span>
+          </Text>
+        </Text>
         <span className="mt-1 flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 truncate text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+          <Text size="secondary" tone="neutral" weight="medium" truncate className="min-w-0">
             {automation.name}
-          </span>
+          </Text>
           {automation.host?.needsInput ? (
             <Badge tone="warning" className="shrink-0 whitespace-nowrap">
               {t("Needs input")}
@@ -879,7 +892,7 @@ function AutomationCard({
             </Badge>
           ) : null}
         </span>
-        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-muted)">
+        <Text size="micro" tone="muted" className="mt-1 flex min-w-0 items-center gap-1.5">
           {logoPath ? (
             <ProjectLogoIcon
               path={logoPath}
@@ -894,7 +907,9 @@ function AutomationCard({
               className="icon-xs shrink-0"
             />
           )}
-          <span className="min-w-0 truncate">{project}</span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {project}
+          </Text>
           {lastRun ? (
             <>
               <span className="shrink-0">·</span>
@@ -902,12 +917,18 @@ function AutomationCard({
             </>
           ) : null}
           <OverflowTooltip label={model.name}>
-            <span className="ml-auto flex min-w-0 max-w-28 items-center gap-1 text-(--ui-text-muted)">
+            <Text
+              size="inherit"
+              tone="muted"
+              className="ml-auto flex min-w-0 max-w-28 items-center gap-1"
+            >
               <HarnessIcon harness={automation.harness} className="icon-sm shrink-0" />
-              <span className="min-w-0 truncate">{model.name}</span>
-            </span>
+              <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                {model.name}
+              </Text>
+            </Text>
           </OverflowTooltip>
-        </span>
+        </Text>
       </Button>
       <span className="absolute right-2.5 top-2 flex items-center gap-1">
         <BadgeList
@@ -975,27 +996,44 @@ function AutomationPicker({
         tooltip={t(template.description)}
       >
         <span className="flex gap-3">
-          <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
+          <Text size="inherit" tone="muted" className="grid size-7 shrink-0 place-items-center">
             <Icon className="icon-md" strokeWidth={1.75} />
-          </span>
+          </Text>
           <span className="min-w-0 flex-1">
-            <span className="line-clamp-2 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+            <ClampText
+              as="span"
+              lines={2}
+              expandable={false}
+              size="secondary"
+              tone="neutral"
+              weight="medium"
+            >
               {t(template.name)}
-            </span>
-            <span className="mt-1 line-clamp-2 text-ui-caption leading-snug text-(--ui-text-muted)">
+            </ClampText>
+            <ClampText
+              as="span"
+              lines={2}
+              expandable={false}
+              size="caption"
+              tone="muted"
+              leading="snug"
+              className="mt-1"
+            >
               {t(template.description)}
-            </span>
+            </ClampText>
           </span>
-          <ChevronRight
-            aria-hidden
-            className="icon-sm mt-1 shrink-0 text-(--ui-text-muted)"
-            strokeWidth={1.75}
-          />
+          <ChevronRight aria-hidden className="icon-sm mt-1 shrink-0" tone="muted" />
         </span>
-        <span className="mt-auto flex min-w-0 items-center gap-1.5 ps-10 pt-2 text-ui-micro text-(--ui-text-muted)">
+        <Text
+          size="micro"
+          tone="muted"
+          className="mt-auto flex min-w-0 items-center gap-1.5 ps-10 pt-2"
+        >
           <TriggerMark kind={template.trigger.kind} className="icon-xs shrink-0" />
-          <span className="min-w-0 truncate">{t(template.triggerLabel)}</span>
-        </span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {t(template.triggerLabel)}
+          </Text>
+        </Text>
       </Button>
     );
   };
@@ -1007,9 +1045,9 @@ function AutomationPicker({
           <Heading size="page">
             {firstUse ? t("Create your first automation") : t("New automation")}
           </Heading>
-          <p className="mt-1.5 text-ui-secondary text-(--ui-text-muted)">
+          <Text as="p" size="secondary" tone="muted" className="mt-1.5">
             {t("Choose how to start. You can edit everything before saving.")}
-          </p>
+          </Text>
         </header>
         <div className="automation-start mt-5" role="group" aria-label={t("Start")}>
           <Button
@@ -1020,16 +1058,16 @@ function AutomationPicker({
             className="automation-start-option"
           >
             <span className="flex gap-3">
-              <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
+              <Text size="inherit" tone="muted" className="grid size-7 shrink-0 place-items-center">
                 <Plus className="icon-md" strokeWidth={1.75} />
-              </span>
+              </Text>
               <span className="min-w-0">
-                <span className="block text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+                <Text size="secondary" tone="neutral" weight="medium" className="block">
                   {t("Start from scratch")}
-                </span>
-                <span className="mt-1 block text-ui-caption leading-snug text-(--ui-text-muted)">
+                </Text>
+                <Text size="caption" tone="muted" leading="snug" className="mt-1 block">
                   {t("Write your own instructions and choose a trigger.")}
-                </span>
+                </Text>
               </span>
             </span>
           </Button>
@@ -1043,18 +1081,22 @@ function AutomationPicker({
               className="automation-start-option"
             >
               <span className="flex gap-3">
-                <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
+                <Text
+                  size="inherit"
+                  tone="muted"
+                  className="grid size-7 shrink-0 place-items-center"
+                >
                   <Sparkles className="icon-md" strokeWidth={1.75} />
-                </span>
+                </Text>
                 <span className="min-w-0">
-                  <span className="block text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+                  <Text size="secondary" tone="neutral" weight="medium" className="block">
                     {t("AI assistant")}
-                  </span>
-                  <span className="mt-1 block text-ui-caption leading-snug text-(--ui-text-muted)">
+                  </Text>
+                  <Text size="caption" tone="muted" leading="snug" className="mt-1 block">
                     {t(
                       "Continue in a full AI session with automation tools and approval controls.",
                     )}
-                  </span>
+                  </Text>
                 </span>
               </span>
             </Button>
@@ -1143,13 +1185,15 @@ function RunRow({
         className={`${RUN_GRID} min-w-[480px] w-full`}
         style={{ display: "grid" }}
       >
-        <span className="flex min-w-0 items-center gap-2 text-(--ui-tone-neutral-fg)">
-          <TriggerMark kind={trigger.kind} className="icon-sm shrink-0 text-(--ui-text-muted)" />
-          <span className="min-w-0 truncate">{trigger.label}</span>
-        </span>
-        <span className="truncate text-(--ui-tone-neutral-fg)">
+        <Text size="inherit" tone="neutral" className="flex min-w-0 items-center gap-2">
+          <TriggerMark kind={trigger.kind} className="icon-sm shrink-0" tone="muted" />
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {trigger.label}
+          </Text>
+        </Text>
+        <Text size="inherit" tone="neutral" truncate>
           {formatAutomationRunAt(run.scheduledFor || run.createdAt)}
-        </span>
+        </Text>
         <span>
           {/* Still running, but stuck until the owner answers. */}
           {run.status === "running" && run.needsInput ? (
@@ -1160,14 +1204,21 @@ function RunRow({
             <RunStatusPill status={run.status} />
           )}
         </span>
-        <span className="text-right tabular-nums text-(--ui-text-muted)">
+        <Text size="inherit" tone="muted" className="text-right tabular-nums">
           {formatAutomationRunDuration(run)}
-        </span>
+        </Text>
         {run.error && (run.status === "failed" || run.status === "skipped") ? (
           <OverflowTooltip label={run.error}>
-            <span className="col-span-full line-clamp-2 break-words text-start text-ui-micro text-(--ui-tone-danger-fg)">
+            <ClampText
+              as="span"
+              lines={2}
+              expandable={false}
+              size="micro"
+              tone="danger"
+              className="col-span-full break-words text-start"
+            >
               {run.error}
-            </span>
+            </ClampText>
           </OverflowTooltip>
         ) : null}
       </Button>
@@ -1328,7 +1379,6 @@ function AutomationEditor({
 
   const historyAvailable = Boolean(draft.id);
   const showingHistory = historyAvailable && tab === "history";
-
   const limitsSummary = [
     `${t("Run time limit")}: ${optionLabel(RUN_TIME_LIMIT_OPTIONS, draft.maxRunMinutes)}`,
     `${t("Runs per day")}: ${optionLabel(RUNS_PER_DAY_OPTIONS, draft.maxRunsPerDay)}`,
@@ -1336,11 +1386,15 @@ function AutomationEditor({
 
   // With a run history the scroll region is the one panel both tabs show.
   const Scroll: ElementType = historyAvailable ? TabPanel : "div";
-
   return (
     <form className="flex min-h-0 min-w-0 flex-1 flex-col" onSubmit={onSubmit} aria-busy={saving}>
       <Tabs value={tab} onValueChange={setTab} panels="shared">
-        <div className="automation-editor-header shrink-0 px-3 pt-2 sm:px-6">
+        <div
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "block-end" },
+            "automation-editor-header shrink-0 px-3 pt-2 sm:px-6",
+          )}
+        >
           <header className="flex flex-col gap-2">
             <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
               <TextField
@@ -1423,9 +1477,12 @@ function AutomationEditor({
                 ) : null}
               </div>
             </div>
-            <div
+            <Text
+              as="div"
+              size="caption"
+              tone="muted"
               inert={saving}
-              className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-ui-caption text-(--ui-text-muted)"
+              className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5"
             >
               <span className="flex shrink-0 items-center gap-2">
                 <ToggleSwitch
@@ -1445,7 +1502,7 @@ function AutomationEditor({
                     onChange({ ...draft, cwd, sessionFolderId: "" });
                 }}
               />
-            </div>
+            </Text>
           </header>
           {historyAvailable ? (
             <TabList label={t("Automation view")} className="mt-1">
@@ -1525,11 +1582,11 @@ function AutomationEditor({
                   {draft.triggers.some(
                     (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
                   ) ? (
-                    <p className="mt-2 px-1 text-ui-caption text-(--ui-text-muted)">
+                    <Text as="p" size="caption" tone="muted" className="mt-2 px-1">
                       {t(
                         "Task and social events run while this app is open. Connect the source machine; social accounts must be linked to this project.",
                       )}
-                    </p>
+                    </Text>
                   ) : null}
                   {draft.triggers.length > 0 ? (
                     <ul className="mt-1 px-2">
@@ -1668,12 +1725,12 @@ function AutomationEditor({
                   chevron="end"
                   summary={
                     <span className="min-w-0">
-                      <span className="block text-ui-caption font-medium text-(--ui-text-muted)">
+                      <Text size="caption" tone="muted" weight="medium" className="block">
                         {t("Advanced")}
-                      </span>
-                      <span className="mt-0.5 block truncate text-ui-micro text-(--ui-text-muted)">
+                      </Text>
+                      <Text size="micro" tone="muted" truncate className="mt-0.5 block">
                         {limitsSummary}
-                      </span>
+                      </Text>
                     </span>
                   }
                 >
@@ -1736,14 +1793,17 @@ function AutomationEditor({
               ) : null}
               {runs.length > 0 ? (
                 <Surface variant="outline" padding="none" className="mt-3 overflow-x-auto">
-                  <div
-                    className={`${RUN_GRID} min-w-[480px] h-10 text-ui-micro text-(--ui-text-muted)`}
+                  <Text
+                    as="div"
+                    size="micro"
+                    tone="muted"
+                    className={`${RUN_GRID} min-w-[480px] h-10`}
                   >
                     <span>{t("Trigger")}</span>
                     <span>{t("Triggered")}</span>
                     <span>{t("Status")}</span>
                     <span className="text-right">{t("Duration")}</span>
-                  </div>
+                  </Text>
                   <Divider decorative />
                   <ul className="divide-y divide-stroke">
                     {runs.slice(0, 100).map((run) => (

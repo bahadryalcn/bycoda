@@ -1,10 +1,15 @@
 import { OverflowTooltip } from "./Tooltip";
 import { memo, type ComponentPropsWithoutRef } from "react";
 import styles from "./MiddleTruncate.module.css";
+import { optionalTextAttributes, type TextSize, type TextTone } from "./Text";
 
 export type MiddleTruncateMode = "auto" | "path" | "text";
 
 export type MiddleTruncateProps = Omit<ComponentPropsWithoutRef<"span">, "children" | "title"> & {
+  /** Type size from the shared scale; unset keeps the surrounding size. */
+  size?: TextSize;
+  /** Ink; unset keeps the surrounding colour. */
+  tone?: TextTone;
   /** The complete value; it stays in the accessibility tree and in the overflow hint. */
   children: string;
   /** `path` keeps the final segment (including its separator), `text` keeps the last `tail` characters,
@@ -97,6 +102,8 @@ export const MiddleTruncate = memo(function MiddleTruncate({
   mode = "auto",
   tail,
   title,
+  size,
+  tone,
   className,
   ...props
 }: MiddleTruncateProps) {
@@ -110,18 +117,21 @@ export const MiddleTruncate = memo(function MiddleTruncate({
   // A head of one or two characters needs no reserved ellipsis room; longer ones keep room for "x...".
   const headClass =
     Array.from(parts.head).length > 2 ? `${styles.head} ${styles.headReserve}` : styles.head;
-  const classes = [parts.tail ? styles.root : styles.plain, className].filter(Boolean).join(" ");
+  const type = optionalTextAttributes(
+    { size, tone },
+    [parts.tail ? styles.root : styles.plain, className].filter(Boolean).join(" "),
+  );
   if (!parts.tail)
     return (
       <OverflowTooltip label={tooltip}>
-        <span {...props} className={classes}>
+        <span {...props} {...type}>
           {children}
         </span>
       </OverflowTooltip>
     );
   return (
     <OverflowTooltip label={tooltip}>
-      <span {...props} className={classes} data-middle-truncate="">
+      <span {...props} {...type} data-middle-truncate="">
         <span className={styles.full}>{children}</span>
         <span aria-hidden="true" className={headClass}>
           {parts.head}

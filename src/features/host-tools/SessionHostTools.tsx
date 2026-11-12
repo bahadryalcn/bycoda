@@ -1,4 +1,5 @@
 import { Alert } from "../../shared/ui/Alert";
+import { Text } from "../../shared/ui/Text";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { useEffect, useId, useMemo, useRef, useState, type ComponentType } from "react";
@@ -309,7 +310,16 @@ function ConversationHostTools({
               </TabList>
             </Tabs>
           ) : (
-            <span className="host-tools-current-tool">{t("Logs")}</span>
+            <Text
+              size="secondary"
+              tone="inherit"
+              weight="medium"
+              leading="inherit"
+              truncate
+              className="host-tools-current-tool"
+            >
+              {t("Logs")}
+            </Text>
           )}
           {!onlyTab ? (
             // Narrow panes swap the tab strip for one named selector that shows the
@@ -330,7 +340,15 @@ function ConversationHostTools({
                   const Icon = toolIcons[tab];
                   return <Icon className="icon-sm" aria-hidden />;
                 })()}
-                <span className="host-tools-nav-label">{t(toolLabels[tab])}</span>
+                <Text
+                  size="inherit"
+                  tone="inherit"
+                  leading="inherit"
+                  truncate
+                  className="host-tools-nav-label"
+                >
+                  {t(toolLabels[tab])}
+                </Text>
                 <ChevronDown className="icon-sm" aria-hidden />
               </Button>
               {toolMenuOpen ? (
@@ -362,11 +380,24 @@ function ConversationHostTools({
           ) : null}
           {/* Stable context: which computer the tool talks to and which
               workspace it belongs to, in the tab row's trailing slot. */}
-          <div className="host-tools-contextbar" data-target-kind={target.kind}>
+          <Text
+            size="caption"
+            tone="secondary"
+            leading="inherit"
+            as="div"
+            className="host-tools-contextbar"
+            data-target-kind={target.kind}
+          >
             {hostScoped ? (
               <div className="host-tools-machine" aria-busy={machinesLoading}>
                 <div className="host-tool-toolbar host-tools-machine-toolbar">
-                  <div className="host-tool-field host-tools-machine-field">
+                  <Text
+                    size="caption"
+                    tone="inherit"
+                    leading="inherit"
+                    as="div"
+                    className="host-tool-field host-tools-machine-field"
+                  >
                     <SearchableSelect
                       hideLabel
                       label={t("Tool machine")}
@@ -398,7 +429,7 @@ function ConversationHostTools({
                           : []),
                       ]}
                     />
-                  </div>
+                  </Text>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -416,17 +447,23 @@ function ConversationHostTools({
             ) : (
               <span className="host-tools-host" title={`${ownerLabel}\n${cwd}`}>
                 <Server className="icon-sm" aria-hidden />
-                <span className="host-tools-host-name">{ownerLabel}</span>
-                <span className="host-tools-host-role">{t("Project host")}</span>
+                <Text size="inherit" tone="primary" truncate className="host-tools-host-name">
+                  {ownerLabel}
+                </Text>
+                <Text size="inherit" className="host-tools-host-role">
+                  {t("Project host")}
+                </Text>
               </span>
             )}
             {!hideHeading ? (
               <span className="host-tools-context" title={`${title}\n${cwd}`}>
                 <Folder className="icon-sm" aria-hidden />
-                <span className="host-tools-context-name">{title}</span>
+                <Text size="inherit" tone="primary" truncate className="host-tools-context-name">
+                  {title}
+                </Text>
               </span>
             ) : null}
-          </div>
+          </Text>
           {!hidePresentation ? (
             <Button
               variant="ghost"

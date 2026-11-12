@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { MoveRecoveryNotice, type CopyNotice } from "./MoveRecoveryNotice";
 import { TextField } from "../../../shared/ui/TextField";
 import {
@@ -125,11 +126,11 @@ const GIT_STATUS_MARK: Record<string, { mark: string; label: string }> = {
   untracked: { mark: "U", label: "Untracked" },
   deleted: { mark: "D", label: "Deleted" },
 };
-const GIT_STATUS_COLOR: Record<string, string> = {
-  modified: "text-(--ui-tone-warning-fg)",
-  added: "text-diff-add-fg",
-  untracked: "text-diff-add-fg",
-  deleted: "text-diff-del-fg",
+const GIT_STATUS_TONE: Record<string, "warning" | "added" | "removed"> = {
+  modified: "warning",
+  added: "added",
+  untracked: "added",
+  deleted: "removed",
 };
 
 type Props = {
@@ -1018,16 +1019,20 @@ function FileTreeInner({
               }}
               className="min-w-0 flex-1"
             >
-              <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
+              <Text
+                size="inherit"
+                tone="secondary"
+                className="grid size-4 shrink-0 place-items-center"
+              >
                 {rootOpen ? (
                   <ChevronDown className="icon-sm" strokeWidth={1.75} />
                 ) : (
                   <ChevronRight className="icon-sm" strokeWidth={1.75} />
                 )}
-              </span>
-              <span className="min-w-0 truncate text-ui-caption font-medium text-[var(--ui-text-secondary)]">
+              </Text>
+              <Text truncate size="caption" tone="secondary" weight="medium" className="min-w-0">
                 {name}
-              </span>
+              </Text>
             </Button>
             {/* Creation, then tree management, then view/search; narrow headers fold the last two into the menu. */}
             <InlineAction
@@ -1128,10 +1133,13 @@ function FileTreeInner({
             />
           ) : null}
           {selectedPaths.size > 1 || hiddenSelectedPaths.length ? (
-            <div
+            <Text
               role="status"
               data-explorer-selection-scope
-              className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 py-1 text-ui-caption text-(--ui-text-secondary)"
+              as="div"
+              size="caption"
+              tone="secondary"
+              className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 py-1"
             >
               <span>
                 {t("Selected")}: {selectedPaths.size}
@@ -1141,17 +1149,20 @@ function FileTreeInner({
                   {t("Selection includes hidden items")}: {hiddenSelectedPaths.length}
                 </span>
               ) : null}
-            </div>
+            </Text>
           ) : null}
           {copyNotice ? <MoveRecoveryNotice notice={copyNotice} /> : null}
           {operationPending ? (
-            <div
+            <Text
               role="status"
-              className="flex items-center gap-2 px-3 py-1 text-ui-caption text-(--ui-text-secondary)"
+              as="div"
+              size="caption"
+              tone="secondary"
+              className="flex items-center gap-2 px-3 py-1"
             >
               <Spinner size="sm" />
               {t("Working…")}
-            </div>
+            </Text>
           ) : null}
           {opError ? (
             <Alert tone="danger" inline className="mx-2 my-1">
@@ -1338,10 +1349,13 @@ function TreeChildren({
         </LoadingText>
       ) : null}
       {!error && !loading && entries !== null && visible.length === 0 && !show ? (
-        <p
+        <Text
           role="status"
           data-explorer-empty
-          className="py-1 pr-2 text-ui-caption text-(--ui-text-muted)"
+          as="p"
+          size="caption"
+          tone="muted"
+          className="py-1 pr-2"
           style={pad}
         >
           {entries.length ? t("Only excluded files in this folder") : t("This folder is empty")}
@@ -1350,14 +1364,14 @@ function TreeChildren({
               {t("Show excluded files")}
             </Button>
           ) : null}
-        </p>
+        </Text>
       ) : null}
       {show && ctx.creating?.isDir ? row : null}
       {folders.map(renderNode)}
       {show && ctx.creating && !ctx.creating.isDir ? row : null}
       {files.map(renderNode)}
       {hidden > 0 ? (
-        <p className="flex gap-3 pr-2 text-ui-caption text-[var(--ui-text-secondary)]" style={pad}>
+        <Text as="p" size="caption" tone="secondary" className="flex gap-3 pr-2" style={pad}>
           <Button
             size="sm"
             variant="ghost"
@@ -1378,7 +1392,7 @@ function TreeChildren({
               {t("Show all {p0}", { p0: hidden })}
             </Button>
           ) : null}
-        </p>
+        </Text>
       ) : null}
     </>
   );
@@ -1431,7 +1445,7 @@ const TreeNode = memo(function TreeNode({
   const children = cached ?? loaded;
   const loading = entry.isDir && open && !cached && settled === null;
   const loadError = settled?.error ?? null;
-  const gitColor = gitStatus ? GIT_STATUS_COLOR[gitStatus] : undefined;
+  const gitTone = gitStatus ? GIT_STATUS_TONE[gitStatus] : undefined;
   const gitMark = gitStatus ? GIT_STATUS_MARK[gitStatus] : undefined;
 
   useEffect(() => {
@@ -1522,19 +1536,25 @@ const TreeNode = memo(function TreeNode({
             <FileTypeIcon name={entry.name} isDir={entry.isDir} isOpen={open} />
           </TreeRowIcon>
           {/* Name stays at content weight; excluded entries recede, Git state lives in the end slot only. */}
-          <TreeRowLabel
-            className={entry.ignored ? "italic text-[var(--ui-text-secondary)]" : undefined}
-          >
-            {entry.name}
+          <TreeRowLabel>
+            {entry.ignored ? (
+              <Text as="em" size="inherit" tone="secondary">
+                {entry.name}
+              </Text>
+            ) : (
+              entry.name
+            )}
           </TreeRowLabel>
           {gitMark ? (
             <TreeRowTrailing>
-              <span
-                className={`font-medium ${gitColor ?? ""}`}
+              <Text
+                size="inherit"
+                tone={gitTone ?? "inherit"}
+                weight="medium"
                 title={entry.isDir ? t("Contains changes") : t(gitMark.label)}
               >
                 {entry.isDir ? "•" : gitMark.mark}
-              </span>
+              </Text>
             </TreeRowTrailing>
           ) : null}
         </TreeRow>
@@ -1698,7 +1718,8 @@ export function NameRow({
           }}
           onBlur={() => finish(issue === null || issue.severity !== "error")}
           style={{ minHeight: "calc(var(--ui-control-height-compact) - 0.25rem)" }}
-          className="min-w-0 flex-1 leading-none"
+          className="min-w-0 flex-1"
+          leading="none"
         />
         {busy ? <Spinner size="sm" className="shrink-0" /> : null}
         {context ? (
@@ -1723,14 +1744,17 @@ const nameFieldInset = (depth: number) =>
 /** One quiet line saying what the field creates or renames and where (the screen-reader copy is separate). */
 function NameCaption({ depth, children }: { depth: number; children: ReactNode }) {
   return (
-    <p
+    <Text
+      as="p"
+      tone="muted"
+      truncate
       aria-hidden="true"
       data-name-caption
-      className="min-w-0 truncate pe-2 pb-1 text-ui-caption leading-4 text-(--ui-text-muted)"
+      className="pe-2 pb-1"
       style={{ paddingInlineStart: nameFieldInset(depth) }}
     >
       {children}
-    </p>
+    </Text>
   );
 }
 
@@ -1761,7 +1785,9 @@ function NameIssueView({
         body = (
           <>
             {t("A file or folder ")}
-            <span className="font-medium">{issue.name}</span>{" "}
+            <Text size="inherit" tone="inherit" weight="medium">
+              {issue.name}
+            </Text>{" "}
             {t("already exists at this location. Please choose a different name.")}
           </>
         );
@@ -1770,7 +1796,9 @@ function NameIssueView({
         body = (
           <>
             {t("The name ")}
-            <span className="font-medium">{issue.name}</span>
+            <Text size="inherit" tone="inherit" weight="medium">
+              {issue.name}
+            </Text>
             {t(" is not valid as a file or folder name. Please choose a different name.")}
           </>
         );

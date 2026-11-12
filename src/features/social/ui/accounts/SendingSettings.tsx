@@ -68,6 +68,8 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
               disabled={is("sending.enable") || !!offline}
               onChange={(event) => setConfirmed(event.target.checked)}
               label={t("Content I approve and active rules may send from my real accounts.")}
+              size="secondary"
+              leading="inherit"
               className="social-check"
             />
             <DisabledReason

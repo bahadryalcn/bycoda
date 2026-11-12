@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -210,58 +212,61 @@ export function SshAgentForwarding({
         {active?.error ? <Alert tone="danger">{active.error}</Alert> : null}
         {review ? (
           <>
-            <p className="break-all text-ui-body font-medium">
+            <Text as="p" size="body" tone="inherit" weight="medium" className="break-all">
               {sshEndpointPreview({ ...review.summary, user: review.summary.user ?? undefined })}
-            </p>
+            </Text>
             {server.sshEndpoint?.httpProxy ? (
-              <p className="break-all text-ui-caption text-(--ui-text-muted)">
+              <Text as="p" tone="muted" className="break-all">
                 {server.sshEndpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}
                 : {sshEndpointPreview(server.sshEndpoint.httpProxy)}
-              </p>
+              </Text>
             ) : null}
             {review.summary.configuration ? (
               <Disclosure
                 size="sm"
-                className="text-ui-caption text-(--ui-text-muted)"
+                textSize="caption"
+                tone="muted"
                 summary={t("Effective SSH configuration")}
               >
-                <DescriptionList size="sm">
-                  {Object.entries(review.summary.configuration.provenance).map(
-                    ([field, source]) => (
-                      <DescriptionItem key={field} term={field}>
-                        {t(
-                          source.source === "group"
-                            ? "Group"
-                            : source.source === "connection"
-                              ? "Connection"
-                              : "Default",
-                        )}
-                        {source.groupId ? ` · ${source.groupId} · r${source.revision}` : ""}
-                      </DescriptionItem>
-                    ),
-                  )}
-                </DescriptionList>
-                {review.summary.configuration.environment.length ? (
-                  <p>
-                    {t("Environment shell")}:{" "}
-                    {review.summary.configuration.shellKind === "powershell"
-                      ? "PowerShell"
-                      : "POSIX"}
-                  </p>
-                ) : null}
-                {review.summary.configuration.environment.map((entry) => (
-                  <p key={entry.name} className="break-all">
-                    <code>
-                      {entry.name}={entry.value}
-                    </code>
-                  </p>
-                ))}
+                <Text as="div" size="caption" tone="muted">
+                  <DescriptionList size="sm">
+                    {Object.entries(review.summary.configuration.provenance).map(
+                      ([field, source]) => (
+                        <DescriptionItem key={field} term={field}>
+                          {t(
+                            source.source === "group"
+                              ? "Group"
+                              : source.source === "connection"
+                                ? "Connection"
+                                : "Default",
+                          )}
+                          {source.groupId ? ` · ${source.groupId} · r${source.revision}` : ""}
+                        </DescriptionItem>
+                      ),
+                    )}
+                  </DescriptionList>
+                  {review.summary.configuration.environment.length ? (
+                    <p>
+                      {t("Environment shell")}:{" "}
+                      {review.summary.configuration.shellKind === "powershell"
+                        ? "PowerShell"
+                        : "POSIX"}
+                    </p>
+                  ) : null}
+                  {review.summary.configuration.environment.map((entry) => (
+                    <p key={entry.name} className="break-all">
+                      <Code>
+                        {entry.name}={entry.value}
+                      </Code>
+                    </p>
+                  ))}
+                </Text>
               </Disclosure>
             ) : null}
-            <p className="text-ui-caption text-(--ui-text-muted)">
+            <Text as="p" tone="muted">
               {t("One terminal only. Approval is not saved.")} ·{" "}
               {Math.max(0, Math.ceil((review.expiresAt - clock) / 1000))} s
-            </p>
+            </Text>
             {!valid ? (
               <InlineMessage tone="warning">
                 {t("This review expired or is unavailable. Request a new review.")}

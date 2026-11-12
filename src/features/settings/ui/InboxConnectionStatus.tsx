@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useCallback, useState } from "react";
 import { SettingsFeedback } from "./settingsControls";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
@@ -178,9 +179,9 @@ export function InboxAccountActions({
             </>
           }
         >
-          <p className="text-ui-secondary">
+          <Text as="p" size="secondary" tone="inherit">
             {t("Saved credentials will be removed from this computer.")}
-          </p>
+          </Text>
         </Modal>
       ) : null}
     </>

@@ -1,10 +1,12 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { EditorState, Compartment, type Text } from "@codemirror/state";
+import { EditorState, Compartment, type Text as DocText } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { presentableDiff } from "@codemirror/merge";
 import { editorSearch } from "../../files/public/editorSearch";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -31,7 +33,7 @@ import {
   findConflictBlocks,
   resolveConflictMarkers,
 } from "../model/conflictMarkers";
-import { stepConflict } from "./mergeResultActions";
+import { applyTextRoles, stepConflict } from "./mergeResultActions";
 import { ConflictScrollSync } from "./conflictScrollSync";
 import { useConflictProvenance, type ConflictProvenance } from "./useConflictProvenance";
 import {
@@ -98,7 +100,7 @@ export function conflictSourcesFromMarkers(text: string) {
 }
 
 /** Line tint marks each conflict; inner marks show what differs from the other side. */
-function sourceDecorations(doc: Text, source: ConflictSource, active: number) {
+function sourceDecorations(doc: DocText, source: ConflictSource, active: number) {
   return Decoration.set(
     (source.highlights ?? []).flatMap(({ from, to }, index) => {
       if (from === to) return [];
@@ -292,17 +294,22 @@ export function ConflictLayout({
         actions={
           controls ? (
             <div className="conflict-navigation" role="group" aria-label={t("Merge conflicts")}>
-              <span
+              <Text
+                as="span"
                 role="status"
+                tone={
+                  controls.state.regions.every((region) => region.choice !== null)
+                    ? "success"
+                    : "warning"
+                }
                 className="conflict-progress"
-                data-complete={controls.state.regions.every((region) => region.choice !== null)}
               >
                 {`${controls.state.active + 1} / ${controls.state.regions.length}`}
                 {" · "}
                 {t("{p0} unresolved", {
                   p0: controls.state.regions.filter((region) => region.choice === null).length,
                 })}
-              </span>
+              </Text>
               <Button
                 variant="ghost"
                 size="sm"
@@ -333,8 +340,8 @@ export function ConflictLayout({
       >
         {provenance ? (
           <Tooltip label={[provenance.ours.detail, provenance.theirs.detail].join(" ← ")}>
-            <div className="conflict-provenance">
-              <span className="conflict-provenance-operation">
+            <Text as="div" tone="muted" className="conflict-provenance">
+              <Text as="span" className="conflict-provenance-operation">
                 {t(
                   provenance.operation === "rebase"
                     ? "Rebase"
@@ -344,16 +351,20 @@ export function ConflictLayout({
                         ? "Revert"
                         : "Merge",
                 )}
-              </span>
-              <strong>{provenance.ours.label || t("Current")}</strong>
+              </Text>
+              <Text as="strong" size="inherit" tone="primary" weight="medium" truncate>
+                {provenance.ours.label || t("Current")}
+              </Text>
               <span aria-hidden="true">←</span>
-              <strong>{provenance.theirs.label || t("Incoming")}</strong>
-            </div>
+              <Text as="strong" size="inherit" tone="primary" weight="medium" truncate>
+                {provenance.theirs.label || t("Incoming")}
+              </Text>
+            </Text>
           </Tooltip>
         ) : null}
       </PaneHeader>
       <div
-        className="conflict-layout-panes"
+        {...surfaceAttributes({ variant: "workspace-panel" }, "conflict-layout-panes")}
         ref={panes}
         style={
           {
@@ -364,7 +375,13 @@ export function ConflictLayout({
           } as CSSProperties
         }
       >
-        <section className="conflict-pane conflict-pane-result" aria-label={t("Resolved output")}>
+        <section
+          {...surfaceAttributes(
+            { variant: "workspace-panel", frame: "pane", edge: "all" },
+            "conflict-pane conflict-pane-result",
+          )}
+          aria-label={t("Resolved output")}
+        >
           <PaneHeader
             as="header"
             titleAs="div"
@@ -561,7 +578,13 @@ function ConflictSourcePane({
     });
   }, [controls?.state.active, source.highlights]);
   return (
-    <section className={`conflict-pane conflict-pane-${side}`} aria-label={t(heading)}>
+    <section
+      {...surfaceAttributes(
+        { variant: "workspace-panel", frame: "pane", edge: "all" },
+        `conflict-pane conflict-pane-${side}`,
+      )}
+      aria-label={t(heading)}
+    >
       <PaneHeader
         as="header"
         titleAs="div"
@@ -573,10 +596,20 @@ function ConflictSourcePane({
             asChild
             label={`${t(source.origin)} · ${t("Read only")} · ${provenance?.detail ?? source.label}`}
           >
-            <span className="conflict-source-identity" data-origin={t(source.origin)}>
-              {identity ? <strong>{identity}</strong> : null}
+            <Text
+              as="span"
+              size="inherit"
+              tone="secondary"
+              className="conflict-source-identity"
+              data-origin={t(source.origin)}
+            >
+              {identity ? (
+                <Text as="strong" size="inherit" tone="primary" weight="medium">
+                  {identity}
+                </Text>
+              ) : null}
               {provenance?.subject ? <span>{provenance.subject}</span> : null}
-            </span>
+            </Text>
           </Tooltip>
         }
         actions={
@@ -611,7 +644,9 @@ function ConflictSourcePane({
         }
       />
       {source.text === null ? (
-        <p className="conflict-source-missing">{t("Deleted in this version")}</p>
+        <Text as="p" className="conflict-source-missing">
+          {t("Deleted in this version")}
+        </Text>
       ) : (
         <div className="conflict-source-editor" ref={host} />
       )}
@@ -634,7 +669,11 @@ class SourceChoiceWidget extends WidgetType {
   }
   toDOM() {
     const root = document.createElement("div");
-    root.className = "conflict-inline-actions conflict-source-actions";
+    applyTextRoles(
+      root,
+      { size: "micro", tone: "secondary" },
+      "conflict-inline-actions conflict-source-actions",
+    );
     const button = document.createElement("button");
     button.type = "button";
     button.className = "conflict-inline-choice";

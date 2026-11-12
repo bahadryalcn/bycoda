@@ -4,7 +4,6 @@
   inline-size: min(100%, 840px);
   block-size: min(680px, calc(100dvh - 32px));
   margin-inline: auto;
-  font-size: var(--ui-font-secondary);
 }
 .onboarding-panel .modal-panel > div:last-child {
   display: flex;
@@ -23,7 +22,6 @@
   flex: none;
   padding-block: 18px 14px;
   padding-inline: clamp(16px, 3vw, 28px);
-  border-block-end: 1px solid var(--color-stroke);
 }
 .onboarding-topline {
   display: flex;
@@ -43,7 +41,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 9px;
+  gap: 8px;
   font-size: var(--ui-font-title);
   font-weight: 500;
   letter-spacing: -0.025em;
@@ -54,7 +52,6 @@
   object-fit: contain;
 }
 .onboarding-brand small {
-  border-inline-start: 1px solid var(--color-stroke);
   padding-inline-start: 10px;
   font-size: var(--ui-font-caption);
   font-weight: 400;
@@ -72,8 +69,6 @@
 .onboarding-step-caption {
   display: none;
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 @container onboarding-stepper (max-width: 44rem) {
   .onboarding-step-caption {
@@ -109,7 +104,7 @@
   margin-block-end: 14px;
 }
 .onboarding-heading h3 {
-  margin-block-end: 7px;
+  margin-block-end: 6px;
 }
 .onboarding-scroll {
   flex: 1;
@@ -123,8 +118,6 @@
   container: onboarding-scroll / inline-size;
 }
 .onboarding-body p {
-  color: var(--ui-text-muted);
-  line-height: 1.55;
   margin-block-end: 14px;
 }
 .onboarding-heading p {
@@ -132,14 +125,10 @@
 }
 .onboarding-body strong {
   display: block;
-  font-weight: 500;
 }
 .onboarding-body small {
   display: block;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-muted);
-  line-height: 1.45;
-  margin-block-start: 3px;
+  margin-block-start: 4px;
 }
 
 /* Sections and setting rows */
@@ -201,12 +190,7 @@
   order: 1;
 }
 .onboarding-feature > svg {
-  color: var(--ui-text-muted);
   flex: none;
-}
-.onboarding-feature small {
-  font-size: var(--ui-font-micro);
-  line-height: 1.4;
 }
 @media (hover: hover) and (pointer: fine) {
   .onboarding-feature:not([data-fixed]):hover {
@@ -225,8 +209,6 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: var(--ui-font-micro);
-  color: var(--ui-text-muted);
 }
 
 /* Step 2: visual choice cards (mode, crew) */
@@ -260,10 +242,8 @@
   box-shadow: inset 0 0 0 1px var(--ui-border-accent);
 }
 .onboarding-choice-text strong {
-  font-size: var(--ui-font-secondary);
 }
 .onboarding-choice-text small {
-  font-size: var(--ui-font-micro);
   margin-block-start: 2px;
 }
 /* Still frames only: previews keep their aspect ratio and never stretch or animate. */
@@ -287,9 +267,7 @@
   object-fit: contain;
 }
 .onboarding-crew-none {
-  background: transparent;
   border: 1px dashed var(--ui-card-border);
-  color: var(--ui-text-muted);
 }
 
 /* Step 3: agents. Name and status on the left; one fixed right column keeps rows aligned. */
@@ -328,21 +306,13 @@
   min-inline-size: 0;
 }
 .onboarding-agent-identity strong {
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
 }
 .onboarding-body .onboarding-agent-status {
   display: flex;
   align-items: center;
   gap: 6px;
   min-block-size: 1.45em;
-  color: var(--ui-text-secondary);
   white-space: nowrap;
-}
-.onboarding-agent-status > span:not([data-size]) {
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .onboarding-agent-controls {
   display: grid;
@@ -388,9 +358,6 @@
 }
 .onboarding-provider-empty p,
 .onboarding-provider-add > p {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
   margin: 0;
 }
 .onboarding-provider-empty {
@@ -407,22 +374,13 @@
 .onboarding-provider-select > span {
   display: block;
   margin-block-end: 8px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 /* Step 4: connections */
 .onboarding-card {
   margin-block-end: 8px;
 }
-.onboarding-card small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .onboarding-status {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-micro);
 }
 .onboarding-actions {
   display: flex;
@@ -431,7 +389,6 @@
   margin-block-start: 12px;
 }
 .onboarding-hint {
-  font-size: var(--ui-font-caption);
   margin-block-start: 12px;
 }
 /* Step 5: projects */
@@ -452,13 +409,9 @@
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-  border-block-end: 1px solid var(--color-stroke);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .onboarding-body .onboarding-selection-note {
   margin: 0 0 0 auto;
-  font-size: var(--ui-font-micro);
 }
 .onboarding-project {
   display: flex;
@@ -482,32 +435,25 @@ div.onboarding-project {
 .onboarding-project > strong {
   flex: none;
   max-inline-size: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .onboarding-project-icon {
   flex: none;
-  color: var(--ui-text-muted);
 }
 .onboarding-project-path {
   flex: 1;
   min-inline-size: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 .onboarding-project-count {
   flex: none;
   min-inline-size: 2.5rem;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
+
   font-variant-numeric: tabular-nums;
   text-align: end;
 }
 .onboarding-provider-icons {
   display: flex;
   flex: none;
-  gap: 5px;
+  gap: 4px;
 }
 .onboarding-error {
   overflow-wrap: anywhere;
@@ -520,10 +466,8 @@ div.onboarding-project {
   justify-content: space-between;
   gap: 12px;
   min-block-size: 58px;
-  border-block-start: 1px solid var(--color-stroke);
   padding-block: 12px;
   padding-inline: clamp(16px, 3vw, 28px);
-  background: var(--color-background-base);
 }
 .onboarding-footer-start {
   display: flex;
@@ -537,10 +481,6 @@ div.onboarding-project {
   justify-content: flex-end;
   gap: 8px;
   margin-inline-start: auto;
-}
-.onboarding-save-note {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-micro);
 }
 
 @media (prefers-reduced-motion: no-preference) {

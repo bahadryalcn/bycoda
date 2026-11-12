@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -101,7 +103,9 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
   };
 
   return (
-    <div className="shrink-0 border-t border-(--ui-pane-border)">
+    <div
+      {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 border-(--ui-pane-border)")}
+    >
       {confirmElement}
       <SectionLabel
         className="px-1"
@@ -178,7 +182,9 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
                     onClick={() => onOpenCommit(stashCommit(entry))}
                     className="min-w-0 flex-1 justify-start"
                   >
-                    <span className="min-w-0 truncate">{entry.message}</span>
+                    <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                      {entry.message}
+                    </Text>
                   </Button>
                   <InlineMoreAction
                     label={t("Actions for {p0}", { p0: entry.message })}

@@ -77,7 +77,7 @@ function documentText(doc: Text): string {
 }
 
 // The owning pane scrolls, so the editor grows with its text.
-const noteEditorTheme = (minHeight: number) =>
+const noteEditorTheme = (minHeight: number, prose: boolean) =>
   EditorView.theme({
     "&.cm-editor": {
       height: "auto",
@@ -85,6 +85,7 @@ const noteEditorTheme = (minHeight: number) =>
     "&.cm-editor .cm-scroller": {
       overflow: "visible",
       lineHeight: "var(--ui-leading-body)",
+      ...(prose ? { fontFamily: "var(--font-sans)", fontSize: "var(--ui-font-body)" } : {}),
     },
     "&.cm-editor .cm-content": {
       minHeight: `${minHeight}px`,
@@ -157,7 +158,7 @@ export function NoteMarkdownEditor({
         markdown(),
         placeholder(t("Write markdown…")),
         schemeConfig.current.of(schemeExtensions(initial.current.scheme)),
-        noteEditorTheme(initial.current.minHeight),
+        noteEditorTheme(initial.current.minHeight, !initial.current.showLineNumbers),
         EditorView.contentAttributes.of({
           "aria-label": label ?? t("Note body"),
           spellcheck: "true",
@@ -468,10 +469,19 @@ const TOOLBAR: {
   },
 ];
 
+const QUICK_COMMANDS: readonly MarkdownCommand[] = [
+  "bold",
+  "italic",
+  "heading",
+  "bullet",
+  "checklist",
+  "link",
+];
+
 const TOOLBAR_GROUPS: { label: string; commands: readonly MarkdownCommand[] }[] = [
-  { label: "Text", commands: ["bold", "italic", "strike"] },
-  { label: "Block", commands: ["heading", "bullet", "numbered", "checklist", "quote"] },
-  { label: "Insert", commands: ["code", "link", "table", "rule"] },
+  { label: "Text", commands: ["strike"] },
+  { label: "Block", commands: ["numbered", "quote"] },
+  { label: "Insert", commands: ["code", "table", "rule"] },
 ];
 
 export function NoteMarkdownToolbar({
@@ -497,24 +507,26 @@ export function NoteMarkdownToolbar({
     <div
       role="toolbar"
       aria-label={t("Markdown formatting")}
-      className="note-markdown-toolbar ms-auto flex min-w-0 items-center gap-0.5"
+      className="note-markdown-toolbar ms-auto flex min-w-0 flex-wrap items-center gap-0.5"
       // Keep the selection in the editor while a button is pressed.
       onMouseDown={(event) => event.preventDefault()}
     >
-      {(editing ? TOOLBAR.slice(0, 2) : []).map(({ command, label, icon: Icon }) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={label}
-          motion="none"
-          key={command}
-          type="button"
-          onClick={() => run((view) => runMarkdownCommand(view, command))}
-        >
-          <Icon className="icon-sm" />
-        </Button>
-      ))}
+      {(editing ? TOOLBAR.filter((item) => QUICK_COMMANDS.includes(item.command)) : []).map(
+        ({ command, label, icon: Icon }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={label}
+            motion="none"
+            key={command}
+            type="button"
+            onClick={() => run((view) => runMarkdownCommand(view, command))}
+          >
+            <Icon className="icon-sm" />
+          </Button>
+        ),
+      )}
       {editing ? (
         <>
           <Button

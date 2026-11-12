@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import {
   canRetryRoomPrivacyProjection,
   rebuildClosedRoomPrivacyProjection,
@@ -158,7 +160,10 @@ export function AssistantView(props: AssistantViewProps) {
 
   return (
     <AssistantRoomContext.Provider value={room}>
-      <main className={shell.room} aria-label={identity.room}>
+      <main
+        {...surfaceAttributes({ variant: "canvas-chat" }, shell.room)}
+        aria-label={identity.room}
+      >
         <LiveText
           className="sr-only"
           mode="assertive"
@@ -355,9 +360,9 @@ export function AssistantView(props: AssistantViewProps) {
           <InlineError className={shell.notice}>{error.text}</InlineError>
         )}
         {!snapshot ? (
-          <div className={shell.empty}>
+          <Text as="div" size="caption" tone="secondary" leading="inherit" className={shell.empty}>
             {loading ? t("Loading...") : t("Connect to the local Host to open this room.")}
-          </div>
+          </Text>
         ) : !snapshot.profile.setupComplete ? (
           <section className={shell.setupPrompt}>
             <Heading size="section">{t("Set up your personal assistant")}</Heading>
@@ -371,7 +376,17 @@ export function AssistantView(props: AssistantViewProps) {
             <RoomStatusPopovers snapshot={snapshot} />
             {errorFor("presence")}
             {errorFor("presence.return")}
-            {returnMessage && <p className={shell.muted}>{returnMessage}</p>}
+            {returnMessage && (
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className={shell.muted}
+              >
+                {returnMessage}
+              </Text>
+            )}
             {errorFor("pauseAll")}
             {snapshot.chiefReview?.blocked && (
               <Alert
@@ -399,7 +414,7 @@ export function AssistantView(props: AssistantViewProps) {
               </Alert>
             )}
             {errorFor("chief.retry")}
-            <div className={shell.tabRow}>
+            <div {...surfaceAttributes({ frame: "pane", edge: "block-end" }, shell.tabRow)}>
               <TabStrip
                 label={t("Room sections")}
                 value={view}
@@ -423,9 +438,15 @@ export function AssistantView(props: AssistantViewProps) {
               aria-label={t(view)}
             >
               {(view === "Today" || view === "Jobs") && snapshot.workHoursActive === false && (
-                <p className={styles.muted}>
+                <Text
+                  as="p"
+                  size="micro"
+                  tone="secondary"
+                  leading="inherit"
+                  className={styles.muted}
+                >
                   {t("Outside working hours. Accepted turns can finish; new work waits.")}
-                </p>
+                </Text>
               )}
               {view === "History" && (
                 <header className={historyStyles.heading}>
@@ -465,7 +486,7 @@ export function AssistantView(props: AssistantViewProps) {
               {view === "Memory" && <MemoryTab snapshot={snapshot} />}
             </section>
             {pending && (
-              <footer className={shell.footer}>
+              <footer {...surfaceAttributes({ frame: "pane", edge: "block-start" }, shell.footer)}>
                 <span>{pending.label}</span>
               </footer>
             )}

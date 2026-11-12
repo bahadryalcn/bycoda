@@ -13,10 +13,16 @@ A toast waiting behind the visible three keeps its countdown and returns as the 
 front close. Reminder and
 approval cards stay fully visible beside the stack.
 
+Dragging the project rail much narrower than its minimum width switches to the compact rail when the compact rail is enabled; reopening the full rail restores its previous width.
 The compact rail keeps its width and uses standard-sized navigation targets and icons.
 The footer places the voice companion first, followed by GitHub and available updates,
-then Settings and Account. Hover or focus the GitHub star to reveal its corner dismiss
+then Settings and Account. Development builds place a small blue wrench in this
+same action group, horizontally in the expanded footer and vertically in the compact
+rail. Hover it for the Development build label; production builds omit it.
+Hover or focus the GitHub star to reveal its corner dismiss
 button. Dismissal applies to both compact and expanded footers for the current version.
+The docked voice companion and GitHub icon have transparent idle backgrounds like Settings
+and Account; the floating voice companion keeps its raised surface.
 In an expanded footer with enough room, hovering or focusing the update icon reveals
 its label. Clicking it opens the existing update dialog.
 
@@ -276,7 +282,8 @@ header or use its more button) offers **Archive all** and **Delete all** for the
 conversations listed in it. Delete all asks for confirmation and cannot be
 undone; nothing is deleted automatically.
 
-The Workspace picker fits its label and arrows. Conversation search opens in the
+The Workspace picker uses available header space for the project and branch names,
+shortening them only when adjacent controls need the room. Conversation search opens in the
 remaining header space. While search is open, selection and filter buttons yield
 their space to the query; they return when search closes, retaining their state.
 
@@ -415,3 +422,21 @@ accepted. Opening never sends it. Newer composer input or a changed saved source
 remains separate instead of being overwritten. Clearing an editable draft stays
 cleared after reopening; held or uncertain deliveries keep their recovery actions.
 If session ownership cannot be loaded, the saved source remains available with Retry.
+
+## Notes
+
+The note header keeps title, project and tags together. The check icon means saved;
+Save remains available as an icon and with the keyboard shortcut. Failures and recovery
+keep their visible messages.
+
+Use the plus beside tags to assign an existing library tag or a ready-made tag. Type
+and press Enter for a custom tag. The library shows tag shortcuts beneath search;
+click a selected tag again, or All tags, to clear that filter. Filtering keeps the
+current note and its draft open.
+
+Document is the default editable view: click a paragraph to edit, then Read document
+to return to reading. Heading, list, checklist and link commands sit beside bold and
+italic while editing. Source and Split remain available for exact Markdown work.
+
+Add to chat prepares context in the note's project. Its adjacent menu selects another
+project without moving or relinking the note. The message remains unsent.

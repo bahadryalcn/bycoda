@@ -44,9 +44,11 @@ afterEach(() => {
   state.machines = [];
 });
 
-it("renders nothing when no Host is listed", () => {
+it("keeps search anchor and shows Host connection guidance when no Host is listed", () => {
   act(() => root.render(createElement(ProviderDecisionModels)));
   expect(rendered()).toBeNull();
+  expect(element.querySelector('[data-setting-id="decision-models"]')).not.toBeNull();
+  expect(element.textContent).toContain("Connect this computer");
 });
 
 it("runs the section on this computer's Host", () => {

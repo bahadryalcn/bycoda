@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -115,9 +117,9 @@ function AssignmentModel({
           kind: "content",
           id: "empty",
           node: (
-            <p className="px-2 py-3 text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="secondary" className="px-2 py-3">
               {t("No matching models")}
-            </p>
+            </Text>
           ),
         },
       ];
@@ -143,10 +145,10 @@ function AssignmentModel({
         className="max-w-full"
       >
         <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
-        <span className="truncate">
+        <Text size="inherit" tone="inherit" truncate>
           {selected?.name ?? task.model}
           {selectedEffortLabel ? ` · ${selectedEffortLabel}` : ""} · {HARNESS_TITLE[task.harness]}
-        </span>
+        </Text>
         <ChevronDown className="icon-xs shrink-0" />
       </Button>
       {open && (
@@ -209,14 +211,14 @@ function WorkerHelp() {
           onDismiss={() => setOpen(false)}
           className={`px-2.5 py-2 ${open ? "" : "pointer-events-none"}`}
         >
-          <div className="text-ui-caption leading-4 text-(--ui-tone-neutral-fg)">
+          <Text as="div" size="caption" tone="neutral">
             {t("How many workers run at once")}
-          </div>
-          <div className="mt-1 text-ui-micro leading-4 text-(--ui-text-secondary)">
+          </Text>
+          <Text as="div" size="micro" tone="secondary" className="mt-1">
             {t(
               "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
             )}
-          </div>
+          </Text>
         </Popover>
       )}
     </>
@@ -309,7 +311,6 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
       tasks: proposal.tasks.map((task) => (task.id === id ? { ...task, ...patch } : task)),
     });
   };
-  const fieldLabel = "mb-1 block text-ui-micro leading-tight text-(--ui-text-secondary)";
   return (
     <Surface
       variant="quiet"
@@ -319,29 +320,40 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
       data-orchestration-review
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2.5 px-3 py-2.5">
-        <span className="grid size-6 shrink-0 place-items-center text-(--ui-text-secondary)">
+        <Text size="inherit" tone="secondary" className="grid size-6 shrink-0 place-items-center">
           {planning ? (
             <Spinner size="md" />
           ) : (
             <MessageMultiple className="icon-md" strokeWidth={1.75} />
           )}
-        </span>
+        </Text>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+          <Text as="div" size="secondary" tone="neutral" weight="medium" truncate>
             {planning ? t("Planning assignments…") : proposal.title}
-          </div>
-          <div className="mt-1 flex items-center gap-1.5 text-ui-micro leading-tight text-(--ui-text-secondary)">
+          </Text>
+          <Text
+            as="div"
+            size="micro"
+            tone="secondary"
+            leading="tight"
+            className="mt-1 flex items-center gap-1.5"
+          >
             <HarnessIcon harness={proposal.author.harness} className="icon-xs shrink-0" />
-            <span className="truncate" title={HARNESS_TITLE[proposal.author.harness]}>
+            <Text
+              size="inherit"
+              tone="inherit"
+              truncate
+              title={HARNESS_TITLE[proposal.author.harness]}
+            >
               {t("Lead · ")}
               {proposal.author.name}
-            </span>
+            </Text>
             {!!proposal.tasks.length && (
               <span className="shrink-0">
                 · {proposal.tasks.length} {proposal.tasks.length === 1 ? t("task") : t("tasks")}
               </span>
             )}
-          </div>
+          </Text>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {!run && proposal.status === "invalid" && (
@@ -389,16 +401,21 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
         </div>
       </div>
       {planning && (
-        <p className="px-3 pb-2.5 text-ui-caption leading-5 text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary" leading="relaxed" className="px-3 pb-2.5">
           {proposal.settings.choices.length
             ? t(
                 "Your lead is choosing tasks and worker models. Review the assignments here before starting.",
               )
             : t("Checking available harnesses and models…")}
-        </p>
+        </Text>
       )}
       {!!proposal.tasks.length && (
-        <ul className="border-t border-(--ui-tone-neutral-border) py-1">
+        <ul
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "top" },
+            "border-(--ui-tone-neutral-border) py-1",
+          )}
+        >
           {visible.map((task) => {
             const index = proposal.tasks.indexOf(task);
             const open = expanded.includes(task.id);
@@ -432,7 +449,9 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                       <ChevronRight className="icon-sm shrink-0" />
                     )}
                     <OverflowTooltip label={task.title}>
-                      <span className="truncate text-ui-caption">{task.title}</span>
+                      <Text size="caption" tone="inherit" truncate>
+                        {task.title}
+                      </Text>
                     </OverflowTooltip>
                   </Button>
                   <div className="max-w-[60%] min-w-0">
@@ -449,25 +468,39 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                         }
                       />
                     ) : (
-                      <span
-                        className="flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)"
+                      <Text
+                        size="micro"
+                        tone="secondary"
+                        className="flex min-w-0 items-center gap-1.5"
                         title={HARNESS_TITLE[task.harness]}
                       >
                         <HarnessIcon harness={task.harness} className="icon-xs shrink-0" />
-                        <span className="truncate">
+                        <Text size="inherit" tone="inherit" truncate>
                           {taskChoice?.name ?? task.model}
                           {taskEffort ? ` · ${taskEffort}` : ""}
-                        </span>
-                      </span>
+                        </Text>
+                      </Text>
                     )}
                   </div>
                 </ActionHost>
                 {open && (
-                  <div className="space-y-2.5 px-3 pb-3 pl-8 text-ui-micro leading-4 text-(--ui-text-secondary)">
+                  <Text
+                    as="div"
+                    size="micro"
+                    tone="secondary"
+                    className="space-y-2.5 px-3 pb-3 pl-8"
+                  >
                     {editable ? (
                       <>
                         <div className="block">
-                          <span className={fieldLabel}>{t("Task")}</span>
+                          <Text
+                            size="micro"
+                            tone="secondary"
+                            leading="tight"
+                            className="mb-1 block"
+                          >
+                            {t("Task")}
+                          </Text>
                           <TextField
                             hideLabel
                             label=""
@@ -478,7 +511,14 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                           />
                         </div>
                         <div className="block">
-                          <span className={fieldLabel}>{t("Instructions")}</span>
+                          <Text
+                            size="micro"
+                            tone="secondary"
+                            leading="tight"
+                            className="mb-1 block"
+                          >
+                            {t("Instructions")}
+                          </Text>
                           <InstructionsField
                             label={t("Instructions for task {p0}", { p0: index + 1 })}
                             value={task.prompt}
@@ -487,9 +527,15 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                         </div>
                       </>
                     ) : (
-                      <p className="whitespace-pre-wrap text-ui-caption leading-5 text-(--ui-text-secondary)">
+                      <Text
+                        as="p"
+                        size="caption"
+                        tone="secondary"
+                        leading="relaxed"
+                        className="whitespace-pre-wrap"
+                      >
                         {task.prompt}
-                      </p>
+                      </Text>
                     )}
                     {!!task.dependsOn.length && (
                       <div className="flex min-w-0 items-center gap-1.5">
@@ -507,7 +553,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                         />
                       </div>
                     )}
-                  </div>
+                  </Text>
                 )}
               </li>
             );
@@ -532,7 +578,15 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
       )}
       {(error || proposal.error) && <Alert tone="danger">{error ?? proposal.error}</Alert>}
       {!planning && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-(--ui-tone-neutral-border) px-3 py-2 text-ui-micro text-(--ui-text-secondary)">
+        <Text
+          as="div"
+          size="micro"
+          tone="secondary"
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "top" },
+            "flex flex-wrap items-center justify-between gap-2 border-(--ui-tone-neutral-border) px-3 py-2",
+          )}
+        >
           <div className="flex items-center gap-1.5">
             {editable ? (
               <>
@@ -575,7 +629,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               .filter(Boolean)
               .join(" · ")}
           </span>
-        </div>
+        </Text>
       )}
     </Surface>
   );

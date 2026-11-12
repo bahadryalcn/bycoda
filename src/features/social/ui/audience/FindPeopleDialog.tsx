@@ -1,3 +1,4 @@
+import { Code } from "../../../../shared/ui/Code";
 import { useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -194,7 +195,7 @@ export function FindPeopleDialog({
           <InlineMessage tone="warning">
             {t("This search is not available for this account yet. Try another source.")}
             <TechnicalDetails>
-              <code>{result.unsupported}</code>
+              <Code>{result.unsupported}</Code>
             </TechnicalDetails>
           </InlineMessage>
         ) : null}

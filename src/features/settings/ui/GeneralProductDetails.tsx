@@ -4,6 +4,7 @@ import { copyText } from "../../../platform/tauri/clipboard";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { Check, Copy, Star } from "../../../shared/ui/icons";
 import { startContribution, useContributeFlow } from "../../projects/public/contribute";
 import { Row, SettingsFeedback } from "./settingsControls";
@@ -48,7 +49,15 @@ export function ProductDetails() {
   return (
     <>
       <Row label={t("Developed by")}>
-        <span className="general-about-value">{PRODUCT_IDENTITY.developerName}</span>
+        <Text
+          as="span"
+          size="secondary"
+          tone="primary"
+          leading="normal"
+          className="general-about-value"
+        >
+          {PRODUCT_IDENTITY.developerName}
+        </Text>
       </Row>
       <ProductLink
         label={t("Website")}
@@ -178,6 +187,8 @@ function ProductLink({
         ref={linkControl}
         variant="link"
         className="general-about-link"
+        textSize="secondary"
+        leading="normal"
         loading={pending === "open"}
         loadingLabel={t("Opening…")}
         disabled={pending !== null}

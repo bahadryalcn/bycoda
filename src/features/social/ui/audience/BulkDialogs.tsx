@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -163,11 +164,11 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
               ]}
               onChange={setSequenceId}
             />
-            <p className="audience-muted">
+            <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
               {t(
                 "The sequence runs for its own list, so the selected people are added to that list.",
               )}
-            </p>
+            </Text>
           </>
         ) : null}
         {result ? (

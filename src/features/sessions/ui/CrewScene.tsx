@@ -1,3 +1,13 @@
+import {
+  canvasWorkerEnabled,
+  subscribeCanvasWorkerEnabled,
+} from "../../../shared/lib/canvas-worker/host";
+import {
+  createCrewCanvasHost,
+  CREW_RENDERER_ID,
+  CLASSIC_CREW_WORKER_QUALIFIED,
+} from "./crewCanvasHost";
+const crewWorkerSnapshot = () => canvasWorkerEnabled(CREW_RENDERER_ID);
 import { Button } from "../../../shared/ui/Button";
 import { valueHash } from "../../../shared/lib/valueHash";
 import { useT } from "../../../shared/i18n";
@@ -123,6 +133,11 @@ function CrewStage({
   const t = useT();
   const theme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
   const rigged = riggedCrewTheme(theme);
+  const workerEnabled = useSyncExternalStore(
+    subscribeCanvasWorkerEnabled,
+    crewWorkerSnapshot,
+    crewWorkerSnapshot,
+  );
   const sessions = useShellSessions();
   // The shell list changes with every non-text update of any session; the seats only
   // need recomputing when one of these inputs does.
@@ -243,7 +258,11 @@ function CrewStage({
   useEffect(() => {
     const surface = canvas.current;
     if (!surface) return;
-    const draw = rigged ? rigged.createPainter(surface) : createCodeArtPainter(surface);
+    const draw = rigged
+      ? rigged.createPainter(surface)
+      : workerEnabled && CLASSIC_CREW_WORKER_QUALIFIED
+        ? createCrewCanvasHost(surface)
+        : createCodeArtPainter(surface);
     let previous: number | undefined;
     let previousLabels: number | undefined;
     let lastFrame = performance.now();
@@ -399,7 +418,7 @@ function CrewStage({
       if (timer !== undefined) clearTimeout(timer);
       draw.dispose?.();
     };
-  }, [running, crewKey, frame, artStatus, rigged, growthEnabled, variant, paused]);
+  }, [running, crewKey, frame, artStatus, rigged, growthEnabled, variant, paused, workerEnabled]);
   return (
     <div
       ref={container}

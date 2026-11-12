@@ -1,6 +1,8 @@
 import { StatusDot } from "../../../shared/ui/StatusDot";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Badge, StatusBadge } from "../../../shared/ui/Badge";
 import { useT } from "../../../shared/i18n";
 import { ListEnd, Minus } from "../../../shared/ui/icons";
@@ -23,10 +25,7 @@ export function TaskListPreview({ items, explanation }: Props) {
       className="mb-2 overflow-hidden"
     >
       <div className="flex items-start gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-2">
-        <ListEnd
-          className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
-          strokeWidth={1.75}
-        />
+        <ListEnd className="mt-0.5 icon-md shrink-0" tone="secondary" strokeWidth={1.75} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
             <SectionLabel as="h3">{t("Tasks")}</SectionLabel>
@@ -35,9 +34,15 @@ export function TaskListPreview({ items, explanation }: Props) {
             </Badge>
           </div>
           {explanation ? (
-            <p className="mt-0.5 line-clamp-2 font-sans text-ui-micro leading-4 text-(--ui-text-secondary)">
+            <ClampText
+              as="p"
+              lines={2}
+              expandable={false}
+              size="micro"
+              className="mt-0.5 font-sans"
+            >
               {explanation}
-            </p>
+            </ClampText>
           ) : null}
         </div>
       </div>
@@ -48,19 +53,19 @@ export function TaskListPreview({ items, explanation }: Props) {
             className="flex min-w-0 items-start gap-2.5 px-2.5 py-1.5"
           >
             <TaskState status={item.status} />
-            <span
-              className={`min-w-0 flex-1 font-sans text-ui-secondary leading-4.5 ${
+            <Text
+              size="secondary"
+              tone="secondary"
+              className={`min-w-0 flex-1 font-sans ${
                 item.status === "completed"
-                  ? "text-(--ui-text-secondary) line-through decoration-content/25"
+                  ? "line-through decoration-content/25"
                   : item.status === "cancelled"
-                    ? "text-(--ui-text-secondary) line-through decoration-content/20"
-                    : item.status === "in_progress"
-                      ? "text-(--ui-text-secondary)"
-                      : "text-(--ui-text-secondary)"
+                    ? "line-through decoration-content/20"
+                    : ""
               }`}
             >
               {item.text}
-            </span>
+            </Text>
           </li>
         ))}
       </ol>
@@ -76,7 +81,7 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
         status={status === "completed" ? "done" : "running"}
         iconOnly
         size="xs"
-        className="mt-px"
+        className="mt-0"
       />
     );
   }
@@ -88,7 +93,7 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
         label={t("Cancelled")}
         role="img"
         icon={<Minus />}
-        className="mt-px"
+        className="mt-0"
       />
     );
   }

@@ -1,10 +1,11 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { t } from "../../../shared/i18n";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Surface } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Star, Terminal } from "../../../shared/ui/icons";
 import type { ServerRecord } from "../model/serverInventory";
@@ -75,11 +76,15 @@ export function ServerItem({
     <MachineStatus machine={server.machine} compact={!cards} />
   ) : null;
   const favorite = server.metadata.favorite ? (
-    <Star aria-label={t("Favorite")} className="icon-xs shrink-0 text-(--ui-text-muted)" />
+    <Star aria-label={t("Favorite")} className="icon-xs shrink-0" tone="muted" />
   ) : null;
   // The group color is a small identity dot beside the name, not an edge stripe.
   const accentDot = accent ? (
-    <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accent }} />
+    <span
+      aria-hidden
+      {...surfaceAttributes({ radius: "pill" }, "size-2 shrink-0")}
+      style={{ background: accent }}
+    />
   ) : null;
 
   const onContextMenu = (event: MouseEvent<HTMLElement>) => {
@@ -181,18 +186,26 @@ export function ServerItem({
         <span className="flex min-w-0 flex-col gap-1 p-3">
           <span className="server-card-head flex min-w-0 items-center gap-2">
             <OverflowTooltip label={server.name}>
-              <span className="min-w-0 truncate font-medium">{server.name}</span>
+              <Text as="span" size="inherit" tone="inherit" weight="medium" truncate>
+                {server.name}
+              </Text>
             </OverflowTooltip>
             {accentDot}
             {favorite}
           </span>
           <OverflowTooltip label={address}>
-            <span
-              className={`text-ui-caption text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
+            <Text
+              as="span"
+              size="caption"
+              tone="secondary"
+              truncate={!selected}
+              className={selected ? "break-all whitespace-normal" : undefined}
             >
-              <span className="text-(--ui-text-muted)">{kind} · </span>
+              <Text size="inherit" tone="muted">
+                {kind} ·{" "}
+              </Text>
               {address}
-            </span>
+            </Text>
           </OverflowTooltip>
           {badges.length > 0 ? (
             <span aria-hidden="true" className={`mbs-1 block ${status ? "h-5" : "h-4"}`} />
@@ -207,20 +220,42 @@ export function ServerItem({
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-2">
               <OverflowTooltip label={server.name}>
-                <span className="block min-w-0 truncate text-ui-body font-medium">
+                <Text
+                  as="span"
+                  size="body"
+                  tone="inherit"
+                  weight="medium"
+                  truncate
+                  className="block"
+                >
                   {server.name}
-                </span>
+                </Text>
               </OverflowTooltip>
               {accentDot}
             </span>
             <OverflowTooltip label={groupTags ? `${address} · ${groupTags}` : address}>
-              <span
-                className={`block min-w-0 flex-1 text-ui-caption text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
+              <Text
+                as="span"
+                size="caption"
+                tone="secondary"
+                truncate={!selected}
+                className={
+                  selected
+                    ? "block min-w-0 flex-1 break-all whitespace-normal"
+                    : "block min-w-0 flex-1"
+                }
               >
-                <span className="text-(--ui-text-muted)">{kind} · </span>
+                <Text size="inherit" tone="muted">
+                  {kind} ·{" "}
+                </Text>
                 {address}
-                {groupTags ? <span className="text-(--ui-text-muted)"> · {groupTags}</span> : null}
-              </span>
+                {groupTags ? (
+                  <Text size="inherit" tone="muted">
+                    {" "}
+                    · {groupTags}
+                  </Text>
+                ) : null}
+              </Text>
             </OverflowTooltip>
           </span>
           <span className="server-row-status flex shrink-0 items-center gap-2">
@@ -306,7 +341,7 @@ export function ServerItem({
       {content}
     </Surface>
   ) : (
-    <li className="server-list-row" {...rootProps}>
+    <li {...surfaceAttributes({ radius: "control" }, "server-list-row")} {...rootProps}>
       {content}
     </li>
   );

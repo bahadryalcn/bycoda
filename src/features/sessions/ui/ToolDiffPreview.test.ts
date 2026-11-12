@@ -121,7 +121,7 @@ describe("tool diff popovers", () => {
     expect(dialog()?.textContent).toContain("before");
     expect(dialog()?.textContent).toContain("after");
     expect(dialog()?.textContent).toContain("+1");
-    expect(dialog()?.textContent).toContain("-1");
+    expect(dialog()?.textContent).toContain("−1");
     pointer(trigger, "pointerout");
     advance(100);
     pointer(dialog()!, "pointerover");

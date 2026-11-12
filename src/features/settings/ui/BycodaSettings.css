@@ -10,6 +10,11 @@
   container-type: inline-size;
   container-name: settings-workbench;
 }
+/* Dialogs, including the peek panel, share the sticky page bar's opaque ground. */
+.bycoda-settings-workbench[data-settings-embedded] {
+  --ui-workspace-canvas: var(--color-background-base);
+  --ui-workspace-panel: var(--color-background-base);
+}
 .bycoda-settings-titlebar {
   min-block-size: max(40px, var(--ui-control-height-compact));
 }
@@ -42,9 +47,6 @@
 .settings-page-bar .settings-page-title[data-size] {
   flex: 1 1 auto;
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   line-height: var(--ui-control-height-compact);
 }
 .bycoda-settings-toolbar-actions {
@@ -81,20 +83,17 @@
 .bycoda-settings-category-group {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   min-width: 0;
 }
 .bycoda-settings-category-label {
   display: block;
   padding: 0 8px 4px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
 }
 .bycoda-settings-category-tabs {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   min-width: 0;
 }
 /* Category glyphs are 14px optical slots; no glyph can grow a navigation row. */
@@ -106,7 +105,6 @@
 .bycoda-settings-category-tabs > button > span {
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 @container settings-workbench (max-width: 760px) {
@@ -230,8 +228,6 @@
   display: block;
   min-inline-size: 0;
   padding-block: var(--settings-group-gap, 28px) 0;
-  border: 0;
-  border-radius: var(--ui-radius-card);
 }
 .settings-group:first-child {
   padding-block-start: 0;
@@ -270,15 +266,8 @@
 .settings-title-line > button {
   margin-block: -4px;
 }
-.settings-reset {
-  color: var(--ui-text-secondary);
-}
 .settings-row-title {
   margin: 0;
-  font-size: var(--ui-font-secondary);
-  font-weight: 400;
-  line-height: 1.5;
-  color: var(--color-content);
 }
 /* Group headings: secondary, 13px, 500. The class-qualified selector outranks the legacy
    `.bycoda-settings-content` heading rule in styles/bycoda.css. */
@@ -329,7 +318,7 @@
   border-end-end-radius: calc(var(--ui-radius-card) - 0.0625rem);
 }
 @media (hover: hover) and (pointer: fine) {
-  .settings-row:hover {
+  .settings-row:not([data-stacked]):hover {
     background: var(--ui-settings-row-hover);
   }
 }
@@ -344,16 +333,10 @@
 .settings-row[data-disabled] > :is(.settings-row-label, .settings-row-control) {
   opacity: var(--ui-disabled-opacity);
 }
-.settings-description {
-  color: var(--ui-text-secondary);
-}
 .settings-help-text,
 .settings-scope,
 .settings-dependency {
   margin: 4px 0 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
@@ -470,7 +453,6 @@
   padding-inline: 16px;
 }
 .settings-group-feedback {
-  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 .settings-group-content > [role="alert"],
 .settings-row-control > [role="alert"] {
@@ -523,9 +505,6 @@
   align-items: center;
   gap: 4px 8px;
   margin-block-start: 6px;
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
-  color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
 }
 .settings-group-title,
@@ -544,7 +523,6 @@
   min-inline-size: 0;
 }
 .settings-advanced > .settings-subheading {
-  color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
 }
 /* The disclosure row aligns with row titles (16px), spans the frame, and puts the chevron on the right. */
@@ -558,24 +536,13 @@
   order: 1;
   margin-inline-start: auto;
 }
-.settings-advanced > p {
-  margin: 0;
-  padding: 8px 16px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
-}
 .settings-advanced-toggle svg {
   flex-shrink: 0;
-  transition: transform var(--motion-feedback-duration) var(--motion-ease-out);
 }
 .settings-advanced-toggle svg[data-open] {
   transform: rotate(90deg);
 }
 @media (prefers-reduced-motion: reduce) {
-  .settings-advanced-toggle svg {
-    transition: none;
-  }
   .bycoda-settings-workbench
     :is(.settings-toggle, .settings-toggle > span, .settings-select > svg) {
     transition: none;

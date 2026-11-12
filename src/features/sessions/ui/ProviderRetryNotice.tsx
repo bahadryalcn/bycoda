@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -45,7 +46,7 @@ export function ProviderRetryNotice({
     return runRefresh(onRefresh, pending, setRefreshing, setRefreshFailed);
   };
   return (
-    <div className="shrink-0 px-4 py-1.5 text-ui-caption">
+    <Text as="div" size="caption" tone="inherit" className="shrink-0 px-4 py-1.5">
       <Alert
         tone="warning"
         inline
@@ -63,9 +64,9 @@ export function ProviderRetryNotice({
         }
       >
         <span className="min-w-0 break-words">
-          <span className="font-medium text-(--ui-tone-neutral-fg)">
+          <Text size="inherit" tone="neutral" weight="medium">
             {t(notice.reconnecting ? "Reconnecting to {p0}" : "{p0} is retrying", { p0: provider })}
-          </span>
+          </Text>
           {notice.detail ? <> · {notice.detail}</> : null}
           <span className="block">
             {t(
@@ -81,6 +82,6 @@ export function ProviderRetryNotice({
           )}
         </Alert>
       ) : null}
-    </div>
+    </Text>
   );
 }

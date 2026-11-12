@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState, type ReactNode } from "react";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
@@ -178,7 +179,9 @@ export function CrewMemberForm({
         </Heading>
         {compact ? null : (
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <span className="text-ui-body font-medium">{t("Responsibility in the crew")}</span>
+            <Text size="body" tone="inherit" weight="medium">
+              {t("Responsibility in the crew")}
+            </Text>
             <SegmentedControl
               label={t("Responsibility in the crew")}
               value={agent.role}

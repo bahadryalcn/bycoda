@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import styles from "./WorktreesPage.module.css";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -166,17 +167,30 @@ export function WorktreesPage({
                 </Button>
               </div>
             </div>
-            <p className={styles.scope}>{prettyCwd(project || "~")}</p>
+            <Text as="p" size="caption" tone="muted" leading="inherit" className={styles.scope}>
+              {prettyCwd(project || "~")}
+            </Text>
             {data && (
-              <p
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="inherit"
                 id="setting-worktree-location"
                 data-setting-id="worktree-location"
                 className={styles.location}
               >
-                {t("New worktrees are created in ")} <span>{prettyCwd(data.defaultRoot)}</span>
-              </p>
+                {t("New worktrees are created in ")}{" "}
+                <Text size="inherit" tone="muted">
+                  {prettyCwd(data.defaultRoot)}
+                </Text>
+              </Text>
             )}
-            {remoteProject && <p className="settings-description">{remoteLifecycleNotice}</p>}
+            {remoteProject && (
+              <Text as="p" size="inherit" tone="secondary">
+                {remoteLifecycleNotice}
+              </Text>
+            )}
           </header>
         )}
         liveSessions={liveSessions}
@@ -198,21 +212,21 @@ export function WorktreesPage({
             {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
             {loadError && <SettingsFeedback state="error">{loadError}</SettingsFeedback>}
             {!data && !loadError && (
-              <p role="status" className={styles.empty}>
+              <Text as="p" size="inherit" tone="secondary" role="status" className={styles.empty}>
                 {t("Loading worktrees…")}
-              </p>
+              </Text>
             )}
             {managedLoading && (
-              <p role="status" className={styles.empty}>
+              <Text as="p" size="inherit" tone="secondary" role="status" className={styles.empty}>
                 {t(
                   "Managed workspaces are loading. Deletion is unavailable until their status is known.",
                 )}
-              </p>
+              </Text>
             )}
             {data && !worktrees.length && !managedWorkspaces?.length && (
-              <p className={styles.empty}>
+              <Text as="p" size="inherit" tone="secondary" className={styles.empty}>
                 {t("Create a worktree to work on another branch in a separate folder.")}
-              </p>
+              </Text>
             )}
             {worktrees
               .filter((tree) =>

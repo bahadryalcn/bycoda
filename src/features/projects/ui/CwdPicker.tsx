@@ -1,4 +1,6 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { useT } from "../../../shared/i18n";
 import { ChevronDown } from "../../../shared/ui/icons";
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
@@ -99,20 +101,20 @@ export function CwdPicker({
     label: basename(item.path),
     title: item.path,
     content: (
-      <span className="min-w-0 flex-1 truncate text-ui-secondary">
+      <Text truncate size="secondary" tone="inherit" className="min-w-0 flex-1">
         {renderProjectLabel?.(item.path) ?? basename(item.path)}
-      </span>
+      </Text>
     ),
     trailing: (
-      <span className="max-w-28 shrink-0 truncate font-mono text-ui-micro text-(--ui-text-secondary)">
+      <Text truncate size="micro" tone="secondary" className="max-w-28 shrink-0 font-mono">
         {prettyParent(item.path)}
-      </span>
+      </Text>
     ),
   });
   const heading = (text: string) => (
-    <p className="px-2.5 pb-1 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)">
+    <Text as="p" weight="medium" tone="secondary" className="px-2.5 pb-1 pt-2">
       {text}
-    </p>
+    </Text>
   );
   const items: DropdownMenuItem[] = [];
   if (inProject)
@@ -122,12 +124,14 @@ export function CwdPicker({
       node: (
         <>
           {heading(t("Current project"))}
-          <div className="px-2.5 py-1.5 text-(--ui-text-secondary)">
-            <p className="truncate text-ui-secondary text-content">
+          <Text as="div" size="inherit" tone="secondary" className="px-2.5 py-1.5">
+            <Text truncate as="p" size="secondary" tone="primary">
               {renderProjectLabel?.(cwd) ?? basename(cwd)}
-            </p>
-            <p className="truncate font-mono text-ui-micro">{prettyParent(cwd)}</p>
-          </div>
+            </Text>
+            <Text truncate as="p" size="micro" tone="inherit" className="font-mono">
+              {prettyParent(cwd)}
+            </Text>
+          </Text>
         </>
       ),
     });
@@ -142,9 +146,9 @@ export function CwdPicker({
         kind: "content",
         id: "none",
         node: (
-          <p className="px-2.5 py-2 text-ui-secondary text-(--ui-text-secondary)">
+          <Text as="p" size="secondary" tone="secondary" className="px-2.5 py-2">
             {t("No other projects")}
-          </p>
+          </Text>
         ),
       });
     items.push(...previewRecents.map(projectItem));
@@ -167,9 +171,9 @@ export function CwdPicker({
         id: NEW_TERMINAL_ID,
         label: t("New terminal"),
         trailing: (
-          <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-secondary)">
+          <Text size="micro" tone="secondary" className="shrink-0 font-mono">
             {MOD}`
-          </span>
+          </Text>
         ),
       },
     );
@@ -217,12 +221,18 @@ export function CwdPicker({
         {children ?? (
           <>
             <ProjectLogoIcon path={projectLogoPath} fallbackStrokeWidth={1.5} />
-            <span className="truncate font-mono text-ui-caption">{label}</span>
+            <Text truncate size="caption" tone="inherit" className="font-mono">
+              {label}
+            </Text>
           </>
         )}
         {chevron ? (
           <ChevronDown
-            className={`icon-xs shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""}`}
+            tone="secondary"
+            {...motionAttributes(
+              { transition: "transform", duration: "standard", easing: "sheen" },
+              `icon-xs shrink-0 ${open ? "rotate-180" : ""}`,
+            )}
             strokeWidth={1.75}
           />
         ) : null}

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { t } from "../../../../shared/i18n";
@@ -41,9 +43,11 @@ export function ConversationHeader({
   const summaryRefreshable =
     !pending && !clearing && !summaryRefreshing && !!environmentId && summaryScopeVisible(threadId);
   return (
-    <div className={styles.header}>
+    <div {...surfaceAttributes({ frame: "pane", edge: "block-end" }, styles.header)}>
       <div className={styles.identity}>
-        <strong>{snapshot.profile.name}</strong>
+        <Text as="strong" size="title" tone="inherit" weight="medium" leading="inherit" truncate>
+          {snapshot.profile.name}
+        </Text>
         <Badge key={threadId} size="xs" className={styles.threadChip}>
           {threadLabel}
         </Badge>
@@ -51,7 +55,15 @@ export function ConversationHeader({
           {(summaryRefreshing || summaryLabel || summaryFailed) && (
             <>
               {!summaryFailed && (summaryRefreshing || summaryState?.status !== "blocked") ? (
-                <p className={styles.summaryText}>{t("Updating conversation summary")}</p>
+                <Text
+                  as="p"
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className={styles.summaryText}
+                >
+                  {t("Updating conversation summary")}
+                </Text>
               ) : (
                 <Badge
                   size="xs"

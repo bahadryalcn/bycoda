@@ -6,7 +6,6 @@
   justify-content: space-between;
   gap: 8px 16px;
   padding-block: 10px;
-  border-block-end: 1px solid var(--ui-settings-hairline);
   min-inline-size: 0;
 }
 .rowText {
@@ -17,14 +16,8 @@
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
-.rowText strong {
-  font-size: var(--ui-font-body);
-  font-weight: 500;
-}
 .rowText p {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 /* Settings page: status and error lines sit between rows with row padding, and collapse while empty. */
@@ -46,7 +39,6 @@
   justify-content: space-between;
   gap: 8px 16px;
   padding: 10px 16px;
-  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 .footerAction > p {
   flex: 1 1 14rem;

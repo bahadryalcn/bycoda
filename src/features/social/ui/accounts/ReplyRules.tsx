@@ -1,7 +1,9 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { Heading } from "../../../../shared/ui/Heading";
+import { Text } from "../../../../shared/ui/Text";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Switch } from "../../../../shared/ui/Switch";
 import type { HostProject } from "../../../connections/public/protocol";
@@ -121,7 +123,10 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
       .catch(() => undefined);
 
   return (
-    <section className="social-card" aria-label={t("Reply rules")}>
+    <section
+      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      aria-label={t("Reply rules")}
+    >
       <div className="social-card-head">
         <Heading size="item">{t("Reply rules")}</Heading>
         <DisabledReason
@@ -140,7 +145,9 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
         </InlineMessage>
       ) : null}
       {rules && !rules.length ? (
-        <p className="social-muted">{t("No reply rules for this account yet.")}</p>
+        <Text as="p" tone="muted" leading="snug" className="social-muted">
+          {t("No reply rules for this account yet.")}
+        </Text>
       ) : null}
       {rules?.map((rule) => (
         <div key={rule.id} className="social-field-row">
@@ -150,19 +157,21 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
             disabled={disabled || is(`rule:${rule.id}`)}
             onCheckedChange={(enabled) => setEnabled(rule, enabled)}
           />
-          <span className="social-muted">
+          <Text as="span" tone="muted" leading="snug" className="social-muted">
             {triggerText(rule.trigger)} · {modeText(rule.mode)}
-          </span>
+          </Text>
           {rule.pausedReason && !rule.enabled ? (
-            <span className="social-muted">{t("Paused")}</span>
+            <Text as="span" tone="muted" leading="snug" className="social-muted">
+              {t("Paused")}
+            </Text>
           ) : null}
         </div>
       ))}
       {proposal ? (
-        <div className="social-card">
-          <p className="social-card-description">
+        <div {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}>
+          <Text as="p" tone="muted" leading="snug" className="social-card-description">
             {t("AI suggests these narrower rules. Nothing changes until you edit a rule.")}
-          </p>
+          </Text>
           {proposal.proposals.length ? (
             <ul>
               {proposal.proposals.map((item) => (
@@ -172,12 +181,14 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
               ))}
             </ul>
           ) : (
-            <p className="social-muted">{t("No rule needs narrowing.")}</p>
+            <Text as="p" tone="muted" leading="snug" className="social-muted">
+              {t("No rule needs narrowing.")}
+            </Text>
           )}
           {proposal.notes.map((note) => (
-            <p key={note} className="social-muted">
+            <Text key={note} as="p" tone="muted" leading="snug" className="social-muted">
               {note}
-            </p>
+            </Text>
           ))}
         </div>
       ) : null}

@@ -1,3 +1,5 @@
+import { automaticSources, sameSource } from "../model/presentation";
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -37,7 +39,9 @@ export function SourcesList({
   }
   if (sources === null) {
     return (
-      <p className="text-ui-caption px-4 py-2.5 text-(--ui-text-secondary)">{t("Loading…")}</p>
+      <Text as="p" size="caption" tone="secondary" className="px-4 py-2.5">
+        {t("Loading…")}
+      </Text>
     );
   }
   if (sources.length === 0) {
@@ -48,16 +52,24 @@ export function SourcesList({
           size="inline"
           description={t("No decision model is connected yet.")}
           action={emptyAction}
+          title={t("Add a decision model")}
         />
       </div>
     );
   }
   return (
-    <ul className="flex min-w-0 flex-col" aria-label={t("Connected decision models")}>
-      {sources.map((source) => (
+    <ul
+      className="decision-sources flex min-w-0 flex-col"
+      aria-label={t("Connected decision models")}
+    >
+      {automaticSources(sources).map((source, index) => (
         <SourceRow
           key={source.id}
           source={source}
+          usedFirst={index === 0}
+          duplicate={
+            sources.find((other) => other.id !== source.id && sameSource(source, other))?.name
+          }
           actions={actions}
           isPending={isPending}
           onEdit={onEdit}

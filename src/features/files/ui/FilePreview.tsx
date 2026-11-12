@@ -1,9 +1,11 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { DiffStat } from "../../../shared/ui/DiffStat";
+import { Text } from "../../../shared/ui/Text";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { CircleDashed, X } from "../../../shared/ui/icons";
 import { MAX_PREVIEW_LINES } from "../../../integrations/harness/core/preview";
-import { formatInteger } from "../../../shared/lib/numbers";
 import { displayPath, resolveWorkspacePath } from "../../../shared/lib/paths";
 import type { ToolPreview, ToolPreviewLine } from "../../sessions";
 import { FileTypeIcon } from "./FileTypeIcon";
@@ -82,11 +84,12 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
 
   return (
     <div
-      className={
+      {...surfaceAttributes(
+        { frame: variant === "card" ? "card" : undefined, edge: "all" },
         variant === "card"
-          ? "overflow-hidden rounded-(--ui-radius-card) border border-(--ui-card-border)"
-          : "min-w-0"
-      }
+          ? "overflow-hidden rounded-(--ui-radius-card) border-(--ui-card-border)"
+          : "min-w-0",
+      )}
     >
       <div className="flex items-center gap-2 px-2.5 py-2">
         <FileTypeIcon name={fileName || "file"} isDir={false} />
@@ -95,7 +98,8 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
             variant="ghost"
             motion="none"
             type="button"
-            className="min-w-0 flex-1 truncate text-left font-mono hover:underline"
+            className="min-w-0 flex-1 text-left font-mono hover:underline"
+            truncate
             tooltip={path}
             tooltipWhen={path === label ? "overflow" : "always"}
             onClick={() => onOpenFile(filePath)}
@@ -104,19 +108,25 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
           </Button>
         ) : (
           <Tooltip label={path} when={path === label ? "overflow" : "always"}>
-            <span className="min-w-0 flex-1 truncate font-mono text-ui-caption font-medium text-[var(--color-content)]">
+            <Text
+              truncate
+              size="caption"
+              tone="primary"
+              weight="medium"
+              className="min-w-0 flex-1 font-mono"
+            >
               {label}
-            </span>
+            </Text>
           </Tooltip>
         )}
         {added > 0 || deleted > 0 ? (
-          <span className="shrink-0 font-sans text-ui-micro font-medium tabular-nums">
-            {added > 0 ? <span className="text-diff-add-fg">+{formatInteger(added)}</span> : null}
-            {added > 0 && deleted > 0 ? " " : null}
-            {deleted > 0 ? (
-              <span className="text-diff-del-fg">-{formatInteger(deleted)}</span>
-            ) : null}
-          </span>
+          <DiffStat
+            additions={added}
+            deletions={deleted}
+            size="micro"
+            weight="medium"
+            className="shrink-0 font-sans"
+          />
         ) : (
           <StatusIcon status={status} />
         )}
@@ -134,9 +144,9 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
             aria-label={variant === "popover" ? t("Preview lines") : undefined}
           >
             {preview.contentOnly && !lines.length ? (
-              <p className="px-3 py-2 font-mono text-ui-caption text-[var(--ui-text-secondary)]">
+              <Text as="p" size="caption" tone="secondary" className="px-3 py-2 font-mono">
                 {t("Empty file")}
-              </p>
+              </Text>
             ) : null}
             {lines.map((line, index) => (
               <PreviewLine
@@ -167,31 +177,33 @@ function PreviewLine({
   const bar =
     line.kind === "add" ? "bg-diff-add" : line.kind === "del" ? "bg-diff-del" : "bg-transparent";
   const mark = line.kind === "add" ? "+" : line.kind === "del" ? "−" : " ";
-  const markColor =
-    line.kind === "add"
-      ? "text-diff-add-fg"
-      : line.kind === "del"
-        ? "text-diff-del-fg"
-        : "text-transparent";
+  const markTone = line.kind === "add" ? "added" : line.kind === "del" ? "removed" : "inherit";
 
   return (
     <div className={`relative flex items-baseline ${scrollable ? "w-max min-w-full" : ""} ${bg}`}>
       <span className={`absolute inset-y-0 left-0 w-0.5 ${bar}`} />
-      <span className="w-7 shrink-0 pr-1 text-right font-mono text-ui-micro text-[var(--ui-text-muted)]">
+      <Text size="micro" tone="muted" className="w-7 shrink-0 pr-1 text-right font-mono">
         {line.number ?? " "}
-      </span>
+      </Text>
       {showGutter ? (
-        <span
-          className={`w-3 shrink-0 text-center font-mono text-ui-micro font-medium ${markColor}`}
+        <Text
+          size="micro"
+          tone={markTone}
+          weight="medium"
+          className="w-3 shrink-0 text-center font-mono"
         >
           {mark}
-        </span>
+        </Text>
       ) : null}
-      <span
-        className={`min-w-0 flex-1 pr-2 font-mono text-ui-micro leading-4.5 ${scrollable ? "whitespace-pre" : "truncate"}`}
+      <Text
+        size="micro"
+        tone="inherit"
+        leading="relaxed"
+        truncate={!scrollable}
+        className={`min-w-0 flex-1 pr-2 font-mono ${scrollable ? "whitespace-pre" : ""}`}
       >
         {highlight(line.text, line.kind === "context")}
-      </span>
+      </Text>
     </div>
   );
 }
@@ -199,12 +211,10 @@ function PreviewLine({
 function StatusIcon({ status }: { status: Status }) {
   useLocale();
   if (status === "rejected") {
-    return <X className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
+    return <X tone="danger" className="icon-sm shrink-0" strokeWidth={2} />;
   }
   if (status === "pending") {
-    return (
-      <CircleDashed className="icon-sm shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
-    );
+    return <CircleDashed tone="muted" className="icon-sm shrink-0" strokeWidth={1.75} />;
   }
   return null;
 }
@@ -213,40 +223,40 @@ function highlight(text: string, dimmed: boolean) {
   const dim = dimmed ? "opacity-70" : "";
   const trimmed = text.trimStart();
   if (trimmed.startsWith("//") || trimmed.startsWith("///") || trimmed.startsWith("#")) {
-    return <span className={`text-[var(--ui-text-muted)] ${dim}`}>{text}</span>;
+    return (
+      <Text as="span" size="inherit" tone="muted" className={dim}>
+        {text}
+      </Text>
+    );
   }
 
-  const parts: { text: string; color: string }[] = [];
+  const parts: { text: string; tone?: "success" | "warning" }[] = [];
   const regex = /\b([A-Za-z_][A-Za-z0-9_]*)\b/g;
   let last = 0;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(text))) {
     if (match.index > last) {
-      parts.push({ text: text.slice(last, match.index), color: "" });
+      parts.push({ text: text.slice(last, match.index) });
     }
     const token = match[1];
-    const color = KEYWORDS.has(token)
-      ? "text-(--ui-tone-success-fg)"
-      : /^[A-Z]/.test(token)
-        ? "text-(--ui-tone-warning-fg)"
-        : "";
-    parts.push({ text: token, color });
+    const tone = KEYWORDS.has(token) ? "success" : /^[A-Z]/.test(token) ? "warning" : undefined;
+    parts.push({ text: token, tone });
     last = match.index + token.length;
   }
-  if (last < text.length) parts.push({ text: text.slice(last), color: "" });
+  if (last < text.length) parts.push({ text: text.slice(last) });
 
   return (
-    <span className={`text-[var(--color-content)] ${dim}`}>
+    <Text as="span" size="inherit" tone="primary" className={dim}>
       {parts.map((part, index) =>
-        part.color ? (
-          <span key={index} className={part.color}>
+        part.tone ? (
+          <Text key={index} as="span" size="inherit" tone={part.tone}>
             {part.text}
-          </span>
+          </Text>
         ) : (
           <span key={index}>{part.text}</span>
         ),
       )}
-    </span>
+    </Text>
   );
 }
 

@@ -151,3 +151,23 @@ export function saveDefaultsDraft(
     () => checks.every((check) => check()),
   );
 }
+
+/** Attempts every target and keeps refused writes available for a targeted retry. */
+export function saveDefaultsTargets(
+  draft: DefaultsDraft,
+  targets: readonly DefaultsTarget[],
+  save = saveDefaultsDraft,
+) {
+  const saved: DefaultsTarget[] = [];
+  const failed: { target: DefaultsTarget; message: string }[] = [];
+  for (const target of targets) {
+    try {
+      const outcome = save(draft, target);
+      if (outcome.state === "saved") saved.push(target);
+      else failed.push({ target, message: outcome.message });
+    } catch (error) {
+      failed.push({ target, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { saved, failed };
+}

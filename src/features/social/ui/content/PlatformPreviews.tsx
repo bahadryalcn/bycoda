@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Surface } from "../../../../shared/ui/Surface";
 import { PlatformMark } from "../common/PlatformIcon";
@@ -38,23 +39,49 @@ export function PlatformPreviews({ accounts, draft, policies, problems }: Platfo
               <PlatformMark platform={account.platform} size="sm" />
               <strong>{account.name}</strong>
             </header>
-            <p className="content-preview-text">{text || t("Your post text appears here.")}</p>
+            <Text
+              as="p"
+              size="body"
+              tone="inherit"
+              leading="inherit"
+              className="content-preview-text"
+            >
+              {text || t("Your post text appears here.")}
+            </Text>
             {draft.media.length ? (
-              <p className="content-preview-note">
+              <Text
+                as="p"
+                size="caption"
+                tone="muted"
+                leading="inherit"
+                className="content-preview-note"
+              >
                 {t("{p0} attachments", { p0: draft.media.length })}
-              </p>
+              </Text>
             ) : null}
-            <p className="content-preview-count">
+            <Text
+              as="p"
+              size="caption"
+              tone={over ? "danger" : "muted"}
+              leading="inherit"
+              className="content-preview-count"
+            >
               {limit !== undefined
                 ? t("{p0} of {p1} characters", { p0: count, p1: limit })
                 : t("{p0} characters", { p0: count })}
-            </p>
+            </Text>
             {own.length ? (
-              <ul className="content-preview-problems">
+              <Text
+                as="ul"
+                size="caption"
+                tone="danger"
+                leading="inherit"
+                className="content-preview-problems"
+              >
                 {own.map((problem) => (
                   <li key={problem.text}>{problem.text}</li>
                 ))}
-              </ul>
+              </Text>
             ) : null}
           </Surface>
         );

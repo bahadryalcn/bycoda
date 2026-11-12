@@ -3,19 +3,12 @@
   display: grid;
   gap: 14px;
   min-inline-size: 0;
-  line-height: 1.5;
 }
 .muted {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 .note {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.4;
   text-align: start;
 }
 
@@ -32,8 +25,6 @@
   padding: 8px 12px;
   border: 1px solid var(--ui-pane-border);
   border-radius: var(--ui-radius-card);
-  font-size: var(--ui-font-body);
-  line-height: 1.5;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -65,8 +56,6 @@
 /* Preview */
 .summary {
   margin: 0;
-  font-size: var(--ui-font-body);
-  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 .fields {
@@ -89,12 +78,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 2px 6px;
-  color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
-}
-.change strong {
-  color: inherit;
-  font-weight: 500;
 }
 .avatarSection {
   display: grid;

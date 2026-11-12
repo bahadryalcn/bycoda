@@ -111,7 +111,11 @@ export function validateUiCatalog(entries) {
     if (entry.instead && !names.has(entry.instead))
       problem(`@instead names unknown component "${entry.instead}"`);
     for (const token of entry.replaces) {
-      if (!/^[a-z][a-z0-9]*$/.test(token) && !/^role=[a-z]+$/.test(token))
+      if (
+        !/^[a-z][a-z0-9]*$/.test(token) &&
+        !/^role=[a-z]+$/.test(token) &&
+        !/^input\[type=(?:date|time|datetime-local)\]$/.test(token)
+      )
         problem(`invalid @replaces token "${token}"`);
       const owner = claimed.get(token);
       if (owner && owner !== entry.name)

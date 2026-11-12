@@ -151,15 +151,20 @@ contract is in `src/shared/model/host-contracts/delegation.ts`, and the service 
 `host/delegation/service.ts`.
 
 - `agents.options` takes no input. It returns the selected `subagents` and
-  `advisor` refs with `available`, the current `running` counts and `limits`.
+  `advisor` refs with `available`, `effortLevels` and `defaultEffort` when offered, the current `running` counts and `limits`.
 - `agents.delegate` takes `requestId`, `title` and `prompt`, plus `model` (a ref
   key from `agents.options`). `model` is required when more than one subagent model
-  is selected. It returns at once with the run.
+  is selected. Optional `effort` selects the closest offered level; omitted uses the model default. It returns at once with the run.
 - `agents.consult` takes `requestId`, `question` and optional `context`. It starts
   the advisor with an `intent` of `plan`, so it cannot edit files.
-- `agents.wait` takes `runId` and optional `timeoutSeconds` (1 to 50, default 50).
-  It returns the run's current state, then the caller calls again while it is
-  `running`.
+- `agents.reply` takes `requestId`, `runId` and `message` (1 to 16,000 characters).
+  It resumes the same finished child with its context and recorded model/account.
+  Running children must finish or be cancelled first; approvals need an owner answer
+  in the child session. Advisor replies remain read-only. Retries are idempotent.
+- `agents.wait` takes exactly one of `runId` or `runIds` (1 to 16 unique IDs).
+  Timeout defaults to the provider maximum: 240 seconds for Claude, Codex and Grok,
+  50 for others. `runId` returns one run; `runIds` returns `{ runs: [...] }` once
+  none is running or the timeout expires. `needsInput` does not block the wait.
 - `agents.cancel` takes `runId`. It stops a running child; the child keeps the work it
   already did.
 
@@ -179,11 +184,11 @@ returns `error`. Responses also carry `runId`, `sessionId`, `markdownReference`
 
 Limits, from `DELEGATION_LIMITS`:
 
-- up to 8 subagent models per conversation;
-- 8 running subagents and 1 running advisor per parent;
+- up to 24 subagent models per conversation;
+- 16 running subagents and 1 running advisor per parent;
 - 16,000 characters for a prompt, question or context;
 - 120 characters for a title;
-- 50 seconds per wait;
+- up to 240 seconds per wait (50 for providers without a managed deadline);
 - 8,192 bytes for an encoded setting value; larger values are ignored, not parsed.
 
 A child cannot start `agents.*` runs. The Host rejects that call, and a child

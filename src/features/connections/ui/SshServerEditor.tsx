@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useId, useState } from "react";
@@ -240,19 +241,19 @@ export function SshServerEditor({
           onChange={(event) => setName(event.target.value)}
           disabled={saving}
         />
-        <div className="text-ui-caption text-(--ui-text-muted)">
+        <Text as="div" tone="muted">
           <p>
             {t(
               "Enter the server address and SSH user. Connect opens a terminal; Save adds it to your servers.",
             )}
           </p>
           <p className="mbs-2">{t("Leave empty to use your SSH agent and default identities.")}</p>
-        </div>
+        </Text>
         {!onConnect && valid && endpoint.httpProxy ? (
-          <p className="break-all text-ui-caption text-(--ui-text-muted)">
+          <Text as="p" tone="muted" className="break-all">
             {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
             {sshEndpointPreview(endpoint.httpProxy)}
-          </p>
+          </Text>
         ) : null}
         <Disclosure
           size="sm"
@@ -263,95 +264,97 @@ export function SshServerEditor({
             server?.sshEndpoint?.jumpHosts?.length ||
             server?.sshEndpoint?.jumpPolicies?.length,
           )}
-          className="border-t border-stroke pbs-3 text-ui-caption text-(--ui-text-muted)"
+          className="border-t border-stroke pbs-3"
+          textSize="caption"
+          tone="muted"
           summary={t("Advanced SSH settings")}
         >
-          <div className="flex flex-col gap-3">
-            <TextField
-              label={t("Public SSH certificate file")}
-              value={certificateFile}
-              maxLength={4096}
-              disabled={saving}
-              onChange={(event) => setCertificateFile(event.target.value)}
-              description={t(
-                "Public certificate reference only. Private keys and enrollment stay outside this form.",
-              )}
-            />
-            <SshCertificateInspection reference={certificateFile} disabled={saving} />
-            <Switch
-              checked={perHopPolicy}
-              onCheckedChange={setPerHopPolicy}
-              disabled={saving}
-              label={t("Per-hop SSH policy")}
-            />
-            {perHopPolicy ? (
-              <SshJumpPolicyEditor
-                value={policyDrafts}
-                onChange={setPolicyDrafts}
+          <Text as="div" size="caption" tone="muted">
+            <div className="flex flex-col gap-3">
+              <TextField
+                label={t("Public SSH certificate file")}
+                value={certificateFile}
+                maxLength={4096}
                 disabled={saving}
+                onChange={(event) => setCertificateFile(event.target.value)}
+                description={t(
+                  "Public certificate reference only. Private keys and enrollment stay outside this form.",
+                )}
               />
-            ) : (
-              <SshJumpChainEditor value={jumpHosts} onChange={setJumpHosts} disabled={saving} />
-            )}
-          </div>
+              <SshCertificateInspection reference={certificateFile} disabled={saving} />
+              <Switch
+                checked={perHopPolicy}
+                onCheckedChange={setPerHopPolicy}
+                disabled={saving}
+                label={t("Per-hop SSH policy")}
+              />
+              {perHopPolicy ? (
+                <SshJumpPolicyEditor
+                  value={policyDrafts}
+                  onChange={setPolicyDrafts}
+                  disabled={saving}
+                />
+              ) : (
+                <SshJumpChainEditor value={jumpHosts} onChange={setJumpHosts} disabled={saving} />
+              )}
+            </div>
+          </Text>
         </Disclosure>
-        <Disclosure
-          size="sm"
-          className="text-ui-caption text-(--ui-text-muted)"
-          summary={t("Connection proxy")}
-        >
-          <div className="flex min-w-0 flex-col gap-2">
-            <Switch
-              checked={proxyEnabled}
-              onCheckedChange={setProxyEnabled}
-              disabled={saving}
-              label={t("HTTP CONNECT upstream")}
-            />
-            {proxyEnabled ? (
-              <>
-                <FieldGroup variant="bare" disabled={saving}>
-                  <SegmentedControl
-                    label={t("Proxy transport")}
-                    value={proxyScheme}
-                    onValueChange={(value) => setProxyScheme(value as "http" | "https")}
-                    options={[
-                      { value: "http", label: "HTTP" },
-                      { value: "https", label: "HTTPS" },
-                    ]}
+        <Disclosure size="sm" textSize="caption" tone="muted" summary={t("Connection proxy")}>
+          <Text as="div" size="caption" tone="muted">
+            <div className="flex min-w-0 flex-col gap-2">
+              <Switch
+                checked={proxyEnabled}
+                onCheckedChange={setProxyEnabled}
+                disabled={saving}
+                label={t("HTTP CONNECT upstream")}
+              />
+              {proxyEnabled ? (
+                <>
+                  <FieldGroup variant="bare" disabled={saving}>
+                    <SegmentedControl
+                      label={t("Proxy transport")}
+                      value={proxyScheme}
+                      onValueChange={(value) => setProxyScheme(value as "http" | "https")}
+                      options={[
+                        { value: "http", label: "HTTP" },
+                        { value: "https", label: "HTTPS" },
+                      ]}
+                    />
+                  </FieldGroup>
+                  <TextField
+                    label={t("Proxy host")}
+                    value={proxyHost}
+                    maxLength={253}
+                    disabled={saving}
+                    onChange={(event) => setProxyHost(event.target.value)}
                   />
-                </FieldGroup>
-                <TextField
-                  label={t("Proxy host")}
-                  value={proxyHost}
-                  maxLength={253}
-                  disabled={saving}
-                  onChange={(event) => setProxyHost(event.target.value)}
-                />
-                <TextField
-                  label={t("Proxy port")}
-                  value={proxyPort}
-                  inputMode="numeric"
-                  maxLength={5}
-                  disabled={saving}
-                  onChange={(event) => setProxyPort(event.target.value)}
-                />
-                <p>
-                  {t(
-                    proxyScheme === "https"
-                      ? "HTTPS verifies the proxy certificate and hostname before connecting."
-                      : "The upstream connection uses plain HTTP. Basic credentials require separate approval for each operation.",
-                  )}
-                </p>
-                {proxyConflict ? (
-                  <InlineError live="polite">
+                  <TextField
+                    label={t("Proxy port")}
+                    value={proxyPort}
+                    inputMode="numeric"
+                    maxLength={5}
+                    disabled={saving}
+                    onChange={(event) => setProxyPort(event.target.value)}
+                  />
+                  <p>
                     {t(
-                      "Choose either an HTTP proxy or a jump chain. Both cannot be used together.",
+                      proxyScheme === "https"
+                        ? "HTTPS verifies the proxy certificate and hostname before connecting."
+                        : "The upstream connection uses plain HTTP. Basic credentials require separate approval for each operation.",
                     )}
-                  </InlineError>
-                ) : null}
-              </>
-            ) : null}
-          </div>
+                  </p>
+                  {proxyConflict ? (
+                    <InlineError live="polite">
+                      {t(
+                        "Choose either an HTTP proxy or a jump chain. Both cannot be used together.",
+                      )}
+                    </InlineError>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          </Text>
         </Disclosure>
         {onConnect ? (
           <>
@@ -360,44 +363,51 @@ export function SshServerEditor({
               disabled={saving}
               onChange={(event) => setSaveConnection(event.target.checked)}
               label={t("Save connection")}
-              className="flex items-center gap-2 text-ui-caption"
+              size="caption"
+              className="flex items-center gap-2"
             />
             {valid ? (
-              <div
+              <Text
                 aria-label={t("Endpoint preview")}
-                className="border-t border-stroke pbs-3 text-ui-caption"
+                as="div"
+                tone="inherit"
+                className="border-t border-stroke pbs-3"
               >
-                <p className="break-all font-medium">{sshEndpointPreview(endpoint)}</p>
+                <Text as="p" size="inherit" tone="inherit" weight="medium" className="break-all">
+                  {sshEndpointPreview(endpoint)}
+                </Text>
                 {endpoint.jumpHosts?.length ? (
-                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                  <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
                     {t("Jump chain")}: {endpoint.jumpHosts.join(" → ")}
-                  </p>
+                  </Text>
                 ) : null}
                 {endpoint.jumpPolicies?.length ? (
-                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                  <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
                     {t("Jump chain")}: {endpoint.jumpPolicies.map(sshEndpointPreview).join(" → ")}
-                  </p>
+                  </Text>
                 ) : null}
                 {endpoint.httpProxy ? (
-                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                  <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
                     {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
                     {sshEndpointPreview(endpoint.httpProxy)}
-                  </p>
+                  </Text>
                 ) : null}
                 {endpoint.identityFile ? (
-                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                  <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
                     {t("Identity file")}: {endpoint.identityFile}
-                  </p>
+                  </Text>
                 ) : null}
                 {endpoint.certificateFile ? (
-                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                  <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
                     {t("Public SSH certificate file")}: {endpoint.certificateFile}
-                  </p>
+                  </Text>
                 ) : null}
                 {!endpoint.user ? (
-                  <p className="mbs-1 text-(--ui-text-muted)">{t("Uses the default SSH user.")}</p>
+                  <Text as="p" size="inherit" tone="muted" className="mbs-1">
+                    {t("Uses the default SSH user.")}
+                  </Text>
                 ) : null}
-              </div>
+              </Text>
             ) : null}
           </>
         ) : null}

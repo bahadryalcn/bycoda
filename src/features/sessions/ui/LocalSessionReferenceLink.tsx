@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
@@ -169,7 +170,7 @@ export function LocalSessionReferenceLink({
         <Info className="icon-sm" />
       </Button>
       {!details && (error || opening) ? (
-        <span id={id} role="status" className="text-ui-caption text-(--ui-text-secondary)">
+        <Text id={id} role="status" size="caption" tone="secondary">
           {opening ? t("Opening session…") : error}
           {error ? (
             <Button
@@ -199,7 +200,7 @@ export function LocalSessionReferenceLink({
               {t("Open conversation")}
             </Button>
           ) : null}
-        </span>
+        </Text>
       ) : null}
       {details ? (
         <Popover
@@ -210,22 +211,26 @@ export function LocalSessionReferenceLink({
           role="dialog"
           aria-label={t("Session details")}
           onDismiss={() => setDetails(false)}
-          className="p-3 text-ui-body"
+          className="p-3"
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="grid min-w-0 gap-3">
+          <Text as="div" size="body" tone="inherit" className="grid min-w-0 gap-3">
             <div id={id} role="status">
               {reading ? t("Loading session details…") : null}
-              {error ? <span className="text-(--ui-tone-danger-fg)">{error}</span> : null}
+              {error ? (
+                <Text size="inherit" tone="danger">
+                  {error}
+                </Text>
+              ) : null}
               {metadata ? (
                 <div className="grid min-w-0 gap-1">
                   <strong className="wrap-anywhere">{metadata.title}</strong>
                   {metadata.project ? (
-                    <span className="wrap-anywhere text-(--ui-text-secondary)">
+                    <Text size="inherit" tone="secondary" className="wrap-anywhere">
                       {metadata.project}
-                    </span>
+                    </Text>
                   ) : null}
-                  <span className="text-ui-caption text-(--ui-text-secondary)">
+                  <Text size="caption" tone="secondary">
                     {[
                       metadata.origin ?? t("Local"),
                       metadata.status,
@@ -233,7 +238,7 @@ export function LocalSessionReferenceLink({
                     ]
                       .filter(Boolean)
                       .join(" · ")}
-                  </span>
+                  </Text>
                 </div>
               ) : null}
             </div>
@@ -281,7 +286,7 @@ export function LocalSessionReferenceLink({
                 {t("Open beside")}
               </Button>
             </div>
-          </div>
+          </Text>
         </Popover>
       ) : null}
     </span>

@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -54,9 +56,9 @@ export function DiffCommentComposer({
       >
         <div className="mb-1.5 flex items-center gap-2 px-0.5">
           <OverflowTooltip label={location}>
-            <span className="min-w-0 flex-1 truncate font-mono text-ui-caption text-(--ui-text-secondary)">
-              {location}
-            </span>
+            <Text truncate className="min-w-0 flex-1">
+              <Code size="inherit">{location}</Code>
+            </Text>
           </OverflowTooltip>
           <Button
             size="sm"
@@ -89,10 +91,10 @@ export function DiffCommentComposer({
           className="w-full"
         />
         <div className="mt-2 flex items-center justify-between gap-3">
-          <span className="text-ui-caption text-(--ui-text-secondary)">
+          <Text size="caption" tone="secondary">
             {MOD}
             {t("↩ to add")}
-          </span>
+          </Text>
           <Button
             size="sm"
             variant="primary"

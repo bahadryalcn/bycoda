@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useRef, useState } from "react";
@@ -96,7 +97,9 @@ export function SshIdentityField({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-ui-caption font-medium text-content">{t("SSH key")}</span>
+        <Text as="span" size="caption" tone="primary" weight="medium">
+          {t("SSH key")}
+        </Text>
         <Button
           variant="ghost"
           iconOnly
@@ -123,7 +126,11 @@ export function SshIdentityField({
         placeholder={loading ? t("Loading…") : t("SSH agent and default keys")}
         options={[{ value: "", label: t("SSH agent and default keys") }, ...options]}
       />
-      {value ? <p className="break-all text-ui-caption text-(--ui-text-muted)">{value}</p> : null}
+      {value ? (
+        <Text as="p" tone="muted" className="break-all">
+          {value}
+        </Text>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="secondary"
@@ -188,21 +195,24 @@ export function SshIdentityField({
         size="sm"
         open={pathOpen || failed || pickerError}
         onOpenChange={setPathOpen}
-        className="text-ui-caption text-(--ui-text-muted)"
+        textSize="caption"
+        tone="muted"
         summary={t("Use a key file path")}
       >
-        <TextField
-          label={pathLabel}
-          aria-label={pathLabel}
-          value={value}
-          maxLength={4096}
-          onChange={(event) => onChange(event.target.value)}
-          disabled={disabled || selecting}
-          description={t("Leave empty to use your SSH agent and default identities.")}
-        />
+        <Text as="div" size="caption" tone="muted">
+          <TextField
+            label={pathLabel}
+            aria-label={pathLabel}
+            value={value}
+            maxLength={4096}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={disabled || selecting}
+            description={t("Leave empty to use your SSH agent and default identities.")}
+          />
+        </Text>
       </Disclosure>
       {selectedKey ? (
-        <DescriptionList size="sm" className="text-ui-caption text-(--ui-text-muted)">
+        <DescriptionList size="sm">
           <DescriptionItem term={t("Key type")}>{selectedKey.keyType}</DescriptionItem>
           <DescriptionItem term={t("Fingerprint")}>{selectedKey.fingerprint}</DescriptionItem>
         </DescriptionList>

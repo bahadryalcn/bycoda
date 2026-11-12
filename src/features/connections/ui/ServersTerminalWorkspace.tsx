@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   registerSshWorkspaceUi,
@@ -385,16 +386,21 @@ export function ServersTerminalWorkspace({
                 <ArrowLeft className="icon-sm" />
               </Button>
               <ToolHeader>
-                <div className="flex min-w-0 items-center gap-2 px-3 text-ui-body">
-                  <Terminal aria-hidden className="icon-sm shrink-0 text-(--ui-text-secondary)" />
-                  <span className="truncate">
+                <Text
+                  as="div"
+                  size="body"
+                  tone="inherit"
+                  className="flex min-w-0 items-center gap-2 px-3"
+                >
+                  <Terminal aria-hidden className="icon-sm shrink-0" tone="secondary" />
+                  <Text size="inherit" tone="inherit" truncate>
                     {terminals.find((terminal) => terminal.id === active)?.name ??
                       t("SSH terminal")}
-                  </span>
+                  </Text>
                   <Badge tone="neutral" size="sm">
                     SSH
                   </Badge>
-                </div>
+                </Text>
               </ToolHeader>
               {!IS_MAC ? <WindowControls /> : null}
             </div>
@@ -439,13 +445,15 @@ export function ServersTerminalWorkspace({
                       }}
                     >
                       <Terminal aria-hidden className="icon-sm shrink-0" />
-                      <span className="min-w-0 flex-1 truncate">{terminal.name}</span>
+                      <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                        {terminal.name}
+                      </Text>
                       {!terminal.lifecycle ? (
                         <WorkingIndicator label={t("Opening…")} />
                       ) : terminal.lifecycle === "failed" ? (
                         <StatusBadge status="failed" size="xs" />
                       ) : (
-                        <span className="text-ui-caption text-(--ui-text-muted)">
+                        <Text tone="muted">
                           {t(
                             terminal.lifecycle === "opened-on-computer"
                               ? "Running"
@@ -453,7 +461,7 @@ export function ServersTerminalWorkspace({
                                 ? "Terminal closed"
                                 : "Closed",
                           )}
-                        </span>
+                        </Text>
                       )}
                     </Tab>
                     <InlineAction
@@ -486,9 +494,9 @@ export function ServersTerminalWorkspace({
                 }
               >
                 {terminal.keyGenerationPath ? (
-                  <p className="shrink-0 break-all px-3 py-2 text-ui-caption text-(--ui-text-muted)">
+                  <Text as="p" tone="muted" className="shrink-0 break-all px-3 py-2">
                     {t("Identity file")}: {terminal.keyGenerationPath}
-                  </p>
+                  </Text>
                 ) : null}
                 <ServerTerminalSession
                   name={terminal.name}

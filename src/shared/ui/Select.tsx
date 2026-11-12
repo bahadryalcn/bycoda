@@ -1,3 +1,4 @@
+import { optionalTextAttributes } from "./Text";
 import { OverflowTooltip } from "./Tooltip";
 import {
   useEffect,
@@ -59,11 +60,21 @@ const initialActive = (options: readonly SelectChoice[], value: string) => {
  * @avoid Everything else: Select. Long or searchable lists: SearchableSelect.
  * @replaces select
  */
-export function NativeSelect({ className, ...props }: ComponentPropsWithRef<"select">) {
+export function NativeSelect({
+  className,
+  truncate,
+  ...props
+}: ComponentPropsWithRef<"select"> & {
+  /** One-line selected value with an ellipsis; unset keeps native wrapping. */
+  truncate?: boolean;
+}) {
   return (
     <select
       {...props}
-      className={["bycoda-arc bycoda-arc-select", className].filter(Boolean).join(" ")}
+      {...optionalTextAttributes(
+        { truncate },
+        ["bycoda-arc bycoda-arc-select", className].filter(Boolean).join(" "),
+      )}
     />
   );
 }

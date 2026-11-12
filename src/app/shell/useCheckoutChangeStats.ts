@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useT } from "../../shared/i18n";
+import { useT as useGitT } from "../../shared/i18n/git";
 import {
   useProjectDiffStats,
   useProjectsDiffStats,
@@ -7,7 +8,7 @@ import {
 import { useProjectWorktrees } from "../../features/source-control/hooks/useProjectWorktrees";
 import { useGitSubmodules } from "../../features/source-control/hooks/useGitSubmodules";
 import {
-  checkoutTitle,
+  checkoutTitleWith,
   checkoutRepositoryPaths,
   folderName,
   checkoutSelectionScope,
@@ -36,6 +37,7 @@ export function useCheckoutChangeStats({
   active: boolean;
 }) {
   const t = useT();
+  const gitT = useGitT();
   const checkoutScopeEnabled = active && !repositoryPaths?.length;
   const { data: checkoutTrees } = useProjectWorktrees(gitRoot, checkoutScopeEnabled);
   const checkoutScope = useMemo(() => {
@@ -103,7 +105,7 @@ export function useCheckoutChangeStats({
     if (!tree) return selectedCheckout ? { title: folderName(selectedCheckout) } : null;
     const own = sessionCheckout(gitRoot, checkoutPaths);
     return {
-      title: checkoutTitle(tree),
+      title: checkoutTitleWith(tree, gitT),
       folder: folderName(tree.path),
       branch: !!tree.branch,
       session: !!own && sameProjectPath(own, tree.path),

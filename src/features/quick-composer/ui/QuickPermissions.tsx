@@ -14,7 +14,8 @@ export function QuickPermissionIcon({
   const Icon = RUNTIME_MODE_ICONS[mode];
   return (
     <Icon
-      className={`${className ?? ""} ${mode === "full-access" ? "text-(--ui-tone-warning-fg)" : ""}`}
+      className={className}
+      tone={mode === "full-access" ? "warning" : undefined}
       strokeWidth={1.75}
     />
   );

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useId, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -61,7 +62,9 @@ export function RenameProjectFolderDialog({
             .finally(() => setBusy(false));
         }}
       >
-        <p className="break-all text-ui-caption text-(--ui-text-secondary)">{path}</p>
+        <Text as="p" size="caption" tone="secondary" className="break-all">
+          {path}
+        </Text>
         <TextField
           label={t("Folder name")}
           autoFocus

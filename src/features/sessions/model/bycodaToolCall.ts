@@ -23,6 +23,7 @@ const ACTION_LABELS: Record<string, string> = {
   "agents.options": "List delegate models",
   "agents.delegate": "Start a subagent",
   "agents.consult": "Ask the advisor",
+  "agents.reply": "Continue a session",
   "agents.wait": "Wait for a subagent",
   "agents.cancel": "Cancel a subagent",
 };

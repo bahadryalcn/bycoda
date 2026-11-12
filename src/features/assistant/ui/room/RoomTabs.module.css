@@ -36,7 +36,6 @@
 }
 .recoveryId {
   min-inline-size: 0;
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 540px) {

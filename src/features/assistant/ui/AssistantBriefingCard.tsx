@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -211,7 +212,14 @@ export function AssistantBriefingCard({
         </Button>
       </div>
       {parts.lead && (
-        <ClampText key={briefing.id} lines={3} className={briefingStyles.copy}>
+        <ClampText
+          key={briefing.id}
+          lines={3}
+          size="secondary"
+          tone="inherit"
+          leading="normal"
+          className={briefingStyles.copy}
+        >
           {parts.lead}
         </ClampText>
       )}
@@ -224,9 +232,18 @@ export function AssistantBriefingCard({
               </SectionLabel>
               <ul className={briefingStyles.items}>
                 {section.items.map((item, index) => (
-                  <li key={index} className={briefingStyles.item}>
+                  <ClampText
+                    as="li"
+                    expandable={false}
+                    lines={2}
+                    size="secondary"
+                    tone="secondary"
+                    leading="inherit"
+                    key={index}
+                    className={briefingStyles.item}
+                  >
                     {item}
-                  </li>
+                  </ClampText>
                 ))}
               </ul>
             </section>
@@ -234,9 +251,9 @@ export function AssistantBriefingCard({
         </div>
       )}
       {parts.notes.map((note) => (
-        <p key={note} className={briefingStyles.muted}>
+        <Text as="p" tone="muted" leading="inherit" key={note} className={briefingStyles.muted}>
           {note}
-        </p>
+        </Text>
       ))}
       <div className={briefingStyles.actions}>
         {!snapshot.profile.voiceSetupComplete ? (
@@ -276,6 +293,9 @@ export function AssistantBriefingCard({
       {/* Always mounted so the status is announced when it first appears. */}
       <LiveText
         className={briefingStyles.muted}
+        size="caption"
+        tone="muted"
+        leading="inherit"
         text={
           speaking === "idle"
             ? ""
@@ -288,15 +308,18 @@ export function AssistantBriefingCard({
       />
       {snapshot.profile.voiceSetupComplete && unknownLanguage && (
         <div className={briefingStyles.languageHint}>
-          <span className={briefingStyles.muted}>
+          <Text as="span" tone="muted" leading="inherit" className={briefingStyles.muted}>
             {t("Speak once or choose a language before listening.")}
-          </span>
+          </Text>
           <Button onClick={onChooseLanguage}>{t("Choose language")}</Button>
         </div>
       )}
       {audioError && <InlineError>{t(audioError)}</InlineError>}
       <LiveText
         className={briefingStyles.muted}
+        size="caption"
+        tone="muted"
+        leading="inherit"
         text={approvals?.length === 0 && unavailable === 0 ? t("No pending approvals found.") : ""}
       />
       {unavailable > 0 && (
@@ -315,10 +338,10 @@ export function AssistantBriefingCard({
                     : `session:${target.sessionId}:${target.blockId}`
                 }
               >
-                <span>
+                <Text as="span" size="inherit" tone="inherit" leading="normal">
                   {target.title} ·{" "}
                   {t(target.kind === "goal" ? "Plan approval" : "Command approval")}
-                </span>
+                </Text>
                 <Button
                   disabled={!!busy || (target.kind === "goal" ? !onOpenGoal : !onOpenSession)}
                   onClick={() => void run("opening", (guard) => open(target, guard))}

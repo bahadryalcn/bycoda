@@ -28,8 +28,7 @@
   flex: none;
   min-inline-size: 0;
   min-block-size: 0;
-  background: var(--ui-workspace-canvas);
-  color: var(--color-content);
+
   overflow: clip;
 }
 .tools-workspace:is([data-placement="top"], [data-placement="bottom"]) .tools-workspace-dock {
@@ -84,7 +83,6 @@
   flex-direction: column;
   flex: 1 0 480px;
   min-block-size: 0;
-  border-block-end: 1px solid var(--color-stroke);
 }
 .tools-workspace-pane:only-child {
   flex-basis: 0;
@@ -96,7 +94,6 @@
   min-inline-size: 0;
   font-family: var(--font-sans, system-ui, sans-serif);
   background: var(--ui-workspace-canvas);
-  color: var(--color-content);
 }
 .host-tools-placement-trigger {
   flex: none;
@@ -108,7 +105,6 @@
 .runtime-logs-monitor-setup summary {
   cursor: pointer;
   padding-block: 6px;
-  font-size: var(--ui-font-caption);
 }
 .runtime-logs-monitor-setup summary:focus-visible {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
@@ -139,9 +135,8 @@
 }
 .runtime-logs-monitor-setup label {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   flex: 1 1 220px;
-  font-size: var(--ui-font-caption);
 }
 .runtime-logs-monitor span {
   flex: 1 1 180px;
@@ -158,7 +153,6 @@
 
 .tools-hub {
   flex-direction: column;
-  background: var(--ui-workspace-canvas-surface);
 }
 .tools-hub-header {
   display: flex;
@@ -166,11 +160,8 @@
   gap: 6px;
   padding: 4px 8px;
   min-inline-size: 0;
-  border-block-end: 1px solid var(--color-stroke);
 }
 .tools-hub-title {
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
   white-space: nowrap;
 }
 .tools-hub-identity {
@@ -198,14 +189,10 @@
   justify-content: center;
   gap: 8px;
   padding: 16px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .tools-hub-empty strong {
-  color: var(--color-content);
   max-inline-size: 100%;
   overflow-wrap: anywhere;
-  font-weight: 500;
 }
 @media (width < 540px) {
   .tools-hub-title {

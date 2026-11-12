@@ -1,3 +1,4 @@
+import { Text } from "../shared/ui/Text";
 import { CrewManagedSessionsFeed } from "../features/crews/public/managed";
 import { parseRemotePath } from "../features/connections/model/remoteProjects";
 import {
@@ -3134,7 +3135,12 @@ function Workspace({
       <LocalSessionReferenceProvider value={localSessionReferences}>
         <OrchestrationActions.Provider value={orchestrationActions}>
           <OrchestrationWorkers.Provider value={orchestrationWorkers}>
-            <div className="app-canvas flex h-full flex-col text-content">
+            <Text
+              as="div"
+              size="inherit"
+              tone="primary"
+              className="app-canvas flex h-full flex-col"
+            >
               {compactTitleBar ? workspaceTitleBar : null}
               <RemoteConnectionNotices />
               <CrewManagedSessionsFeed cwds={crewFeedCwds} />
@@ -3603,7 +3609,7 @@ function Workspace({
                   setProviderSignInRequest={setProviderSignInRequest}
                 />
               </WindowControlsVisible.Provider>
-            </div>
+            </Text>
             <TranscriptPoolOutlet pool={transcriptPool} />
           </OrchestrationWorkers.Provider>
         </OrchestrationActions.Provider>

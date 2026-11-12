@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
@@ -392,19 +394,19 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
       <div className="flex min-h-0 flex-col gap-3">
         {load.status === "loading" ? (
           <div className="flex flex-col gap-2 py-4">
-            <p role="status" className="text-center text-ui-secondary text-(--ui-text-secondary)">
+            <Text role="status" as="p" size="secondary" tone="secondary" className="text-center">
               {t("Scanning Claude Code and Codex history…")}
-            </p>
+            </Text>
             {[0, 1, 2, 3, 4].map((row) => (
               <Skeleton key={row} aria-hidden className="h-7 w-full" />
             ))}
           </div>
         ) : null}
         {load.status === "error" ? (
-          <p className="py-10 text-center text-ui-secondary text-(--ui-tone-danger-fg)">
+          <Text as="p" size="secondary" tone="danger" className="py-10 text-center">
             {t("Could not read the history: ")}
             {load.message}
-          </p>
+          </Text>
         ) : null}
 
         {report && run.status === "idle" ? (
@@ -430,9 +432,9 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                     >
                       <HarnessIcon harness={provider} className="size-3" />
                       {PROVIDER_LABEL[provider]}
-                      <span className="tabular-nums text-(--ui-text-muted)">
+                      <Text size="inherit" tone="muted" className="tabular-nums">
                         {providerCounts[provider].toLocaleString(locale)}
-                      </span>
+                      </Text>
                     </Button>
                   );
                 })}
@@ -512,7 +514,15 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               padding="none"
               className="flex min-h-0 flex-col overflow-hidden"
             >
-              <div className="flex items-center gap-2.5 border-b border-(--ui-tone-neutral-border) px-3 py-1.5 text-ui-micro text-(--ui-text-secondary)">
+              <Text
+                as="div"
+                size="micro"
+                tone="secondary"
+                {...surfaceAttributes(
+                  { frame: "neutral", edge: "bottom" },
+                  "flex items-center gap-2.5  border-(--ui-tone-neutral-border) px-3 py-1.5",
+                )}
+              >
                 <Checkbox
                   aria-label={t("Select all shown")}
                   disabled={shownKeys.length === 0}
@@ -525,22 +535,22 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                     )
                   }
                 />
-                <span className="min-w-0 flex-1 truncate">
+                <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
                   {plural(formatNumber, folders.length, "folder")} ·{" "}
                   {plural(formatNumber, visible.length, "conversation")}
                   {report.candidates.length !== visible.length
                     ? t(" (of {p0})", { p0: report.candidates.length.toLocaleString(locale) })
                     : ""}
-                </span>
-              </div>
+                </Text>
+              </Text>
               <div className="max-h-[42vh] min-h-32 overflow-y-auto">
                 {folders.length === 0 ? (
                   <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-                    <p className="text-ui-caption text-(--ui-text-secondary)">
+                    <Text as="p" size="caption" tone="secondary">
                       {report.candidates.length === 0
                         ? t("No Claude Code or Codex conversations were found on this computer.")
                         : t("Nothing matches these filters.")}
-                    </p>
+                    </Text>
                     {report.candidates.length > 0 && filtering ? (
                       <Button variant="secondary" type="button" onClick={resetAll}>
                         {t("Reset filters")}
@@ -580,15 +590,20 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                             className="min-w-0 flex-1"
                           >
                             {missingOpen || searching ? (
-                              <ChevronDown className="icon-sm shrink-0 text-(--ui-text-secondary)" />
+                              <ChevronDown className="icon-sm shrink-0" tone="secondary" />
                             ) : (
-                              <ChevronRight className="icon-sm shrink-0 text-(--ui-text-secondary)" />
+                              <ChevronRight className="icon-sm shrink-0" tone="secondary" />
                             )}
-                            <span className="min-w-0 flex-1 truncate text-ui-secondary text-(--ui-text-secondary)">
+                            <Text
+                              size="secondary"
+                              tone="secondary"
+                              truncate
+                              className="min-w-0 flex-1"
+                            >
                               {t("Missing folders ({p0})", {
                                 p0: missingFolders.length.toLocaleString(locale),
                               })}
-                            </span>
+                            </Text>
                           </Button>
                         </div>
                         {missingOpen || searching
@@ -621,11 +636,11 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                 />
                 {groupProjects ? (
                   <>
-                    <span className="shrink-0 text-ui-micro text-(--ui-text-muted)">
+                    <Text size="micro" tone="muted" className="shrink-0">
                       {groupPreview.length === 0
                         ? t("No groups")
                         : plural(formatNumber, groupPreview.length, "group")}
-                    </span>
+                    </Text>
                     <InfoPopover label={t("Sidebar groups")}>
                       <p>
                         {groupPreview.length === 0
@@ -639,7 +654,13 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <p className="min-w-0 flex-1 text-ui-caption leading-snug text-(--ui-text-secondary)">
+                <Text
+                  as="p"
+                  size="caption"
+                  tone="secondary"
+                  leading="snug"
+                  className="min-w-0 flex-1"
+                >
                   {counts.toImport === 0
                     ? t("Nothing selected to import.")
                     : t("{p0} in {p1} will be imported ({p2} on disk).", {
@@ -653,14 +674,14 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                       })
                     : ""}
                   {hiddenSelected > 0 ? (
-                    <span className="text-(--ui-text-muted)">
+                    <Text size="inherit" tone="muted">
                       {" "}
                       {t("{p0} hidden by filters will not be imported.", {
                         p0: hiddenSelected.toLocaleString(locale),
                       })}
-                    </span>
+                    </Text>
                   ) : null}
-                </p>
+                </Text>
                 <InfoPopover label={t("Scan details")}>
                   <p>
                     {t("Scanned {p0} files in {p1} ms.", {
@@ -755,19 +776,21 @@ function FolderSection({
           className="min-w-0 flex-1"
         >
           {open ? (
-            <ChevronDown className="icon-sm shrink-0 text-(--ui-text-secondary)" />
+            <ChevronDown className="icon-sm shrink-0" tone="secondary" />
           ) : (
-            <ChevronRight className="icon-sm shrink-0 text-(--ui-text-secondary)" />
+            <ChevronRight className="icon-sm shrink-0" tone="secondary" />
           )}
-          <Folder className="icon-sm shrink-0 text-(--ui-text-secondary)" />
-          <span className="max-w-[45%] shrink-0 truncate text-ui-secondary font-medium">
+          <Folder className="icon-sm shrink-0" tone="secondary" />
+          <Text size="secondary" weight="medium" truncate className="max-w-[45%] shrink-0">
             {projectName(folder.path)}
-          </span>
+          </Text>
           {parentLabel ? (
             <MiddleTruncate
               mode="path"
               title={folder.path}
-              className="min-w-0 flex-1 text-ui-micro text-(--ui-text-muted)"
+              size="micro"
+              tone="muted"
+              className="min-w-0 flex-1"
             >
               {parentLabel}
             </MiddleTruncate>
@@ -775,18 +798,20 @@ function FolderSection({
             <span className="flex-1" />
           )}
           {!folder.exists ? (
-            <span
-              className="grid shrink-0 place-items-center text-(--ui-text-muted)"
+            <Text
+              size="inherit"
+              tone="muted"
+              className="grid shrink-0 place-items-center"
               title={t("Folder not found. Imported as history only.")}
             >
               <CircleAlert aria-hidden className="icon-sm" />
-            </span>
+            </Text>
           ) : null}
-          <span className="w-16 shrink-0 text-right text-ui-micro tabular-nums text-(--ui-text-muted)">
+          <Text size="micro" tone="muted" className="w-16 shrink-0 text-right tabular-nums">
             {chosen > 0 && chosen < keys.length
               ? `${chosen.toLocaleString(locale)} / ${folder.items.length.toLocaleString(locale)}`
               : folder.items.length.toLocaleString(locale)}
-          </span>
+          </Text>
         </Button>
       </div>
       {open ? (
@@ -808,34 +833,36 @@ function FolderSection({
                       >
                         <HarnessIcon harness={item.provider} className="size-3.5" />
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-ui-caption">
+                      <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1">
                         {item.firstPrompt}
-                      </span>
+                      </Text>
                       {imported ? (
-                        <span className="shrink-0 text-ui-micro text-(--ui-text-muted)">
+                        <Text size="micro" tone="muted" className="shrink-0">
                           {t("imported")}
-                        </span>
+                        </Text>
                       ) : isHistoryOnly(item) ? (
-                        <span
-                          className="grid shrink-0 place-items-center text-(--ui-text-muted)"
+                        <Text
+                          size="inherit"
+                          tone="muted"
+                          className="grid shrink-0 place-items-center"
                           title={t(
                             "Imported as history; sending a message starts a new conversation",
                           )}
                         >
                           <Clock aria-hidden className="icon-sm" />
-                        </span>
+                        </Text>
                       ) : null}
                       {item.kind !== "interactive" ? (
-                        <span className="shrink-0 text-ui-micro text-(--ui-text-muted)">
+                        <Text size="micro" tone="muted" className="shrink-0">
                           {item.kind === "exec" ? t("automation") : t("subagent")}
-                        </span>
+                        </Text>
                       ) : null}
-                      <span className="w-24 shrink-0 text-right text-ui-micro text-(--ui-text-secondary)">
+                      <Text size="micro" tone="secondary" className="w-24 shrink-0 text-right">
                         {formatImportDate(item.lastAt)}
-                      </span>
-                      <span className="w-14 shrink-0 text-right text-ui-micro text-(--ui-text-secondary)">
+                      </Text>
+                      <Text size="micro" tone="secondary" className="w-14 shrink-0 text-right">
                         {formatBytes(item.sizeBytes)}
-                      </span>
+                      </Text>
                     </>
                   }
                   className={`flex min-w-0 flex-1 items-center gap-2.5 py-1.5 pl-9 pr-3 ${

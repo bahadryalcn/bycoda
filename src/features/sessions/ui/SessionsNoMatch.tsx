@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Search, X } from "../../../shared/ui/icons";
@@ -25,15 +26,15 @@ export function SessionsNoMatch({
   return (
     <div role="status" className="flex flex-col gap-2 px-3 py-2">
       <div className="flex min-w-0 items-start gap-2">
-        <Search
-          aria-hidden
-          className="icon-sm mt-0.5 shrink-0 text-(--ui-text-muted)"
-          strokeWidth={1.75}
-        />
+        <Search aria-hidden className="icon-sm mt-0.5 shrink-0" tone="muted" strokeWidth={1.75} />
         <div className="min-w-0">
-          <p className="text-ui-body font-medium">{t("No matching sessions")}</p>
+          <Text as="p" size="body" tone="inherit" weight="medium">
+            {t("No matching sessions")}
+          </Text>
           <OverflowTooltip label={query}>
-            <p className="truncate text-ui-caption text-(--ui-text-secondary)">“{query}”</p>
+            <Text as="p" size="caption" tone="secondary" truncate>
+              “{query}”
+            </Text>
           </OverflowTooltip>
         </div>
       </div>

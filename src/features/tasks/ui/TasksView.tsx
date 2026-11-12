@@ -1,6 +1,8 @@
+import { Text } from "../../../shared/ui/Text";
 import "./tasks.css";
 import "./tasks-shell.css";
 import { Alert } from "../../../shared/ui/Alert";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { useTaskBoardQueries } from "../model/useTaskBoardQueries";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -125,11 +127,14 @@ export function TasksView({
   const toolNavigation = useContext(ToolNavigationContext);
   const navigating = Boolean(toolNavigation?.active);
   return (
-    <div
+    <Text
+      as="div"
+      tone="neutral"
+      size="inherit"
       role="region"
       aria-label={t("Tasks")}
       data-app-tasks
-      className="flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <PaneHeader
         dragRegion
@@ -149,7 +154,7 @@ export function TasksView({
         onOpenBackgroundSession={onOpenBackgroundSession}
         goalReveal={goalReveal}
       />
-    </div>
+    </Text>
   );
 }
 
@@ -673,7 +678,12 @@ function TasksContent({
   );
 
   return (
-    <div className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)">
+    <Text
+      as="div"
+      tone="neutral"
+      size="inherit"
+      className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col"
+    >
       <TaskToolbar
         section={section}
         showReports={accessibleSprints.length > 0 || section === "reports"}
@@ -927,16 +937,21 @@ function TasksContent({
       ) : null}
       {section !== "reports" && hasTasks && !loading ? (
         <p className="task-board-summary">
-          <span className="task-scope-summary">{summaryLine}</span>
+          <Text size="caption" tone="secondary" leading="inherit" className="task-scope-summary">
+            {summaryLine}
+          </Text>
         </p>
       ) : null}
       <div
         className={`@container/task-area min-h-0 min-w-0 flex-1 ${section === "reports" ? "hidden" : "flex"}`}
       >
         <GoalSessionsDialog goals={goals} tasks={visibleTasks} onOpenSession={onOpenSession} />
-        <div
+        <ScrollArea
           ref={boardRef}
-          className="min-h-0 min-w-0 flex-1 overflow-x-scroll overflow-y-auto overscroll-none p-3 [scrollbar-gutter:stable] @max-[640px]/task-area:has-[+aside]:hidden"
+          axis="both"
+          scrollbar="always"
+          gutter="stable"
+          className="min-h-0 min-w-0 flex-1 overscroll-none p-3 @max-[640px]/task-area:has-[+aside]:hidden"
         >
           {loading ? (
             <SurfaceLoading />
@@ -997,7 +1012,7 @@ function TasksContent({
               empty={emptyTasks}
             />
           )}
-        </div>
+        </ScrollArea>
         {selected ? (
           <TaskDetail
             key={`${selected.machineId}:${selected.id}`}
@@ -1011,6 +1026,6 @@ function TasksContent({
           />
         ) : null}
       </div>
-    </div>
+    </Text>
   );
 }

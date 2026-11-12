@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useCallback, useMemo } from "react";
 import { gitBlame } from "../../../platform/tauri/fs";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -43,7 +44,13 @@ export function GitCommitBlameView({
       {!sha ? (
         <EmptyState size="inline" className="px-3" description={t("No commits yet")} />
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto font-mono text-ui-caption leading-6">
+      <Text
+        as="div"
+        size="caption"
+        tone="inherit"
+        leading="inherit"
+        className="min-h-0 flex-1 overflow-auto font-mono leading-6"
+      >
         {resource.data?.map((entry, index) => {
           const first = resource.data?.[index - 1]?.sha !== entry.sha;
           return (
@@ -51,20 +58,29 @@ export function GitCommitBlameView({
               key={entry.line}
               className={`flex whitespace-pre ${first ? "border-t border-(--ui-pane-border)" : ""}`}
             >
-              <span
+              <Text
                 title={`${entry.sha}\n${entry.author} · ${entry.summary}`}
-                className="sticky left-0 w-44 shrink-0 truncate bg-(--color-background-base) px-2 font-sans text-ui-micro text-(--ui-text-secondary)"
+                size="micro"
+                tone="secondary"
+                truncate
+                className="sticky left-0 w-44 shrink-0 bg-(--color-background-base) px-2 font-sans"
               >
                 {first ? `${entry.shortSha} ${entry.author}` : ""}
-              </span>
-              <span className="w-10 shrink-0 pr-2 text-right text-[var(--ui-text-muted)] select-none">
+              </Text>
+              <Text
+                size="inherit"
+                tone="muted"
+                className="w-10 shrink-0 pr-2 text-right select-none"
+              >
                 {entry.line}
-              </span>
-              <span className="pr-3 text-content">{lines[entry.line - 1] ?? ""}</span>
+              </Text>
+              <Text size="inherit" tone="primary" className="pr-3">
+                {lines[entry.line - 1] ?? ""}
+              </Text>
             </div>
           );
         })}
-      </div>
+      </Text>
     </section>
   );
 }

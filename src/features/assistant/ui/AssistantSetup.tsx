@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
@@ -343,14 +344,14 @@ export function AssistantSetup({
           </ModalActions>
         }
       >
-        <div className={styles.setup}>
-          <p className={styles.muted}>
+        <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.setup}>
+          <Text as="p" leading="normal" className={styles.muted}>
             {t(
               "Optional. Check what keeps the assistant working around the clock; you can skip this and find it later in Settings, Access.",
             )}
-          </p>
+          </Text>
           <AlwaysOnChecklist request={checklistRequest} snapshot={snapshot} />
-        </div>
+        </Text>
       </Modal>
     );
   return (
@@ -400,7 +401,7 @@ export function AssistantSetup({
         ) : undefined
       }
     >
-      <div className={styles.setup}>
+      <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.setup}>
         {loadError && (
           <InlineError
             className={styles.feedback}
@@ -410,7 +411,13 @@ export function AssistantSetup({
           </InlineError>
         )}
         {/* Always mounted so the loading message is announced when it first appears. */}
-        <LiveText className={styles.muted} text={draft ? "" : t("Loading...")} />
+        <LiveText
+          className={styles.muted}
+          size="caption"
+          tone="secondary"
+          leading="normal"
+          text={draft ? "" : t("Loading...")}
+        />
         {!draft ? null : (
           <>
             <Progress
@@ -421,7 +428,15 @@ export function AssistantSetup({
               aria-label={t("Step {p0} of {p1}", { p0: index + 1, p1: steps.length })}
             />
             <div className={styles.content}>
-              <p className={styles.intro}>{t(intros[step])}</p>
+              <Text
+                as="p"
+                size="secondary"
+                tone="secondary"
+                leading="normal"
+                className={styles.intro}
+              >
+                {t(intros[step])}
+              </Text>
               {step === 0 && (
                 <Button
                   type="button"
@@ -528,13 +543,21 @@ export function AssistantSetup({
                     </DescriptionItem>
                     {draft.rules.trim() && (
                       <DescriptionItem term={t("First rules")}>
-                        <span className={styles.rules}>{draft.rules}</span>
+                        <Text
+                          as="span"
+                          size="inherit"
+                          tone="inherit"
+                          leading="relaxed"
+                          className={styles.rules}
+                        >
+                          {draft.rules}
+                        </Text>
                       </DescriptionItem>
                     )}
                   </DescriptionList>
-                  <p className={styles.muted}>
+                  <Text as="p" leading="normal" className={styles.muted}>
                     {t("The microphone opens only when you choose to talk.")}
-                  </p>
+                  </Text>
                 </div>
               )}
               {step === 9 && voice && ![2, 3, 4].every((value) => verified[String(value)]) && (
@@ -552,7 +575,7 @@ export function AssistantSetup({
             </div>
           </>
         )}
-      </div>
+      </Text>
       {builderOpen && (
         <AssistantBuilderDialog
           current={patch}

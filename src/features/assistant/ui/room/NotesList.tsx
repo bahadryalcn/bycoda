@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import type { AssistantNote } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { ActionHost } from "../../../../shared/ui/ActionHost";
@@ -5,6 +6,7 @@ import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
+import { motionAttributes } from "../../../../shared/ui/Motion";
 import { dailyNoteDay, notePreview } from "./assistantNoteDisplay";
 import styles from "./NotesTab.module.css";
 
@@ -39,7 +41,7 @@ export function NotesList({
             selected={note.id === selectedId || isChecked}
           >
             <Checkbox
-              className={styles.check}
+              {...motionAttributes({ transition: "opacity", easing: "standard" }, styles.check)}
               data-action-inline=""
               data-visible={selectionMode || undefined}
               aria-label={t("Select {p0}", { p0: note.title })}
@@ -53,15 +55,39 @@ export function NotesList({
             >
               <span className={styles.row}>
                 <span className={styles.rowTop}>
-                  <span className={styles.rowTitle}>{note.title}</span>
+                  <Text
+                    as="span"
+                    size="body"
+                    tone="inherit"
+                    weight="medium"
+                    leading="inherit"
+                    truncate
+                    className={styles.rowTitle}
+                  >
+                    {note.title}
+                  </Text>
                   <Timestamp
                     className={styles.rowTime}
+                    size="micro"
+                    tone="muted"
+                    leading="inherit"
                     value={note.updatedAt}
                     format="relative"
                     relativeStyle="narrow"
                   />
                 </span>
-                {preview && <span className={styles.rowPreview}>{preview}</span>}
+                {preview && (
+                  <Text
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    weight="regular"
+                    truncate
+                    className={styles.rowPreview}
+                  >
+                    {preview}
+                  </Text>
+                )}
                 {dailyNoteDay(note) !== undefined && <Badge size="xs">{t("Daily")}</Badge>}
               </span>
             </Button>

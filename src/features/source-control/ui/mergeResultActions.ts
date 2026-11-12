@@ -1,6 +1,7 @@
 import { Facet, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, keymap } from "@codemirror/view";
 import { t } from "../../../shared/i18n/git";
+import { textAttributes, type TextRoles } from "../../../shared/ui/Text";
 import {
   mergeResolution,
   mergeResolutionField,
@@ -8,6 +9,17 @@ import {
   type MergeRegion,
   type MergeResolution,
 } from "../model/mergeResolution";
+
+/**
+ * Gives a drawn (non-React) element the shared type roles a Text component would: the same
+ * class and data attributes, so the role styles apply without a local class.
+ */
+export function applyTextRoles(element: HTMLElement, roles: TextRoles, className: string) {
+  const { className: classes, ...attributes } = textAttributes(roles, className);
+  element.className = classes;
+  for (const [name, value] of Object.entries(attributes))
+    if (value !== undefined) element.setAttribute(name, String(value));
+}
 
 /** Mirrors the React busy/disabled gate so drawn widgets update with it. */
 export const mergeActionsDisabled = Facet.define<boolean, boolean>({
@@ -67,7 +79,11 @@ class RegionActions extends WidgetType {
   toDOM() {
     const { region } = this;
     const root = document.createElement("div");
-    root.className = "conflict-inline-actions";
+    applyTextRoles(
+      root,
+      { size: "micro", tone: this.active ? "primary" : "secondary" },
+      "conflict-inline-actions",
+    );
     root.dataset.mergeWidget = String(region.id);
     root.dataset.active = String(this.active);
     root.dataset.state = region.choice ?? "pending";
@@ -77,7 +93,15 @@ class RegionActions extends WidgetType {
       t("Conflict {p0} of {p1}", { p0: region.id + 1, p1: this.total }),
     );
     const label = document.createElement("span");
-    label.className = "conflict-inline-label";
+    applyTextRoles(
+      label,
+      {
+        size: "inherit",
+        tone: region.choice ? "success" : "warning",
+        weight: "medium",
+      },
+      "conflict-inline-label",
+    );
     label.textContent = `${t("Conflict {p0} of {p1}", { p0: region.id + 1, p1: this.total })} · ${regionStateLabel(region)}`;
     root.append(label);
     const button = (choice: MergeChoice, text: string, title: string, pressed?: boolean) => {

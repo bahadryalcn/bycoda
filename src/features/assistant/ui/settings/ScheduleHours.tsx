@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
@@ -66,9 +67,9 @@ export function ScheduleHours({
               onChange(Number(value), end);
             }}
           />
-          <span className={styles.dash} aria-hidden="true">
+          <Text size="inherit" tone="secondary" className={styles.dash} aria-hidden="true">
             –
-          </span>
+          </Text>
           <SearchableSelect
             hideLabel
             label={work ? t("Work hours end") : t("Quiet hours end")}
@@ -81,7 +82,9 @@ export function ScheduleHours({
           />
         </>
       ) : (
-        <span className={styles.muted}>{work ? t("All day") : t("Off")}</span>
+        <Text size="caption" tone="secondary" leading="inherit" className={styles.muted}>
+          {work ? t("All day") : t("Off")}
+        </Text>
       )}
     </div>
   );

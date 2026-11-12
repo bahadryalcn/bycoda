@@ -1,7 +1,9 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Text } from "../../../shared/ui/Text";
 import { ChevronRight, RefreshCw } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { type ShellProfiles } from "../../terminal/public/terminalProfiles";
@@ -80,11 +82,18 @@ export function HostShellRow({
       data-setting-id={settingId}
       data-revealed={flash || undefined}
       tabIndex={-1}
-      className="terminal-host"
+      {...surfaceAttributes({ radius: "control" }, "terminal-host")}
     >
       <div className="settings-collection-row terminal-host-row">
         <div className="settings-collection-main terminal-host-identity">
-          <p className="settings-collection-title terminal-host-name">
+          <Text
+            as="p"
+            size="secondary"
+            tone="primary"
+            weight="medium"
+            leading="normal"
+            className="settings-collection-title terminal-host-name"
+          >
             <span>{name}</span>
             <Badge>
               {kind === "local"
@@ -93,14 +102,14 @@ export function HostShellRow({
                   ? t("Local sync")
                   : t("Remote server")}
             </Badge>
-          </p>
-          <p className="settings-collection-meta">
+          </Text>
+          <Text as="p" leading="normal" className="settings-collection-meta">
             {missing
               ? t("The shell you picked is no longer installed, so the system default is used.")
               : effective
                 ? `${effective.name} · ${effective.path}`
                 : t("No shell detected yet")}
-          </p>
+          </Text>
         </div>
         <Badge tone={status.tone} role="status">
           {status.label}
@@ -170,7 +179,11 @@ export function HostShellRow({
           className="terminal-host-detail-anchor"
         />
       ) : null}
-      <div id={detailPanel} className="terminal-host-detail" hidden={!expanded}>
+      <div
+        id={detailPanel}
+        {...surfaceAttributes({ radius: "control", variant: "panel" }, "terminal-host-detail")}
+        hidden={!expanded}
+      >
         {expanded && listed ? (
           listed.profiles.length ? (
             <ul
@@ -180,8 +193,20 @@ export function HostShellRow({
               {listed.profiles.map((profile) => (
                 <li key={profile.id} className="terminal-shell-item">
                   <div className="settings-collection-main">
-                    <p className="settings-collection-title">{profile.name}</p>
-                    <p className="settings-collection-meta">{profile.path}</p>
+                    <Text
+                      as="p"
+                      size="secondary"
+                      tone="primary"
+                      weight="medium"
+                      leading="normal"
+                      truncate
+                      className="settings-collection-title"
+                    >
+                      {profile.name}
+                    </Text>
+                    <Text as="p" leading="normal" className="settings-collection-meta">
+                      {profile.path}
+                    </Text>
                   </div>
                   {profile.id === effectiveId ? (
                     <Badge>{t("Default")}</Badge>
@@ -203,6 +228,7 @@ export function HostShellRow({
             <EmptyState
               size="inline"
               className="settings-collection-empty"
+              descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
               title={t("No shells found")}
               description={t(
                 "Install PowerShell, Git for Windows or another shell, then look again.",

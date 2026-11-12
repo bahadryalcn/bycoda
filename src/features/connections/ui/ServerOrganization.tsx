@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -120,17 +121,20 @@ export function ServerOrganization({
     </>
   );
   return expanded ? (
-    <section className="mbs-4 border-t border-stroke pbs-4 text-ui-caption">
+    <Text as="section" size="caption" tone="inherit" className="mbs-4 border-t border-stroke pbs-4">
       <SectionLabel as="h3">{title}</SectionLabel>
       {content}
-    </section>
+    </Text>
   ) : (
     <Disclosure
       size="sm"
-      className="mbs-4 border-t border-stroke pbs-4 text-ui-caption"
+      textSize="caption"
+      className="mbs-4 border-t border-stroke pbs-4"
       summary={title}
     >
-      {content}
+      <Text as="div" size="caption" tone="inherit">
+        {content}
+      </Text>
     </Disclosure>
   );
 }

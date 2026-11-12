@@ -1,7 +1,9 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useState } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
+import { Text } from "../../../../shared/ui/Text";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
@@ -85,13 +87,16 @@ export function AccountPermissions({
       .catch(() => undefined);
 
   return (
-    <section className="social-card" aria-label={t("Who can use this account")}>
+    <section
+      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      aria-label={t("Who can use this account")}
+    >
       <Heading size="item">{t("Who can use this account")}</Heading>
-      <p className="social-card-description">
+      <Text as="p" tone="muted" leading="snug" className="social-card-description">
         {t(
           "Access applies only to this account and can be revoked here. Sending still requires the autonomy level below.",
         )}
-      </p>
+      </Text>
       {account.assistantGrantPending ? (
         <InlineMessage tone="danger">
           {t(
@@ -112,6 +117,8 @@ export function AccountPermissions({
             checked={assistant.includes("read")}
             onChange={(event) => setAssistant(event.target.checked ? ["read"] : [])}
             label={t("Can read")}
+            size="secondary"
+            leading="inherit"
             className="social-check"
           />
           <Checkbox
@@ -119,6 +126,8 @@ export function AccountPermissions({
             checked={assistant.includes("draft")}
             onChange={(event) => setAssistant(event.target.checked ? ["read", "draft"] : ["read"])}
             label={t("Prepare drafts")}
+            size="secondary"
+            leading="inherit"
             className="social-check"
           />
         </FieldGroup>
@@ -172,6 +181,8 @@ export function AccountPermissions({
                 }
                 label={permission.label}
                 key={permission.id}
+                size="secondary"
+                leading="inherit"
                 className="social-check"
               />
             ))}
@@ -187,9 +198,9 @@ export function AccountPermissions({
           </Button>
         </form>
       ) : (
-        <p className="social-muted">
+        <Text as="p" tone="muted" leading="snug" className="social-muted">
           {t("Create a project first to give this account project access.")}
-        </p>
+        </Text>
       )}
       {projectWrite.error ? (
         <InlineMessage tone="danger">{projectWrite.error}</InlineMessage>

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -35,13 +37,19 @@ export function CitationTokenPill({ token, citation }: { token: string; citation
         );
       }}
     >
-      <span className={styles.token} data-unavailable={unavailable || undefined}>
+      <Text
+        as="span"
+        size="inherit"
+        tone={unavailable ? "secondary" : "accent"}
+        {...surfaceAttributes({ radius: "control" }, styles.token)}
+        data-unavailable={unavailable || undefined}
+      >
         <BlockQuote className={styles.tokenIcon} aria-hidden />
         {/* Brackets stay in the DOM so selecting and copying give the token back. */}
         <span className="sr-only">[</span>
         {tokenLabel(token)}
         <span className="sr-only">]</span>
-      </span>
+      </Text>
     </Button>
   );
 }
@@ -76,8 +84,19 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
           }}
         >
           <BlockQuote className="icon-sm shrink-0" />
-          {token ? <span className={styles.token}>{tokenLabel(token)}</span> : null}
-          <span className={styles.label}>{chatCitationPreview(citation)}</span>
+          {token ? (
+            <Text
+              as="span"
+              size="inherit"
+              tone="accent"
+              {...surfaceAttributes({ radius: "control" }, styles.token)}
+            >
+              {tokenLabel(token)}
+            </Text>
+          ) : null}
+          <Text size="inherit" tone="inherit" truncate className={styles.label}>
+            {chatCitationPreview(citation)}
+          </Text>
         </Button>
         <Button
           iconOnly
@@ -94,10 +113,10 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
         </Button>
       </div>
       {unavailable ? (
-        <span className={styles.fallback} role="status">
+        <Text size="caption" tone="secondary" className={styles.fallback} role="status">
           {t("Source changed or unavailable. The saved quote is preserved.")}
           <span className={styles.excerpt}>{citation.text}</span>
-        </span>
+        </Text>
       ) : null}
       {anchor ? (
         <Popover
@@ -108,7 +127,7 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
           onDismiss={() => setAnchor(null)}
         >
           <div className={styles.details}>
-            <div className={styles.header}>
+            <Text as="div" tone="inherit" leading="inherit" className={styles.header}>
               <strong>{t("Quoted reply")}</strong>
               <Button
                 iconOnly
@@ -119,9 +138,21 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
               >
                 <X className="icon-sm" />
               </Button>
-            </div>
-            <blockquote className={styles.quote}>{citation.text}</blockquote>
-            {citation.comment ? <p className={styles.comment}>{citation.comment}</p> : null}
+            </Text>
+            <Text as="blockquote" size="secondary" leading="inherit" className={styles.quote}>
+              {citation.text}
+            </Text>
+            {citation.comment ? (
+              <Text
+                as="p"
+                size="secondary"
+                tone="inherit"
+                leading="inherit"
+                className={styles.comment}
+              >
+                {citation.comment}
+              </Text>
+            ) : null}
             <Button
               variant="ghost"
               size="sm"

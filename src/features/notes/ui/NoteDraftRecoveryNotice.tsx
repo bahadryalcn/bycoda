@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t, useLocale } from "../../../shared/i18n";
@@ -123,12 +124,18 @@ export function NoteDraftRecoveryNotice() {
             onClick: () => void retryDraft(id, draft),
           }}
         >
-          <p className="wrap-anywhere text-ui-secondary font-medium">
+          <Text as="p" size="secondary" tone="inherit" weight="medium" className="wrap-anywhere">
             {(draft.edits.current.title ?? draft.saved?.title ?? draft.base.title).trim() ||
               t("Untitled")}
-          </p>
-          {draft.error ? <p className="wrap-anywhere text-ui-caption">{draft.error}</p> : null}
-          <p className="text-ui-caption">{t("Your draft is retained for this app session.")}</p>
+          </Text>
+          {draft.error ? (
+            <Text as="p" size="caption" tone="inherit" className="wrap-anywhere">
+              {draft.error}
+            </Text>
+          ) : null}
+          <Text as="p" size="caption" tone="inherit">
+            {t("Your draft is retained for this app session.")}
+          </Text>
         </Toast>
       ))}
     </>
@@ -141,8 +148,10 @@ function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
     <ToastSlot>
       <div data-note-private-recovery={input.id}>
         <ToastCard tone="info" title={t("Retained note input")}>
-          <p className="wrap-anywhere font-medium">{input.title || t("Untitled")}</p>
-          <p className="text-ui-caption">
+          <Text as="p" size="inherit" tone="inherit" weight="medium" className="wrap-anywhere">
+            {input.title || t("Untitled")}
+          </Text>
+          <Text as="p" size="caption" tone="inherit">
             {t(
               input.field === "tags"
                 ? "Tags input"
@@ -150,8 +159,10 @@ function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
                   ? "Title input"
                   : "Document input",
             )}
-          </p>
-          <p className="text-ui-caption">{t("Check the note before reusing this input.")}</p>
+          </Text>
+          <Text as="p" size="caption" tone="inherit">
+            {t("Check the note before reusing this input.")}
+          </Text>
           {input.text === null ? (
             <p>{t("The original input could not be read.")}</p>
           ) : (
@@ -161,9 +172,9 @@ function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
             </Disclosure>
           )}
           {copied.copied || copied.failed ? (
-            <p role="status" className="text-ui-caption">
+            <Text as="p" size="caption" tone="inherit" role="status">
               {copied.failed ? copied.error : t("Exact text copied")}
-            </p>
+            </Text>
           ) : null}
           <div className="mt-2 flex items-center justify-end gap-1">
             <Button

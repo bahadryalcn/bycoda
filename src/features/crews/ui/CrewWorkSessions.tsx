@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useMemo, type ReactNode } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
@@ -83,26 +84,30 @@ function SessionRow({
       )}
       <span className="flex min-w-0 flex-1 flex-col text-start">
         <span className="flex min-w-0 items-baseline gap-1.5">
-          <span className="truncate text-ui-secondary font-medium">{name}</span>
-          {roleText ? (
-            <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">{roleText}</span>
-          ) : null}
+          <Text size="secondary" tone="inherit" weight="medium" truncate>
+            {name}
+          </Text>
+          {roleText ? <Text className="shrink-0">{roleText}</Text> : null}
         </span>
         {task || model ? (
-          <span className="flex min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
-            {task ? <span className="min-w-0 truncate">{task}</span> : null}
+          <Text className="flex min-w-0 items-center gap-1.5">
+            {task ? (
+              <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                {task}
+              </Text>
+            ) : null}
             {task && model ? <span aria-hidden="true">·</span> : null}
             {model}
-          </span>
+          </Text>
         ) : null}
       </span>
       {working || status ? (
-        <span className="inline-flex max-w-[38%] shrink-0 items-center gap-1 text-end text-ui-caption text-(--ui-text-secondary)">
+        <Text className="inline-flex max-w-[38%] shrink-0 items-center gap-1 text-end">
           {working ? <WorkingIndicator size="xs" /> : null}
           {status ? <span>{status}</span> : null}
-        </span>
+        </Text>
       ) : null}
-      <Eye aria-hidden="true" className="icon-sm shrink-0 text-(--ui-text-muted)" />
+      <Eye aria-hidden="true" className="icon-sm shrink-0" tone="muted" />
     </Button>
   );
 }
@@ -145,7 +150,7 @@ export function CrewWorkSessions({
       ) : (
         <div className="pt-3" />
       )}
-      <div role="list" aria-label={t("Sessions")} className="flex min-w-0 flex-col gap-px">
+      <div role="list" aria-label={t("Sessions")} className="flex min-w-0 flex-col gap-0">
         <div role="listitem">
           <SessionRow
             role="coordinator"
@@ -186,7 +191,7 @@ export function CrewWorkSessions({
           const review = crewTaskReview(task, ids.review);
           const workerName = agent?.name.trim() || roleLabel("specialist");
           return (
-            <div key={task.id} role="listitem" className="flex min-w-0 flex-col gap-px">
+            <div key={task.id} role="listitem" className="flex min-w-0 flex-col gap-0">
               <SessionRow
                 role={agent?.role ?? "specialist"}
                 traits={agent && looks.get(agent.id)}

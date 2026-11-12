@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { getLocale, t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
@@ -103,10 +104,15 @@ export function SocialShellBar({
             {t("AI stopped")}
           </Badge>
         ) : (
-          <span className="social-shell-ai-state">
+          <Text
+            size="secondary"
+            tone="secondary"
+            leading="inherit"
+            className="social-shell-ai-state"
+          >
             <StatusDot tone="success" />
             {t("AI active")}
-          </span>
+          </Text>
         )}
         <DisabledReason
           variant="secondary"

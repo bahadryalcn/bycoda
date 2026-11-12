@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useMemo } from "react";
@@ -38,19 +40,30 @@ export function GitGraphHoverCard({
   };
 
   return (
-    <div className="space-y-2">
-      <p className="font-medium leading-snug break-words">{commit.subject || commit.shortSha}</p>
-      <div className="flex items-center gap-2 text-(--ui-text-secondary)">
+    <Text as="div" size="caption" tone="primary" className="space-y-2">
+      <Text
+        as="p"
+        size="inherit"
+        tone="inherit"
+        weight="medium"
+        leading="snug"
+        className="break-words"
+      >
+        {commit.subject || commit.shortSha}
+      </Text>
+      <Text as="div" size="inherit" tone="secondary" className="flex items-center gap-2">
         <GraphAvatar name={commit.author} size={18} />
-        <span className="min-w-0 truncate">{commit.author || t("Unknown author")}</span>
-      </div>
-      <p className="text-(--ui-text-secondary)">
+        <Text size="inherit" tone="inherit" truncate className="min-w-0">
+          {commit.author || t("Unknown author")}
+        </Text>
+      </Text>
+      <Text as="p" size="inherit" tone="secondary">
         {formatAbsoluteTime(commit.timestamp)} ({formatRelativeTime(commit.timestamp, Date.now())})
-      </p>
+      </Text>
       <div className="flex items-center gap-1.5">
-        <code className="font-mono text-ui-micro text-(--ui-text-secondary)">
+        <Code size="micro" tone="secondary">
           {commit.shortSha}
-        </code>
+        </Code>
         <Button
           variant="ghost"
           motion="none"
@@ -76,13 +89,11 @@ export function GitGraphHoverCard({
       ) : null}
       {copyError ? <InlineError>{copyError}</InlineError> : null}
       {commit.parents.length > 0 ? (
-        <p className="text-(--ui-text-secondary)">
+        <Text as="p" size="inherit" tone="secondary">
           {commit.parents.length > 1 ? t("Parents") : t("Parent")}{" "}
-          <code className="font-mono text-ui-micro">
-            {commit.parents.map((parent) => parent.slice(0, 7)).join(", ")}
-          </code>
-        </p>
+          <Code size="micro">{commit.parents.map((parent) => parent.slice(0, 7)).join(", ")}</Code>
+        </Text>
       ) : null}
-    </div>
+    </Text>
   );
 }

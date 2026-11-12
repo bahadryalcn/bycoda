@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -349,8 +350,10 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
                 onClick={() => navigate(entry.path)}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
-                <Folder className="icon-md shrink-0 text-(--ui-text-muted)" />
-                <span className="truncate">{entry.name}</span>
+                <Folder tone="muted" className="icon-md shrink-0" />
+                <Text size="inherit" tone="inherit" truncate>
+                  {entry.name}
+                </Text>
               </Button>
             </ActionHost>
           ))}
@@ -363,7 +366,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               void createFolder();
             }}
           >
-            <FolderPlus className="icon-md shrink-0 text-(--ui-text-muted)" />
+            <FolderPlus tone="muted" className="icon-md shrink-0" />
             <TextField
               hideLabel
               label=""

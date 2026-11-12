@@ -1,5 +1,6 @@
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { Alert } from "../../shared/ui/Alert";
+import { Text } from "../../shared/ui/Text";
 import {
   NEW_LOCAL_HOST_SESSION,
   newLocalHostSession,
@@ -1153,12 +1154,17 @@ export function useProjectMenu({
           onDismiss={closeNotificationMenu}
           className="space-y-1 overflow-y-auto p-3"
         >
-          <p
-            className="truncate px-1 text-ui-caption font-medium text-content"
+          <Text
+            as="p"
+            truncate
+            size="caption"
+            tone="primary"
+            weight="medium"
+            className="px-1"
             title={notificationMenu.project.name}
           >
             {notificationMenu.project.name}
-          </p>
+          </Text>
           <NotificationMuteDatePicker
             projectIds={[notificationMenu.project.id]}
             onCancel={closeNotificationMenu}

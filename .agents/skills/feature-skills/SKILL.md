@@ -1,17 +1,13 @@
 ---
 name: feature-skills
-description: "Change bycoda skill-management source: policy routing, document drafts, discovery or machine transfer. Preserve per-machine restrictions; this developer guide grants no install/enable authority."
+description: "Use when changing skill-management source code, discovery, policy and transfer. Not for using skills; see feature-card-template."
 ---
 
 # Skill management development
 
-All code paths below are repository-relative; linked skill resources are relative to this directory.
+Use for Skills management UI, catalog/policy state, document edit/preview/split, copy/import/export/delete and provider invocation integration. Ordinary app operations use the bycoda tool guide; this skill is for source changes and grants no install or enable authority.
 
-## When to use
-
-Use for Skills management UI, catalog/policy state, document edit/preview/split, copy/import/export/delete and provider invocation integration. Ordinary app operations use the bycoda tool guide; this skill is for source changes.
-
-## Start here
+## Source starts
 
 - `src/features/skills/ui/SkillsPage.tsx` composes the library and detail; `SkillRow.tsx`, `SkillMachinesPanel.tsx` and `CreateSkillDialog.tsx` own the row, per-machine copy/toggle tab and creation dialog. `SkillDocumentPreview.tsx`, `SkillPicker.tsx` and `SkillPromptField.tsx` own document and invocation surfaces.
 - `src/features/skills/model/skills.ts`, `skillPreferences.ts`, `machineSkills.ts`, `transferSkill.ts` and `deleteSkill.ts` own data/actions; `skillLibrary.ts` merges machine lists into rows and answers presence and "already installed" by name.
@@ -38,13 +34,17 @@ Use for Skills management UI, catalog/policy state, document edit/preview/split,
 - Delete retains native confirmation, protected namespaces, disabled-preference cleanup and catalog refresh. A documentation/source edit is not a live install/toggle/copy/delete authorization.
 - Keep policy read/save/discovery errors scoped to the owning machine; failed durable saves must not display success. Distinguish loading/read failure/saving/dirty/known saved document state.
 
-## Workflow and checks
+## Workflow
 
 1. Trace management action through UI, model, native/Host and provider turn boundary only as affected; follow current policy before loading any supporting skill.
 2. Use existing Markdown editor/preview/selection and overlay owners; read [Markdown preview](../feature-markdown-preview/SKILL.md) if scroll/split semantics change.
 3. Select focused suites from the map. Exercise fresh-disable/offline/late-reader races, draft/conflict recovery, one/many unavailable machines and copy/replace unknown outcomes with fake stores; verify native/provider/device boundaries separately.
 
-## Read when needed
+## References
 
 - Read [surfaces](references/surfaces.md) for command identifiers, source maps and targeted verification.
 - For contributor-owned feature-card authoring, use [feature-card template](../feature-card-template/SKILL.md); it is distinct from the product Skills manager.
+
+## Focused checks
+
+Use the focused test owners in [the surface map](references/surfaces.md).

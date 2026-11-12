@@ -7,8 +7,15 @@ import {
   type ReactNode,
 } from "react";
 import styles from "./Checkbox.module.css";
+import { optionalTextAttributes, type TextSize, type TextTone, type TextRoles } from "./Text";
 
-export type CheckboxProps = Omit<ComponentPropsWithRef<"input">, "type"> & {
+export type CheckboxProps = Omit<ComponentPropsWithRef<"input">, "type" | "size"> & {
+  /** Label type roles; unset preserves existing styling. */
+  size?: TextSize;
+  tone?: TextTone;
+  weight?: TextRoles["weight"];
+  /** Line height role; `inherit` keeps the surrounding line height. */
+  leading?: TextRoles["leading"];
   indeterminate?: boolean;
   /** Visible text. Renders the whole row as one native `<label>`; `className` then places that row. */
   label?: ReactNode;
@@ -29,6 +36,10 @@ export function Checkbox({
   className,
   label,
   description,
+  size,
+  tone,
+  weight,
+  leading,
   ...props
 }: CheckboxProps) {
   const input = useRef<HTMLInputElement>(null);
@@ -63,7 +74,10 @@ export function Checkbox({
   if (!hasLabel) return control;
   return (
     <label
-      className={[styles.row, className].filter(Boolean).join(" ")}
+      {...optionalTextAttributes(
+        { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading },
+        [styles.row, className].filter(Boolean).join(" "),
+      )}
       data-checkbox-row=""
       data-disabled={props.disabled ? "" : undefined}
     >

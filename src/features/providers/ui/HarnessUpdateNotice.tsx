@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
@@ -124,11 +126,11 @@ export function HarnessUpdateNotice() {
           />
         ))}
       </div>
-      <p className="pt-2 text-ui-micro text-(--ui-text-muted)">
+      <Text as="p" size="micro" tone="muted" className="pt-2">
         {anyUpdated
           ? t("CLI version verified. Model discovery can be retried in Providers.")
           : t("New models often need the latest version.")}
-      </p>
+      </Text>
     </Toast>
   );
 }
@@ -149,22 +151,26 @@ function HarnessUpdateRow({
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <HarnessIcon harness={update.harness} className="icon-md shrink-0" />
-            <span className="min-w-0 break-words text-ui-secondary font-medium">
+            <Text size="secondary" tone="inherit" weight="medium" className="min-w-0 break-words">
               {HARNESS_TITLE[update.harness]}
-            </span>
+            </Text>
           </div>
           {state.status !== "updated" ? (
-            <div className="pt-1 font-mono text-ui-micro tabular-nums text-(--ui-text-muted)">
+            <Code size="micro" tone="muted" className="block pt-1 tabular-nums">
               {update.installed} → {update.latest}
-            </div>
+            </Code>
           ) : null}
         </div>
         {state.status === "updated" ? (
-          <span className="flex flex-wrap items-center justify-end gap-1 text-ui-micro tabular-nums text-success">
+          <Text
+            size="micro"
+            tone="success"
+            className="flex flex-wrap items-center justify-end gap-1 tabular-nums"
+          >
             <Check className="icon-sm" />
             {t("Updated to ")}
             {state.version}
-          </span>
+          </Text>
         ) : (
           <Button
             variant="ghost"

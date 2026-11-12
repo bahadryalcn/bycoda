@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { t } from "../../../shared/i18n";
@@ -105,7 +106,9 @@ export function ApiProviderDialog({
       <div className="flex min-w-0 flex-col gap-3">
         {catalogError !== null ? <ErrorNotice error={catalogError} /> : null}
         {catalog === null && catalogError === null ? (
-          <p className="text-ui-caption text-(--ui-text-secondary)">{t("Loading providers…")}</p>
+          <Text as="p" size="caption" tone="secondary">
+            {t("Loading providers…")}
+          </Text>
         ) : null}
         {catalog !== null && entries.length === 0 ? (
           <InlineMessage tone="neutral">{t("No providers are listed yet.")}</InlineMessage>
@@ -121,9 +124,15 @@ export function ApiProviderDialog({
           />
         ) : null}
         {entry ? (
-          <div className="text-ui-caption flex min-w-0 flex-col gap-1 text-(--ui-text-secondary)">
-            <span className="truncate">{contractLabel(entry.adapter)}</span>
-            {entry.endpoint ? <span className="truncate font-mono">{entry.endpoint}</span> : null}
+          <Text as="div" size="caption" tone="secondary" className="flex min-w-0 flex-col gap-1">
+            <Text size="inherit" tone="inherit" truncate>
+              {contractLabel(entry.adapter)}
+            </Text>
+            {entry.endpoint ? (
+              <Text as="span" size="inherit" tone="inherit" truncate className="font-mono">
+                {entry.endpoint}
+              </Text>
+            ) : null}
             {entry.docsUrl ? (
               <div>
                 <Button variant="ghost" size="sm" onClick={() => openDocs(entry.docsUrl ?? "")}>
@@ -136,7 +145,7 @@ export function ApiProviderDialog({
                 {t("Details for this provider are not verified. Measure accuracy after adding.")}
               </InlineMessage>
             )}
-          </div>
+          </Text>
         ) : null}
         <TextField
           label={t("Model (optional)")}

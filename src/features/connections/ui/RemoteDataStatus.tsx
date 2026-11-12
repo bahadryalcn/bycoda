@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
@@ -81,9 +82,11 @@ export function RemoteDataStatus({
     const spinning = retrying || state.phase === "loading" || (busy && onRefresh !== undefined);
     const icon = spinning ? <Spinner /> : <Check aria-hidden className="icon-sm" />;
     return (
-      <span
+      <Text
         data-remote-data-state={state.phase}
-        className="inline-flex shrink-0 items-center text-(--ui-text-muted)"
+        size="inherit"
+        tone="muted"
+        className="inline-flex shrink-0 items-center"
         aria-busy={busy}
       >
         <span role="status" className="sr-only">
@@ -107,7 +110,7 @@ export function RemoteDataStatus({
             </span>
           </Tooltip>
         )}
-      </span>
+      </Text>
     );
   }
   return (
@@ -127,12 +130,16 @@ export function RemoteDataStatus({
                 p0: new Date(state.updatedAt!).toLocaleString(getLocale()),
               })}
             >
-              <span className="ml-1 text-(--ui-text-muted)">· {time}</span>
+              <Text size="inherit" tone="muted" className="ml-1">
+                · {time}
+              </Text>
             </Tooltip>
           ) : null}
           {state.error ? (
             fitsOneLine(state.error) ? (
-              <p className="mt-1 break-words text-(--ui-text-muted)">{state.error}</p>
+              <Text as="p" size="inherit" tone="muted" className="mt-1 break-words">
+                {state.error}
+              </Text>
             ) : (
               <p className="mt-1">
                 <ErrorDetails title={message} detail={state.error} />

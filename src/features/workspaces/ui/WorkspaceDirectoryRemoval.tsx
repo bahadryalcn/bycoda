@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { projectName } from "../../../shared/lib/paths";
@@ -168,7 +169,7 @@ export function WorkspaceDirectoryRemoval({
         </ModalActions>
       }
     >
-      <div className="space-y-3 text-ui-body">
+      <Text as="div" size="body" tone="inherit" className="space-y-3">
         <p>
           {closeFirst && workspace.state === "active"
             ? t(
@@ -178,9 +179,9 @@ export function WorkspaceDirectoryRemoval({
                 "The conversation, branch and recovery history are retained. Resume recreates the directory.",
               )}
         </p>
-        <p className="break-all font-mono text-(--ui-text-secondary)">
+        <Text as="p" size="inherit" tone="secondary" className="break-all font-mono">
           {plan?.path ?? workspace.path}
-        </p>
+        </Text>
         {pending === "plan" && <LoadingText>{t("Checking directory…")}</LoadingText>}
         {error && <InlineError className="break-words">{error}</InlineError>}
         {plan && (
@@ -216,7 +217,7 @@ export function WorkspaceDirectoryRemoval({
             )}
           </>
         )}
-      </div>
+      </Text>
     </Modal>
   );
 }

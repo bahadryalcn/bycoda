@@ -1,3 +1,6 @@
+import { Heading } from "../../../shared/ui/Heading";
+import { Surface } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import type { AccountContext } from "@bycoda/account-contracts";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -8,7 +11,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { PrivateEmail } from "../../../shared/ui/PrivateEmail";
 import { AccountAvatar } from "./AccountAvatar";
-import { memberSince, planLabel } from "./AccountProfile";
+import { planLabel } from "./AccountProfile";
 import styles from "./account.module.css";
 
 /** Who is signed in, above every account tab: picture, name, e-mail, plan, and sign out. */
@@ -41,17 +44,18 @@ export function AccountHeader({
 
   return (
     <header className={styles.header}>
-      <div className={styles.identityCard}>
+      <Surface variant="outline" padding="md" className={styles.identityCard}>
         <AccountAvatar user={user} size="lg" />
         <div className={styles.identity}>
-          <span className={styles.name}>{user.displayName || user.email}</span>
-          <span className={styles.email}>
+          <Heading size="page" truncate>
+            {user.displayName || user.email}
+          </Heading>
+          <Text size="caption" tone="secondary" leading="inherit" className={styles.email}>
             <PrivateEmail email={user.email} />
-          </span>
-          <span className={styles.facts}>
+          </Text>
+          <Text size="caption" tone="secondary" leading="inherit" className={styles.facts}>
             <Badge tone="accent">{planLabel(entitlements.planTier)}</Badge>
-            <span>{t("Member since {p0}", { p0: memberSince(user) })}</span>
-          </span>
+          </Text>
         </div>
         <Button
           variant="secondary"
@@ -61,7 +65,7 @@ export function AccountHeader({
         >
           {t("Sign out")}
         </Button>
-      </div>
+      </Surface>
       {stale ? (
         <InlineMessage tone="neutral">
           {t("Showing account details saved {p0}. They refresh when you are online.", {

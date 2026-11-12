@@ -1,14 +1,22 @@
+import {
+  updatedLabel,
+  usageErrorMessage,
+  usageWindows,
+  type UsageWindowEntry,
+} from "./usageProviderLabels";
+import { UsageWindowStat } from "./UsageWindowStat";
+import { Text } from "../../shared/ui/Text";
+import { motionAttributes } from "../../shared/ui/Motion";
 import { Progress } from "../../shared/ui/Progress";
 import { TextField } from "../../shared/ui/TextField";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
-import { t, useFormat, useLocale, useT } from "../../shared/i18n";
+import { useFormat, useLocale, useT } from "../../shared/i18n";
 import {
   Fragment,
   useEffect,
   useId,
   useRef,
   useState,
-  type CSSProperties,
   type FormEvent,
   type RefObject,
 } from "react";
@@ -35,9 +43,9 @@ import { projectMascot } from "../../features/projects/model/projectMascots";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { HARNESS_TITLE, type HarnessId } from "../../features/sessions/model/session";
 import {
-  loadTabGroupColors,
-  loadTabGroupCustomColors,
-  loadTabGroupMascots,
+  useTabGroupColors,
+  useTabGroupCustomColors,
+  useTabGroupMascots,
   resolveTabGroupColor,
   resolveTabGroupMascot,
 } from "../../features/workspace/model/tabGroups";
@@ -49,7 +57,7 @@ import { InlineError } from "../../shared/ui/InlineError";
 import { Spinner } from "../../shared/ui/Spinner";
 import { Heading } from "../../shared/ui/Heading";
 import { SectionLabel } from "../../shared/ui/SectionLabel";
-import { Surface } from "../../shared/ui/Surface";
+import { surfaceAttributes, Surface } from "../../shared/ui/Surface";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Button } from "../../shared/ui/Button";
 import {
@@ -85,12 +93,6 @@ import {
   loadRateLimits,
   useCachedRateLimits,
 } from "../../features/providers/model/rateLimitsCache";
-
-type UsageWindowEntry = {
-  key: "session" | "weekly" | "monthly";
-  window: RateLimitWindow;
-};
-
 type UsageProviderChipProps = {
   limits: ProviderRateLimits;
   usageOnly?: boolean;
@@ -106,7 +108,6 @@ type UsageProviderChipProps = {
   onConsumeReset?: (creditId?: string) => Promise<CodexRateLimitResetOutcome>;
   onReconnect?: () => Promise<void>;
 };
-
 export function UsageProviderChip(props: UsageProviderChipProps) {
   const { limits, now, accounts = [], accountId, presentation } = props;
   const t = useT();
@@ -128,7 +129,6 @@ export function UsageProviderChip(props: UsageProviderChipProps) {
   const iconHarness = presentation?.harness ?? limits.provider;
   const activeAccount = accounts.find((account) => account.id === accountId);
   const dismiss = useDismissPopover(setOpen, trigger);
-
   return (
     <>
       <Button
@@ -152,15 +152,17 @@ export function UsageProviderChip(props: UsageProviderChipProps) {
         {accounts.length > 1 && activeAccount ? (
           <span className="inline-flex min-w-0 items-center gap-1">
             <AccountColorDot account={activeAccount} className="size-1.5" />
-            <span className="max-w-24 truncate text-(--ui-text-secondary)">
+            <Text size="inherit" tone="secondary" truncate className="max-w-24">
               {activeAccount.label}
-            </span>
+            </Text>
           </span>
         ) : null}
         {loading ? (
           <UnknownUsageBar label={t("Loading usage…")} loading />
         ) : disconnected ? (
-          <span className="text-(--ui-text-secondary)">{t("not connected")}</span>
+          <Text size="inherit" tone="secondary">
+            {t("not connected")}
+          </Text>
         ) : windows.length === 0 ? (
           <UnknownUsageBar label={limits.error ?? t("Usage unavailable")} />
         ) : (
@@ -168,9 +170,9 @@ export function UsageProviderChip(props: UsageProviderChipProps) {
             {windows.map((entry, index) => (
               <Fragment key={entry.key}>
                 {index > 0 ? (
-                  <span aria-hidden="true" className="text-(--ui-text-secondary)">
+                  <Text aria-hidden="true" size="inherit" tone="secondary">
                     ·
-                  </span>
+                  </Text>
                 ) : null}
                 <UsageWindowStat window={entry.window} now={now} />
               </Fragment>
@@ -191,10 +193,8 @@ export function UsageProviderChip(props: UsageProviderChipProps) {
     </>
   );
 }
-
 /**
- * Popover body, mounted only while the chip is open so its view, reset and
- * sign-in state starts fresh on every open without a reset effect.
+ * Popover body: view, reset and sign-in state start fresh on each open, without a reset effect.
  */
 function UsageProviderDetails({
   limits,
@@ -236,7 +236,6 @@ function UsageProviderDetails({
     detailLimits.status === "idle" ||
     (detailLimits.status === "fetching" && detailWindows.length === 0);
   const canBrowseUsage = usageOnly && accounts.length > 1;
-
   useEffect(() => {
     if (usageOnly && viewingOtherAccount) {
       void loadRateLimits(limits.provider, detailAccountId);
@@ -280,27 +279,26 @@ function UsageProviderDetails({
       : null;
   const mascotProject = project ? projectName(project) : providerLabel;
   const appearanceKey = project ? projectKey(project) : mascotProject;
-  const mascotName = resolveTabGroupMascot(appearanceKey, loadTabGroupMascots());
+  const mascotName = resolveTabGroupMascot(appearanceKey, useTabGroupMascots());
   const mascotColor = resolveTabGroupColor(
     appearanceKey,
-    loadTabGroupColors(),
-    loadTabGroupCustomColors(),
+    useTabGroupColors(),
+    useTabGroupCustomColors(),
     mascotProject,
   );
-
   const useReset = async (credit: RateLimitResetCredit | undefined, rowKey: string) => {
     if (!onConsumeReset || viewingOtherAccount) return;
     setActiveResetKey(rowKey);
     setResetAction("using");
     setResetError(null);
+    const creditId = credit?.id;
     try {
-      setResetAction(await onConsumeReset(credit?.id));
+      setResetAction(await onConsumeReset(creditId));
     } catch (error) {
-      setResetError(error instanceof Error ? error.message : "Could not use this reset");
+      setResetError(usageErrorMessage(error, "Could not use this reset"));
       setResetAction("error");
     }
   };
-
   const reconnect = async () => {
     if (!onReconnect) return;
     setReconnectState("running");
@@ -309,11 +307,10 @@ function UsageProviderDetails({
       await onReconnect();
       setReconnectState("complete");
     } catch (error) {
-      setReconnectError(error instanceof Error ? error.message : "Could not complete sign-in");
+      setReconnectError(usageErrorMessage(error, "Could not complete sign-in"));
       setReconnectState("error");
     }
   };
-
   return (
     <Popover
       anchor={trigger}
@@ -327,196 +324,219 @@ function UsageProviderDetails({
       role="dialog"
       aria-label={t("{p0} usage details", { p0: providerLabel })}
       tabIndex={-1}
-      className={`overflow-y-auto text-content ${accountView === "usage" && loginView && !canBrowseUsage ? "" : "p-2.5"}`}
+      className={`overflow-y-auto ${accountView === "usage" && loginView && !canBrowseUsage ? "" : "p-2.5"}`}
     >
-      {canBrowseUsage ? (
-        <div role="group" aria-label={t("Accounts")} className="mbe-2 flex flex-wrap gap-1">
-          {accounts.map((account) => (
-            <Button
-              key={account.id}
-              variant="tab"
-              aria-pressed={account.id === detailAccountId}
-              tooltip={account.label}
-              tooltipWhen="overflow"
-              className="min-w-0 max-w-full gap-1.5"
-              onClick={() => {
-                setResetAction("idle");
-                setActiveResetKey(null);
-                setResetError(null);
-                setReconnectState("idle");
-                setReconnectError(null);
-                if (onSelectUsageAccount) onSelectUsageAccount(account.id);
-                else setUsageAccountId(account.id);
-              }}
-              disabled={resetAction === "using" || reconnectState === "running"}
-            >
-              <AccountColorDot account={account} className="size-1.5" />
-              <span className="min-w-0 truncate">{account.label}</span>
-            </Button>
-          ))}
-        </div>
-      ) : null}
-      {accountView === "accounts" ? (
-        <ProviderAccountPicker
-          providerLabel={providerLabel}
-          accounts={accounts}
-          identities={identities}
-          accountId={accountId ?? ""}
-          usageFor={usageFor}
-          now={now}
-          onBack={() => setAccountView("usage")}
-          onAdd={() => setAccountView("add")}
-          onManage={
-            onManageAccounts
-              ? () => {
-                  close();
-                  onManageAccounts();
-                }
-              : undefined
-          }
-          onSelect={(nextAccountId) => {
-            onSelectAccount?.(nextAccountId);
-            close();
-          }}
-        />
-      ) : accountView === "add" ? (
-        <AddProviderAccount
-          providerLabel={providerLabel}
-          onBack={() => setAccountView("accounts")}
-          onAdd={onAddAccount}
-          onComplete={() => close()}
-        />
-      ) : loginView ? (
-        <>
-          {canManageAccounts ? (
-            <AccountSwitchRow
-              account={activeAccount}
-              accountLabel={activeAccountLabel}
-              onClick={() => setAccountView("accounts")}
-            />
-          ) : null}
-          <ProviderSignInPanel
-            harness={limits.provider}
-            state={reconnectState}
-            error={reconnectError}
-            onSignIn={() => void reconnect()}
-          />
-        </>
-      ) : (
-        <>
-          <div className="flex items-start gap-2 px-1 pb-2 pt-0.5">
-            <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-(--color-stroke)">
-              <HarnessIcon harness={iconHarness} className="size-4" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <Heading size="item" level={2}>
-                {providerLabel}
-                {t(" usage")}
-              </Heading>
-              <p className="mt-0.5 text-ui-caption leading-4 text-(--ui-text-secondary)">
-                {updatedLabel(detailLimits, now)}
-              </p>
-              {presentation?.sourceLabel ? (
-                <p className="mt-0.5 text-ui-caption leading-4 text-(--ui-text-secondary)">
-                  {presentation.sourceLabel}
-                </p>
-              ) : null}
-              {canManageAccounts ? (
-                <div className="pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-ui-caption text-(--ui-text-secondary)">
-                  {/* Keep account switching separate from email revelation. */}
-                  <Button
-                    variant="ghost"
-                    motion="none"
-                    type="button"
-                    className="pointer-events-auto absolute inset-0"
-                    aria-label={t("Switch {p0} account", { p0: providerLabel })}
-                    onClick={() => setAccountView("accounts")}
-                  />
-                  {activeAccount ? (
-                    <AccountColorDot account={activeAccount} className="size-1.5" />
-                  ) : null}
-                  <span className="max-w-[60%] shrink-0 truncate">{activeAccountLabel}</span>
-                  <ProviderAccountSubtitle
-                    key={activeAccount && identityKey(activeAccount)}
-                    identity={activeIdentity}
-                    className="text-(--ui-text-secondary)"
-                  />
-                  <ChevronRight className="size-2.5 shrink-0" strokeWidth={1.75} aria-hidden />
-                </div>
-              ) : null}
-            </div>
-            {detailLimits.status === "fetching" ? (
-              <span className="mt-0.5 inline-flex items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
-                <RefreshCw
-                  className="size-2.5 motion-safe:animate-spin"
-                  strokeWidth={1.75}
-                  aria-hidden
-                />
-                {t("Updating")}
-              </span>
-            ) : null}
+      <Text as="div" size="inherit" tone="primary">
+        {canBrowseUsage ? (
+          <div role="group" aria-label={t("Accounts")} className="mbe-2 flex flex-wrap gap-1">
+            {accounts.map((account) => (
+              <Button
+                key={account.id}
+                variant="tab"
+                aria-pressed={account.id === detailAccountId}
+                tooltip={account.label}
+                tooltipWhen="overflow"
+                className="min-w-0 max-w-full gap-1.5"
+                onClick={() => {
+                  setResetAction("idle");
+                  setActiveResetKey(null);
+                  setResetError(null);
+                  setReconnectState("idle");
+                  setReconnectError(null);
+                  if (onSelectUsageAccount) onSelectUsageAccount(account.id);
+                  else setUsageAccountId(account.id);
+                }}
+                disabled={resetAction === "using" || reconnectState === "running"}
+              >
+                <AccountColorDot account={account} className="size-1.5" />
+                <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                  {account.label}
+                </Text>
+              </Button>
+            ))}
           </div>
-
-          {detailLimits.status === "error" && detailWindows.length > 0 ? (
-            <p className="mb-2 rounded-(--ui-radius-card) bg-(--ui-tone-warning-subtle) px-2.5 py-2 text-ui-caption leading-4 text-warning">
-              {t("Couldn’t refresh. Showing the last available snapshot.")}
-            </p>
-          ) : null}
-
-          {detailWindows.length > 0 ? (
-            <div className="flex flex-col gap-2.5">
-              {detailWindows.map((entry) => (
-                <UsageWindowCard key={entry.key} kind={entry.key} window={entry.window} now={now} />
-              ))}
+        ) : null}
+        {accountView === "accounts" ? (
+          <ProviderAccountPicker
+            providerLabel={providerLabel}
+            accounts={accounts}
+            identities={identities}
+            accountId={accountId ?? ""}
+            usageFor={usageFor}
+            now={now}
+            onBack={() => setAccountView("usage")}
+            onAdd={() => setAccountView("add")}
+            onManage={
+              onManageAccounts
+                ? () => {
+                    close();
+                    onManageAccounts();
+                  }
+                : undefined
+            }
+            onSelect={(nextAccountId) => {
+              onSelectAccount?.(nextAccountId);
+              close();
+            }}
+          />
+        ) : accountView === "add" ? (
+          <AddProviderAccount
+            providerLabel={providerLabel}
+            onBack={() => setAccountView("accounts")}
+            onAdd={onAddAccount}
+            onComplete={() => close()}
+          />
+        ) : loginView ? (
+          <>
+            {canManageAccounts ? (
+              <AccountSwitchRow
+                account={activeAccount}
+                accountLabel={activeAccountLabel}
+                onClick={() => setAccountView("accounts")}
+              />
+            ) : null}
+            <ProviderSignInPanel
+              harness={limits.provider}
+              state={reconnectState}
+              error={reconnectError}
+              onSignIn={() => void reconnect()}
+            />
+          </>
+        ) : (
+          <>
+            <div className="flex items-start gap-2 px-1 pb-2 pt-0.5">
+              <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-(--color-stroke)">
+                <HarnessIcon harness={iconHarness} className="size-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <Heading size="item" level={2}>
+                  {providerLabel}
+                  {t(" usage")}
+                </Heading>
+                <Text as="p" size="caption" tone="secondary" className="mt-0.5">
+                  {updatedLabel(detailLimits, now, t)}
+                </Text>
+                {presentation?.sourceLabel ? (
+                  <Text as="p" size="caption" tone="secondary" className="mt-0.5">
+                    {presentation.sourceLabel}
+                  </Text>
+                ) : null}
+                {canManageAccounts ? (
+                  <Text
+                    as="div"
+                    size="caption"
+                    tone="secondary"
+                    {...surfaceAttributes(
+                      { radius: "sm" },
+                      "pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 px-1 py-0.5",
+                    )}
+                  >
+                    {/* Keep account switching separate from email revelation. */}
+                    <Button
+                      variant="ghost"
+                      motion="none"
+                      type="button"
+                      className="pointer-events-auto absolute inset-0"
+                      aria-label={t("Switch {p0} account", { p0: providerLabel })}
+                      onClick={() => setAccountView("accounts")}
+                    />
+                    {activeAccount ? (
+                      <AccountColorDot account={activeAccount} className="size-1.5" />
+                    ) : null}
+                    <Text size="inherit" tone="inherit" truncate className="max-w-[60%] shrink-0">
+                      {activeAccountLabel}
+                    </Text>
+                    <ProviderAccountSubtitle
+                      key={activeAccount && identityKey(activeAccount)}
+                      identity={activeIdentity}
+                      tone="secondary"
+                    />
+                    <ChevronRight className="size-2.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                  </Text>
+                ) : null}
+              </div>
+              {detailLimits.status === "fetching" ? (
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  className="mt-0.5 inline-flex items-center gap-1"
+                >
+                  <RefreshCw
+                    className="size-2.5 motion-safe:animate-spin"
+                    strokeWidth={1.75}
+                    aria-hidden
+                  />
+                  {t("Updating")}
+                </Text>
+              ) : null}
             </div>
-          ) : (
-            <EmptyUsageState limits={detailLimits} loading={detailLoading} />
-          )}
-
-          {!usageOnly && suggestion && onSelectAccount ? (
-            <SwitchSuggestion
-              account={suggestion}
-              limits={usageFor(suggestion)}
-              exhausted={activeStatus.tone === "exhausted"}
-              now={now}
-              onSwitch={() => {
-                onSelectAccount(suggestion.id);
-                close();
-              }}
-            />
-          ) : null}
-
-          {limits.provider === "codex" || limits.provider === "claude" ? (
-            <BankedResets
-              limits={detailLimits}
-              now={now}
-              action={viewingOtherAccount ? "idle" : resetAction}
-              activeResetKey={viewingOtherAccount ? null : activeResetKey}
-              error={viewingOtherAccount ? null : resetError}
-              mascotProject={mascotProject}
-              mascotName={mascotName}
-              mascotColor={mascotColor}
-              onConfirm={(creditId) => {
-                setActiveResetKey(creditId);
-                setResetAction("confirming");
-              }}
-              onCancel={() => {
-                setActiveResetKey(null);
-                setResetAction("idle");
-              }}
-              onUse={useReset}
-              // Claude resets are spent with /limit-reset in Claude Code, not from here.
-              canUse={
-                limits.provider === "codex" && !viewingOtherAccount && Boolean(onConsumeReset)
-              }
-            />
-          ) : null}
-        </>
-      )}
+            {detailLimits.status === "error" && detailWindows.length > 0 ? (
+              <Text
+                as="p"
+                size="caption"
+                tone="warning"
+                className="mb-2 rounded-(--ui-radius-card) bg-(--ui-tone-warning-subtle) px-2.5 py-2"
+              >
+                {t("Couldn’t refresh. Showing the last available snapshot.")}
+              </Text>
+            ) : null}
+            {detailWindows.length > 0 ? (
+              <div className="flex flex-col gap-2.5">
+                {detailWindows.map((entry) => (
+                  <UsageWindowCard
+                    key={entry.key}
+                    kind={entry.key}
+                    window={entry.window}
+                    now={now}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyUsageState limits={detailLimits} loading={detailLoading} />
+            )}
+            {!usageOnly && suggestion && onSelectAccount ? (
+              <SwitchSuggestion
+                account={suggestion}
+                limits={usageFor(suggestion)}
+                exhausted={activeStatus.tone === "exhausted"}
+                now={now}
+                onSwitch={() => {
+                  onSelectAccount(suggestion.id);
+                  close();
+                }}
+              />
+            ) : null}
+            {limits.provider === "codex" || limits.provider === "claude" ? (
+              <BankedResets
+                limits={detailLimits}
+                now={now}
+                action={viewingOtherAccount ? "idle" : resetAction}
+                activeResetKey={viewingOtherAccount ? null : activeResetKey}
+                error={viewingOtherAccount ? null : resetError}
+                mascotProject={mascotProject}
+                mascotName={mascotName}
+                mascotColor={mascotColor}
+                onConfirm={(creditId) => {
+                  setActiveResetKey(creditId);
+                  setResetAction("confirming");
+                }}
+                onCancel={() => {
+                  setActiveResetKey(null);
+                  setResetAction("idle");
+                }}
+                onUse={useReset}
+                // Claude resets are spent with /limit-reset in Claude Code, not from here.
+                canUse={
+                  limits.provider === "codex" && !viewingOtherAccount && Boolean(onConsumeReset)
+                }
+              />
+            ) : null}
+          </>
+        )}
+      </Text>
     </Popover>
   );
 }
-
 function AccountSwitchRow({
   account,
   accountLabel,
@@ -538,14 +558,17 @@ function AccountSwitchRow({
         onClick={onClick}
       >
         {account ? <AccountColorDot account={account} /> : null}
-        <span className="min-w-0 flex-1 truncate">{accountLabel}</span>
-        <span className="text-ui-caption text-(--ui-text-secondary)">{t("Switch account")}</span>
-        <ChevronRight className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden />
+        <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+          {accountLabel}
+        </Text>
+        <Text size="caption" tone="secondary">
+          {t("Switch account")}
+        </Text>
+        <ChevronRight className="icon-xs shrink-0" tone="secondary" aria-hidden />
       </Button>
     </div>
   );
 }
-
 function ProviderAccountPicker({
   providerLabel,
   accounts,
@@ -591,9 +614,9 @@ function ProviderAccountPicker({
           {t(" accounts")}
         </Heading>
       </div>
-      <p className="mt-1 px-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
+      <Text as="p" size="caption" tone="secondary" className="mt-1 px-1">
         {t("Applies to this conversation only; new ones use the default account.")}
-      </p>
+      </Text>
       <div
         className="mt-2 flex flex-col gap-1"
         role="group"
@@ -606,13 +629,19 @@ function ProviderAccountPicker({
           const usage = usageFor(account);
           const meters = meterWindowsWith(usage, t);
           return (
-            <div
+            <Text
+              as="div"
               key={account.id}
-              className={`pointer-events-none relative flex w-full items-center gap-3 rounded-(--ui-radius-card) px-2.5 py-2 text-left text-ui-micro ring-1 ring-inset transition-colors ${
-                selected
-                  ? "bg-(--ui-surface-selected) text-content ring-(--ui-tone-accent-border)"
-                  : "bg-(--ui-surface-muted) text-(--ui-text-secondary) ring-(--color-stroke)"
-              }`}
+              size="micro"
+              tone={selected ? "primary" : "secondary"}
+              {...motionAttributes(
+                { transition: "colors", duration: "standard" },
+                `pointer-events-none relative flex w-full items-center gap-3 rounded-(--ui-radius-card) px-2.5 py-2 text-left ring-1 ring-inset ${
+                  selected
+                    ? "bg-(--ui-surface-selected) ring-(--ui-tone-accent-border)"
+                    : "bg-(--ui-surface-muted) ring-(--color-stroke)"
+                }`,
+              )}
             >
               {/* A sibling target keeps the email button out of the selection button. */}
               <Button
@@ -628,18 +657,21 @@ function ProviderAccountPicker({
               <span className="min-w-0 flex-1 py-0.5">
                 <span className="flex min-w-0 items-center gap-1.5">
                   <AccountColorDot account={account} />
-                  <span className="shrink-0 truncate">{account.label}</span>
-                  <ProviderAccountSubtitle
-                    identity={identity}
-                    className="text-ui-caption text-(--ui-text-secondary)"
-                  />
+                  <Text size="inherit" tone="inherit" truncate className="shrink-0">
+                    {account.label}
+                  </Text>
+                  <ProviderAccountSubtitle identity={identity} size="caption" tone="secondary" />
                   {orgTag ? (
-                    <Badge size="xs" className="max-w-24 shrink-0 truncate">
+                    <Badge size="xs" truncate className="max-w-24 shrink-0">
                       {orgTag}
                     </Badge>
                   ) : null}
                 </span>
-                <span className="mt-1 flex min-w-0 items-center gap-3 text-ui-caption">
+                <Text
+                  size="caption"
+                  tone="inherit"
+                  className="mt-1 flex min-w-0 items-center gap-3"
+                >
                   <span
                     id={`${statusId}-${account.id}`}
                     // Without meters, a long "unknown" reason truncates.
@@ -661,10 +693,10 @@ function ProviderAccountPicker({
                       ))}
                     </span>
                   ) : null}
-                </span>
+                </Text>
               </span>
-              {selected ? <Check className="icon-sm shrink-0 text-accent" aria-hidden /> : null}
-            </div>
+              {selected ? <Check className="icon-sm shrink-0" tone="accent" aria-hidden /> : null}
+            </Text>
           );
         })}
       </div>
@@ -694,7 +726,6 @@ function ProviderAccountPicker({
     </div>
   );
 }
-
 function SwitchSuggestion({
   account,
   limits,
@@ -712,15 +743,17 @@ function SwitchSuggestion({
   return (
     <Surface variant="outline" padding="md" as="section" className="mt-2 flex items-center gap-2.5">
       <div className="min-w-0 flex-1">
-        <p className="text-ui-caption leading-4 text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary">
           {exhausted ? t("Out of usage") : t("Running low")}
           {t(" · switch to")}
-        </p>
-        <p className="mt-0.5 flex min-w-0 items-center gap-2 text-ui-micro">
+        </Text>
+        <Text as="p" size="micro" tone="inherit" className="mt-0.5 flex min-w-0 items-center gap-2">
           <AccountColorDot account={account} />
-          <span className="min-w-0 truncate font-medium">{account.label}</span>
-          <AccountStatusLabel status={accountStatus(limits, now)} className="text-ui-caption" />
-        </p>
+          <Text size="inherit" tone="inherit" weight="medium" truncate className="min-w-0">
+            {account.label}
+          </Text>
+          <AccountStatusLabel status={accountStatus(limits, now)} size="caption" />
+        </Text>
       </div>
       <Button variant="ghost" motion="none" type="button" className="shrink-0" onClick={onSwitch}>
         {t("Switch account")}
@@ -728,7 +761,6 @@ function SwitchSuggestion({
     </Surface>
   );
 }
-
 function AddProviderAccount({
   providerLabel,
   onBack,
@@ -744,7 +776,6 @@ function AddProviderAccount({
   const [label, setLabel] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!onAdd || !label.trim() || running) return;
@@ -758,7 +789,6 @@ function AddProviderAccount({
       setRunning(false);
     }
   };
-
   return (
     <form onSubmit={(event) => void submit(event)}>
       <div className="flex h-7 items-center gap-1">
@@ -781,9 +811,9 @@ function AddProviderAccount({
           {t(" account")}
         </Heading>
       </div>
-      <p className="mt-1 px-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
+      <Text as="p" size="caption" tone="secondary" className="mt-1 px-1">
         {t("Give this account a local name, then finish sign-in in your browser.")}
-      </p>
+      </Text>
       <TextField
         fieldClassName="mt-3 min-w-0 flex-1"
         label={t("Account name")}
@@ -814,15 +844,6 @@ function AddProviderAccount({
     </form>
   );
 }
-
-function usageWindows(limits: ProviderRateLimits): UsageWindowEntry[] {
-  return [
-    limits.session ? ({ key: "session", window: limits.session } as const) : null,
-    limits.weekly ? ({ key: "weekly", window: limits.weekly } as const) : null,
-    limits.monthly ? ({ key: "monthly", window: limits.monthly } as const) : null,
-  ].filter((entry): entry is UsageWindowEntry => entry != null);
-}
-
 function UsageWindowCard({
   kind,
   window,
@@ -862,7 +883,12 @@ function UsageWindowCard({
         value={Math.round(shown)}
         tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
       />
-      <div className="mbs-1.5 flex items-center justify-between gap-3 text-ui-caption leading-4 text-(--ui-text-secondary)">
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
+        className="mbs-1.5 flex items-center justify-between gap-3"
+      >
         <span className="tabular-nums">
           {formatUsagePercent(showRemaining ? pct : remaining)}{" "}
           {showRemaining ? t("used") : t("remaining")}
@@ -872,28 +898,27 @@ function UsageWindowCard({
             window.resetsAt == null ? undefined : format.formatDate(window.resetsAt, FULL_DATE_TIME)
           }
         >
-          <span className="truncate text-right tabular-nums">
+          <Text size="inherit" tone="inherit" truncate className="text-right tabular-nums">
             {window.resetsAt == null
               ? t("{p0} window", { p0: formatWindowLabel(window.windowMinutes) })
               : formatResetCountdownWith(window.resetsAt - now, t, format)}
-          </span>
+          </Text>
         </Tooltip>
-      </div>
+      </Text>
     </section>
   );
 }
-
 function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; loading: boolean }) {
   const t = useT();
   return (
     <Surface variant="outline" className="flex flex-col gap-2" role="status">
-      <span className="text-ui-micro font-medium">
+      <Text size="micro" tone="inherit" weight="medium">
         {loading
           ? t("Loading usage…")
           : limits.status === "unavailable"
             ? t("Not connected")
             : t("Usage unavailable")}
-      </span>
+      </Text>
       <UnknownUsageBar
         label={loading ? t("Loading usage…") : t("Usage unavailable")}
         loading={loading}
@@ -902,79 +927,23 @@ function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; load
     </Surface>
   );
 }
-
-function updatedLabel(limits: ProviderRateLimits, now: number): string {
-  if (limits.updatedAt <= 0) return t("Rate-limit details");
-  const elapsedMinutes = Math.max(0, Math.floor((now - limits.updatedAt) / 60_000));
-  // Without any windows, the time is the last check rather than data age.
-  if (!limits.session && !limits.weekly && !limits.monthly && !limits.resetCredits) {
-    if (elapsedMinutes === 0) return t("Checked just now");
-    if (elapsedMinutes < 60) return t("Checked {p0}m ago", { p0: elapsedMinutes });
-    return t("Checked {p0}h ago", { p0: Math.floor(elapsedMinutes / 60) });
-  }
-  if (elapsedMinutes === 0) return t("Updated just now");
-  if (elapsedMinutes < 60) return t("Updated {p0}m ago", { p0: elapsedMinutes });
-  return t("Updated {p0}h ago", { p0: Math.floor(elapsedMinutes / 60) });
-}
-
 function UnknownUsageBar({ label, loading = false }: { label: string; loading?: boolean }) {
   return (
     <Tooltip label={label}>
-      <span
+      <Text
         aria-label={label}
-        className="inline-flex h-4 min-w-12 items-center justify-center rounded-sm border border-dashed border-(--color-stroke) bg-(--ui-surface-muted) px-1 text-ui-caption text-(--ui-text-secondary)"
+        size="caption"
+        tone="secondary"
+        {...surfaceAttributes(
+          { radius: "sm" },
+          "inline-flex h-4 min-w-12 items-center justify-center border border-dashed border-(--color-stroke) bg-(--ui-surface-muted) px-1",
+        )}
       >
         {loading ? "···" : "?"}
-      </span>
+      </Text>
     </Tooltip>
   );
 }
-
-function UsageWindowStat({ window, now }: { window: RateLimitWindow; now: number }) {
-  const t = useT();
-  const format = useFormat();
-  const showRemaining = useShowRemainingUsage();
-  const pct = clampUsedPercent(window.usedPercent);
-  const shown = showRemaining ? 100 - pct : pct;
-  const label = `${formatWindowLabel(window.windowMinutes)} · ${rateLimitWindowTooltipWith(window, now, showRemaining, t, format)}`;
-  const tone = pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral";
-  // The compact meter keeps the value inside; at rest its fill is a quiet selection tone
-  // instead of the solid content colour, so ambient usage never outshines the workspace.
-  const quiet =
-    tone === "neutral"
-      ? ({
-          "--progress-fill": "var(--ui-surface-selected)",
-          "--progress-ink": "var(--color-content)",
-        } as CSSProperties)
-      : undefined;
-  return (
-    <Tooltip label={label}>
-      <span className="inline-flex items-center gap-1.5 tabular-nums">
-        <span aria-hidden="true" className="text-ui-micro text-(--ui-text-secondary)">
-          {formatWindowLabel(window.windowMinutes)}
-        </span>
-        <Progress
-          compact
-          showValue
-          valuePlacement="inside"
-          valueLabel={formatUsagePercent(shown)}
-          aria-label={label}
-          aria-valuetext={label}
-          className="w-11 shrink-0"
-          style={quiet}
-          value={shown}
-          tone={tone}
-        />
-        {window.resetsAt != null ? (
-          <span className="text-(--ui-text-secondary)">
-            {formatResetDuration(window.resetsAt - now)}
-          </span>
-        ) : null}
-      </span>
-    </Tooltip>
-  );
-}
-
 function BankedResets({
   limits,
   now,
@@ -1005,7 +974,6 @@ function BankedResets({
   const t = useT();
   const count = limits.resetCredits?.availableCount ?? 0;
   if (count <= 0) return null;
-
   const detailedCredits = (limits.resetCredits?.credits ?? []).filter(
     (credit) => credit.status === "available" || credit.status === "unknown",
   );
@@ -1018,7 +986,7 @@ function BankedResets({
   const showTitles = new Set(rows.map((credit) => credit?.title?.trim() ?? "")).size > 1;
   const refreshing = limits.status === "fetching";
   return (
-    <section className="mbs-2 border-t border-(--color-stroke) pbs-1.5">
+    <section {...surfaceAttributes({ frame: "stroke", edge: "top" }, "mbs-2 pbs-1.5")}>
       <div className="flex items-center justify-between gap-2 px-1">
         <div className="flex min-w-0 items-center gap-1.5">
           <SectionLabel as="h3" size="micro">
@@ -1033,18 +1001,19 @@ function BankedResets({
             {count}
           </Badge>
           {refreshing ? (
-            <span
-              className="inline-flex items-center gap-1 text-ui-caption text-(--ui-text-secondary)"
+            <Text
+              size="caption"
+              tone="secondary"
+              className="inline-flex items-center gap-1"
               role="status"
             >
               <Spinner size="xs" />
               {t("Checking…")}
-            </span>
+            </Text>
           ) : null}
         </div>
         <BankedResetMascot project={mascotProject} name={mascotName} color={mascotColor} />
       </div>
-
       <div
         className="mt-0.5 max-h-56 overflow-y-auto overscroll-contain"
         role="list"
@@ -1075,7 +1044,6 @@ function BankedResets({
     </section>
   );
 }
-
 function BankedResetMascot({
   project,
   name,
@@ -1137,19 +1105,23 @@ function BankedResetRow({
               : format.formatDate(credit.expiresAt, FULL_DATE_TIME)
           }
         >
-          <p className="min-w-0 truncate text-ui-caption tabular-nums text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary" truncate className="min-w-0 tabular-nums">
             {credit?.expiresAt == null
               ? t("Expiry not provided")
               : credit.expiresAt <= now
                 ? t("Expired")
                 : t("Expires in {p0}", { p0: formatResetDuration(credit.expiresAt - now) })}
-          </p>
+          </Text>
         </Tooltip>
         {action === "using" ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
+          <Text
+            size="caption"
+            tone="secondary"
+            className="inline-flex shrink-0 items-center gap-1.5"
+          >
             <Spinner size="xs" />
             {t("Applying…")}
-          </span>
+          </Text>
         ) : canUse && action !== "confirming" && (!outcome || retryable) ? (
           <Button
             variant="ghost"
@@ -1164,20 +1136,21 @@ function BankedResetRow({
         ) : null}
       </div>
       {outcome ? (
-        <p
-          className={`mt-0.5 break-words text-ui-caption leading-4 ${
-            action === "reset" ? "text-success" : "text-(--ui-text-secondary)"
-          }`}
+        <Text
+          as="p"
+          size="caption"
+          tone={action === "reset" ? "success" : "secondary"}
+          className="mt-0.5 break-words"
           role="status"
         >
           {action === "error" ? error : resetOutcomeLabel(action, t)}
-        </p>
+        </Text>
       ) : null}
       {action === "confirming" ? (
         <div className="mt-1.5 flex items-center justify-between gap-2">
-          <p className="text-ui-caption leading-4 text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary">
             {t("Spend this reset now?")}
-          </p>
+          </Text>
           <div className="flex shrink-0 gap-1">
             <Button variant="ghost" motion="none" type="button" className="" onClick={onCancel}>
               {t("Cancel")}

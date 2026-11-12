@@ -14,6 +14,7 @@ import {
 import type { PopoverAlign, PopoverSide } from "../lib/popover";
 import { Check } from "./icons";
 import { LiveText } from "./LiveText";
+import { textAttributes, type TextRoles, type TextLeading } from "./Text";
 import { useTooltip } from "./Tooltip";
 import {
   Button as ArcButton,
@@ -97,6 +98,22 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   onLongPress?: (event: PointerEvent<HTMLButtonElement>) => void;
   /** Hold time for `onLongPress` in milliseconds. Default 500. */
   longPressDelay?: number;
+  /** One-line label: text that does not fit ends in an ellipsis and the control may shrink
+   *  (`min-width: 0`) inside a flex row. The clip sits on the control itself, so
+   *  `tooltipWhen="overflow"` measures the same element. Replaces `className="truncate"`. */
+  truncate?: boolean;
+  /** Label line height; unset keeps the control's own. `none` 1, `tight` 1.25, `snug` 1.375,
+   *  `normal` 1.5, `relaxed` 1.625, `inherit` the surrounding line height. Replaces
+   *  `leading-*` classes. */
+  leading?: TextLeading;
+  /** Label size; unset keeps the control size. Use for text actions, not hit geometry. */
+  textSize?: TextRoles["size"];
+  /** Label ink; unset keeps the intent and interaction ink. */
+  textTone?: TextRoles["tone"];
+  /** Label weight; unset keeps the control weight. */
+  weight?: TextRoles["weight"];
+  /** Maximum visible label lines; unset leaves wrapping unchanged. Full text stays accessible. */
+  lines?: number;
 };
 
 export type ButtonProps = CommonButtonProps &
@@ -176,6 +193,12 @@ export function Button({
   pressed,
   onLongPress,
   longPressDelay = 500,
+  truncate = false,
+  leading,
+  textSize,
+  textTone,
+  weight,
+  lines,
   className,
   children,
   disabled,
@@ -292,6 +315,14 @@ export function Button({
   ]
     .filter(Boolean)
     .join(" ");
+  // Label roles only when a caller sets one: a plain Button keeps its attributes and classes.
+  const { className: typedClasses, ...typeData } = textAttributes(
+    { size: textSize, tone: textTone, weight, truncate, leading },
+    classes,
+  );
+  const typed =
+    truncate || leading !== undefined || !!textSize || !!textTone || !!weight || !!lines;
+  const controlClasses = typed ? typedClasses : classes;
   // Handlers that touch `longPress` call `swallow` inline instead of going through `guard`:
   // the compiler treats a closure passed to a render-time call as render code, which made
   // its ref read look like a render-phase access and left the whole Button uncompiled.
@@ -382,6 +413,16 @@ export function Button({
     "data-button-reveal-label": revealLabel || undefined,
     // Any explicit alignment is authoritative over structural (item/tab) defaults.
     "data-button-align": align,
+    // Not `data-size`/`data-tone`: the control owns those roles through its own attributes.
+    "data-size": textSize,
+    "data-tone": textTone,
+    "data-weight": weight,
+    "data-lines": lines || undefined,
+    style: lines
+      ? ({ ...props.style, "--clamp-lines": lines } as import("react").CSSProperties)
+      : props.style,
+    "data-truncate": typed ? typeData["data-truncate"] : undefined,
+    "data-leading": typed ? leading : undefined,
     // Controls that do not scale on press (native renderer, popup anchors) step their tone instead.
     "data-button-press": native ? "tone" : undefined,
     onClick: guard((event: MouseEvent<HTMLButtonElement>) => {
@@ -548,7 +589,9 @@ export function Button({
     return withHint(
       <button
         {...attributes}
-        className={[arcStyles.button, arcStyles[arcVariant], arcStyles[size], classes].join(" ")}
+        className={[arcStyles.button, arcStyles[arcVariant], arcStyles[size], controlClasses].join(
+          " ",
+        )}
         onDrag={guard(onDrag)}
         onDragStart={guard(onDragStart)}
         onDragEnd={onDragEnd}
@@ -587,7 +630,7 @@ export function Button({
       variant={arcVariant}
       size={size}
       loading={loading && !inlineProgress}
-      className={classes}
+      className={controlClasses}
     >
       {content}
     </ArcButton>,

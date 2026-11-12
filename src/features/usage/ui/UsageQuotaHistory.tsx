@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useMemo, useState } from "react";
@@ -69,7 +71,12 @@ export function QuotaHistory({
   }
   const width = window.end - window.start;
   return (
-    <section className="usage-panel">
+    <section
+      {...surfaceAttributes(
+        { frame: "card", edge: "all", radius: "card", variant: "card" },
+        "usage-panel",
+      )}
+    >
       <div className="usage-section-heading">
         <div className="flex items-center gap-2">
           <Heading size="item" level={3}>
@@ -109,7 +116,7 @@ export function QuotaHistory({
           />
         </div>
       </div>
-      <div className="usage-quota-legend">
+      <Text as="div" size="caption" tone="inherit" leading="inherit" className="usage-quota-legend">
         {visibleAccounts.map((a) => {
           const sample = latest.get(accountKey(a));
           return (
@@ -120,20 +127,22 @@ export function QuotaHistory({
             >
               <span
                 aria-hidden
-                className="usage-quota-legend-dot"
+                {...surfaceAttributes({ radius: "pill" }, "usage-quota-legend-dot")}
                 style={{ background: providerAccountColorValue(a) }}
               />
               <UsageProviderIdentity provider={a.provider} label={accountLabel(a)} />
-              <span
+              <Text
+                size="inherit"
+                tone="secondary"
                 className="usage-quota-legend-value"
                 title={sample ? observationTime(sample.at) : undefined}
               >
                 {sample ? percent(sample.used) : t("No records")}
-              </span>
+              </Text>
             </div>
           );
         })}
-      </div>
+      </Text>
       {rows.length ? (
         <>
           <div
@@ -141,8 +150,12 @@ export function QuotaHistory({
             role="img"
             aria-label={`${t("Limit history")}: ${rows.length} ${t("recorded samples")}`}
           >
-            <span className="usage-quota-max">100%</span>
-            <span className="usage-quota-zero">0%</span>
+            <Text size="caption" tone="secondary" leading="inherit" className="usage-quota-max">
+              100%
+            </Text>
+            <Text size="caption" tone="secondary" leading="inherit" className="usage-quota-zero">
+              0%
+            </Text>
             {rows.map((row) => (
               <span
                 className="usage-quota-point"
@@ -156,64 +169,68 @@ export function QuotaHistory({
               />
             ))}
           </div>
-          <p className="usage-quota-axis usage-muted">
+          <Text as="p" leading="inherit" className="usage-quota-axis usage-muted">
             <span>{observationTime(window.start)}</span>
             <span>
               {t("Used (%)")} · {observationTime(window.end)}
             </span>
-          </p>
+          </Text>
           <Disclosure size="sm" summary={t("Show as table")}>
-            <div
-              className="usage-history-table"
-              role="region"
-              aria-label={t("Limit history")}
-              tabIndex={0}
-            >
-              <SortableDataTable
-                caption={t("Limit history")}
-                rowKey="key"
-                rows={rows
-                  .slice(-100)
-                  .reverse()
-                  .map((s) => ({
-                    key: `${s.account}:${s.kind}:${s.at}`,
-                    account: accountLabel(accountMap.get(s.account)!),
-                    at: s.at,
-                    time: s.at,
-                    used: s.used,
-                    minutes: s.minutes,
-                    reset: s.resetsAt ?? null,
-                  }))}
-                columns={[
-                  { key: "account", label: t("Account") },
-                  {
-                    key: "time",
-                    label: t("Time"),
-                    render: (v) => observationTime(Number(v)),
-                  },
-                  {
-                    key: "used",
-                    label: t("Used (%)"),
-                    numeric: true,
-                    render: (v) => percent(Number(v)),
-                  },
-                  {
-                    key: "minutes",
-                    label: t("Window (minutes)"),
-                    numeric: true,
-                    render: (value) =>
-                      `${Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`} (${value})`,
-                  },
-                  {
-                    key: "reset",
-                    label: t("Reset"),
-                    render: (v) =>
-                      v == null ? t("Reset time unavailable") : observationTime(Number(v)),
-                  },
-                ]}
-              />
-            </div>
-            <p className="usage-muted">{t("Latest 100 samples in the selected interval.")}</p>
+            <Text as="div" leading="inherit">
+              <div
+                className="usage-history-table"
+                role="region"
+                aria-label={t("Limit history")}
+                tabIndex={0}
+              >
+                <SortableDataTable
+                  caption={t("Limit history")}
+                  rowKey="key"
+                  rows={rows
+                    .slice(-100)
+                    .reverse()
+                    .map((s) => ({
+                      key: `${s.account}:${s.kind}:${s.at}`,
+                      account: accountLabel(accountMap.get(s.account)!),
+                      at: s.at,
+                      time: s.at,
+                      used: s.used,
+                      minutes: s.minutes,
+                      reset: s.resetsAt ?? null,
+                    }))}
+                  columns={[
+                    { key: "account", label: t("Account") },
+                    {
+                      key: "time",
+                      label: t("Time"),
+                      render: (v) => observationTime(Number(v)),
+                    },
+                    {
+                      key: "used",
+                      label: t("Used (%)"),
+                      numeric: true,
+                      render: (v) => percent(Number(v)),
+                    },
+                    {
+                      key: "minutes",
+                      label: t("Window (minutes)"),
+                      numeric: true,
+                      render: (value) =>
+                        `${Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`} (${value})`,
+                    },
+                    {
+                      key: "reset",
+                      label: t("Reset"),
+                      render: (v) =>
+                        v == null ? t("Reset time unavailable") : observationTime(Number(v)),
+                    },
+                  ]}
+                />
+              </div>
+            </Text>
+            <Text as="p" leading="inherit" className="usage-muted">
+              {t("Latest 100 samples in the selected interval.")}
+            </Text>
           </Disclosure>
         </>
       ) : (

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -315,8 +317,12 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
 
   return (
     <div ref={root} className={styles.window} data-side={compact ? undefined : beside}>
-      <main
-        className={styles.panel}
+      <Text
+        as="main"
+        size="caption"
+        tone="neutral"
+        leading="inherit"
+        {...surfaceAttributes({ variant: state?.error ? "danger" : "plain" }, styles.panel)}
         aria-label={t("Voice companion")}
         data-compact={compact || undefined}
         data-voice-state={state?.visualState}
@@ -343,20 +349,20 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               <TriangleAlert className="icon-sm" />
             </Button>
           )}
-          <div className={styles.heading}>
+          <Text as="div" size="inherit" tone="inherit" leading="snug" className={styles.heading}>
             <OverflowTooltip label={state?.title}>
-              <Heading size="caption" level={1} className={styles.title}>
+              <Heading size="caption" level={1} truncate>
                 {state?.title ?? t("Voice companion")}
               </Heading>
             </OverflowTooltip>
             {compact && (
               <OverflowTooltip label={summary}>
-                <span className={styles.summary} aria-hidden="true">
+                <Text size="micro" tone="secondary" leading="inherit" truncate aria-hidden="true">
                   {summary}
-                </span>
+                </Text>
               </OverflowTooltip>
             )}
-          </div>
+          </Text>
           {compact && status === "live" && (
             <VoiceTurnControl
               compact
@@ -416,7 +422,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           </Button>
         </header>
         <LiveText
-          className={compact || status === "idle" ? styles.srOnly : styles.status}
+          {...surfaceAttributes(
+            { frame: compact || status === "idle" ? "none" : undefined },
+            compact || status === "idle" ? styles.srOnly : styles.status,
+          )}
+          size="secondary"
+          weight="medium"
+          leading="normal"
           text={`${compact && state?.error ? t("Voice needs attention") : statusText}${state?.working ? ` | ${state.workingStatus || t("Session working")}` : ""}`}
         />
         {!compact && (
@@ -425,6 +437,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               {menuError && (
                 <InlineError
                   className={styles.feedback}
+                  text={{ size: "caption", tone: "secondary", leading: "inherit" }}
                   action={<Button onClick={() => setMenuError("")}>{t("Dismiss")}</Button>}
                 >
                   {menuError}
@@ -434,7 +447,15 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               {state?.transcript && (
                 <div className={`${styles.turn} ${styles.heard}`}>
                   <span className="sr-only">{t("You")}: </span>
-                  <p className={styles.message}>{state.transcript}</p>
+                  <Text
+                    as="p"
+                    size="secondary"
+                    tone="inherit"
+                    leading="normal"
+                    className={styles.message}
+                  >
+                    {state.transcript}
+                  </Text>
                 </div>
               )}
               {/* Always mounted so each reply is announced when it arrives. */}
@@ -445,27 +466,44 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               {state?.message && (
                 <div className={styles.turn}>
                   <span className="sr-only">{t("Reply")}: </span>
-                  <p className={styles.message}>{state.message}</p>
+                  <Text
+                    as="p"
+                    size="secondary"
+                    tone="inherit"
+                    leading="normal"
+                    className={styles.message}
+                  >
+                    {state.message}
+                  </Text>
                 </div>
               )}
               {state?.error && (
                 <>
                   <InlineError
                     className={styles.caption}
+                    text={{ size: "caption", tone: "secondary", leading: "snug" }}
                     action={<Button onClick={() => send("dismissError")}>{t("Dismiss")}</Button>}
                   >
                     {voiceErrorTitle(state.error)}
                   </InlineError>
                   {!isActionableVoiceError(state.error) && (
                     <div className={styles.feedback}>
-                      <p>{state.error}</p>
+                      <Text as="p" size="inherit" tone="secondary" leading="normal">
+                        {state.error}
+                      </Text>
                     </div>
                   )}
                 </>
               )}
-              <LiveText className={styles.caption} text={state?.notice ?? ""} />
+              <LiveText
+                size="caption"
+                tone="secondary"
+                leading="snug"
+                className={styles.caption}
+                text={state?.notice ?? ""}
+              />
             </div>
-            <div className={styles.actions}>
+            <div {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, styles.actions)}>
               {status === "live" && (
                 <VoiceTurnControl
                   menuSurface="native"
@@ -529,11 +567,21 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             </div>
           </>
         )}
-      </main>
+      </Text>
       {beside && !compact ? (
-        <aside ref={sideScroller} aria-label={t("Question")} className={styles.side}>
+        <Text
+          as="aside"
+          size="inherit"
+          tone="neutral"
+          ref={sideScroller}
+          aria-label={t("Question")}
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "all", radius: "panel", variant: "plain" },
+            styles.side,
+          )}
+        >
           {questions}
-        </aside>
+        </Text>
       ) : null}
     </div>
   );

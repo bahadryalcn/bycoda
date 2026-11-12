@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
@@ -47,15 +48,46 @@ export function InboxList({
                 <span className="inbox-row-body">
                   <span className="inbox-row-top">
                     {unread ? <span className="inbox-unread-dot" aria-hidden /> : null}
-                    <span className="inbox-row-title" data-unread={unread || undefined}>
+                    <Text
+                      as="span"
+                      size="secondary"
+                      tone={unread ? "primary" : "secondary"}
+                      weight={unread ? "medium" : "regular"}
+                      truncate
+                      className="inbox-row-title"
+                      data-unread={unread || undefined}
+                    >
                       {name}
-                    </span>
-                    <Timestamp className="inbox-row-time" value={item.at} format="relative" />
+                    </Text>
+                    <Timestamp
+                      className="inbox-row-time"
+                      size="caption"
+                      tone="muted"
+                      leading="inherit"
+                      value={item.at}
+                      format="relative"
+                    />
                   </span>
                   {item.person && item.title !== name && item.title !== item.preview ? (
-                    <span className="inbox-row-subject">{item.title}</span>
+                    <Text
+                      size="secondary"
+                      tone="secondary"
+                      leading="inherit"
+                      truncate
+                      className="inbox-row-subject"
+                    >
+                      {item.title}
+                    </Text>
                   ) : null}
-                  <span className="inbox-row-preview">{item.preview}</span>
+                  <Text
+                    size="caption"
+                    tone="muted"
+                    leading="inherit"
+                    truncate
+                    className="inbox-row-preview"
+                  >
+                    {item.preview}
+                  </Text>
                   <span className="inbox-row-meta">
                     <Badge size="xs" tone={statusTone(item.status)}>
                       {statusText(item.status)}

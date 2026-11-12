@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
@@ -145,9 +147,31 @@ export default function GuideHub({
       size="lg"
       onClose={onClose}
     >
-      <div className="bycoda-arc guide-hub">
-        <div className="guide-hub-start" role="group" aria-label={t("First steps")}>
-          <span className="guide-hub-start-title">{t("First steps")}</span>
+      <Text
+        as="div"
+        size="body"
+        tone="primary"
+        leading="normal"
+        {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, "bycoda-arc guide-hub")}
+      >
+        <Text
+          as="div"
+          size="caption"
+          tone="inherit"
+          leading="normal"
+          {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "guide-hub-start")}
+          role="group"
+          aria-label={t("First steps")}
+        >
+          <Text
+            as="span"
+            size="inherit"
+            tone="muted"
+            weight="medium"
+            className="guide-hub-start-title"
+          >
+            {t("First steps")}
+          </Text>
           <ol className="guide-hub-start-list">
             {firstSteps.map((item) => (
               <li key={item.stepId}>
@@ -160,7 +184,10 @@ export default function GuideHub({
                     item.done ? (
                       <Check className="icon-sm" aria-hidden="true" />
                     ) : (
-                      <span className="guide-hub-ring" aria-hidden="true" />
+                      <span
+                        {...surfaceAttributes({ radius: "pill" }, "guide-hub-ring")}
+                        aria-hidden="true"
+                      />
                     )
                   }
                   onClick={() => setActiveId(item.topicId)}
@@ -170,9 +197,9 @@ export default function GuideHub({
               </li>
             ))}
           </ol>
-          <span className="guide-hub-start-next" role="status">
+          <Text size="inherit" tone="secondary" className="guide-hub-start-next" role="status">
             {upNext ? t("Up next: {p0}", { p0: upNext.label }) : t("All set")}
-          </span>
+          </Text>
           <div className="guide-hub-start-tour">
             {hasNews ? (
               <Button
@@ -198,7 +225,7 @@ export default function GuideHub({
               {tourState.startsWith("paused:") ? t("Resume tour") : t("Take the tour")}
             </Button>
           </div>
-        </div>
+        </Text>
         <nav className="guide-hub-nav" aria-label={t("Guide topics")}>
           {groups.map((group) => (
             <div key={group.name} className="guide-hub-group">
@@ -217,11 +244,21 @@ export default function GuideHub({
                     startIcon={<Icon className="icon-md" />}
                     onClick={() => setActiveId(item.id)}
                   >
-                    <span className="guide-hub-nav-label">{item.title}</span>
+                    <Text size="inherit" tone="inherit" truncate className="guide-hub-nav-label">
+                      {item.title}
+                    </Text>
                     {complete ? (
-                      <Check className="icon-sm guide-hub-complete" aria-label={t("Done")} />
+                      <Check
+                        tone="primary"
+                        className="icon-sm guide-hub-complete"
+                        aria-label={t("Done")}
+                      />
                     ) : seen.includes(item.id) ? (
-                      <Check className="icon-sm guide-hub-seen" aria-label={t("Viewed")} />
+                      <Check
+                        tone="muted"
+                        className="icon-sm guide-hub-seen"
+                        aria-label={t("Viewed")}
+                      />
                     ) : null}
                   </Button>
                 );
@@ -234,11 +271,13 @@ export default function GuideHub({
             <Heading size="page" level={2} id="guide-hub-title">
               {topic.title}
             </Heading>
-            <span className="guide-hub-count">
+            <Text size="caption" tone="muted" leading="normal" className="guide-hub-count">
               {t("{p0} of {p1} done", { p0: topicFinished, p1: topic.steps.length })}
-            </span>
+            </Text>
           </header>
-          <p className="guide-hub-summary">{topic.summary}</p>
+          <Text as="p" size="inherit" tone="secondary" className="guide-hub-summary">
+            {topic.summary}
+          </Text>
           <div className="guide-hub-actions">
             <Button
               variant="primary"
@@ -259,12 +298,19 @@ export default function GuideHub({
             ) : null}
           </div>
           {blocker ? (
-            <p className="guide-hub-blocker" role="status">
+            <Text
+              as="p"
+              size="caption"
+              tone="secondary"
+              leading="normal"
+              className="guide-hub-blocker"
+              role="status"
+            >
               <span>{blocker.reason}</span>
               <Button variant="link" onClick={() => run(blocker.action)}>
                 {blocker.label}
               </Button>
-            </p>
+            </Text>
           ) : null}
           <section className="guide-hub-section">
             <SectionLabel as="h3" className="guide-hub-section-title">
@@ -294,10 +340,23 @@ export default function GuideHub({
                       </Button>
                     </Tooltip>
                     <div className="guide-hub-step-body">
-                      <span className="guide-hub-step-title">{step.title}</span>
-                      <span id={`guide-step-${step.id}`} className="guide-hub-step-text">
+                      <Text
+                        as="span"
+                        size="inherit"
+                        tone={done ? "secondary" : "inherit"}
+                        weight="medium"
+                        className="guide-hub-step-title"
+                      >
+                        {step.title}
+                      </Text>
+                      <Text
+                        size="inherit"
+                        tone="secondary"
+                        id={`guide-step-${step.id}`}
+                        className="guide-hub-step-text"
+                      >
                         {step.text}
-                      </span>
+                      </Text>
                     </div>
                     {step.show && onShowStep ? (
                       <Button
@@ -317,11 +376,11 @@ export default function GuideHub({
           </section>
           {topic.tips.length > 0 ? (
             <Disclosure className="guide-hub-tips" size="sm" summary={t("Tips")}>
-              <ul>
+              <Text as="ul" size="inherit" tone="secondary">
                 {topic.tips.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
-              </ul>
+              </Text>
             </Disclosure>
           ) : null}
           {topic.shortcuts.length > 0 ? (
@@ -355,7 +414,7 @@ export default function GuideHub({
             ) : null}
           </nav>
         </article>
-      </div>
+      </Text>
     </Modal>
   );
 }

@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { terminalText } from "../../../shared/lib/terminalText";
@@ -119,7 +121,9 @@ export function ChatFilterBar({
               checked={filters.archived}
               onChange={(event) => onChange({ ...filters, archived: event.target.checked })}
               label={t("Archived")}
-              className="flex items-center gap-1.5 text-ui-secondary text-(--ui-text-secondary)"
+              size="secondary"
+              tone="secondary"
+              className="flex items-center gap-1.5"
             />
             <Button
               variant="ghost"
@@ -241,7 +245,16 @@ export function ChatSearchResults({
               </Badge>
             ) : null}
           </SectionLabel>
-          <p className="app-search-project-path">{group.cwd}</p>
+          <Text
+            as="p"
+            size="caption"
+            tone="muted"
+            leading="inherit"
+            truncate
+            className="app-search-project-path"
+          >
+            {group.cwd}
+          </Text>
           {group.sessions.map((session) => {
             const row = rowProps(session.id);
             const more = session.hitCount - session.hits.length;
@@ -259,9 +272,17 @@ export function ChatSearchResults({
                   onClick={() => row.entry && onOpen(row.entry)}
                 >
                   <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
-                  <span className="app-search-result-title min-w-0 flex-1">
+                  <Text
+                    as="span"
+                    size="inherit"
+                    tone="inherit"
+                    weight="medium"
+                    leading="inherit"
+                    truncate
+                    className="app-search-result-title min-w-0 flex-1"
+                  >
                     <Marked text={session.title} ranges={session.titleRanges} />
-                  </span>
+                  </Text>
                   <span className="flex flex-wrap items-center gap-1.5 @max-[560px]/search:basis-full @max-[560px]/search:ps-6">
                     {session.archived ? (
                       <Badge size="sm" appearance="subtle" className="shrink-0">
@@ -269,15 +290,15 @@ export function ChatSearchResults({
                       </Badge>
                     ) : null}
                     {session.hitCount > 0 ? (
-                      <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+                      <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
                         {session.hitCount === 1
                           ? t("1 match")
                           : t("{p0} matches", { p0: session.hitCount })}
-                      </span>
+                      </Text>
                     ) : null}
-                    <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                    <Text size="caption" tone="secondary" className="shrink-0">
                       {formatChatDate(session.updatedAt)}
-                    </span>
+                    </Text>
                   </span>
                 </Button>
                 {session.hits.map((hit) => {
@@ -296,22 +317,37 @@ export function ChatSearchResults({
                       onClick={() => hitRow.entry && onOpen(hitRow.entry)}
                     >
                       <MessageSquare
-                        className="icon-xs shrink-0 text-(--ui-text-secondary)"
+                        className="icon-xs shrink-0"
+                        tone="secondary"
                         strokeWidth={1.75}
                       />
-                      <span className="app-search-match-excerpt">
+                      <Text
+                        size="caption"
+                        tone="secondary"
+                        leading="inherit"
+                        {...motionAttributes(
+                          { transition: "size", duration: "standard" },
+                          "app-search-match-excerpt",
+                        )}
+                      >
                         <Marked text={hit.snippet} ranges={hit.ranges} />
-                      </span>
-                      <span className="app-search-chat-role shrink-0">
+                      </Text>
+                      <Text size="micro" tone="muted" className="shrink-0">
                         {hit.role === "user" ? t("You") : hit.role}
-                      </span>
+                      </Text>
                     </Button>
                   );
                 })}
                 {more > 0 ? (
-                  <p className="app-search-more">
+                  <Text
+                    as="p"
+                    size="caption"
+                    tone="muted"
+                    leading="inherit"
+                    className="app-search-more"
+                  >
                     {more === 1 ? t("1 more match") : t("{p0} more matches", { p0: more })}
-                  </p>
+                  </Text>
                 ) : null}
               </div>
             );

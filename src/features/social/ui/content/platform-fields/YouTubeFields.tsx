@@ -40,12 +40,16 @@ export function YouTubeFields({ value, disabled, onChange }: PlatformFieldProps)
         checked={options.madeForKids === true}
         onChange={(event) => change({ madeForKids: event.target.checked })}
         label={t("Made for kids")}
+        size="body"
+        leading="inherit"
         className="content-check"
       />
       <Checkbox
         checked={options.containsSyntheticMedia === true}
         onChange={(event) => change({ containsSyntheticMedia: event.target.checked })}
         label={t("Contains altered or synthetic content")}
+        size="body"
+        leading="inherit"
         className="content-check"
       />
     </FieldGroup>

@@ -1,6 +1,6 @@
 ---
 name: feature-sessions-sidebar
-description: Change conversation lists, sidebar/recent rows, filtering, pinning, rename, draft/status presentation or remote navigation. Preserve selection, history and project/execution identity; recovery and archive operations have separate contracts.
+description: "Use when changing conversation lists, sidebar and recent rows, filters, pinning and rename. Not for recovery or archive; see feature-session-recovery, feature-archive."
 ---
 
 # Sessions sidebar
@@ -26,8 +26,7 @@ Own conversation collections and rows across the shell, session models, Host/nat
 - Keep project, selected session and execution checkout identity distinct; navigate remote records through existing adoption owners.
 - Archive, delete, stop, settle and recovery dismissal retain separate locks, confirmation and recovery owners. Reading a list grants no authority.
 - Standard/detailed and compact rows retain their density, accessible state and stable interaction slots; use the [row contracts](references/contracts.md#row-presentation).
-- Submitted turn provenance owns provider history; preserve optional summary metadata through Native, Host and remote projections.
-- Persist pin/order/filter/search/paging and sibling updates. Filtered rows never stand for the entire collection in bulk actions or counts.
+- Submitted turn provenance owns provider history; preserve optional summary metadata through Native, Host and remote projections. Persist pin/order/filter/search/paging and sibling updates. Filtered rows never stand for the entire collection in bulk actions or counts.
 - Validated delegated advisors and subagents stay out of ordinary lists, search and restored tabs. Resolve child links to the verified parent panel; retain child execution, request ownership and finished history independently of current defaults.
 - Interrupted status and activity survive partial reads and quit/recovery; owner Stop stays terminal without erasing transcript bytes.
 - Working summarizes the open project while retaining global counts and other-project paging; compare canonical keys including remote machine identity.
@@ -39,7 +38,7 @@ Own conversation collections and rows across the shell, session models, Host/nat
 
 ## Focused checks
 
-Use focused tests in `src/features/sessions/model/`, `src/features/sessions/data/`, `src/app/shell/` and `src/features/connections/model/`. Layout/navigation fixtures: `tests/browser/sessions/session-row-layout.spec.ts`; footer: `tests/browser/app-shell/update-footer.spec.ts`. Run changed-file checks and selected path suites per the testing guide; UI evidence follows task tier. Fixture navigation does not prove live remote or installed updater behavior.
+Test `src/features/sessions/model/`, `src/features/sessions/data/`, `src/app/shell/` and `src/features/connections/model/`. Layout/navigation fixtures: `tests/browser/sessions/session-row-layout.spec.ts`; footer: `tests/browser/app-shell/update-footer.spec.ts`. Run changed-file checks and selected path suites per the testing guide; UI evidence follows task tier. Fixture navigation does not prove live remote or installed updater behavior.
 
 ## References
 

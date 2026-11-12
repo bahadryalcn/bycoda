@@ -1,6 +1,6 @@
 ---
 name: feature-card-template
-description: Write or maintain a project feature development skill with a concise workflow, feature-specific contracts and conditional references. Use for feature documentation, not skill installation.
+description: Use when changing feature skill structure and authoring rules. Not for skill installation; see feature-skills.
 ---
 
 # Feature development skills
@@ -19,12 +19,16 @@ Source paths are repository-relative, directory-level where possible, never `pat
   If you are about to add a bullet that starts with the defect you just fixed, stop:
   that belongs in the test name and the commit message.
 
+## Description standard
+
+Use at most 200 characters and two short sentences. Start with "Use when changing" and name concrete owned things. When a neighbor exists, follow with "Not for <nearest excluded work>; see <owning skill name>." Keep preservation contracts in the body. Quote values containing a colon.
+
 ## Required shape
 
 ```markdown
 ---
 name: feature-<name>
-description: <task and scope in one sentence; name the neighboring owner of excluded work>
+description: Use when changing <concrete owned things>. Not for <nearest excluded work>; see <owning skill name>.
 ---
 
 # <Feature>

@@ -1,18 +1,15 @@
 ---
 name: feature-source-control
-description: "Change Git review, staging, history, diffs, branches/worktrees and recovery while preserving selected-checkout identity, index state and publication/destructive gates."
+description: "Use when changing Git review, staging, history, diffs and branches. Not for execution worktrees; see feature-managed-workspaces."
 ---
 
 # Source control changes
-
-## When and scope
 
 Use for the Git panel and shared diff controls. Managed workspace lifecycle/rewind and saved global settings have separate owners. Inbox uses UnifiedDiffView and must be checked when that renderer changes.
 
 ## Source starts
 
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
+Full paths are repository-root relative; adjacent abbreviated names share the preceding directory. Follow current imports and callers; this map is not a completeness claim.
 
 - `src/features/source-control/ui/`: Git panel, changes, history, branch/worktree/conflict dialogs and UnifiedDiffView.
 - `src/features/source-control/model/` and data resources: status, selection, graph/filter/window and operation state.
@@ -41,10 +38,9 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Focused checks
 
-Run focused Git component/model tests; shared review changes need `pnpm exec vitest run src/features/source-control/ui/UnifiedDiffViewSplit.test.ts src/features/source-control/ui/UnifiedDiffView.markers.test.ts` plus actual Inbox/file consumers.
-Exercise no/multiple repositories, submodules, partial staging, conflicts, binary/large paths, long history and branch/worktree failures. A CodeMirror fixture cannot prove UnifiedDiffView behavior; destructive checks require disposable repositories.
+Run focused Git component/model tests; shared review changes need `pnpm exec vitest run src/features/source-control/ui/UnifiedDiffViewSplit.test.ts src/features/source-control/ui/UnifiedDiffView.markers.test.ts` plus actual Inbox/file consumers. Exercise no/multiple repositories, submodules, partial staging, conflicts, binary/large paths, long history and branch/worktree failures. A CodeMirror fixture cannot prove UnifiedDiffView behavior; destructive checks require disposable repositories.
 
-## Read when needed
+## References
 
 - [Source control guide](../../../docs/guides/source-control.md) for operation scope and commit/push/diff behavior.
 - [Managed workspaces](../feature-managed-workspaces/SKILL.md) for lifecycle and rewind; [GitHub Inbox](../feature-inbox-github/SKILL.md) for exact-head PR review.

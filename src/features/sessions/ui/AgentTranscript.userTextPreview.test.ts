@@ -94,9 +94,7 @@ it("bounds the chat and focus preview, opens the exact full text, and copies the
   expect(await navigator.clipboard.readText()).toBe(text);
   act(() => trigger.click());
   expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe(text);
-  expect(document.querySelector('[role="dialog"] pre')?.classList.contains("select-text")).toBe(
-    true,
-  );
+  expect(document.querySelector('[role="dialog"] pre')?.getAttribute("data-size")).toBe("body");
   await navigator.clipboard.writeText("");
   await act(async () =>
     document

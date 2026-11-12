@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
@@ -56,18 +57,21 @@ export function ReminderNotices({
 
   return (
     <ToastSlot placement="top-end" order={-1}>
-      <section
+      <Text
+        as="section"
+        size="inherit"
+        tone="neutral"
         aria-label={t("Due reminders")}
-        className="relative flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-floating) text-(--ui-tone-neutral-fg) shadow-(--ui-elevation-floating)"
+        className="relative flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-floating) shadow-(--ui-elevation-floating)"
       >
         <div className="flex min-h-7 items-center gap-2 px-3 pt-2">
-          <Clock className="icon-sm shrink-0 text-(--ui-text-secondary)" aria-hidden />
-          <span className="flex-1 text-ui-caption font-medium text-(--ui-text-secondary)">
+          <Clock className="icon-sm shrink-0" tone="secondary" aria-hidden />
+          <Text as="span" size="caption" tone="secondary" weight="medium" className="flex-1">
             {t("Due reminders")}
-          </span>
-          <span role="status" className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
+          </Text>
+          <Text role="status" size="caption" tone="secondary" className="tabular-nums">
             {reminders.length || ""}
-          </span>
+          </Text>
         </div>
         {error ? (
           <div className="px-2 pt-1">
@@ -94,13 +98,20 @@ export function ReminderNotices({
                 className="block w-full text-left"
                 onClick={() => onOpen(reminder)}
               >
-                <span className="block truncate text-ui-secondary font-medium">
+                <Text
+                  as="span"
+                  size="secondary"
+                  tone="inherit"
+                  weight="medium"
+                  truncate
+                  className="block"
+                >
                   {sessionDisplayTitle(reminder.title, reminder.harness)}
-                </span>
-                <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
+                </Text>
+                <Text as="span" size="caption" tone="secondary" truncate className="block">
                   {projectDisplayNameFrom(reminder.cwd, projectLabels)} ·{" "}
                   {formatReminderTime(reminder.dueAt)}
-                </span>
+                </Text>
               </Button>
               <div className="mt-1 flex items-center gap-1">
                 <Button variant="ghost" type="submit" onClick={() => onOpen(reminder)}>
@@ -146,7 +157,7 @@ export function ReminderNotices({
             {t("Desktop alerts are off. Enable in Settings.")}
           </Button>
         ) : null}
-      </section>
+      </Text>
       {snooze &&
       reminders.some(
         (reminder) =>

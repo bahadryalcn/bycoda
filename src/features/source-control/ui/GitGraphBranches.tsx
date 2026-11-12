@@ -3,6 +3,7 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Text } from "../../../shared/ui/Text";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -221,14 +222,21 @@ export function GitGraphBranches({
                             label={t("Switch to {p0}", { p0: reference(branch) })}
                             tooltip={t("Switch to {p0}", { p0: reference(branch) })}
                             onClick={() => void pick("checkout", branch)}
-                            className={`min-w-0 flex-1 justify-start gap-2 ${current ? "text-content" : "text-(--ui-text-secondary)"}`}
+                            className="min-w-0 flex-1 justify-start gap-2"
                           >
                             {current ? (
-                              <Check className="icon-sm shrink-0 text-(--ui-tone-accent-fg)" />
+                              <Check className="icon-sm shrink-0" tone="accent" />
                             ) : (
                               <GitBranch className="icon-sm shrink-0" />
                             )}
-                            <span className="truncate">{reference(branch)}</span>
+                            <Text
+                              as="span"
+                              size="inherit"
+                              tone={current ? "primary" : "secondary"}
+                              truncate
+                            >
+                              {reference(branch)}
+                            </Text>
                           </Button>
                           <InlineMoreAction
                             label={t("Actions for {p0}", { p0: reference(branch) })}

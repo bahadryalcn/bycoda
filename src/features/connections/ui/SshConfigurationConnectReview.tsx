@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useRef, useState } from "react";
@@ -86,9 +87,9 @@ export function SshConfigurationConnectReview({
       <div className="flex min-w-0 flex-col gap-3">
         {configuration ? (
           <>
-            <p className="break-all text-ui-body font-medium">
+            <Text as="p" size="body" tone="inherit" weight="medium" className="break-all">
               {sshEndpointPreview(configuration.endpoint)}
-            </p>
+            </Text>
             <DescriptionList size="sm">
               {(
                 [
@@ -111,13 +112,13 @@ export function SshConfigurationConnectReview({
                   {!(
                     value === t("Default") && configuration.provenance[field]?.source === "default"
                   ) && (
-                    <span className="ms-2 text-(--ui-text-muted)">
+                    <Text size="inherit" tone="muted" className="ms-2">
                       {configuration.provenance[field]?.source === "group"
                         ? `${t("Group")} · ${configuration.provenance[field].groupId} · ${configuration.provenance[field].revision}`
                         : configuration.provenance[field]?.source === "default"
                           ? t("Default")
                           : t("Connection")}
-                    </span>
+                    </Text>
                   )}
                 </DescriptionItem>
               ))}
@@ -131,9 +132,9 @@ export function SshConfigurationConnectReview({
                     </DescriptionItem>
                   ))}
                 </DescriptionList>
-                <p className="mbs-2 text-(--ui-text-muted)">
+                <Text as="p" size="inherit" tone="muted" className="mbs-2">
                   {t("These literal values apply only to this new SSH terminal.")}
-                </p>
+                </Text>
               </Disclosure>
             ) : null}
           </>

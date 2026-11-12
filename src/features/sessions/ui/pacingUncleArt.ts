@@ -1,4 +1,5 @@
 import { themePalette } from "../../../shared/theme/palette";
+import type { Canvas2D } from "../../../shared/lib/canvas-worker/types";
 import type { CrewTheme } from "../../settings";
 import { drawPacingAgent } from "./pacingAgentArt";
 import { drawPacingDroid } from "./pacingDroidArt";
@@ -356,14 +357,14 @@ const CELL_W = 48;
 const CELL_H = 34;
 /** Room for one theme's full set (the uncle needs about 100 frames) without churn. */
 const MAX_SPRITES = 128;
-type Cell = { image: CanvasImageSource; ctx: CanvasRenderingContext2D };
+type Cell = { image: CanvasImageSource; ctx: Canvas2D };
 const sprites = new Map<string, CanvasImageSource>();
-const painted = new WeakMap<CanvasRenderingContext2D, string>();
+const painted = new WeakMap<Canvas2D, string>();
 
 function createCell(width: number, height: number): Cell | null {
   if (typeof OffscreenCanvas !== "undefined") {
     const image = new OffscreenCanvas(width, height);
-    const ctx = image.getContext("2d") as unknown as CanvasRenderingContext2D | null;
+    const ctx = image.getContext("2d");
     return ctx ? { image, ctx } : null;
   }
   if (typeof document === "undefined") return null;
@@ -375,12 +376,7 @@ function createCell(width: number, height: number): Cell | null {
 }
 
 /** Each distinct frame is drawn once; the walk, pauses and gestures replay cached bitmaps. */
-function cachedSprite(
-  key: string,
-  scale: number,
-  dpr: number,
-  paint: (ctx: CanvasRenderingContext2D) => void,
-) {
+function cachedSprite(key: string, scale: number, dpr: number, paint: (ctx: Canvas2D) => void) {
   const hit = sprites.get(key);
   if (hit) {
     sprites.delete(key);
@@ -423,12 +419,15 @@ function frameOf(p: PacingPose, t: number, theme: CrewTheme) {
  * Frames that match the canvas's current picture leave it untouched.
  */
 export function drawPacingUncle(
-  ctx: CanvasRenderingContext2D,
+  surfaceContext: Canvas2D,
   width: number,
   height: number,
   elapsed: number,
   theme: CrewTheme = "classic",
 ): void {
+  // Legacy procedural helpers use only common 2D operations, never DOM canvas members.
+  // Keep their existing signatures until their owning theme migration; no runtime wrapper.
+  const ctx = surfaceContext as CanvasRenderingContext2D;
   const t = Math.floor(elapsed * PACING_FPS) / PACING_FPS;
   const scale = height / 32;
   const span = Math.max(0, width - 36);
@@ -444,7 +443,14 @@ export function drawPacingUncle(
   ctx.clearRect(0, 0, width, height);
   const walker = WALKERS[theme] ?? character;
   const sprite = cachedSprite(`${key}|${scale}|${dpr}`, scale, dpr, (cell) =>
-    walker(cell, (CELL_W / 2) * scale, CELL_H * scale, scale, pose, look),
+    walker(
+      cell as CanvasRenderingContext2D,
+      (CELL_W / 2) * scale,
+      CELL_H * scale,
+      scale,
+      pose,
+      look,
+    ),
   );
   if (!sprite) {
     walker(ctx, x, height, scale, pose, look);
@@ -457,4 +463,19 @@ export function drawPacingUncle(
     CELL_W * scale,
     CELL_H * scale,
   );
+}
+
+/** Same skip decision as the painter, available before crossing the worker boundary. */
+export function pacingFrameSignature(
+  width: number,
+  height: number,
+  elapsed: number,
+  theme: CrewTheme,
+  dpr: number,
+): string {
+  const t = Math.floor(elapsed * PACING_FPS) / PACING_FPS;
+  const span = Math.max(0, width - 36);
+  const { pose, key } = frameOf(pacingPose(t, span), t, theme);
+  const x = Math.round(((width - span) / 2 + pose.x * span) * dpr) / dpr;
+  return `${key}|${x}|${width}|${height}|${dpr}`;
 }

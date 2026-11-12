@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { buildIdentity } from "../../../shared/model/build-info";
 import { remoteRequest } from "../model/connections";
@@ -86,7 +87,9 @@ export function LocalHostUpdateNotice() {
     <>
       <Alert tone={notice.tone}>
         <div className="min-w-0 flex-1">
-          <span className="font-medium text-content">{t(notice.title)}</span>{" "}
+          <Text as="span" size="inherit" tone="primary" weight="medium">
+            {t(notice.title)}
+          </Text>{" "}
           {notice.details.map((line) => t(line.text, line.params)).join(" ")}
           {error ? <p className="mbs-0.5">{t(error)}</p> : null}
           {notice.canUpdateNow ? (

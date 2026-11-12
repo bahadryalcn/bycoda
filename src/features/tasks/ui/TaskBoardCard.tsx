@@ -1,3 +1,6 @@
+import { ClampText } from "../../../shared/ui/ClampText";
+import { Text } from "../../../shared/ui/Text";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { Heading } from "../../../shared/ui/Heading";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -141,23 +144,44 @@ function TaskCardBody({
       className="task-board-card cursor-pointer"
     >
       {goal ? (
-        <p
+        <Text
+          as="p"
+          tone="muted"
+          size="micro"
+          leading="inherit"
           data-task-goal
           title={t("Part of the goal “{p0}”", { p0: goal })}
           className="task-card-goal"
         >
           <Sparkles className="icon-xs shrink-0" strokeWidth={1.75} />
-          <span className="min-w-0 truncate">{goal}</span>
-        </p>
+          <Text truncate size="inherit" tone="inherit" className="min-w-0">
+            {goal}
+          </Text>
+        </Text>
       ) : null}
-      <Heading size="item" title={description} className="task-card-title">
+      <Heading size="item" lines={2} title={description} className="task-card-title">
         {actions.pending ? (
           <Spinner size="xs" label={t("Loading…")} className="mr-1 inline-block" />
         ) : null}
         {task.title}
-        <GripVertical aria-hidden="true" className="task-drag-grip icon-xs" strokeWidth={1.75} />
+        <GripVertical
+          aria-hidden="true"
+          tone="muted"
+          {...motionAttributes({ transition: "opacity" }, "task-drag-grip icon-xs")}
+          strokeWidth={1.75}
+        />
       </Heading>
-      {planning ? <p className="task-planning-caption">{planning}</p> : null}
+      {planning ? (
+        <Text
+          as="p"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className="task-planning-caption"
+        >
+          {planning}
+        </Text>
+      ) : null}
       <AssistantTaskBadge task={task} />
       {statusBadges ? <div className="task-card-chips">{statusBadges}</div> : null}
       {showStatus ? (
@@ -167,49 +191,56 @@ function TaskCardBody({
         />
       ) : null}
       {task.branch || taskWorkspaceState(task).workspaceId ? (
-        <div className="task-card-note flex flex-wrap gap-x-2">
+        <Text
+          as="div"
+          size="micro"
+          tone="muted"
+          leading="inherit"
+          className="flex flex-wrap gap-x-2"
+        >
           <span data-task-completion>{t(taskWorkspaceState(task).completion)}</span>
           {/* A blocked delivery is already named by the failure link above. */}
           {task.mergeError ? null : (
-            <span data-task-delivery className="text-(--ui-text-secondary)">
+            <Text tone="secondary" size="inherit" data-task-delivery>
               {t(taskWorkspaceState(task).delivery)}
-            </span>
+            </Text>
           )}
-        </div>
+        </Text>
       ) : null}
       {taskWorkspaceState(task).needsRenewedApproval ? (
-        <p data-task-renewed-approval className="task-card-note text-(--ui-tone-warning-fg)">
+        <Text as="p" size="micro" tone="muted" leading="inherit" data-task-renewed-approval>
           {t("Automatic merge is suspended. Review changes to renew approval.")}
-        </p>
+        </Text>
       ) : null}
       {task.status === "review" &&
       !task.mergeError &&
       !taskWorkspaceState(task).needsRenewedApproval ? (
-        <p className="task-card-note text-(--ui-tone-warning-fg)">
+        <Text as="p" size="micro" tone="muted" leading="inherit">
           {hasUnmergedBranch(task)
             ? task.mergeError
               ? t("Delivery is blocked")
               : t("Waiting for your merge approval")
             : t("Waiting for your approval")}
-        </p>
+        </Text>
       ) : null}
       {task.reviewNotes?.length ? (
-        <p
-          data-task-review-notes
-          className={`task-card-note ${unread ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-muted)"}`}
-        >
+        <Text as="p" size="micro" tone="muted" leading="inherit" data-task-review-notes>
           {unread
             ? t(unread === 1 ? "{p0} new review note" : "{p0} new review notes", { p0: unread })
             : t(task.reviewNotes.length === 1 ? "{p0} review note" : "{p0} review notes", {
                 p0: task.reviewNotes.length,
               })}
-        </p>
+        </Text>
       ) : null}
       {waitingFor.length > 0 ? (
         // The list's "+N" is a button of its own, so its clicks must not open the card.
-        <div
+        <Text
+          as="div"
+          size="micro"
+          tone="muted"
+          leading="inherit"
           data-no-drag
-          className="task-card-note flex min-w-0 items-center gap-1.5 text-(--ui-tone-warning-fg)"
+          className="flex min-w-0 items-center gap-1.5"
           onClick={(event) => event.stopPropagation()}
         >
           <span className="shrink-0">{t("Waiting for: ")}</span>
@@ -219,24 +250,41 @@ function TaskCardBody({
             className="min-w-0 flex-1"
             items={waitingFor.map((title, index) => ({ id: `${index}:${title}`, label: title }))}
           />
-        </div>
+        </Text>
       ) : null}
       {description ? (
-        <p data-task-description className="task-card-description">
+        <ClampText
+          as="p"
+          lines={1}
+          expandable={false}
+          size="micro"
+          tone="muted"
+          leading="inherit"
+          data-task-description
+          className="task-card-description"
+        >
           {description}
-        </p>
+        </ClampText>
       ) : null}
-      <p className="task-card-meta truncate">
+      <Text as="p" truncate size="micro" tone="muted" leading="inherit">
         {project}
         {t(" · on ")}
         {task.machineName}
         {task.stale ? t(" (offline, last known)") : ""}
-      </p>
-      <p className="task-card-meta task-card-footer flex min-w-0 items-center gap-1">
+      </Text>
+      <Text
+        as="p"
+        size="micro"
+        tone="muted"
+        leading="inherit"
+        className="task-card-footer flex min-w-0 items-center gap-1"
+      >
         {task.crewDefinitionId && <span>{t("Crew")} · </span>}
         <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
         <OverflowTooltip label={model.name}>
-          <span className="min-w-0 truncate">{model.name}</span>
+          <Text truncate size="inherit" tone="inherit" className="min-w-0">
+            {model.name}
+          </Text>
         </OverflowTooltip>
         {timeLabel ? (
           <span className="ms-auto flex shrink-0 items-center gap-1 tabular-nums">
@@ -244,9 +292,15 @@ function TaskCardBody({
             {timeLabel}
           </span>
         ) : null}
-      </p>
+      </Text>
       {task.branch ? (
-        <p className="task-card-meta flex min-w-0 items-center gap-1">
+        <Text
+          as="p"
+          size="micro"
+          tone="muted"
+          leading="inherit"
+          className="flex min-w-0 items-center gap-1"
+        >
           <GitBranch className="icon-xs shrink-0" strokeWidth={1.75} />
           <OverflowTooltip
             label={
@@ -255,19 +309,25 @@ function TaskCardBody({
                 : task.branch
             }
           >
-            <span className="min-w-0 truncate">
+            <Text truncate size="inherit" tone="inherit" className="min-w-0">
               {task.merged
                 ? t("{p0} merged into {p1}", { p0: task.branch, p1: task.baseBranch })
                 : task.branch}
-            </span>
+            </Text>
           </OverflowTooltip>
-        </p>
+        </Text>
       ) : null}
       <TaskActions task={task} compact {...actions} />
       {failureOpen ? (
         <div onClick={(event) => event.stopPropagation()}>
           <Modal title={t("Task details")} onClose={() => setFailureOpen(false)}>
-            <div className="task-status-details">
+            <Text
+              as="div"
+              tone="secondary"
+              size="secondary"
+              leading="inherit"
+              className="task-status-details"
+            >
               <Heading size="item">{task.title}</Heading>
               <TaskStatusText status={{ ...status, detail: undefined }} />
               {task.budgetStop ? <p>{task.budgetStop}</p> : null}
@@ -275,7 +335,7 @@ function TaskCardBody({
               {task.error ? <p>{task.error}</p> : null}
               {task.mergeError ? <p>{task.mergeError}</p> : null}
               {task.verification ? <VerificationSummary verification={task.verification} /> : null}
-            </div>
+            </Text>
           </Modal>
         </div>
       ) : null}

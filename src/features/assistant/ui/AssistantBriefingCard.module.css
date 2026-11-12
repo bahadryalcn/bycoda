@@ -22,14 +22,10 @@
   max-inline-size: 75ch;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  line-height: 1.5;
-  font-size: var(--ui-font-secondary);
 }
 
 .muted {
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
 }
 
@@ -64,7 +60,6 @@
 .approval > span {
   flex: 1 1 240px;
   overflow-wrap: anywhere;
-  line-height: 1.5;
 }
 
 .sections {
@@ -92,10 +87,7 @@
 
 .item {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-secondary);
-  color: var(--ui-text-secondary);
 }

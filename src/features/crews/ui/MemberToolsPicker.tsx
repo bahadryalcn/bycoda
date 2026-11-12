@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Heading } from "../../../shared/ui/Heading";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
@@ -100,11 +101,11 @@ export function MemberToolsPicker({
       {custom ? (
         <div className="flex min-w-0 flex-col gap-2">
           {value && value.preset !== "custom" ? (
-            <p className="text-ui-caption text-content-muted">
+            <Text as="p" tone="inherit">
               {t(
                 "This member is read-only from an earlier setting. Choose a profile to change it.",
               )}
-            </p>
+            </Text>
           ) : null}
           <ToolNamesField
             label={t("Host tools")}
@@ -150,7 +151,9 @@ export function MemberToolsPicker({
             max={CREW_TOOL_LIMITS.names}
             onChange={(next) => set({ ...lists, skills: next })}
           />
-          <p className="text-ui-caption text-content-muted">{t("Empty lists mean no limit.")}</p>
+          <Text as="p" tone="inherit">
+            {t("Empty lists mean no limit.")}
+          </Text>
         </div>
       ) : null}
     </div>

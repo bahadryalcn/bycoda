@@ -69,7 +69,10 @@ import skillCatalog from "./skills/playwright.skill-catalog.config.ts";
 import titleSettings from "./settings/playwright.title-settings.config.ts";
 import messagingIntegrations from "./messaging/messaging-integrations.playwright.config.ts";
 
+import canvasPaired from "./crews/playwright.canvas-paired.config.ts";
+
 export const fixtureConfigs = {
+  "tests/browser/crews/playwright.canvas-paired.config.ts": canvasPaired,
   "tests/browser/chat/playwright.inline-visuals.config.ts": inlineVisuals,
   "tests/browser/chat/playwright.chat-citations.config.ts": chatCitations,
   "tests/browser/workspace/working-project-summary.playwright.config.ts": workingProjectSummary,

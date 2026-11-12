@@ -129,3 +129,40 @@ it("persists advisor Off and removes legacy advisor on selection", () => {
   container.remove();
   vi.unstubAllGlobals();
 });
+
+it("shows Fast as keyboard accessible scale and keeps explicit Off", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const change = vi.fn();
+  act(() =>
+    root.render(
+      createElement(ProviderDefaultExtras, {
+        extras: [
+          {
+            id: "fast",
+            label: "Fast",
+            kind: "toggle",
+            value: "true",
+            options: [
+              { value: "true", label: "On" },
+              { value: "false", label: "Off" },
+            ],
+          },
+        ],
+        harness: "claude",
+        scopeDefaults: { extras: { fast: "false" } },
+        inheritedDefaults: { extras: { fast: "true" } },
+        onSessionDefaultsChange: change,
+        projectScope: true,
+        resetLabel: "Use global default",
+      }),
+    ),
+  );
+  expect(container.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain(
+    "Standard",
+  );
+  expect(change).not.toHaveBeenCalled();
+  act(() => root.unmount());
+  container.remove();
+});

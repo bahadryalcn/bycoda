@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Heading } from "../../../shared/ui/Heading";
@@ -356,9 +357,9 @@ function ConnectedCrewEditor({
         {draft.agents.length ? (
           <div className="flex min-w-0 items-center gap-2">
             {unfinished ? (
-              <span className="min-w-0 truncate text-ui-caption text-(--ui-text-secondary)">
+              <Text truncate className="min-w-0">
                 {t("Unfinished additions are kept until you add or discard them.")}
-              </span>
+              </Text>
             ) : null}
             <Button
               variant="secondary"

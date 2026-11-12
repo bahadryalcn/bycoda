@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
@@ -147,16 +148,18 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
                 onClick={() => onOpenCommit(commit)}
                 className="flex w-full items-center gap-2 text-left"
               >
-                <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-muted)">
+                <Text size="micro" tone="muted" className="shrink-0 font-mono">
                   {commit.shortSha}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-content">{commit.subject}</span>
-                <span className="shrink-0 truncate text-[var(--ui-text-muted)]">
+                </Text>
+                <Text as="span" size="inherit" tone="primary" truncate className="min-w-0 flex-1">
+                  {commit.subject}
+                </Text>
+                <Text size="inherit" tone="muted" truncate className="shrink-0">
                   {commit.author}
-                </span>
-                <span className="shrink-0 tabular-nums text-[var(--ui-text-muted)]">
+                </Text>
+                <Text size="inherit" tone="muted" className="shrink-0 tabular-nums">
                   {shortDate(commit.timestamp)}
-                </span>
+                </Text>
               </Button>
             </li>
           ))}
@@ -210,7 +213,12 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
       ) : !data ? (
         <Loading />
       ) : (
-        <div className="min-h-0 overflow-auto p-1.5 font-mono text-ui-caption leading-5">
+        <Text
+          as="div"
+          size="caption"
+          leading="relaxed"
+          className="min-h-0 overflow-auto p-1.5 font-mono"
+        >
           {data.blame.map((entry, index) => {
             // Only the first line of a run names its commit, like an editor gutter.
             const first = data.blame[index - 1]?.sha !== entry.sha;
@@ -240,22 +248,30 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
                       head: false,
                     })
                   }
-                  className="w-48 shrink-0 truncate text-left"
+                  className="w-48 shrink-0 text-left"
                 >
-                  {first
-                    ? uncommitted
-                      ? t("Not committed yet")
-                      : `${entry.author} · ${shortDate(entry.timestamp)} · ${entry.summary}`
-                    : ""}
+                  <Text as="span" size="inherit" tone="inherit" truncate className="block">
+                    {first
+                      ? uncommitted
+                        ? t("Not committed yet")
+                        : `${entry.author} · ${shortDate(entry.timestamp)} · ${entry.summary}`
+                      : ""}
+                  </Text>
                 </Button>
-                <span className="w-10 shrink-0 pr-3 text-right text-[var(--ui-text-muted)] select-none">
+                <Text
+                  size="inherit"
+                  tone="muted"
+                  className="w-10 shrink-0 pr-3 text-right select-none"
+                >
                   {entry.line}
-                </span>
-                <span className="text-content">{data.lines[entry.line - 1] ?? ""}</span>
+                </Text>
+                <Text size="inherit" tone="primary">
+                  {data.lines[entry.line - 1] ?? ""}
+                </Text>
               </div>
             );
           })}
-        </div>
+        </Text>
       )}
     </Modal>
   );

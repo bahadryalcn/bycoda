@@ -1,14 +1,18 @@
-import type { ComponentPropsWithRef } from "react";
+import { createElement, type ComponentPropsWithRef } from "react";
 import styles from "./ScrollArea.module.css";
 
-export type ScrollAreaProps = ComponentPropsWithRef<"div"> & {
+type ScrollTag = "div" | "ul" | "ol" | "span" | "section" | "form" | "aside";
+export type ScrollAreaProps<T extends ScrollTag = "div"> = ComponentPropsWithRef<T> & {
+  /** Preserve the host element and its semantics without an extra wrapper. */
+  as?: T;
   /** Scroll direction: `y` (default), `x` for a horizontal strip, `both` for a free canvas. */
   axis?: "y" | "x" | "both";
   /**
    * `auto` (default) shows the shared scrollbar family set in Appearance; `hidden` keeps the
-   * content scrollable without a bar (tab strips, chip rows).
+   * content scrollable without a bar (tab strips, chip rows). `always` forces the primary
+   * axis to scroll; for `both`, it forces the horizontal axis and leaves vertical automatic.
    */
-  scrollbar?: "auto" | "hidden";
+  scrollbar?: "auto" | "hidden" | "always";
   /** `stable` reserves the bar's space so content does not shift when the bar appears. */
   gutter?: "auto" | "stable";
 };
@@ -27,21 +31,36 @@ export type ScrollAreaProps = ComponentPropsWithRef<"div"> & {
  * <ScrollArea className="min-h-0 flex-1">{rows}</ScrollArea>
  * <ScrollArea axis="x" scrollbar="hidden">{tabs}</ScrollArea>
  * <ScrollArea gutter="stable">{settings}</ScrollArea>
+ * <ScrollArea as="ul" axis="both" scrollbar="always">{rows}</ScrollArea>
  */
-export function ScrollArea({
+export function ScrollArea<T extends ScrollTag = "div">({
+  as,
   axis = "y",
   scrollbar = "auto",
   gutter = "auto",
   className,
   ...props
-}: ScrollAreaProps) {
-  return (
-    <div
-      {...props}
-      data-axis={axis}
-      data-scrollbar={scrollbar === "hidden" ? "hidden" : undefined}
-      data-gutter={gutter === "stable" ? "stable" : undefined}
-      className={[styles.area, className].filter(Boolean).join(" ")}
-    />
-  );
+}: ScrollAreaProps<T>) {
+  return createElement(as || "div", {
+    ...scrollAreaAttributes({ axis, scrollbar, gutter }, className),
+    ...props,
+  } as ComponentPropsWithRef<"div">);
+}
+
+/** Scrollbar roles on an existing TabPanel or virtual-list scroll owner, without a new box.
+ * Unset axis preserves the owner overflow. The virtualizer retains its ref and events. */
+export function scrollAreaAttributes(
+  {
+    axis,
+    scrollbar = "auto",
+    gutter = "auto",
+  }: Pick<ScrollAreaProps, "axis" | "scrollbar" | "gutter"> = {},
+  className?: string,
+) {
+  return {
+    "data-axis": axis,
+    "data-scrollbar": scrollbar === "auto" ? undefined : scrollbar,
+    "data-gutter": gutter === "stable" ? "stable" : undefined,
+    className: [styles.area, className].filter(Boolean).join(" "),
+  };
 }

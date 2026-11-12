@@ -1,3 +1,4 @@
+import { Text } from "../../../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import type { AssistantModelPoolRow } from "../../../../../shared/model/assistantModelPool";
@@ -46,24 +47,26 @@ function RowQuota({ row }: { row: AssistantModelPoolRow }) {
   const tight = tightestRemaining([limits.session, limits.weekly, limits.monthly]);
   if (!tight)
     return (
-      <p className={styles.quota}>
+      <Text as="p" leading="inherit" className={styles.quota}>
         {limits.status === "fetching" || limits.status === "idle"
           ? t("Reading limit…")
           : t("Limit unknown")}
-      </p>
+      </Text>
     );
   return (
-    <p className={styles.quota}>
+    <Text as="p" leading="inherit" className={styles.quota}>
       {tight.percent < (row.minRemainingPercent ?? 0) && (
         <Badge size="xs" tone="warning">
           {t("Skipped now")}
         </Badge>
       )}
-      <strong>{t("{p0}% left", { p0: tight.percent })}</strong>
+      <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
+        {t("{p0}% left", { p0: tight.percent })}
+      </Text>
       {tight.resetsAt != null && (
         <Timestamp value={tight.resetsAt} prefix={t("Resets")} className={styles.reset} />
       )}
-    </p>
+    </Text>
   );
 }
 
@@ -126,9 +129,16 @@ export function ModelPoolRow({
         >
           <GripVertical className="icon-sm" />
         </Button>
-        <span className={styles.number} aria-hidden="true">
+        <Text
+          size="secondary"
+          tone="secondary"
+          leading="inherit"
+          weight="medium"
+          className={styles.number}
+          aria-hidden="true"
+        >
           {number}
-        </span>
+        </Text>
         <div className={styles.picker}>
           <ModelPicker
             harness={row.harness}
@@ -225,7 +235,15 @@ export function ModelPoolRow({
         />
       </div>
       <div className={styles.footer}>
-        <div className={styles.roles} role="group" aria-label={t("Roles served")}>
+        <Text
+          as="div"
+          size="secondary"
+          tone="inherit"
+          leading="normal"
+          className={styles.roles}
+          role="group"
+          aria-label={t("Roles served")}
+        >
           {ASSISTANT_MODEL_POOL_ROLES.map((role) => (
             <Checkbox
               key={role}
@@ -239,7 +257,7 @@ export function ModelPoolRow({
               }
             />
           ))}
-        </div>
+        </Text>
         <RowQuota row={row} />
       </div>
       {problems.map((problem) => (

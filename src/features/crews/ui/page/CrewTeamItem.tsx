@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useMemo, useRef, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
@@ -84,20 +85,24 @@ export function CrewTeamItem({
           />
         ) : null}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-ui-body font-medium text-content">{crew.name}</p>
+          <Text as="p" size="body" tone="primary" weight="medium" truncate>
+            {crew.name}
+          </Text>
           {/* Scope and size are data, not help text: they stay visible. */}
-          <p className="truncate text-ui-caption text-(--ui-text-muted)">
+          <Text as="p" tone="muted" truncate>
             {[scope, t("{p0} members", { p0: crew.agents.length })].join(" · ")}
-          </p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-ui-caption text-(--ui-text-muted)">
+          </Text>
+          <Text as="p" tone="muted" className="mt-0.5 flex items-center gap-1.5">
             {execution === "working" ? <WorkingIndicator size="xs" /> : null}
             {attention ? (
               <Badge size="xs" tone={CREW_ATTENTION_TONE[attention]}>
                 {crewAttentionLabel(attention)}
               </Badge>
             ) : null}
-            <span className="truncate">{work}</span>
-          </p>
+            <Text size="inherit" tone="inherit" truncate>
+              {work}
+            </Text>
+          </Text>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">

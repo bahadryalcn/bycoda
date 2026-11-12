@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -154,12 +155,20 @@ function AccountLimits({
       <div className="usage-account-heading">
         <div className="usage-account-identity">
           <Heading size="item" level={3}>
-            <span className="usage-account-provider">
+            <Text size="inherit" tone="secondary" className="usage-account-provider">
               <UsageProviderIdentity provider={provider} />
-            </span>
+            </Text>
             <span className="usage-account-name">{label}</span>
             {account.isDefault && label !== t("Default account") ? (
-              <span className="usage-account-default">{t("Default account")}</span>
+              <Text
+                size="caption"
+                tone="muted"
+                weight="regular"
+                leading="inherit"
+                className="usage-account-default"
+              >
+                {t("Default account")}
+              </Text>
             ) : null}
           </Heading>
           <ProviderAccountSubtitle
@@ -169,11 +178,13 @@ function AccountLimits({
                 ? t("Loading account identity…")
                 : t("Account identity unavailable")
             }
-            className="usage-account-subtitle text-ui-caption text-(--ui-text-secondary)"
+            size="caption"
+            tone="secondary"
+            className="usage-account-subtitle"
           />
         </div>
         {limits.updatedAt > 0 ? (
-          <span className="usage-account-observed">
+          <Text size="caption" tone="muted" leading="inherit" className="usage-account-observed">
             <span className="sr-only">{t("Last observed")}: </span>
             <Timestamp
               value={limits.updatedAt}
@@ -181,7 +192,7 @@ function AccountLimits({
               relativeStyle="short"
               title={`${t("Last observed")}: ${new Date(limits.updatedAt).toLocaleString(locale)}`}
             />
-          </span>
+          </Text>
         ) : null}
         <Button
           ref={menuButton}
@@ -209,7 +220,10 @@ function AccountLimits({
                   label: t(option.label),
                   checked: account.color === option.id,
                   icon: (
-                    <span className="size-2.5 rounded-full" style={{ background: option.value }} />
+                    <span
+                      {...surfaceAttributes({ radius: "pill" }, "size-2.5")}
+                      style={{ background: option.value }}
+                    />
                   ),
                 })),
               },
@@ -234,7 +248,13 @@ function AccountLimits({
           const direction = showRemaining ? "remaining" : "used";
           return (
             <div key={kind} className="usage-quota">
-              <div className="usage-quota-heading">
+              <Text
+                as="div"
+                size="caption"
+                tone="inherit"
+                leading="inherit"
+                className="usage-quota-heading"
+              >
                 <SectionLabel as="h4" classNames={{ label: "usage-quota-title" }}>
                   {t(
                     kind === "session" && window.windowMinutes === 300
@@ -245,17 +265,19 @@ function AccountLimits({
                           ? "Weekly"
                           : "Monthly",
                   )}
-                  <span className="usage-quota-reset">
+                  <Text size="inherit" tone="muted" weight="regular" className="usage-quota-reset">
                     {window.resetsAt == null
                       ? t("Reset time unavailable")
                       : formatResetCountdown(window.resetsAt - now)}
-                  </span>
+                  </Text>
                 </SectionLabel>
-                <p>
-                  <strong>{Math.round(shown)}%</strong>
+                <Text as="p" size="inherit" tone="secondary">
+                  <Text as="strong" size="body" tone="primary" weight="medium" leading="inherit">
+                    {Math.round(shown)}%
+                  </Text>
                   <span>{showRemaining ? t("left") : t("used")}</span>
-                </p>
-              </div>
+                </Text>
+              </Text>
               <UsageMeter
                 label={`${label} ${kind} ${direction}`}
                 segments={[{ id: "used", label: t("used"), value: used }]}
@@ -284,7 +306,7 @@ function AccountLimits({
         </InlineError>
       ) : null}
       {windows.length > 0 && (limits.status === "fetching" || limits.status === "idle") ? (
-        <LoadingText presentation="text" className="text-ui-caption text-(--ui-text-secondary)">
+        <LoadingText presentation="text" size="caption" tone="secondary">
           {t("Refreshing account limits… Previous limits remain visible.")}
         </LoadingText>
       ) : null}

@@ -35,18 +35,13 @@
   grid-template-columns: 3rem minmax(0, 1fr);
 }
 .noteTime {
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .noteText {
   min-inline-size: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ui-font-secondary);
-  color: var(--ui-text-secondary);
 }
 
 .glance {
@@ -75,15 +70,10 @@
 }
 
 .tileValue {
-  font-size: var(--ui-font-heading);
-  font-weight: 500;
-  line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
 
 .tileCaption {
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-muted);
 }
 
 .charts {
@@ -111,6 +101,4 @@
 
 .muted {
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }

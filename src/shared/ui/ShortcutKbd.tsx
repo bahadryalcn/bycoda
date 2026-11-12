@@ -1,12 +1,15 @@
+import { optionalTextAttributes, type TextTone } from "./Text";
 import { forwardRef } from "react";
 import {
   ShortcutKbd as ArcShortcutKbd,
   ShortcutKeys as ArcShortcutKeys,
-  type ShortcutKbdProps,
+  type ShortcutKbdProps as ArcShortcutKbdProps,
   type ShortcutKeysProps,
 } from "./arc/shortcut-recorder/shortcut-keys";
 
-export type { ShortcutKbdProps, ShortcutKeysProps };
+/** Key cap ink; unset preserves the key cap theme and geometry. */
+export type ShortcutKbdProps = ArcShortcutKbdProps & { tone?: TextTone };
+export type { ShortcutKeysProps };
 
 /**
  * One key cap for inline hints, menus and help text.
@@ -17,14 +20,14 @@ export type { ShortcutKbdProps, ShortcutKeysProps };
  * @arc shortcut-recorder
  */
 export const ShortcutKbd = forwardRef<HTMLElement, ShortcutKbdProps>(function ShortcutKbd(
-  { className, ...props },
+  { className, tone, ...props },
   ref,
 ) {
   return (
     <ArcShortcutKbd
       {...props}
       ref={ref}
-      className={["bycoda-arc", className].filter(Boolean).join(" ")}
+      {...optionalTextAttributes({ tone }, ["bycoda-arc", className].filter(Boolean).join(" "))}
     />
   );
 });

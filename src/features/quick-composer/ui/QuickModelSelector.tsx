@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { ModelExtrasPanel } from "../../sessions/ui/ModelExtras";
 import { Button } from "../../../shared/ui/Button";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
@@ -259,14 +260,16 @@ export function QuickModelSelector({
                         {visibleTab === "favorites" ? (
                           <HarnessIcon harness={item.harness} className="size-3.5 shrink-0" />
                         ) : null}
-                        <span className="truncate">{item.name}</span>
+                        <Text size="inherit" tone="inherit" truncate>
+                          {item.name}
+                        </Text>
                         {item.provider ? (
-                          <span className="ml-auto truncate text-ui-micro text-(--ui-text-muted)">
+                          <Text size="micro" tone="muted" truncate className="ml-auto">
                             {item.provider.name}
-                          </span>
+                          </Text>
                         ) : null}
                         {item.id === model.id ? (
-                          <Check className="ml-auto icon-sm shrink-0 text-(--ui-tone-accent-fg)" />
+                          <Check className="ml-auto icon-sm shrink-0" tone="accent" />
                         ) : null}
                       </Button>
                       <Button
@@ -308,13 +311,13 @@ export function QuickModelSelector({
                     </div>
                   ))
                 ) : (
-                  <p className="px-2 py-6 text-center text-ui-caption text-(--ui-text-muted)">
+                  <Text as="p" size="caption" tone="muted" className="px-2 py-6 text-center">
                     {query
                       ? t("No matching models")
                       : visibleTab === "favorites"
                         ? t("No favorite models")
                         : t("Loading models…")}
-                  </p>
+                  </Text>
                 )}
               </div>
             </div>
@@ -335,7 +338,9 @@ export function QuickModelSelector({
         }}
       >
         <span>{t("Model")}</span>
-        <span className="ml-auto truncate">{model.name}</span>
+        <Text size="inherit" tone="inherit" truncate className="ml-auto">
+          {model.name}
+        </Text>
         <ChevronDown className="icon-md shrink-0" />
       </Button>
     </section>

@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -21,11 +22,17 @@ function ReportList({ title, lines }: { title: string; lines: string[] }) {
       <SectionLabel as="h4" className="command-report-title">
         {title}
       </SectionLabel>
-      <ul className="command-report-lines">
+      <Text
+        as="ul"
+        size="secondary"
+        tone="primary"
+        leading="inherit"
+        className="command-report-lines"
+      >
         {lines.map((line, index) => (
           <li key={`${title}-${index}`}>{line}</li>
         ))}
-      </ul>
+      </Text>
     </div>
   );
 }
@@ -65,7 +72,9 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
           <ReportList title={t("Results")} lines={data.results} />
           <ReportList title={t("Suggestions")} lines={data.suggestions} />
           {!data.done.length && !data.results.length ? (
-            <p className="command-muted">{t("No AI activity in this period.")}</p>
+            <Text as="p" size="caption" tone="muted" leading="inherit" className="command-muted">
+              {t("No AI activity in this period.")}
+            </Text>
           ) : null}
         </div>
       ) : null}

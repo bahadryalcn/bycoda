@@ -1074,3 +1074,32 @@ describe("Conversation Tools boundary", () => {
     expect(replies[2].result.isError).toBe(true);
   });
 });
+
+it("publishes reply as a write action and validates delegation inputs", () => {
+  expect(conversationAuthorizationScope("agents.reply")).toBe("write");
+  expect(conversationToolCatalog().find((tool) => tool.action === "agents.reply")).toBeDefined();
+  expect(() =>
+    validateConversationTool("agents.reply", { requestId: "a", runId: "r", message: "answer" }),
+  ).not.toThrow();
+  expect(() =>
+    validateConversationTool("agents.reply", { requestId: "a", runId: "r", message: "" }),
+  ).toThrow();
+  expect(() =>
+    validateConversationTool("agents.delegate", {
+      requestId: "a",
+      title: "t",
+      prompt: "p",
+      effort: "invented",
+    }),
+  ).toThrow();
+  // Exactly-one-of runId and runIds is the service's rule; the schema stays flat.
+  for (const input of [{ runIds: [] }, { runIds: ["r", "r"] }, { other: 1 }])
+    expect(() => validateConversationTool("agents.wait", input)).toThrow();
+  const waitSchema = conversationToolCatalog().find((tool) => tool.action === "agents.wait")!
+    .inputSchema as Record<string, unknown>;
+  expect(waitSchema.oneOf).toBeUndefined();
+  expect(waitSchema.properties).toBeDefined();
+  expect(() =>
+    validateConversationTool("agents.wait", { runIds: ["r", "s"], timeoutSeconds: 999 }),
+  ).not.toThrow();
+});

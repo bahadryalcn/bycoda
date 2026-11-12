@@ -14,6 +14,18 @@
     flex-direction: column;
     align-items: stretch;
   }
+  /* `scrollbar="hidden"`: scrolls along the strip's axis, no visible bar. */
+  .list[data-scrollbar="hidden"] {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .list[data-scrollbar="hidden"][aria-orientation="vertical"] {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .list[data-scrollbar="hidden"]::-webkit-scrollbar {
+    display: none;
+  }
   /* `fill`: every direct child (a Tab, or the caller's wrapper around one) takes an equal
      share. A tab inside a box-less wrapper (`Tooltip` uses `display: contents`) or a flex
      wrapper takes the share itself. */

@@ -1,0 +1,37 @@
+.matrixScroll {
+  min-inline-size: 0;
+  overflow-x: auto;
+}
+
+.matrix {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) repeat(4, minmax(3.5rem, auto));
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 29rem;
+}
+
+.setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.setting > :first-child {
+  flex: 1 1 18rem;
+  min-inline-size: 0;
+}
+
+.times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  inline-size: min(100%, 16rem);
+}
+
+.time {
+  flex: 0 1 9rem;
+  inline-size: 9rem;
+}

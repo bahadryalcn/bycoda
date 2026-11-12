@@ -1,6 +1,6 @@
 ---
 name: feature-session-recovery
-description: "Change recovered conversations, previous chat layout, verification/attention status, selection/bulk scopes, journal maintenance or native file-copy recovery presentation."
+description: "Use when changing recovered conversations, the recovery panel, chat splits and journals. Not for archived conversations; see feature-archive."
 ---
 
 # Session recovery
@@ -37,7 +37,7 @@ Own interrupted-conversation recovery, previous chat splits, attention/verificat
 
 ## Focused checks
 
-Select recovery model/action/panel/journal tests in `src/app/model/`, `src/app/workspace/sessions/`, `src/app/shell/` and `src/features/sessions/model/`. File-copy changes also need `src/app/workspace/files/` and `src/features/files/` suites; UI fixture: `tests/browser/sessions/session-recovery.spec.ts`. Follow the testing order and cover partial/read/save failures. Native persistence, live Host verification and restore need isolated integration evidence beyond fixtures.
+Select recovery model/action/panel/journal tests in `src/app/model/`, `src/app/workspace/sessions/`, `src/app/shell/` and `src/features/sessions/model/`. File-copy changes also need `src/app/workspace/files/` and `src/features/files/` suites; UI fixture: `tests/browser/sessions/session-recovery.spec.ts`. Cover partial/read/save failures. Native persistence, live Host verification and restore need isolated integration evidence beyond fixtures.
 
 ## References
 

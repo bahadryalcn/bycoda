@@ -1,15 +1,17 @@
+import { Timestamp } from "../../../shared/ui/Timestamp";
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
-import { t } from "../../../shared/i18n";
+import { formatNumber, t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuAction } from "../../../shared/ui/DropdownMenu";
 import { InlineMessage } from "../../../shared/ui/InlineError";
-import { Meter } from "../../../shared/ui/Meter";
-import { MoreHorizontal } from "../../../shared/ui/icons";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { MoreHorizontal, ArrowUp, Copy } from "../../../shared/ui/icons";
 import type { DecisionModelsState } from "../hooks/useDecisionModels";
 import type { DecisionSource, SourceEvaluation, SourceTestResult } from "../model/decisionTypes";
 import {
-  contractLabel,
   formatAccuracy,
   formatCost,
   formatLatency,
@@ -20,48 +22,39 @@ import {
 } from "../model/decisionView";
 import { ErrorNotice } from "./ErrorNotice";
 import { SourceKindIcon } from "./SourceIcon";
-
 type Actions = DecisionModelsState["actions"];
-
 function evaluationText(result: SourceEvaluation): string {
   if (result.error) return sourceErrorText(result.error);
   const accuracy = formatAccuracy(result.accuracy);
   if (accuracy === null) return t("No result yet.");
-  return t("Accuracy {p1} on {p2} test cases.", { p1: accuracy, p2: String(result.cases) });
+  return t("Accuracy {p1} on {p2} test cases.", { p1: accuracy, p2: formatNumber(result.cases) });
 }
-
-function testText(result: SourceTestResult): { tone: "success" | "warning"; text: string } {
-  if (result.ok) {
-    const latency = formatLatency(result.durationMs);
-    return {
-      tone: "success",
-      text: latency ? t("Connection works ({p1}).", { p1: latency }) : t("Connection works."),
-    };
-  }
-  return { tone: "warning", text: sourceErrorText(result.error) };
-}
-
 type Note =
   | { kind: "test"; result: SourceTestResult }
   | { kind: "evaluate"; result: SourceEvaluation };
-
 /**
  * One source: identity and status on top, measured figures under it. The connection test stays on the
  * row; every other action sits in the overflow menu.
  */
 export function SourceRow({
   source,
+  usedFirst = false,
+  duplicate,
   actions,
   isPending,
   onEdit,
   onRemove,
 }: {
   source: DecisionSource;
+  usedFirst?: boolean;
+  duplicate?: string;
   actions: Actions;
   isPending: (key: string) => boolean;
   onEdit: (source: DecisionSource) => void;
   onRemove: (source: DecisionSource, mode: "source" | "local") => void;
 }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const [testedAt, setTestedAt] = useState<number | null>(null);
   const [note, setNote] = useState<Note | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -70,14 +63,19 @@ export function SourceRow({
   const localBusy = isPending(`local:${source.id}`);
   const isLocal = source.kind === "local";
   const running = source.status === "ready";
-
   const attempt = (action: Promise<Note>) => {
     setFailure(null);
-    void action.then(setNote, (error: unknown) => setFailure(error));
+    void action.then(
+      (next) => {
+        setNote(next);
+        if (next.kind === "test") setTestedAt(Date.now());
+      },
+      (error: unknown) => setFailure(error),
+    );
   };
-
   const menuItems: DropdownMenuAction[] = [
     { kind: "item", id: "edit", label: t("Edit") },
+    { kind: "item", id: "details", label: t("Details") },
     {
       kind: "item",
       id: "measure",
@@ -102,10 +100,10 @@ export function SourceRow({
       : []),
     { kind: "item", id: "remove", label: t("Remove source"), danger: true },
   ];
-
   const onMenuPick = (id: string) => {
     setMenuAnchor(null);
-    if (id === "edit") onEdit(source);
+    if (id === "details") setShowDetails(!showDetails);
+    else if (id === "edit") onEdit(source);
     else if (id === "measure") {
       attempt(
         actions.evaluateSource(source.id).then((result) => ({ kind: "evaluate" as const, result })),
@@ -118,51 +116,108 @@ export function SourceRow({
     } else if (id === "uninstall") onRemove(source, "local");
     else if (id === "remove") onRemove(source, "source");
   };
-
-  const details = [contractLabel(source.adapter), source.model, source.endpoint].filter(
-    (part): part is string => Boolean(part),
-  );
+  const details = [
+    source.local?.modelPath
+      ? t("Local file")
+      : source.kind === "local"
+        ? t("Local service")
+        : sourceKindLabel(source.kind),
+    source.local?.modelPath ?? source.endpoint ?? source.model,
+  ].filter(Boolean);
+  const tested = note?.kind === "test" ? note.result : null;
+  const status = testing
+    ? t("Testing…")
+    : tested
+      ? tested.ok
+        ? t("Working")
+        : t("Failed")
+      : source.status === "ready"
+        ? t("Working")
+        : source.status === "error"
+          ? t("Failed")
+          : sourceStatusLabel(source.status);
   const latency = formatLatency(source.avgMs);
   const accuracy = formatAccuracy(source.lastAccuracy);
   const cost = formatCost(source.costPerMTokens);
-  const hasFigures = latency !== null || accuracy !== null || cost !== null;
-
+  const failedReason =
+    tested && !tested.ok
+      ? sourceErrorText(tested.error)
+      : source.status === "error"
+        ? t("Failed")
+        : null;
   return (
     <li className="flex min-w-0 flex-col gap-2 border-t border-(--ui-settings-hairline) px-4 py-2.5 first:border-t-0">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <SourceKindIcon kind={source.kind} />
+          <SourceKindIcon kind={source.kind} modelPath={source.local?.modelPath} />
           <div className="flex min-w-0 flex-col gap-0.5">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="text-ui-body min-w-0 truncate font-medium">{source.name}</span>
-              <Badge tone="neutral" size="sm">
-                {sourceKindLabel(source.kind)}
-              </Badge>
-              <Badge tone={sourceStatusTone(source.status)} size="sm">
-                {sourceStatusLabel(source.status)}
-              </Badge>
+            <div className="flex min-w-0 items-center gap-2">
+              <Text
+                as="span"
+                size="body"
+                tone="inherit"
+                weight="medium"
+                truncate
+                className="min-w-0"
+              >
+                {source.name}
+              </Text>
+              <Tooltip label={failedReason ?? undefined}>
+                <Badge
+                  className="shrink-0"
+                  tone={
+                    testing
+                      ? "neutral"
+                      : tested
+                        ? tested.ok
+                          ? "success"
+                          : "danger"
+                        : sourceStatusTone(source.status)
+                  }
+                  size="sm"
+                >
+                  {status}
+                </Badge>
+              </Tooltip>
+              {usedFirst ? (
+                <Badge className="shrink-0" size="xs" icon={<ArrowUp />}>
+                  {t("Used first")}
+                </Badge>
+              ) : null}
+              {duplicate ? (
+                <Tooltip label={t("Same model or endpoint as {p1}", { p1: duplicate })}>
+                  <Badge
+                    className="decision-source-duplicate"
+                    size="xs"
+                    tone="warning"
+                    truncate
+                    icon={<Copy />}
+                  >
+                    {t("Duplicate of {p1}", { p1: duplicate })}
+                  </Badge>
+                </Tooltip>
+              ) : null}
             </div>
-            <div className="text-ui-caption min-w-0 truncate text-(--ui-text-secondary)">
-              {details.join(" · ")}
-            </div>
-            {hasFigures ? (
-              <div className="text-ui-caption flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-(--ui-text-muted) tabular-nums">
-                {latency ? <span>{t("Average {p1}", { p1: latency })}</span> : null}
-                {accuracy ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    {t("Last accuracy {p1}", { p1: accuracy })}
-                    <span className="w-12">
-                      <Meter
-                        label={t("Last accuracy {p1}", { p1: accuracy })}
-                        value={Math.round((source.lastAccuracy ?? 0) * 100)}
-                        tone="success"
-                      />
-                    </span>
-                  </span>
-                ) : null}
-                {cost ? <span>{cost}</span> : null}
-              </div>
-            ) : null}
+            <Text
+              as="div"
+              size="caption"
+              tone="secondary"
+              className="flex min-w-0 items-center gap-1"
+            >
+              <span className="shrink-0">{details[0]} ·</span>
+              <MiddleTruncate className="min-w-0 flex-1">{String(details[1] ?? "")}</MiddleTruncate>
+              {latency ? (
+                <span className="shrink-0">· {t("Average {p1}", { p1: latency })}</span>
+              ) : null}
+              {testedAt !== null ? (
+                <Timestamp
+                  className="shrink-0"
+                  size="caption"
+                  value={testedAt}
+                  prefix={`· ${t("Last tested")}`}
+                />
+              ) : null}
+            </Text>
           </div>
         </div>
         <div className="flex shrink-0 items-center justify-end gap-1">
@@ -177,7 +232,7 @@ export function SourceRow({
               )
             }
           >
-            {t("Test connection")}
+            {t("Test")}
           </Button>
           <Button
             variant="ghost"
@@ -192,10 +247,12 @@ export function SourceRow({
           </Button>
         </div>
       </div>
-      {note?.kind === "test" ? (
-        <InlineMessage tone={testText(note.result).tone}>
-          {testText(note.result).text}
-        </InlineMessage>
+      {showDetails ? (
+        <Text size="caption" tone="secondary">
+          {[failedReason, accuracy ? t("Last accuracy {p1}", { p1: accuracy }) : null, cost]
+            .filter(Boolean)
+            .join(" · ")}
+        </Text>
       ) : null}
       {note?.kind === "evaluate" ? (
         <InlineMessage tone={note.result.error ? "warning" : "info"}>

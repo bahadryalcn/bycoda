@@ -8,6 +8,7 @@ import {
 } from "./stableCodeDisclosureIdentity";
 import { flushSync } from "react-dom";
 import { TranscriptVirtualRows, type TranscriptVirtualRow } from "./TranscriptVirtualRows";
+import { TranscriptRowCache } from "./transcriptRowCache";
 import {
   TranscriptVirtualization,
   TranscriptVirtualizationContext,
@@ -137,7 +138,11 @@ import {
 import { HarnessIcon } from "./HarnessIcon";
 import { useElapsedFrom } from "./useElapsedFrom";
 import { isBackgroundOnly } from "../model/activityDock";
-import { deriveTurnActivity, turnClockOrigin, type TurnActivityPhase } from "../model/turnActivity";
+import {
+  deriveTurnActivity,
+  useTurnClockOrigin,
+  type TurnActivityPhase,
+} from "../model/turnActivity";
 import { TurnActivityLine } from "./TurnActivityLine";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useTranscriptLayout } from "../hooks/useTranscriptLayout";
@@ -1009,15 +1014,15 @@ type TurnProps = {
   onRewindMessage?: (block: Block, action: "edit" | "return") => void;
 };
 /**
- * The activity line with the turn clock's origin. `turnClockOrigin` keeps a
- * first-seen time per run, which React cannot see, so the read lives in this
- * small component and the transcript and its turns stay compiled.
+ * The activity line with the turn clock's origin. The first-seen time per run
+ * lives outside React; `useTurnClockOrigin` exposes that stable read through
+ * a render-time hook so the transcript and its turns stay compiled.
  */
 function OriginTurnActivityLine({
   owner,
   ...line
 }: Omit<ComponentProps<typeof TurnActivityLine>, "origin" | "ownsClock"> & { owner?: Block }) {
-  const origin = turnClockOrigin(owner);
+  const origin = useTurnClockOrigin(owner);
   return <TurnActivityLine {...line} origin={origin} ownsClock={origin !== undefined} />;
 }
 
@@ -1082,10 +1087,11 @@ const Turn = memo(function Turn({
   const format = useFormat();
   const userBlock = turnUserBlock(turn, managed);
   const durationMs = userBlock?.durationMs;
-  const proposals = turn.filter((block) => block.orchestration);
   // Proposals are turn results, like the changes card. Keep them out
   // of the live work and append them after all of the lead's output.
+  const proposals = turn.filter((block) => block.orchestration);
   const [itemCache] = useState(() => new TranscriptTurnCache());
+  const [rowCache] = useState(() => new TranscriptRowCache());
   const items = itemCache.turnItems(turn, settled);
   // Earlier activity groups have already been followed by prose or
   // more work. Only the last one can still be the live group.
@@ -1106,9 +1112,9 @@ const Turn = memo(function Turn({
   // New turns carry immutable model provenance. Legacy turns do not,
   // so omit their model instead of rewriting history from the picker.
   const turnModel = userBlock?.turnModel;
+  const turnId = turn[0].id;
   // Work the turn has already answered for folds away behind one line,
   // leaving the prompt and the answer to it.
-  const turnId = turn[0].id;
   const fold = foldableWork(items);
   const folded = fold ? foldedBlocks(items, fold) : [];
   // The fold line is the turn's status line from the first token to
@@ -1265,29 +1271,46 @@ const Turn = memo(function Turn({
         (block.role === "user" &&
           (anchorPrompt || (editingLastTurn && block.id === editableUserBlockId))),
     );
+  // prettier-ignore
   const itemRow = (
     item: TurnItem,
     index: number,
     rail = false,
     tail = false,
-  ): TranscriptVirtualRow => ({
-    id: turnItemKey(item),
-    blockIds: itemBlocks(item).map((block) => block.id),
-    pinned: pinnedItem(item, index),
-    render: () => (
-      <div
-        data-transcript-search-item
-        data-transcript-search-current={isCurrentItem(item) || undefined}
-        className={
-          rail
-            ? `flow-root ${tail ? "pb-0 zen-fold-tail" : "pb-1"} pl-5 zen-fold-rail`
-            : "flow-root pb-1"
-        }
-      >
-        {renderItem(item, index)}
-      </div>
-    ),
-  });
+  ): TranscriptVirtualRow =>
+    rowCache.row(
+      turnItemKey(item),
+      // List every value the row factory/renderItem reads here, or the row goes stale.
+      [
+        item, index, rail, tail, pinnedItem(item, index), isCurrentItem(item),
+        cwd, live, visible, settled,
+        index === initialThinkingAt,
+        !visible || settled || index < foldedAt || (answering && !workStillRunning),
+        allowMountReveal && isLastTurn && item.type === "block" && !seenOutput.has(item.block.id),
+        transcriptLayout, items[index - 1]?.type, index === foldLineAt && showFoldLine,
+        busy, planHarness, planModel, planModelSettings, editableUserBlockId, editingLastTurn,
+        onApproval, onSaveNote, onSendDraft, onEditDraft, onRemoveDraft, onOpenFile, onOpenDiff,
+        onOpenPlan, onBuildPlan, onLoadRemoteBlock, onEditLastTurn, canRewindMessage, onRewindMessage,
+      ],
+      () => ({
+        id: turnItemKey(item),
+        blockIds: itemBlocks(item).map((block) => block.id),
+        pinned: pinnedItem(item, index),
+        render: () => (
+          <div
+            data-transcript-search-item
+            data-transcript-search-current={isCurrentItem(item) || undefined}
+            className={
+              rail
+                ? `flow-root ${tail ? "pb-0 zen-fold-tail" : "pb-1"} pl-5 zen-fold-rail`
+                : "flow-root pb-1"
+            }
+          >
+            {renderItem(item, index)}
+          </div>
+        ),
+      }),
+    );
   const lineRow: TranscriptVirtualRow = {
     id: "work-fold",
     blockIds: [],
@@ -1303,7 +1326,7 @@ const Turn = memo(function Turn({
       if (itemIndex !== fold.start) return [];
       return [
         lineRow,
-        {
+        rowCache.row("work-details", [workOpen, ...workRows], () => ({
           id: "work-details",
           blockIds: workRows.flatMap((row) => row.blockIds),
           pinned: workRows.some((row) => row.pinned),
@@ -1313,7 +1336,7 @@ const Turn = memo(function Turn({
               {() => <TranscriptVirtualRows rows={workRows} listId={`turn:${turnId}:work`} />}
             </TurnRow>
           ),
-        },
+        })),
         ...foldVisible.map(({ entry, index }) => itemRow(entry, index)),
       ];
     }
@@ -1321,6 +1344,7 @@ const Turn = memo(function Turn({
     return itemIndex === foldLineAt ? [lineRow, ...row] : row;
   });
   if (foldLineAt >= items.length) virtualRows.push(lineRow);
+  rowCache.retain([...virtualRows, ...workRows]);
   return (
     <div
       key={turn[0].id}

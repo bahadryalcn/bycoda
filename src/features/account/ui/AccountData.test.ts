@@ -6,6 +6,7 @@ import { AccountData } from "./AccountData";
 
 const mocks = vi.hoisted(() => ({
   days: 1,
+  activityRetention: ["account_lifetime"],
   exportItem: null as null | { id: string; status: string; requestedAt: string; readyAt: string },
   request: vi.fn(async () => undefined),
   save: vi.fn(async () => undefined),
@@ -28,7 +29,7 @@ vi.mock("../hooks/useAccountData", () => ({
       retention: {
         profile: keep,
         devices: keep,
-        activity: keep,
+        activity: mocks.activityRetention,
         notifications: keep,
         support: keep,
         exports: keep,
@@ -48,6 +49,7 @@ let root: Root;
 let container: HTMLDivElement;
 
 beforeEach(() => {
+  mocks.activityRetention = ["account_lifetime"];
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -58,6 +60,21 @@ afterEach(() => {
 });
 
 describe("account data summary", () => {
+  it("shows a shared retention rule once", async () => {
+    await act(async () => root.render(createElement(AccountData)));
+    expect(container.textContent?.match(/Kept while your account exists/g)).toHaveLength(1);
+  });
+
+  it("keeps category-specific retention when the rules differ", async () => {
+    mocks.activityRetention = ["backups_30_days"];
+    await act(async () => root.render(createElement(AccountData)));
+    const activity = [...container.querySelectorAll(".settings-row")].find((row) =>
+      row.textContent?.startsWith("Active time"),
+    );
+    expect(activity?.textContent).toContain("Backups kept 30 days");
+    expect(container.textContent).toContain("Kept while your account exists");
+  });
+
   it.each([
     [1, "1 day, 1h 00m in total"],
     [2, "2 days, 1h 00m in total"],

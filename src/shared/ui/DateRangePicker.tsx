@@ -1,29 +1,14 @@
-import {
-  DateRangePicker as ArcDateRangePicker,
-  defaultDateRangePresets,
-  type DateRangePickerProps,
-} from "./arc/date-range-picker/date-range-picker";
-import { useLocale, useT } from "../i18n";
-
-export type { DateRange } from "./arc/date-range-picker/date-range-picker";
+import { RangePicker, type RangePickerProps } from "./date-time/RangePicker";
+export type { DateRange } from "./date-time/values";
+export type { DateRangePreset } from "./date-time/presets";
+export type { RangePickerProps as DateRangePickerProps } from "./date-time/RangePicker";
 
 /**
- * Inclusive local-day range calendar with presets. Only used inside DateTimeRangePicker; features use that component instead.
+ * Inclusive local-day range field with presets, a shared calendar and typed endpoints.
  * @group fields
- * @status internal
+ * @use A whole-day period as { start: Date; end: Date }; null is empty, onClear clears optional fields.
+ * @avoid Exact instants or exclusive end times: DateTimeRangePicker. One day: DatePicker.
  */
-export function DateRangePicker(props: DateRangePickerProps) {
-  const t = useT();
-  const locale = useLocale();
-  return (
-    <ArcDateRangePicker
-      locale={locale}
-      weekStartsOn={1}
-      label={t("Date range")}
-      placeholder={t("Custom date range")}
-      presets={defaultDateRangePresets.map((preset) => ({ ...preset, label: t(preset.label) }))}
-      {...props}
-      className={["bycoda-arc bycoda-arc-date-range", props.className].filter(Boolean).join(" ")}
-    />
-  );
+export function DateRangePicker(props: RangePickerProps) {
+  return <RangePicker {...props} withTime={false} />;
 }

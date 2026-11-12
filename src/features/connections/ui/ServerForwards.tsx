@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
@@ -113,7 +114,15 @@ export function ServerForwards({
           return (
             <div key={rule.id} className="flex min-w-0 flex-col gap-2 border-b border-stroke pbe-3">
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <span className="min-w-0 break-all font-medium">{rule.name}</span>
+                <Text
+                  as="span"
+                  size="inherit"
+                  tone="inherit"
+                  weight="medium"
+                  className="min-w-0 break-all"
+                >
+                  {rule.name}
+                </Text>
                 {stopping || unknown ? (
                   <Badge size="sm" tone="neutral">
                     {t(stopping ? "Stopping" : "Status unknown")}
@@ -128,11 +137,11 @@ export function ServerForwards({
                   </Badge>
                 )}
               </div>
-              <p className="break-all text-(--ui-text-muted)">
+              <Text as="p" size="inherit" tone="muted" className="break-all">
                 {rule.kind === "dynamic"
                   ? `SOCKS5 · 127.0.0.1:${rule.localPort}`
                   : `127.0.0.1:${rule.localPort} → ${rule.targetHost}:${rule.targetPort}`}
-              </p>
+              </Text>
               {status?.error ? <DetailedInlineError error={status.error} /> : null}
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -274,14 +283,14 @@ export function ServerForwards({
                 />
               </>
             ) : (
-              <p className="break-all text-(--ui-text-muted)">
+              <Text as="p" size="inherit" tone="muted" className="break-all">
                 SOCKS5 · 127.0.0.1:{draft.localPort || "…"}
-              </p>
+              </Text>
             )}
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-(--ui-text-muted)">
+              <Text size="inherit" tone="muted">
                 {t("Loopback only. Start separately after saving.")}
-              </span>
+              </Text>
               <Button type="submit" loading={busy === "save"} disabled={Boolean(busy)}>
                 {t("Save rule")}
               </Button>
@@ -301,13 +310,15 @@ export function ServerForwards({
   return (
     <>
       {expanded ? (
-        <section className="text-ui-caption">
+        <Text as="section" size="caption" tone="inherit">
           <SectionLabel as="h3">{title}</SectionLabel>
           {content}
-        </section>
+        </Text>
       ) : (
-        <Disclosure size="sm" className="text-ui-caption" summary={title}>
-          {content}
+        <Disclosure size="sm" textSize="caption" summary={title}>
+          <Text as="div" size="caption" tone="inherit">
+            {content}
+          </Text>
         </Disclosure>
       )}
       {proxy.dialog}

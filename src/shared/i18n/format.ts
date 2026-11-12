@@ -9,7 +9,8 @@
  * Components that must re-render on language change read the locale through `useLocale()`
  * and pass it in; module-level callers may omit it.
  */
-import { relativeTimeFormat } from "../lib/intl";
+import { dateTimeFormat, relativeTimeFormat } from "../lib/intl";
+import { numberFormat } from "./numberFormat";
 import { getLocale, t } from "./core";
 import type { Locale } from "./languages";
 
@@ -64,19 +65,6 @@ export type ByteFormatOptions = {
 };
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
-const numberFormats = new Map<string, Intl.NumberFormat>();
-function numberFormat(locale: Locale, digits: number): Intl.NumberFormat {
-  const key = `${locale}:${digits}`;
-  let format = numberFormats.get(key);
-  if (!format) {
-    format = new Intl.NumberFormat(locale, {
-      maximumFractionDigits: digits,
-      minimumFractionDigits: 0,
-    });
-    numberFormats.set(key, format);
-  }
-  return format;
-}
 
 /** "512 B", "1.5 MB", "12 GB": one decimal below 10 units, whole numbers above. */
 export function formatBytes(
@@ -91,7 +79,7 @@ export function formatBytes(
     index++;
   }
   const digits = index === 0 ? 0 : value < 10 ? 1 : 0;
-  return `${numberFormat(locale, digits).format(value)} ${BYTE_UNITS[index]}`;
+  return `${numberFormat(locale, { maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(value)} ${BYTE_UNITS[index]}`;
 }
 
 export type DurationFormatOptions = {
@@ -118,7 +106,7 @@ export function formatDuration(
 
 /** "1 day", "2 days" with the plural forms of the app language. */
 export function formatDays(count: number, locale: Locale = getLocale()): string {
-  return new Intl.NumberFormat(locale, { style: "unit", unit: "day", unitDisplay: "long" }).format(
+  return numberFormat(locale, { style: "unit", unit: "day", unitDisplay: "long" }).format(
     Math.max(0, Math.round(Number.isFinite(count) ? count : 0)),
   );
 }
@@ -135,7 +123,7 @@ export function formatElapsed(elapsedMs: number | null): string | null {
 
 /** Compact count using the requested locale, or the runtime default when omitted. */
 export function formatCompactCount(value: number, locale?: string): string {
-  return new Intl.NumberFormat(locale, {
+  return numberFormat(locale, {
     notation: "compact",
     maximumFractionDigits: value >= 1000 ? 1 : 0,
   }).format(Math.max(0, Math.round(value)));
@@ -144,18 +132,20 @@ export function formatCompactCount(value: number, locale?: string): string {
 /** Import history keeps the runtime's invalid-date label and the selected app locale. */
 export function formatImportDate(at: number): string {
   if (!at) return "unknown date";
-  return new Date(at).toLocaleDateString(getLocale(), {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return date.toString();
+  return dateTimeFormat(getLocale(), {
     year: "numeric",
     month: "short",
     day: "numeric",
-  });
+  }).format(date);
 }
 
 /** Archived records retain the runtime locale and an empty label for invalid dates. */
 export function formatArchiveDate(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "";
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    return dateTimeFormat(undefined, {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -278,7 +268,7 @@ export function formatRecentRelative(value: number, now: number): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d`;
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    return dateTimeFormat(undefined, {
       month: "short",
       day: "numeric",
     }).format(new Date(value));
@@ -289,12 +279,13 @@ export function formatRecentRelative(value: number, now: number): string {
 
 export function formatChatDate(timestamp: number, now = Date.now()): string {
   const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return date.toString();
   const sameYear = date.getFullYear() === new Date(now).getFullYear();
-  return date.toLocaleDateString(undefined, {
+  return dateTimeFormat(undefined, {
     day: "numeric",
     month: "short",
     ...(sameYear ? {} : { year: "numeric" }),
-  });
+  }).format(date);
 }
 
 export function formatMinutes(minutes: number): string {
@@ -344,11 +335,13 @@ export function formatGitGraphAbsoluteTime(
   locale?: string,
   timeZone?: string,
 ): string {
-  return new Date(timestampSeconds * 1000).toLocaleString(locale, {
+  const date = new Date(timestampSeconds * 1000);
+  if (Number.isNaN(date.getTime())) return date.toString();
+  return dateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone,
-  });
+  }).format(date);
 }
 
 export function formatCooldown(ms: number): string {

@@ -1,6 +1,7 @@
 import { memo, useId, type CSSProperties } from "react";
 import { MASCOT_GRID, projectMascot } from "../model/projectMascots";
 import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
+import { textAttributes, type TextTone } from "../../../shared/ui/Text";
 import { identityClassName, type IdentitySize } from "../../../shared/ui/identity/identitySize";
 
 type Props = {
@@ -12,6 +13,9 @@ type Props = {
   /** Shared icon scale (icon-xs/sm/md/lg); `className` then only adds. */
   size?: IdentitySize;
   className?: string;
+  /** Shared ink role (a Text tone) for the whole symbol, instead of a `text-…` class. It replaces
+   *  the symbol's own palette; an explicit `color` still wins. Unset keeps the palette. */
+  tone?: TextTone;
   /** Gently breathes while work is in flight, subject to motion preferences. */
   active?: boolean;
 };
@@ -27,9 +31,11 @@ export const ProjectMascot = memo(function ProjectMascot({
   color,
   name,
   size,
+  tone,
   className: classNameProp,
   active = false,
 }: Props) {
+  const toned = tone && !color;
   const className = identityClassName(size, classNameProp, "size-3 shrink-0");
   const mascot = projectMascot(project, name);
   const id = useId().replace(/:/g, "");
@@ -41,13 +47,23 @@ export const ProjectMascot = memo(function ProjectMascot({
     <svg
       aria-hidden
       viewBox={`0 0 ${MASCOT_GRID} ${MASCOT_GRID}`}
-      className={`project-sigil ${className} ${animate ? "bycoda-sigil-active" : ""}`}
+      {...(toned
+        ? textAttributes(
+            { tone },
+            `project-sigil ${className} ${animate ? "bycoda-sigil-active" : ""}`,
+          )
+        : { className: `project-sigil ${className} ${animate ? "bycoda-sigil-active" : ""}` })}
       data-project-icon={mascot.name}
       data-project-icon-label={mascot.label}
       style={
         {
-          color: color ?? mascot.color,
-          "--sigil-hi": color ? `color-mix(in oklch, ${color} 70%, white)` : mascot.highlight,
+          // A tone supplies the colour from CSS and the highlight follows it.
+          color: toned ? undefined : (color ?? mascot.color),
+          "--sigil-hi": toned
+            ? "currentColor"
+            : color
+              ? `color-mix(in oklch, ${color} 70%, white)`
+              : mascot.highlight,
         } as CSSProperties
       }
     >

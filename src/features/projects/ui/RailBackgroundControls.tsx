@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { ColorPickerPopover } from "../../../shared/ui/ColorPickerPopover";
@@ -35,7 +37,10 @@ function ColorSwatchButton({
       >
         <span
           aria-hidden="true"
-          className="block icon-md rounded-(--ui-radius-control) border border-(--ui-pane-border)"
+          {...surfaceAttributes(
+            { frame: "pane", edge: "all" },
+            "block icon-md rounded-(--ui-radius-control) border-(--ui-pane-border)",
+          )}
           style={{ background: value }}
         />
       </Button>
@@ -101,8 +106,13 @@ export function RailBackgroundControls({
                       [part]: event.target.checked ? { color, opacity: 15 } : undefined,
                     })
                   }
-                  label={<span className="truncate">{label}</span>}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-ui-caption"
+                  label={
+                    <Text size="inherit" tone="inherit" truncate>
+                      {label}
+                    </Text>
+                  }
+                  size="caption"
+                  className="flex min-w-0 flex-1 items-center gap-2"
                 />
                 <ColorSwatchButton
                   label={`${label}: ${t("Color")}`}
@@ -112,7 +122,7 @@ export function RailBackgroundControls({
                 />
               </div>
               {current ? (
-                <div className="flex items-center gap-2 text-ui-caption text-(--ui-text-muted)">
+                <Text as="div" size="caption" tone="muted" className="flex items-center gap-2">
                   <span className="shrink-0">{t("Opacity")}</span>
                   <Slider
                     hideLabel
@@ -124,7 +134,7 @@ export function RailBackgroundControls({
                     className="min-w-0 flex-1"
                   />
                   <span className="w-9 shrink-0 text-end tabular-nums">{opacity}%</span>
-                </div>
+                </Text>
               ) : null}
             </div>
           );

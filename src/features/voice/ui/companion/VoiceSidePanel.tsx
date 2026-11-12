@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { t } from "../../../../shared/i18n";
 import { placeVoiceSidePanel, type VoiceSidePlacement } from "../../model/voiceSidePanel";
@@ -63,7 +64,10 @@ export function VoiceSidePanel({
   if (!placement) return null;
   if (placement.side === "inline")
     return (
-      <div ref={scroller as RefObject<HTMLDivElement>} className={styles.dock}>
+      <div
+        ref={scroller as RefObject<HTMLDivElement>}
+        {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, styles.dock)}
+      >
         {children}
       </div>
     );
@@ -71,7 +75,10 @@ export function VoiceSidePanel({
     <aside
       ref={scroller}
       aria-label={t("Question")}
-      className={styles.side}
+      {...surfaceAttributes(
+        { frame: "neutral", edge: "all", radius: "panel", variant: "floating" },
+        styles.side,
+      )}
       data-side={placement.side}
       style={{
         left: placement.x,

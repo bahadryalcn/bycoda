@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -12,11 +13,11 @@ function ItemList({ title, items }: { title: string; items: readonly string[] })
       <SectionLabel as="h3" count={items.length}>
         {title}
       </SectionLabel>
-      <ul className="task-detail-list">
+      <Text as="ul" size="secondary" leading="normal" className="task-detail-list">
         {items.map((item, index) => (
           <li key={index}>{item}</li>
         ))}
-      </ul>
+      </Text>
     </section>
   );
 }
@@ -29,7 +30,13 @@ export function TaskDetailInstructions({ prompt }: { prompt: string }) {
   const brief = readTaskInstructions(prompt);
   const text = brief ? brief.objective : prompt.trim();
   return (
-    <div data-task-detail-description className="task-detail-instructions">
+    <Text
+      as="div"
+      size="inherit"
+      tone="secondary"
+      data-task-detail-description
+      className="task-detail-instructions"
+    >
       <section className="task-detail-section">
         <SectionLabel as="h3">{t("Description")}</SectionLabel>
         {text ? (
@@ -46,6 +53,6 @@ export function TaskDetailInstructions({ prompt }: { prompt: string }) {
           <ItemList title={t("Verification")} items={brief.verification} />
         </>
       ) : null}
-    </div>
+    </Text>
   );
 }

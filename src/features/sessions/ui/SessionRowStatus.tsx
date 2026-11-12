@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
@@ -78,7 +79,9 @@ export function SessionRowStatus({
   const t = useT();
   if (kind === "idle") {
     return (
-      <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">{time}</span>
+      <Text size="micro" tone="secondary" className="shrink-0 tabular-nums">
+        {time}
+      </Text>
     );
   }
   if (kind === "working" || kind === "waiting") {

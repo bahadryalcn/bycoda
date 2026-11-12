@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
@@ -201,11 +202,13 @@ export function CrewWorkManager({
       <div className="@container/crew-management min-w-0" aria-busy={pending}>
         {layout === "page" && crew && crews.length <= 1 ? (
           <div className="flex min-w-0 items-baseline gap-2 px-4 pt-3">
-            <Heading size="item" level={2} className="min-w-0 truncate">
+            <Heading size="item" level={2} truncate className="min-w-0">
               {crew.name}
             </Heading>
             {crewScope ? (
-              <span className="shrink-0 text-ui-caption text-(--ui-text-muted)">{crewScope}</span>
+              <Text tone="muted" className="shrink-0">
+                {crewScope}
+              </Text>
             ) : null}
           </div>
         ) : null}
@@ -266,9 +269,9 @@ export function CrewWorkManager({
           </div>
         </div>
         {crew && !savedCrew ? (
-          <p className="-mt-1 px-4 pb-2 text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" className="-mt-1 px-4 pb-2">
             {t("This crew was deleted. Its work and conversations are kept.")}
-          </p>
+          </Text>
         ) : null}
         {!data ? (
           <div className="p-4">

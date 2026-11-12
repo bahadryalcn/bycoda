@@ -39,16 +39,20 @@ const baseName = (path: string) =>
 /** "Add from a file or address": a model file or a running address, verified by a Host test after adding. */
 export function ManualPathDialog({
   prefill,
+  initialMode,
   onAdd,
   onTest,
   onClose,
 }: {
   prefill?: ManualPrefill;
+  initialMode?: Mode;
   onAdd: (input: DecisionSourceInput) => Promise<DecisionSource>;
   onTest: (id: string) => Promise<SourceTestResult>;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<Mode>(prefill?.endpoint ? "endpoint" : "model_file");
+  const [mode, setMode] = useState<Mode>(
+    initialMode ?? (prefill?.endpoint ? "endpoint" : "model_file"),
+  );
   const [name, setName] = useState(prefill?.name ?? "");
   const [modelPath, setModelPath] = useState(prefill?.modelPath ?? "");
   const [runtimePath, setRuntimePath] = useState(prefill?.runtimePath ?? "");

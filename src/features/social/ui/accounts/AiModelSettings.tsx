@@ -7,6 +7,7 @@ import {
   type SocialPolicies,
 } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import { Text } from "../../../../shared/ui/Text";
 import { isRemoteProvider, REMOTE_PROVIDERS } from "../../../connections/public/protocol";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
 import { Group, Row } from "../../../settings/public/settingsControls";
@@ -61,7 +62,9 @@ export function AiModelSettings({ client, policies, onChanged }: AiModelSettings
         error ? (
           <InlineMessage tone="danger">{error}</InlineMessage>
         ) : is("ai.model") ? (
-          <span className="social-muted">{t("Saving…")}</span>
+          <Text as="span" tone="muted" leading="snug" className="social-muted">
+            {t("Saving…")}
+          </Text>
         ) : null
       }
     >

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -20,7 +22,14 @@ export function GoalSection({
   return (
     <section className="goal-section" aria-label={title}>
       <SectionLabel as="h3">{title}</SectionLabel>
-      <div className={framed ? "goal-section-rows" : "goal-section-pad"}>{children}</div>
+      <div
+        {...surfaceAttributes(
+          framed ? { frame: "card", edge: "all", radius: "card" } : {},
+          framed ? "goal-section-rows" : "goal-section-pad",
+        )}
+      >
+        {children}
+      </div>
     </section>
   );
 }
@@ -43,9 +52,19 @@ export function GoalOption({
   return (
     <div className="goal-option" data-disabled={disabled || undefined}>
       <span className="goal-option-text">
-        <span className="goal-option-title">{title}</span>
-        {description ? <span className="goal-option-description">{description}</span> : null}
-        {disabled && reason ? <span className="goal-option-reason">{reason}</span> : null}
+        <Text as="span" size="secondary" tone={disabled ? "disabled" : "primary"} leading="inherit">
+          {title}
+        </Text>
+        {description ? (
+          <Text size="micro" tone="secondary" leading="inherit" className="goal-option-description">
+            {description}
+          </Text>
+        ) : null}
+        {disabled && reason ? (
+          <Text size="micro" tone="muted" leading="inherit" className="goal-option-reason">
+            {reason}
+          </Text>
+        ) : null}
       </span>
       <span className="goal-option-control">{children}</span>
     </div>

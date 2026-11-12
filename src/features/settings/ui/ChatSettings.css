@@ -13,8 +13,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-inline-size: 0;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
   overflow: hidden;
 }
 .template-manager-nav {
@@ -27,8 +25,6 @@
 .template-manager-count {
   display: block;
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .template-manager-list {
@@ -44,16 +40,8 @@
   align-items: baseline;
   gap: 8px;
 }
-.template-manager-item-name {
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .template-manager-item-trigger {
   flex: none;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .template-manager-editor {
   display: flex;

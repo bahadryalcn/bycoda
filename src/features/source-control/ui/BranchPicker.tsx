@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { withGitOperation, useGitPanelState } from "../model/gitPanelState";
 import { GitBranch, Plus, RefreshCw } from "../../../shared/ui/icons";
@@ -254,9 +255,17 @@ export function BranchPicker({
       rows.map(({ branch: entry }) => ({
         value: `${entry.remote ?? "local"}:${entry.name}`,
         title: (
-          <MiddleTruncate mode="text" className={entry.current ? "font-medium" : undefined}>
-            {entry.name}
-          </MiddleTruncate>
+          <Text
+            as="span"
+            size="inherit"
+            tone="inherit"
+            weight={entry.current ? "medium" : undefined}
+            className="flex min-w-0"
+          >
+            <MiddleTruncate mode="text" className="min-w-0 flex-1">
+              {entry.name}
+            </MiddleTruncate>
+          </Text>
         ),
         textValue: entry.name,
         icon: <GitBranch className="icon-sm" strokeWidth={1.75} />,
@@ -441,11 +450,11 @@ export function BranchPicker({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => pick(createRow)}
                 >
-                  <span className="min-w-0 truncate">
+                  <Text size="inherit" tone="inherit" truncate className="min-w-0">
                     {createRow.name
                       ? t("Create and checkout {p0}", { p0: createRow.name })
                       : t("New branch")}
-                  </span>
+                  </Text>
                 </Button>
               ) : null}
               <Button
@@ -464,7 +473,9 @@ export function BranchPicker({
                   setCreating(true);
                 }}
               >
-                <span className="min-w-0 truncate">{t("New branch from…")}</span>
+                <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                  {t("New branch from…")}
+                </Text>
               </Button>
             </div>
           }

@@ -1,5 +1,7 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
-import { Surface } from "../../../shared/ui/Surface";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { surfaceAttributes, Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { useEffect, useMemo, useState } from "react";
@@ -121,7 +123,15 @@ function CheckAnnotation({
   return (
     <Surface variant="outline" padding="none" className="overflow-hidden">
       {annotation.path ? (
-        <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-fill-subtle) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "bottom" },
+            "flex min-w-0 items-center gap-1.5 bg-(--ui-fill-subtle) px-3 py-2",
+          )}
+        >
           <FileTypeIcon name={annotation.path} isDir={false} />
           <span className="min-w-0 flex-1 break-all">{location}</span>
           {fileUrl ? (
@@ -138,52 +148,71 @@ function CheckAnnotation({
               <ExternalLink className="icon-xs" strokeWidth={1.75} />
             </Button>
           ) : null}
-        </div>
+        </Text>
       ) : null}
       {excerpt.length ? (
-        <div
-          className="overflow-x-auto py-2 font-mono text-ui-micro leading-5"
+        <Text
+          as="div"
+          size="micro"
+          tone="inherit"
+          leading="relaxed"
+          className="overflow-x-auto py-2 font-mono"
           aria-label={t("Source at {p0}", { p0: headOid })}
         >
           {excerpt.map((line, index) => (
-            <div
+            <Text
+              as="div"
               key={index}
-              className={`flex min-w-max gap-4 border-l-2 pr-3 ${firstLine + index === annotation.line ? "border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle) text-(--ui-tone-neutral-fg)" : "border-transparent text-(--ui-text-secondary)"}`}
+              size="inherit"
+              tone={firstLine + index === annotation.line ? "neutral" : "secondary"}
+              className={`flex min-w-max gap-4 border-l-2 pr-3 ${firstLine + index === annotation.line ? "border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle)" : "border-transparent"}`}
             >
-              <span className="w-8 shrink-0 select-none text-right tabular-nums text-(--ui-text-secondary)">
+              <Text
+                size="inherit"
+                tone="secondary"
+                className="w-8 shrink-0 select-none text-right tabular-nums"
+              >
                 {firstLine + index}
-              </span>
+              </Text>
               <code className="whitespace-pre">{line || " "}</code>
-            </div>
+            </Text>
           ))}
-        </div>
+        </Text>
       ) : null}
       <div
         className={`flex min-w-0 items-start gap-2 px-3 py-3 ${excerpt.length ? "border-t border-(--ui-tone-neutral-border)" : ""}`}
       >
         <Mark
-          className={`mt-0.5 icon-xs shrink-0 ${annotation.level === "failure" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-tone-warning-fg)"}`}
+          tone={annotation.level === "failure" ? "danger" : "warning"}
+          className="mt-0.5 icon-xs shrink-0"
           strokeWidth={1.75}
         />
         <div className="min-w-0 flex-1">
-          <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+          <Text
+            as="p"
+            size="caption"
+            tone="secondary"
+            className="max-h-32 overflow-auto whitespace-pre-wrap break-words"
+          >
             {levelLabel ? (
               <>
-                <span className="font-medium text-(--ui-tone-neutral-fg)">{levelLabel}</span>
+                <Text size="inherit" tone="neutral" weight="medium">
+                  {levelLabel}
+                </Text>
                 {" · "}
               </>
             ) : null}
             {messageTitle}
-          </p>
+          </Text>
           {messageLines.length ? (
-            <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-ui-micro leading-relaxed text-(--ui-text-secondary)">
+            <OutputBlock size="micro" leading="relaxed" className="mt-1.5 max-h-60 overflow-auto">
               {messageLines.join("\n")}
-            </pre>
+            </OutputBlock>
           ) : null}
           {canRead && source?.key === sourceKey && !excerpt.length ? (
-            <p className="mt-2 text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="secondary" className="mt-2">
               {t("Source preview unavailable for this commit.")}
-            </p>
+            </Text>
           ) : null}
         </div>
       </div>

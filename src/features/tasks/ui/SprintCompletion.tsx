@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useId, useRef, useState } from "react";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
@@ -92,11 +93,11 @@ export function SprintCompletion({
           }
         }}
       >
-        <p className="sprint-muted">
+        <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
           {t(
             "The sprint report will be frozen. Select unfinished tasks to move; other tasks keep their sprint history.",
           )}
-        </p>
+        </Text>
         {unfinished.length ? (
           <section className="sprint-form-section">
             <SectionLabel count={unfinished.length}>{t("Tasks")}</SectionLabel>

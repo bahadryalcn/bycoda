@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { TogglePill } from "./ModelExtras";
 import { MorphSelect } from "../../../shared/ui/MorphSelect";
 import { Button } from "../../../shared/ui/Button";
@@ -22,24 +23,26 @@ import {
   loadFavoriteModels,
   loadRecentModelChoices,
   saveFavoriteModels,
-  showProviderInModelPicker,
   subscribeModels,
   subscribePickerVisibility,
   type AgentModel,
   type ModelPickerTab,
   type ModelSetting,
 } from "../model/models";
-import {
-  isProviderHidden,
-  projectProvidersRevision,
-  subscribeProjectProviders,
-} from "../model/projectProviders";
+import { projectProvidersRevision, subscribeProjectProviders } from "../model/projectProviders";
 import {
   harnessUnavailableHint,
   subscribeHarnessAvailability,
   getHarnessAvailabilitySnapshot,
 } from "../../../integrations/harness/core/availability";
 import { useModelSource } from "./modelSource";
+import {
+  visibleModelsAtSnapshot,
+  menuSettingsAtRevision,
+  modelEnabledAtRevision,
+  pickerProviderAtRevision,
+  providerAccountsAtSnapshot,
+} from "./modelStoreReaders";
 import { offeredDelegationSetting } from "../model/claudeAdvisor";
 import { delegationNextValue } from "../model/crossDelegation";
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
@@ -64,7 +67,6 @@ import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/ra
 import {
   defaultProviderAccountId,
   providerAccountLabel,
-  providerAccounts,
   supportsProviderAccounts,
   subscribeProviderAccounts,
 } from "../../providers/public/providerAccounts";
@@ -73,7 +75,6 @@ import {
   fastSetting,
   isEffortSetting,
   isSettingLocked,
-  menuSettings,
   pillSettings,
   recentMenuModels,
   settingLabel,
@@ -249,7 +250,6 @@ export function ModelPicker({
   // The account is part of the identity only while there is a choice between
   // accounts; a lone default account stays out of the trigger.
   const triggerAccountLabel = useMemo(() => {
-    void accountsSnapshot;
     if (!accountChoices || !currentAccountId || !supportsProviderAccounts(harness))
       return undefined;
     // A saved account that no longer exists is shown honestly instead of a blank label.
@@ -259,7 +259,7 @@ export function ModelPicker({
       if (!saved) return currentAccountId === "default" ? undefined : t("Unavailable Host account");
       return accounts.length > 1 ? accountDisplayLabel(accounts, saved) : undefined;
     }
-    const accounts = providerAccounts(harness);
+    const accounts = providerAccountsAtSnapshot(harness, accountsSnapshot);
     const known = accounts.some((account) => account.id === currentAccountId);
     if (
       !known &&
@@ -282,33 +282,38 @@ export function ModelPicker({
     accountListOpenRef.current = accountListOpen;
   }, [open, accountListOpen]);
   const pickerHarnesses = useMemo(() => {
-    void availabilityVersion;
-    void visibilityVersion;
-    void projectVersion;
     return HARNESSES.filter(
       (id) =>
         (!allowedHarnesses || allowedHarnesses.includes(id)) &&
-        !isProviderHidden(project, id) &&
-        showProviderInModelPicker(id, source.available(id), source.probed()),
+        pickerProviderAtRevision(
+          id,
+          project,
+          source,
+          availabilityVersion,
+          visibilityVersion,
+          projectVersion,
+        ),
     );
   }, [source, allowedHarnesses, availabilityVersion, visibilityVersion, projectVersion, project]);
   const settings = useMemo(() => {
-    void catalogVersion;
     // In beside-picker mode every option row renders as a toolbar pill, so the
     // menu lists models only.
     if (hideSettings || inheritSelected) return [];
     // Delegation and Context lead; Fast and Reasoning stay near Model.
-    return menuSettings({
-      current,
-      harnesses: pickerHarnesses,
-      source,
-      accountChoices: true,
-      currentAccountId,
-      signedOutAccounts: source.accounts === undefined ? signedOutAccountKeys(usage) : undefined,
-      signedOutLabel: t("Not signed in"),
-      values,
-      unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
-    });
+    return menuSettingsAtRevision(
+      {
+        current,
+        harnesses: pickerHarnesses,
+        source,
+        accountChoices: true,
+        currentAccountId,
+        signedOutAccounts: source.accounts === undefined ? signedOutAccountKeys(usage) : undefined,
+        signedOutLabel: t("Not signed in"),
+        values,
+        unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
+      },
+      catalogVersion,
+    );
   }, [
     catalogVersion,
     current,
@@ -373,9 +378,9 @@ export function ModelPicker({
   );
   // Recent models that stopped being offered drop out of the open menu.
   const recentModels = useMemo(() => {
-    void catalogVersion;
     return (recentMenu?.models ?? []).filter(
-      (item) => pickerHarnesses.includes(item.harness) && isModelEnabled(item.id),
+      (item) =>
+        pickerHarnesses.includes(item.harness) && modelEnabledAtRevision(item.id, catalogVersion),
     );
   }, [recentMenu, pickerHarnesses, catalogVersion]);
   const recentOpen = recentMenu != null && recentModels.length > 0;
@@ -384,40 +389,33 @@ export function ModelPicker({
     recentOpenRef.current = recentOpen;
   }, [recentOpen]);
 
-  const visibleModels = useMemo(() => {
-    void catalogVersion;
-    const needle = query.trim().toLowerCase();
-    const pool =
-      visibleTab === "favorites"
-        ? favorites
-            .map((id) => source.find(id))
-            .filter(
-              (item): item is AgentModel =>
-                item != null && pickerHarnesses.includes(item.harness) && isModelEnabled(item.id),
-            )
-        : source.modelsFor(visibleTab).filter((item) => isModelEnabled(item.id));
-    // The panel lists each model once and picks the account in its header; the beside-picker
-    // flyout keeps one row per model and account.
-    const choices = hideSettings
-      ? accountModelChoices(pool, accountChoices, source.accounts)
-      : pool;
-    if (!needle) return choices;
-    return choices.filter((item) =>
-      `${item.name} ${HARNESS_TITLE[item.harness]} ${item.provider?.name ?? ""} ${item.provider?.id ?? ""}`
-        .toLowerCase()
-        .includes(needle),
-    );
-  }, [
-    source,
-    catalogVersion,
-    favorites,
-    pickerHarnesses,
-    query,
-    visibleTab,
-    accountChoices,
-    accountsSnapshot,
-    hideSettings,
-  ]);
+  const visibleModels = useMemo(
+    () =>
+      visibleModelsAtSnapshot(
+        {
+          source,
+          tab: visibleTab,
+          favorites,
+          harnesses: pickerHarnesses,
+          query,
+          hideSettings,
+          accountChoices,
+        },
+        catalogVersion,
+        accountsSnapshot,
+      ),
+    [
+      source,
+      catalogVersion,
+      favorites,
+      pickerHarnesses,
+      query,
+      visibleTab,
+      accountChoices,
+      accountsSnapshot,
+      hideSettings,
+    ],
+  );
 
   // An inherited (empty) choice has no current model to mark or start on.
   const markedChoiceKey = inheritSelected
@@ -667,6 +665,9 @@ export function ModelPicker({
     <>
       <Button
         size={field ? "md" : "sm"}
+        textSize={field ? "body" : undefined}
+        weight={field ? "regular" : undefined}
+        leading={field ? "inherit" : undefined}
         className={field ? "model-picker-field-trigger" : "w-auto max-w-full min-w-0 shrink-0"}
         data-model-picker-presentation={presentation}
         variant="ghost"
@@ -699,44 +700,57 @@ export function ModelPicker({
         onClick={() => togglePicker()}
       >
         {inheritSelected ? (
-          <span data-model-inherit className="min-w-0 flex-1 truncate text-left">
+          <Text
+            data-model-inherit
+            size="inherit"
+            tone="inherit"
+            truncate
+            className="min-w-0 flex-1 text-left"
+          >
             {inherit.label}
-          </span>
+          </Text>
         ) : (
           <>
             <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
-            <span className="min-w-0 truncate">{current.name}</span>
+            <Text size="inherit" tone="inherit" truncate className="min-w-0">
+              {current.name}
+            </Text>
           </>
         )}
         {triggerAccountLabel && !inheritSelected ? (
           <>
             {" "}
-            <span
+            <Text
               data-model-account
-              className="min-w-0 max-w-24 truncate text-(--ui-text-secondary)"
+              size="inherit"
+              tone="secondary"
+              truncate
+              className="min-w-0 max-w-24"
             >
               {triggerAccountLabel}
-            </span>
+            </Text>
           </>
         ) : null}
         {triggerEffortLabel ? (
-          <span data-model-effort className="shrink-0 text-(--ui-text-secondary)">
+          <Text data-model-effort size="inherit" tone="secondary" className="shrink-0">
             {triggerEffortLabel}
-          </span>
+          </Text>
         ) : null}
         {triggerFastOn ? (
           <Zap
             data-model-fast
-            className="icon-xs shrink-0 text-(--ui-text-secondary)"
+            className="icon-xs shrink-0"
+            tone="secondary"
             fill="currentColor"
             strokeWidth={1.75}
             aria-hidden
           />
         ) : null}
         <ChevronDown
-          className={`icon-xs shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""} ${
+          className={`icon-xs shrink-0 ${open ? "rotate-180" : ""} ${
             field ? "model-picker-field-chevron" : ""
           }`}
+          tone="secondary"
           strokeWidth={1.75}
         />
       </Button>
@@ -811,11 +825,18 @@ export function ModelPicker({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => pickInherit()}
               >
-                <span className={`min-w-0 flex-1 truncate ${inheritSelected ? "font-medium" : ""}`}>
+                <Text
+                  as="span"
+                  size="inherit"
+                  tone="inherit"
+                  weight={inheritSelected ? "medium" : undefined}
+                  truncate
+                  className="min-w-0 flex-1"
+                >
                   {inherit.label}
-                </span>
+                </Text>
                 {inheritSelected ? (
-                  <Check className="icon-sm shrink-0 text-(--ui-tone-neutral-fg)" strokeWidth={2} />
+                  <Check className="icon-sm shrink-0" tone="neutral" strokeWidth={2} />
                 ) : null}
               </Button>
             ) : undefined
@@ -872,14 +893,23 @@ export function ModelPicker({
               >
                 <HarnessIcon harness={item.harness} className="size-4 shrink-0" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-ui-secondary leading-4">{item.name}</span>
-                  <span className="block truncate text-ui-micro leading-4 text-(--ui-text-secondary)">
+                  <Text
+                    as="span"
+                    size="secondary"
+                    tone="inherit"
+                    leading="tight"
+                    truncate
+                    className="block"
+                  >
+                    {item.name}
+                  </Text>
+                  <Text size="micro" tone="secondary" truncate className="block">
                     {HARNESS_TITLE[item.harness]}
                     {item.provider ? ` · ${item.provider.name}` : ""}
-                  </span>
+                  </Text>
                 </span>
                 {selected ? (
-                  <Check className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
+                  <Check className="icon-sm shrink-0" tone="secondary" strokeWidth={2} />
                 ) : null}
               </Button>
             );

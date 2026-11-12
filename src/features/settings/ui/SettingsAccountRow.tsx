@@ -1,5 +1,6 @@
 import { AccountRailRow } from "../../account";
 import { t, useLocale } from "../../../shared/i18n";
+import { Text } from "../../../shared/ui/Text";
 import type { SettingsSectionId } from "../model/settings";
 
 /** Account is not a list group: it is the avatar row leading the category list. */
@@ -26,9 +27,15 @@ export function SettingsAccountRow({
   useLocale();
   return (
     <div className="bycoda-settings-category-group bycoda-settings-account-row" role="presentation">
-      <span className="bycoda-settings-category-label" aria-hidden="true">
+      <Text
+        as="span"
+        weight="medium"
+        leading="inherit"
+        className="bycoda-settings-category-label"
+        aria-hidden="true"
+      >
         {t("My account")}
-      </span>
+      </Text>
       <AccountRailRow
         id={accountRowId(panelId)}
         active={section === "account"}

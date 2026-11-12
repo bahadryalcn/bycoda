@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { sshJumpChain } from "../model/sshEndpointReview";
@@ -27,10 +28,10 @@ export function ConfigImportChoices({
   return (
     <div className="flex min-w-0 flex-col gap-2 border-t border-stroke py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="min-w-0 break-words text-ui-caption">
+        <Text tone="inherit" className="min-w-0 break-words">
           {host.alias} · {host.endpoint.user ? `${host.endpoint.user}@` : ""}
           {host.endpoint.host}:{host.endpoint.port}
-        </span>
+        </Text>
         <div className="flex gap-2">
           <Button variant="ghost" disabled={busy} onClick={onSkip}>
             {t("Skip")}
@@ -43,35 +44,37 @@ export function ConfigImportChoices({
         </div>
       </div>
       {host.endpoint.identityFile ? (
-        <p className="break-all text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted" className="break-all">
           {t("Identity file")}: {host.endpoint.identityFile}
-        </p>
+        </Text>
       ) : null}
       {host.endpoint.certificateFile ? (
-        <p className="break-all text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted" className="break-all">
           {t("Public SSH certificate file")}: {host.endpoint.certificateFile}
-        </p>
+        </Text>
       ) : null}
       {sshJumpChain(host.endpoint).length ? (
         <>
-          <p className="break-all text-ui-caption text-(--ui-text-muted)">
+          <Text as="p" tone="muted" className="break-all">
             {t("Jump chain")}: {sshJumpChain(host.endpoint).join(" → ")}
-          </p>
+          </Text>
           <JumpAuthenticationHelp />
         </>
       ) : null}
       {existing.length ? (
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted">
           {t("This endpoint is already saved. Choose an existing connection.")}
-        </p>
+        </Text>
       ) : host.duplicate ? (
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted">
           {t("Duplicate entry in this import.")}
-        </p>
+        </Text>
       ) : null}
       {existing.map((candidate) => (
         <div key={candidate.id} className="flex flex-wrap items-center justify-between gap-2">
-          <span className="min-w-0 break-words text-ui-caption">{candidate.name}</span>
+          <Text tone="inherit" className="min-w-0 break-words">
+            {candidate.name}
+          </Text>
           <div className="flex gap-2">
             {onUse ? (
               <Button disabled={busy} onClick={() => onUse(candidate)}>
@@ -92,10 +95,10 @@ export function ConfigImportChoices({
 
 export function JumpAuthenticationHelp() {
   return (
-    <p className="break-words text-ui-caption text-(--ui-text-muted)">
+    <Text as="p" tone="muted" className="break-words">
       {t(
         "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.",
       )}
-    </p>
+    </Text>
   );
 }

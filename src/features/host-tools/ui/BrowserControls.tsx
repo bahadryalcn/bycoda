@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { RefObject } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Alert } from "../../../shared/ui/Alert";
@@ -44,10 +45,11 @@ export function BrowserControlToggle({
       size="sm"
       shape="pill"
       className="host-browser-control-toggle"
+      textTone="secondary"
       data-controlling={controlling}
       startIcon={
         controlling ? (
-          <CircleDot className="icon-sm" aria-hidden />
+          <CircleDot className="icon-sm" tone="success" aria-hidden />
         ) : (
           <Eye className="icon-sm" aria-hidden />
         )
@@ -130,17 +132,26 @@ export function BrowserControlsPopover({
       onDismiss={onDismiss}
     >
       <div className="host-browser-state" role="status">
-        <span className="host-tool-status">
+        <Text size="caption" tone="inherit" leading="inherit" className="host-tool-status">
           {[
             browserStatus,
             state?.open ? (state.controlling ? t("Control active") : t("View only")) : "",
           ]
             .filter(Boolean)
             .join(" · ")}
-        </span>
+        </Text>
         {state?.url ? (
           <OverflowTooltip label={state.url}>
-            <span className="host-browser-location">{state.url}</span>
+            <Text
+              as="span"
+              size="caption"
+              tone="secondary"
+              leading="inherit"
+              truncate
+              className="host-browser-location"
+            >
+              {state.url}
+            </Text>
           </OverflowTooltip>
         ) : null}
         {notice ? <span className="host-tool-muted">{notice}</span> : null}

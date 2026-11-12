@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -136,7 +138,14 @@ export function SprintManagement({
     <SprintHostBar board={board} busy={!!busy} error={error} showRefresh={!nothing} />
   );
   return (
-    <section className="sprint-management" aria-label={t("Sprints")}>
+    <Text
+      as="section"
+      size="secondary"
+      tone="primary"
+      leading="inherit"
+      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "sprint-management")}
+      aria-label={t("Sprints")}
+    >
       {nothing ? (
         <>
           <EmptyState
@@ -156,14 +165,16 @@ export function SprintManagement({
           <div className="sprint-heading">
             <div className="sprint-title">
               <OverflowTooltip label={selected?.name}>
-                <Heading size="section">{selected?.name ?? t("Sprints")}</Heading>
+                <Heading size="section" lines={2}>
+                  {selected?.name ?? t("Sprints")}
+                </Heading>
               </OverflowTooltip>
               {selected ? <SprintStatusBadge state={selected.state} /> : null}
               {selected && (selected.startsAt !== undefined || selected.endsAt !== undefined) ? (
-                <span className="sprint-dates">
+                <Text tone="secondary" size="caption" leading="inherit" className="sprint-dates">
                   {displayDate(selected.startsAt, t("No start date"))} ·{" "}
                   {displayDate(selected.endsAt, t("No end date"))}
-                </span>
+                </Text>
               ) : null}
             </div>
             <div className="sprint-actions">
@@ -236,11 +247,11 @@ export function SprintManagement({
         </div>
       ) : null}
       {selected && !fullyAccessible(selected) ? (
-        <p className="sprint-muted">
+        <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
           {t(
             "Only accessible projects are shown. Unlock all sprint projects to manage this sprint.",
           )}
-        </p>
+        </Text>
       ) : null}
       {!selected && !nothing ? (
         <SprintList rows={rows} accessible={accessible} onSelect={onSelect} />
@@ -278,6 +289,6 @@ export function SprintManagement({
           }}
         />
       ) : null}
-    </section>
+    </Text>
   );
 }

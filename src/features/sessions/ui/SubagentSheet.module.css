@@ -9,7 +9,6 @@
   max-block-size: 55%;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   overflow-wrap: anywhere;
 }
 
@@ -29,7 +28,6 @@
   flex-shrink: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
 }
 
 .requests .composer {

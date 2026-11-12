@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { invoke } from "@tauri-apps/api/core";
 import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useState } from "react";
@@ -61,10 +62,10 @@ export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
   // Without the desktop's route store only the saved other address is known.
   if (!routes)
     return ssh.alternate ? (
-      <div className="mt-1 break-all text-ui-caption text-(--ui-text-muted)">
+      <Text as="div" tone="muted" className="mt-1 break-all">
         {t("Other address · ")}
         {ssh.alternate}
-      </div>
+      </Text>
     ) : null;
   const save = (disabled: string[], prefer: RoutePreference) => {
     setSaving(true);
@@ -89,10 +90,12 @@ export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
     <section className="mt-3 flex flex-col gap-2" data-machine-routes aria-label={t("Addresses")}>
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-ui-secondary font-medium">{t("Addresses")}</div>
-          <p className="text-ui-caption text-(--ui-text-muted)">
+          <Text as="div" size="secondary" tone="inherit" weight="medium">
+            {t("Addresses")}
+          </Text>
+          <Text as="p" tone="muted">
             {t("Tried in this order; the first one that answers is used.")}
-          </p>
+          </Text>
         </div>
         {routes.routes.length > 1 ? (
           <div className="w-48">
@@ -128,10 +131,12 @@ export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
               className="flex min-w-0 items-center gap-3 px-3 py-2"
             >
               <div className={`min-w-0 flex-1 ${route.enabled ? "" : "opacity-60"}`}>
-                <div className="truncate font-mono text-ui-secondary">{route.address}</div>
-                <div className="text-ui-caption text-(--ui-text-muted)">
+                <Text as="div" size="secondary" tone="inherit" truncate className="font-mono">
+                  {route.address}
+                </Text>
+                <Text as="div" tone="muted">
                   {kindLabel(route.kind)} · {sourceLabel(route.source)}
-                </div>
+                </Text>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {inUse ? (
@@ -165,9 +170,9 @@ export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
           );
         })}
       </Surface>
-      <p className="text-ui-caption text-(--ui-text-muted)">
+      <Text as="p" tone="muted">
         {t("Change the SSH and other address with Edit name and address.")}
-      </p>
+      </Text>
       {error ? <InlineError>{error}</InlineError> : null}
     </section>
   );

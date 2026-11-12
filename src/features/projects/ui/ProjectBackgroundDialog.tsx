@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
 import { Slider } from "../../../shared/ui/Slider";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -200,9 +202,9 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
                 />
               )
             ) : (
-              <div className="grid h-40 place-items-center text-ui-caption text-[var(--ui-text-muted)]">
+              <Text as="div" size="caption" tone="muted" className="grid h-40 place-items-center">
                 {t("No background selected")}
-              </div>
+              </Text>
             )}
           </div>
           <Button
@@ -216,11 +218,11 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
           >
             {path ? t("Change image") : t("Choose image")}
           </Button>
-          <p className="mt-1.5 text-ui-micro leading-relaxed text-[var(--ui-text-muted)]">
+          <Text as="p" size="micro" tone="muted" leading="relaxed" className="mt-1.5">
             {path
               ? t("This image overrides the global background for this project.")
               : t("This project currently follows the global Appearance setting.")}
-          </p>
+          </Text>
           {error ? <Alert tone="danger">{error}</Alert> : null}
         </div>
 
@@ -228,12 +230,12 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
           <div className="border-t border-stroke pt-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <span className="text-ui-secondary font-medium text-content">
+                <Text size="secondary" tone="primary" weight="medium">
                   {t("Background effect")}
-                </span>
-                <p className="text-ui-micro text-[var(--ui-text-muted)] line-clamp-1">
+                </Text>
+                <ClampText as="p" lines={1} expandable={false} size="micro" tone="muted">
                   {NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[effect]}
-                </p>
+                </ClampText>
               </div>
               <div className="w-36 shrink-0">
                 <SearchableSelect
@@ -277,9 +279,9 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
               onValueChange={(next) => updateOpacity("empty", next)}
               className="min-w-0 flex-1"
             />
-            <span className="w-10 shrink-0 text-right text-ui-caption tabular-nums text-content">
+            <Text size="caption" tone="primary" className="w-10 shrink-0 text-right tabular-nums">
               {Math.round(emptyOpacity * 100)}%
-            </span>
+            </Text>
           </div>
         </ProjectBackgroundRow>
 
@@ -294,9 +296,9 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
               onValueChange={(next) => updateOpacity("session", next)}
               className="min-w-0 flex-1"
             />
-            <span className="w-10 shrink-0 text-right text-ui-caption tabular-nums text-content">
+            <Text size="caption" tone="primary" className="w-10 shrink-0 text-right tabular-nums">
               {Math.round(sessionOpacity * 100)}%
-            </span>
+            </Text>
           </div>
         </ProjectBackgroundRow>
 
@@ -323,7 +325,9 @@ function ProjectBackgroundRow({ label, children }: { label: string; children: Re
   useLocale();
   return (
     <div className="flex items-center justify-between gap-4 border-t border-stroke pt-4">
-      <span className="text-ui-secondary font-medium text-content">{label}</span>
+      <Text size="secondary" tone="primary" weight="medium">
+        {label}
+      </Text>
       {children}
     </div>
   );

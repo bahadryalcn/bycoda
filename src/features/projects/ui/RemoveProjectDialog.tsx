@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { prettyCwd } from "../../../shared/lib/paths";
@@ -76,13 +77,13 @@ export function RemoveProjectDialog({
           ]
         : undefined,
     details: (
-      <div className="max-h-40 overflow-y-auto text-ui-micro leading-tight text-(--ui-text-muted)">
+      <Text as="div" size="micro" tone="muted" leading="tight" className="max-h-40 overflow-y-auto">
         {(paths ?? [path]).map((entry) => (
           <p key={entry} className="break-all">
             {prettyCwd(entry)}
           </p>
         ))}
-      </div>
+      </Text>
     ),
     body: (
       <>

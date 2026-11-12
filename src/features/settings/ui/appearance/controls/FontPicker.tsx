@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { ChevronDown } from "../../../../../shared/ui/icons";
+import { Text } from "../../../../../shared/ui/Text";
 import {
   SearchableSelect,
   type SearchableSelectOption,
@@ -112,9 +113,9 @@ export function FontPicker({
             className="font-picker-trigger"
             endIcon={<ChevronDown />}
           >
-            <span className="font-picker-trigger-name" style={current?.labelStyle}>
+            <Text as="span" size="inherit" tone="inherit" truncate style={current?.labelStyle}>
               {current?.label ?? label}
-            </span>
+            </Text>
           </Button>
         );
       }}

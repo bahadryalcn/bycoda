@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { getPerformanceTrace, clearPerformanceTrace } from "../../../shared/lib/performanceTrace";
@@ -133,9 +134,9 @@ export function DiagnosticsGroup() {
         disabledReason={t("Turn on Performance trace first")}
         feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
       >
-        <span role="status" className="text-ui-caption text-(--ui-text-secondary) empty:hidden">
+        <Text role="status" size="caption" tone="secondary" className="empty:hidden">
           {result === "copied" ? t("Copied") : result === "cleared" ? t("Cleared") : ""}
-        </span>
+        </Text>
         <Button className="shrink-0" onClick={onCopy} loading={copying}>
           {t("Copy trace")}
         </Button>

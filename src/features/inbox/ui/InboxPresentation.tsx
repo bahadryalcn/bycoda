@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import type { BadgeTone } from "../../../shared/ui/Badge";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { BadgeListItem } from "../../../shared/ui/BadgeList";
@@ -168,9 +170,15 @@ export function InboxAvatar({
       style={{ width: size, height: size }}
     />
   ) : (
-    <span
+    <Text
+      size="inherit"
+      tone="secondary"
+      weight="medium"
       aria-hidden
-      className="grid shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) font-medium text-(--ui-text-secondary)"
+      {...surfaceAttributes(
+        { radius: "pill", variant: "raised" },
+        "grid shrink-0 place-items-center",
+      )}
       style={{
         width: size,
         height: size,
@@ -178,7 +186,7 @@ export function InboxAvatar({
       }}
     >
       {initial}
-    </span>
+    </Text>
   );
 }
 
@@ -198,7 +206,9 @@ export function InboxPerson({
   return (
     <span className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}>
       <InboxAvatar name={name} avatarUrl={avatarUrl} size={size === "sm" ? 16 : 20} />
-      <span className="min-w-0 truncate">{name}</span>
+      <Text size="inherit" tone="inherit" truncate className="min-w-0">
+        {name}
+      </Text>
     </span>
   );
 }
@@ -244,7 +254,7 @@ export function inboxLabelItems(labels: readonly GithubLabel[]): BadgeListItem[]
       icon: color ? (
         <span
           aria-hidden
-          className="size-1.5 shrink-0 rounded-full"
+          {...surfaceAttributes({ radius: "pill" }, "size-1.5 shrink-0")}
           style={{ backgroundColor: color }}
         />
       ) : undefined,

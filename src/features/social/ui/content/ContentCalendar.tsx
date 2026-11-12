@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { ClampText } from "../../../../shared/ui/ClampText";
+import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
 import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { ActionHost } from "../../../../shared/ui/ActionHost";
@@ -39,13 +42,24 @@ export function ContentCalendar({
   const now = wallClockNow();
   const month = new Date(anchor).getMonth();
   return (
-    <div className="content-calendar" data-view={view}>
+    <div
+      {...surfaceAttributes({ frame: "pane", edge: "all", radius: "card" }, "content-calendar")}
+      data-view={view}
+    >
       {view === "month" ? (
-        <div className="content-calendar-weekdays" aria-hidden="true">
+        <Text
+          as="div"
+          size="caption"
+          tone="muted"
+          leading="inherit"
+          weight="medium"
+          {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "content-calendar-weekdays")}
+          aria-hidden="true"
+        >
           {days.slice(0, 7).map((day) => (
             <span key={day}>{formatDate(day, { weekday: "short" })}</span>
           ))}
-        </div>
+        </Text>
       ) : null}
       <div className="content-calendar-grid">
         {days.map((day) => {
@@ -68,11 +82,24 @@ export function ContentCalendar({
               <div className="content-day-head">
                 <span className="content-day-title" aria-hidden="true">
                   {view === "week" ? (
-                    <span className="content-day-weekday">
+                    <Text
+                      size="caption"
+                      tone="muted"
+                      leading="inherit"
+                      className="content-day-weekday"
+                    >
                       {formatDate(day, { weekday: "short" })}
-                    </span>
+                    </Text>
                   ) : null}
-                  <span className="content-day-number">{formatDate(day, { day: "numeric" })}</span>
+                  <Text
+                    as="span"
+                    size={view === "month" ? "secondary" : "title"}
+                    tone={today ? "accent-on-solid" : outside ? "muted" : "inherit"}
+                    leading="none"
+                    {...surfaceAttributes({ radius: "pill" }, "content-day-number")}
+                  >
+                    {formatDate(day, { day: "numeric" })}
+                  </Text>
                 </span>
                 <Button
                   variant="ghost"
@@ -96,24 +123,39 @@ export function ContentCalendar({
                     onClick={() => onOpen(entry.campaignId)}
                   >
                     <span className="content-chip">
-                      <span className="content-chip-head">
+                      <Text size="inherit" tone="secondary" className="content-chip-head">
                         {entry.platform ? (
                           <PlatformIcon platform={entry.platform} className="icon-xs" />
                         ) : null}
-                        <span className="content-entry-time">
+                        <Text
+                          size="caption"
+                          tone="secondary"
+                          leading="inherit"
+                          className="content-entry-time"
+                        >
                           {formatDate(entry.at, { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </span>
-                      <span className="content-entry-text">
+                        </Text>
+                      </Text>
+                      <ClampText
+                        as="span"
+                        lines={view === "month" ? 1 : 2}
+                        expandable={false}
+                        size="caption"
+                        tone="primary"
+                        leading="inherit"
+                        className="content-entry-text"
+                      >
                         {entry.text.trim() || t("Media post")}
-                      </span>
+                      </ClampText>
                       <ContentStateDot state={entry.status} />
                     </span>
                   </Button>
                 </ActionHost>
               ))}
               {more ? (
-                <span className="content-entry-more">{t("{p0} more", { p0: more })}</span>
+                <Text size="caption" tone="muted" leading="inherit" className="content-entry-more">
+                  {t("{p0} more", { p0: more })}
+                </Text>
               ) : null}
             </section>
           );

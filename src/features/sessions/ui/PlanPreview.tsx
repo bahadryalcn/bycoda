@@ -1,5 +1,7 @@
+import { ClampText } from "../../../shared/ui/ClampText";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Surface } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { AiIdea, CircleDashed, PanelRight, Play } from "../../../shared/ui/icons";
@@ -51,15 +53,9 @@ export function PlanPreview({
     <Surface variant="quiet" padding="none" className="mb-2 overflow-hidden">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
         {streaming ? (
-          <CircleDashed
-            className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
-            strokeWidth={1.75}
-          />
+          <CircleDashed className="mt-0.5 icon-md shrink-0" tone="secondary" strokeWidth={1.75} />
         ) : (
-          <AiIdea
-            className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
-            strokeWidth={1.75}
-          />
+          <AiIdea className="mt-0.5 icon-md shrink-0" tone="secondary" strokeWidth={1.75} />
         )}
         <div className="min-w-0 flex-1">
           {onOpen ? (
@@ -67,24 +63,41 @@ export function PlanPreview({
               fullWidth
               variant="item"
               type="button"
-              className="block w-full truncate text-left"
+              className="block w-full text-left"
               tooltip={title}
               tooltipWhen="overflow"
               onClick={onOpen}
             >
-              {title}
+              <Text as="span" size="inherit" tone="inherit" truncate className="block">
+                {title}
+              </Text>
             </Button>
           ) : (
             <OverflowTooltip label={title}>
-              <span className="block truncate font-sans text-ui-secondary font-medium text-(--ui-text-secondary)">
+              <Text
+                as="span"
+                size="secondary"
+                tone="secondary"
+                weight="medium"
+                truncate
+                className="block font-sans"
+              >
                 {title}
-              </span>
+              </Text>
             </OverflowTooltip>
           )}
           {summary ? (
-            <p className="mt-0.5 line-clamp-3 font-sans text-ui-caption leading-4.5 text-(--ui-text-secondary)">
+            <ClampText
+              as="p"
+              lines={3}
+              expandable={false}
+              size="caption"
+              tone="secondary"
+              leading="normal"
+              className="mt-0.5 font-sans"
+            >
               {summary}
-            </p>
+            </ClampText>
           ) : null}
           {onOpen || onBuild ? (
             <div className="mt-2 flex items-center justify-end gap-1.5">

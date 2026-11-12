@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { t, useLocale } from "../../../shared/i18n";
@@ -74,7 +75,9 @@ function Brand({ title, text, centered }: { title: string; text: string; centere
         <Heading size="item" level={2} className={styles.brandTitle}>
           {title}
         </Heading>
-        <p className={styles.brandText}>{text}</p>
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.brandText}>
+          {text}
+        </Text>
       </div>
     </div>
   );
@@ -214,7 +217,9 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
           onChange={(event) => setDraft({ ...draft, message: event.target.value })}
         />
         <div className={styles.ratingRow}>
-          <span className={styles.ratingLabel}>{t("How is your experience? (optional)")}</span>
+          <Text size="caption" tone="secondary" leading="inherit">
+            {t("How is your experience? (optional)")}
+          </Text>
           <RadioGroup
             variant="tiles"
             label={t("Rating")}
@@ -226,7 +231,12 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
               value: String(n),
               ariaLabel: t("{p0} of 5", { p0: n }),
               className: draft.rating !== null && n <= draft.rating ? styles.starOn : undefined,
-              content: <Star className="icon-lg" />,
+              content: (
+                <Star
+                  className="icon-lg"
+                  tone={draft.rating !== null && n <= draft.rating ? "warning" : "secondary"}
+                />
+              ),
             }))}
             onValueChange={(value) =>
               setDraft({
@@ -242,14 +252,14 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
           ) : null}
         </div>
         <Checkbox
-          className="text-ui-secondary"
+          size="secondary"
           label={t("Include app version and system")}
           description={t("App version, platform, OS version and release channel.")}
           checked={draft.includeContext}
           onChange={(event) => setDraft({ ...draft, includeContext: event.target.checked })}
         />
         <Checkbox
-          className="text-ui-secondary"
+          size="secondary"
           label={t("Attach diagnostic logs")}
           description={t(
             "Redacted app and Host logs help us find the cause. They never include your conversations.",
@@ -257,10 +267,10 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
           checked={draft.attachLogs}
           onChange={(event) => setDraft({ ...draft, attachLogs: event.target.checked })}
         />
-        <p className={styles.privacy}>
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.privacy}>
           <Lock className="icon-xs" />
           {t("Only what you write is sent. Do not paste secrets.")}
-        </p>
+        </Text>
         {result?.status === "rate-limited" ? (
           <InlineError>
             {t("Too many requests. Wait a little and try again; your message is kept.")}
@@ -281,9 +291,9 @@ function FeedbackElsewhere() {
   return (
     <Modal title={t("Send feedback")} size="sm" onClose={closeFeedbackDialog}>
       <div className="flex flex-col gap-3">
-        <p className="text-ui-body text-content">
+        <Text as="p" size="body" tone="primary">
           {t("Sending feedback from the app is not available in this build.")}
-        </p>
+        </Text>
         <div className="flex flex-wrap gap-2">
           {repositoryUrl ? (
             <Button

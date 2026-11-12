@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { useT } from "../../../shared/i18n";
@@ -102,13 +103,15 @@ function ExtrasEntry({ extras, onOpen }: { extras: ModelFlyoutExtras; onOpen: ()
       className="shrink-0 text-left"
     >
       <SlidersHorizontal className="icon-sm shrink-0" strokeWidth={1.75} />
-      <span className="min-w-0 flex-1 truncate">{t("Extras")}</span>
+      <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+        {t("Extras")}
+      </Text>
       {changed > 0 ? (
         <Badge size="xs" variant="count" tone="neutral">
           {changed}
         </Badge>
       ) : null}
-      <ChevronRight className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+      <ChevronRight className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
     </Button>
   );
 }

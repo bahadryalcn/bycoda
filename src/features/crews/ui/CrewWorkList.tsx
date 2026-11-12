@@ -1,3 +1,5 @@
+import { ClampText } from "../../../shared/ui/ClampText";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -85,12 +87,12 @@ export function CrewWorkList({
           />
         </SearchInputGroup>
         {selectedHidden ? (
-          <p className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" className="flex min-w-0 flex-wrap items-center justify-between gap-x-2">
             <span className="min-w-0">{t("The selected work is hidden by the search.")}</span>
             <Button variant="ghost" size="sm" onClick={() => onQueryChange("")}>
               {t("Clear search")}
             </Button>
-          </p>
+          </Text>
         ) : null}
       </div>
       <div
@@ -114,28 +116,36 @@ export function CrewWorkList({
               tooltipWhen="overflow"
             >
               <span className="min-w-0 flex-1 text-start">
-                <span className="block line-clamp-2 break-words font-medium">
+                <ClampText
+                  as="span"
+                  lines={2}
+                  expandable={false}
+                  size="inherit"
+                  tone="inherit"
+                  weight="medium"
+                  className="block break-words"
+                >
                   {crewRunTitle(run)}
-                </span>
-                <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-ui-caption text-(--ui-text-secondary)">
+                </ClampText>
+                <Text className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <CrewWorkStatusText run={run} />
                   {crewQuietProgress(run) ? (
                     <span className="tabular-nums">{crewQuietProgress(run)}</span>
                   ) : null}
                   <CrewWorkUpdated value={run.updatedAt} />
-                </span>
+                </Text>
               </span>
             </Button>
           </div>
         ))}
         {!runs.length ? (
-          <p className="px-2 py-3 text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" className="px-2 py-3">
             {query.trim() && listedCount
               ? t("No matching crew work.")
               : view === "ongoing"
                 ? t("No ongoing crew work.")
                 : t("No finished crew work.")}
-          </p>
+          </Text>
         ) : null}
         {view === "finished" && hasMoreHistory ? (
           <CollectionFooter

@@ -27,11 +27,16 @@ says you are signed in, return to bycoda. Sign-in finishes within five minutes; 
 ## The account center
 
 The account entry sits at the bottom of the Settings list: your avatar and name, or **Sign in**
-when you use bycoda as a guest. Signed in, the Account page shows your picture, name, e-mail, plan
-and membership date with **Sign out** at the top, and a side menu (a strip above the content in a
+when you use bycoda as a guest. Signed in, the Account page shows your picture, name, e-mail and plan
+with **Sign out** at the top, and a side menu (a strip above the content in a
 narrow window) with **Profile**, **Security**, **Devices**, **Active time**, **Notifications**,
 **Privacy & data**, **Support** and **Account status**. Details saved earlier refresh on their own
-when the window gets focus or the network returns.
+when the window gets focus or the network returns. The side menu stays visible while
+long account sections scroll; membership details live under **Profile**.
+
+The **Daily summary** e-mail cell controls the daily digest. Its send-time field appears
+when enabled. Active time uses one overview with a device-scope selector, rather than
+repeating the same account totals and seven-day chart.
 Signed out it is one sign-in panel plus a **Contact by e-mail** link; a guest stays fully local.
 
 ## Profile

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -119,7 +121,7 @@ export function BinaryFileView({ path, cwd }: Props) {
         cwd={cwd}
         title={t("Couldn’t open {p0}", { p0: basename(path) })}
         detail={state.message}
-        icon={<AlertCircle className="mx-auto mb-3 icon-lg text-(--ui-tone-danger-fg)" />}
+        icon={<AlertCircle tone="danger" className="mx-auto mb-3 icon-lg" />}
         onRetry={reload}
       />
     );
@@ -243,7 +245,13 @@ function ImageView({
       {copyError ? (
         <InlineError className="shrink-0 break-words px-3 py-2">{copyError}</InlineError>
       ) : null}
-      <footer className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 border-t border-(--ui-pane-border) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+      <Text
+        as="footer"
+        {...surfaceAttributes(
+          { frame: "pane", edge: "top" },
+          "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 border-(--ui-pane-border) px-3 py-1",
+        )}
+      >
         <span className="tabular-nums">{natural ? `${natural.w} × ${natural.h}` : "—"}</span>
         <span className="tabular-nums">{formatFileSize(size)}</span>
         <span className="uppercase">{mime.replace(/^image\//, "")}</span>
@@ -295,7 +303,7 @@ function ImageView({
         >
           <Plus className="icon-xs" strokeWidth={1.75} />
         </Button>
-      </footer>
+      </Text>
       {menu ? (
         <ExplorerMenu
           x={menu.x}
@@ -357,11 +365,15 @@ function FileCard({
     <div className="grid h-full min-w-0 place-items-center overflow-auto p-6">
       <div className="w-full min-w-0 max-w-md text-center">
         {icon}
-        <p className="break-words text-ui-secondary text-content">{title}</p>
-        <p className="mt-1 text-ui-secondary text-(--ui-text-secondary)">{detail}</p>
-        <p className="mt-1 break-words font-mono text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" size="secondary" tone="primary" className="break-words">
+          {title}
+        </Text>
+        <Text as="p" size="secondary" tone="secondary" className="mt-1">
+          {detail}
+        </Text>
+        <Text as="p" size="caption" tone="muted" className="mt-1 break-words font-mono">
           {displayPath(path, cwd)}
-        </p>
+        </Text>
         {error ? (
           <InlineError className="mt-2 justify-center break-words">{error}</InlineError>
         ) : null}

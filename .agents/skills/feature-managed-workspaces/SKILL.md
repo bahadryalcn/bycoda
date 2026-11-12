@@ -1,15 +1,13 @@
 ---
 name: feature-managed-workspaces
-description: "Change current-checkout/worktree policy, execution identity, creation, feature claims, rewind, delivery, retention, safe removal or build provenance."
+description: "Use when changing checkout and worktree policy, execution identity, claims, rewind and delivery. Not for Git review UI; see feature-source-control."
 ---
 
 # Managed workspaces
 
 Own execution workspace contracts, not general Git UI. Read the canonical workspace reference for service interfaces and Windows removal rules. Session/task UI composes this contract; Host owns registry, activity, rewind and delivery admission.
 
-## Source entry points
-
-Code paths below are repository-root relative.
+## Source starts
 
 - `host/managed/managed-workspace-runtime.ts`
 - `host/workspaces/workspace-contracts.ts`
@@ -34,11 +32,14 @@ Code paths below are repository-root relative.
 - Owner-reviewed delivery binds exact source/target identities and preserves unrelated target edits. Task completion or a tool response does not authorize merge/push/publication.
 - General managed capability does not establish native turn/buffer/rewind capability. Missing source/build/idle reads are unknown, not safe.
 
-## Verification and references
+## Focused checks
 
 - Select workspace policy/removal/rewind model suites and relevant Host workspace, activity, checkpoint and cleanup tests. Isolated native changes need actual SQLite/receipt/interop checks.
 - For changed UI use its state matrix; for removal/delivery use temp Git repositories and link-boundary cases. Fixtures do not prove live-provider or installed acceptance.
-- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
-- [Canonical workspace architecture](../../../docs/reference/managed-workspaces.md)
-- [Workspace user guide](../../../docs/guides/managed-workspaces.md)
-- [Local updates](../../../docs/local-update.md)
+
+## References
+
+- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners.
+- [Canonical workspace architecture](../../../docs/reference/managed-workspaces.md) for policy, identity and retention rules.
+- [Workspace user guide](../../../docs/guides/managed-workspaces.md) for user-visible behavior.
+- [Local updates](../../../docs/local-update.md) for build identity and owner-directed installs.

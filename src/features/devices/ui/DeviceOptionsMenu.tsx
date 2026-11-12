@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { formatNumber } from "../../../shared/i18n";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
@@ -69,8 +71,14 @@ export function DeviceOptionsMenu({
           {t("Setup and access")}
         </Button>
       </div>
-      <div className="device-panel-zoom" role="group" aria-label={t("Zoom")}>
-        <span className="device-panel-zoom-label">{t("Zoom")}</span>
+      <div
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "device-panel-zoom")}
+        role="group"
+        aria-label={t("Zoom")}
+      >
+        <Text size="caption" tone="secondary" leading="inherit" className="device-panel-zoom-label">
+          {t("Zoom")}
+        </Text>
         <Button
           variant="ghost"
           iconOnly

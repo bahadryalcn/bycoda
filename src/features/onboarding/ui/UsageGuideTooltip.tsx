@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef } from "react";
 import { X } from "../../../shared/ui/icons";
 import { Stepper } from "../../../shared/ui/Stepper";
@@ -6,6 +7,7 @@ import type { TooltipRenderProps } from "react-joyride";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
 
 const guides = [
   { name: "Obi-Wan Kenobi", asset: "obi-wan" },
@@ -44,7 +46,11 @@ function TourCard({
     root.querySelector<HTMLElement>('[data-action="primary"]')?.focus({ preventScroll: true });
   }, [index]);
   return (
-    <section
+    <Text
+      as="section"
+      size="body"
+      tone="primary"
+      leading="normal"
       {...tooltipProps}
       ref={card}
       className="bycoda-arc usage-guide-panel usage-guide-panel--compact"
@@ -52,7 +58,13 @@ function TourCard({
       aria-labelledby="usage-guide-title"
       aria-describedby="usage-guide-description"
     >
-      <header className="usage-guide-toolbar">
+      <Text
+        as="header"
+        size="caption"
+        tone="secondary"
+        leading="normal"
+        className="usage-guide-toolbar"
+      >
         <span className="usage-guide-progress-count" aria-hidden="true">
           {t("{p0} / {p1}", { p0: index + 1, p1: size })}
         </span>
@@ -65,13 +77,13 @@ function TourCard({
         >
           <X className="icon-md" aria-hidden="true" />
         </Button>
-      </header>
-      <div className="usage-guide-scroll" key={index}>
+      </Text>
+      <ScrollArea gutter="stable" className="usage-guide-scroll" key={index}>
         <Heading size="page" level={2} id="usage-guide-title" className="usage-guide-tour-title">
           {step.title}
         </Heading>
         {step.content}
-      </div>
+      </ScrollArea>
       <footer className="usage-guide-footer">
         {size > 1 && !isLastStep ? (
           <Button {...skipProps} variant="ghost" size="sm" className="usage-guide-skip">
@@ -89,7 +101,7 @@ function TourCard({
           </Button>
         </div>
       </footer>
-    </section>
+    </Text>
   );
 }
 
@@ -106,14 +118,24 @@ function UsageGuidePanel({
 }: TooltipRenderProps) {
   const guide = guides[index % guides.length];
   return (
-    <section
+    <Text
+      as="section"
+      size="body"
+      tone="primary"
+      leading="normal"
       {...tooltipProps}
       className="bycoda-arc usage-guide-panel"
       data-joyride-step={index}
       aria-labelledby="usage-guide-title"
       aria-describedby="usage-guide-description"
     >
-      <header className="usage-guide-toolbar">
+      <Text
+        as="header"
+        size="caption"
+        tone="secondary"
+        leading="normal"
+        className="usage-guide-toolbar"
+      >
         <span>{t("Usage guide")}</span>
         <LiveText
           className="usage-guide-progress"
@@ -127,14 +149,16 @@ function UsageGuidePanel({
         >
           <X className="icon-lg" aria-hidden="true" />
         </Button>
-      </header>
-      <div className="usage-guide-scroll" key={index}>
+      </Text>
+      <ScrollArea gutter="stable" className="usage-guide-scroll" key={index}>
         <div className="usage-guide-hero">
           <div className="usage-guide-intro">
             <Heading size="page" level={2} id="usage-guide-title">
               {step.title}
             </Heading>
-            <span className="usage-guide-companion">{guide.name}</span>
+            <Text size="caption" tone="muted" leading="inherit" className="usage-guide-companion">
+              {guide.name}
+            </Text>
           </div>
           <img
             className="usage-guide-character"
@@ -145,7 +169,7 @@ function UsageGuidePanel({
           />
         </div>
         {step.content}
-      </div>
+      </ScrollArea>
       <footer className="usage-guide-footer">
         <Stepper
           label={t("Usage guide")}
@@ -175,6 +199,6 @@ function UsageGuidePanel({
           <Button {...primaryProps}>{t(isLastStep ? "Done" : "Continue →")}</Button>
         </div>
       </footer>
-    </section>
+    </Text>
   );
 }

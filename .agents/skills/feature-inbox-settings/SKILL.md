@@ -1,17 +1,13 @@
 ---
 name: feature-inbox-settings
-description: "Change bycoda Inbox credential forms, connection status or provider visibility scope. Preserve saved/draft/verified identity, account-aware discovery and desktop-owned credentials."
+description: "Use when changing Inbox credentials, connection status and provider scope. Not for Jira boards; see feature-inbox-jira."
 ---
 
 # Inbox settings development
 
-All code paths below are repository-relative; linked skill resources are relative to this directory.
-
-## When to use
-
 Use for Settings integration management for GitHub CLI, GitLab, Azure DevOps, Jira and Linear. Use [GitHub Inbox](../feature-inbox-github/SKILL.md) or [Jira Inbox](../feature-inbox-jira/SKILL.md) for browsing, comments, boards and mutations beyond configuration.
 
-## Start here
+## Source starts
 
 - `src/features/settings/ui/InboxSettings.tsx`, `JiraSettings.tsx` and `InboxConnectionStatus.tsx` own provider forms/status.
 - The cards render in Settings > Integrations (`src/features/settings/ui/integrations/`), next to the messaging cards owned by [Messaging](../feature-messaging/SKILL.md); the old `inbox` section id redirects there.
@@ -29,13 +25,17 @@ Use for Settings integration management for GitHub CLI, GitLab, Azure DevOps, Ji
 - Background sync remains a separate default-off opt-in. Opening a page or refreshing visible data does not silently enable background polling.
 - Preserve masked credentials/private email, accessible pending/error state, duplicate guards and desktop-owned Host/mobile enforcement; never use real secrets in logs or captures.
 
-## Workflow and checks
+## Workflow
 
 1. Follow form/status/scope through model, native validate-before-save and downstream Inbox consumers; verify exact account/machine identity at each boundary.
 2. Use stable shared controls for changing async labels and local errors specific to status/save/disconnect/discovery, retaining configured data after failed reads.
 3. Choose the focused provider/UI suites in the map; exercise replacement failure, late discovery, same-/sibling scope updates and narrow/tab keyboard behavior with fake credentials.
 
-## Read when needed
+## Focused checks
+
+Use the tests in the [surface map](references/surfaces.md) for the changed operation.
+
+## References
 
 - Read [surfaces](references/surfaces.md) for source owners and operation identifiers.
 - For shared Settings shell/search behavior also read [Settings](../feature-settings/SKILL.md).

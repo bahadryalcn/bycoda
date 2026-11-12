@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -72,7 +73,10 @@ export function InboxDiscussionPanel({
     <aside
       ref={resize.setPaneRef}
       aria-label={t("Ask about {p0}", { p0: inboxItemRef(item) })}
-      className="inbox-discussion-panel relative flex min-h-0 shrink-0 flex-col border-l border-(--ui-pane-border)"
+      {...surfaceAttributes(
+        { frame: "pane", edge: "left" },
+        "inbox-discussion-panel relative flex min-h-0 shrink-0 flex-col",
+      )}
     >
       <Sash
         {...resize.sashProps}

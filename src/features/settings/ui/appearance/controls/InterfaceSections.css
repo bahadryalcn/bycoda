@@ -26,7 +26,6 @@
   align-items: center;
   flex: 1 1 18rem;
   min-inline-size: 0;
-  border-inline-start: 1px solid var(--ui-settings-hairline);
 }
 .interface-scrollbar-sample .settings-row {
   inline-size: 100%;
@@ -116,7 +115,6 @@
   height: auto;
   padding: 4px 6px;
   text-align: start;
-  font-size: var(--ui-font-caption);
 }
 .diff-swatch-bars {
   display: grid;
@@ -131,10 +129,6 @@
 }
 .diff-swatch-bars > span:last-child {
   background: var(--swatch-del);
-}
-.diff-swatch-tag {
-  color: var(--ui-text-muted);
-  font-size: 0.65625rem;
 }
 
 /* Scrollbar preview: a scrollable code snippet at full row width. */
@@ -159,6 +153,5 @@
 .scrollbar-preview-gutter {
   flex: none;
   min-inline-size: 1.5ch;
-  color: var(--ui-text-muted);
   text-align: end;
 }

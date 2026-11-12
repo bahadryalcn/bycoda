@@ -1,7 +1,8 @@
+import { Text } from "../../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { Meter } from "../../../../shared/ui/Meter";
-import { Surface } from "../../../../shared/ui/Surface";
+import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
 import { Check, Clock, MessageSquare, UserRound } from "../../../../shared/ui/icons";
 import type { AiSummary } from "../../model/socialActions";
 import { summaryCards, type SummaryCard } from "./commandModel";
@@ -28,17 +29,34 @@ export function SummaryCards({
     <div className="command-cards">
       {summaryCards(summary).map((card) => (
         <Surface key={card.key} variant="card" className="command-card">
-          <span className="command-card-icon">{ICONS[card.key]}</span>
+          <Text
+            size="inherit"
+            tone="secondary"
+            {...surfaceAttributes({ radius: "card", variant: "fill-subtle" }, "command-card-icon")}
+          >
+            {ICONS[card.key]}
+          </Text>
           <div className="command-card-body">
-            <span className="command-card-label">{card.label}</span>
-            <span className="command-card-value">{card.value}</span>
+            <Text size="caption" tone="secondary" leading="inherit" className="command-card-label">
+              {card.label}
+            </Text>
+            <Text
+              as="span"
+              size="heading"
+              tone="primary"
+              weight="medium"
+              leading="inherit"
+              className="command-card-value"
+            >
+              {card.value}
+            </Text>
             {card.key === "reply" && card.percent !== undefined ? (
               <Meter label={card.label} value={card.percent} tone="accent" />
             ) : null}
             {card.key === "pending" && approvalCount > 0 ? (
-              <span className="command-card-note">
+              <Text leading="inherit" size="caption" tone="warning" className="command-card-note">
                 {t("{p0} waiting for approval", { p0: approvalCount })}
-              </span>
+              </Text>
             ) : null}
           </div>
         </Surface>

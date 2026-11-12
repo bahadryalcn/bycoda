@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { File, X } from "../../../shared/ui/icons";
@@ -44,14 +45,18 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
       padding="sm"
       className="note-mini-card flex items-start gap-2"
     >
-      <File className="icon-sm mt-0.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+      <File className="icon-sm mt-0.5 shrink-0" tone="secondary" strokeWidth={1.75} />
       <div className="flex min-w-0 flex-1 flex-col text-left">
-        <span className="line-clamp-1 text-ui-secondary font-medium leading-snug text-content">
+        <Text size="secondary" tone="primary" weight="medium" leading="snug" truncate>
           {card.title || t("Untitled")}
-        </span>
-        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)">
+        </Text>
+        <Text size="micro" tone="secondary" className="mt-0.5 flex min-w-0 items-center gap-1.5">
           <span className="shrink-0">{t("Note")}</span>
-          {!embedded && card.slug ? <span className="min-w-0 truncate">· {card.slug}</span> : null}
+          {!embedded && card.slug ? (
+            <Text size="inherit" tone="inherit" truncate className="min-w-0">
+              · {card.slug}
+            </Text>
+          ) : null}
           {!embedded && project ? (
             <span className="flex min-w-0 items-center gap-1.5">
               {logoPath ? (
@@ -68,10 +73,12 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
                   className="size-3 shrink-0"
                 />
               )}
-              <span className="min-w-0 truncate">{project}</span>
+              <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                {project}
+              </Text>
             </span>
           ) : null}
-        </span>
+        </Text>
       </div>
       {onDismiss ? (
         <Button

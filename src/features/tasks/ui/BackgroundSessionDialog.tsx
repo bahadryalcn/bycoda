@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
@@ -105,18 +107,33 @@ export function BackgroundSessionDialog({
         ) : (
           <>
             <div className="flex flex-col gap-1">
-              <p className="text-ui-caption leading-snug text-(--ui-text-secondary)">
+              <Text as="p" size="caption" leading="snug" tone="secondary">
                 {summary.status}
                 {t(" · on this computer’s host")}
-              </p>
+              </Text>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-card-border) p-3 text-ui-caption leading-relaxed text-(--ui-text-secondary)">
+            <Text
+              as="div"
+              size="caption"
+              leading="relaxed"
+              tone="secondary"
+              {...surfaceAttributes(
+                { frame: "card", edge: "all" },
+                "min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-(--ui-radius-card)-(--ui-card-border) p-3",
+              )}
+            >
               {summary.reply || <EmptyState size="inline" description={t("No reply yet.")} />}
-            </div>
+            </Text>
             {summary.note ? (
-              <p className="whitespace-pre-wrap break-words text-ui-caption leading-snug text-(--ui-text-secondary)">
+              <Text
+                as="p"
+                size="caption"
+                leading="snug"
+                tone="secondary"
+                className="whitespace-pre-wrap break-words"
+              >
                 {summary.note}
-              </p>
+              </Text>
             ) : null}
           </>
         )}

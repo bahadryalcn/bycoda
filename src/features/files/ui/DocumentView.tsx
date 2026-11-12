@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
@@ -214,15 +216,23 @@ export function DocumentView({
         {body}
       </SurfaceSelection>
       {pdfReady ? null : (
-        <footer className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 border-t border-(--ui-pane-border) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+        <Text
+          as="footer"
+          {...surfaceAttributes(
+            { frame: "pane", edge: "top" },
+            "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 border-(--ui-pane-border) px-3 py-1",
+          )}
+        >
           <OverflowTooltip label={name}>
-            <span className="min-w-0 flex-1 truncate">{name}</span>
+            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+              {name}
+            </Text>
           </OverflowTooltip>
           {state.status === "ready" ? (
             <span className="shrink-0 tabular-nums">{formatFileSize(state.bytes.byteLength)}</span>
           ) : null}
           {openButton}
-        </footer>
+        </Text>
       )}
       {actionError ? (
         <FileActionError message={actionError} onDismiss={() => setActionError(null)} />

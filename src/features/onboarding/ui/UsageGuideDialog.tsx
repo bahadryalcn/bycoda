@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ACTIONS, EVENTS, Joyride, STATUS, type EventData, type Step } from "react-joyride";
 import { t, useLocale } from "../../../shared/i18n";
@@ -97,16 +99,34 @@ export default function UsageGuideDialog({
       // A new attempt number makes the targets resolve again after a fix or a recheck.
       data: { attempt: recheck },
       content: (
-        <section
+        <Text
+          as="section"
+          size="title"
+          tone="inherit"
+          weight="regular"
+          leading="inherit"
           className="usage-guide-content"
           data-usage-guide-tooltip
           aria-label={t("Usage guide")}
         >
-          <p id="usage-guide-description" className="usage-guide-description">
+          <Text
+            as="p"
+            size="inherit"
+            tone="secondary"
+            id="usage-guide-description"
+            className="usage-guide-description"
+          >
             {current.description}
-          </p>
+          </Text>
           {help ? (
-            <div className="usage-guide-missing" role="status">
+            <Text
+              as="div"
+              size="caption"
+              tone="secondary"
+              leading="inherit"
+              className="usage-guide-missing"
+              role="status"
+            >
               <p>{help.reason}</p>
               <div className="usage-guide-missing-actions">
                 <Button
@@ -128,33 +148,38 @@ export default function UsageGuideDialog({
                   {t("Check again")}
                 </Button>
               </div>
-            </div>
+            </Text>
           ) : null}
           {current.example ? (
-            <blockquote className="usage-guide-example">
-              <MessageSquare className="icon-md" aria-hidden="true" />
+            <blockquote {...surfaceAttributes({ variant: "inset" }, "usage-guide-example")}>
+              <MessageSquare className="icon-md" tone="muted" aria-hidden="true" />
               <p>{current.example}</p>
             </blockquote>
           ) : null}
           {current.tips.length > 0 ? (
             <ul className="usage-guide-tips">
               {current.tips.map((tip) => (
-                <li key={tip}>
-                  <Check className="icon-md" aria-hidden="true" />
+                <Text as="li" key={tip} size="inherit" tone="secondary">
+                  <Check className="icon-md" tone="muted" aria-hidden="true" />
                   <span>{tip}</span>
-                </li>
+                </Text>
               ))}
             </ul>
           ) : null}
           {current.shortcuts.length > 0 ? (
-            <div className="usage-guide-shortcut-section">
+            <div
+              {...surfaceAttributes(
+                { frame: "stroke", edge: "block-start" },
+                "usage-guide-shortcut-section",
+              )}
+            >
               <SectionLabel as="h3" className="usage-guide-shortcut-title">
                 {t("Shortcuts")}
               </SectionLabel>
               <GuideShortcuts items={current.shortcuts} />
             </div>
           ) : null}
-        </section>
+        </Text>
       ),
     };
   });

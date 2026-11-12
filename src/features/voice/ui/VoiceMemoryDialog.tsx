@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -93,8 +95,13 @@ export function VoiceMemoryDialog({ onClose }: { onClose: () => void }) {
         {memory.notes.length ? (
           <ul className={styles.list} aria-label={t("Saved notes")}>
             {[...memory.notes].reverse().map((note) => (
-              <li className={styles.note} key={note.id}>
-                <span className={styles.text}>{note.text}</span>
+              <li
+                {...surfaceAttributes({ variant: "plain", radius: "card" }, styles.note)}
+                key={note.id}
+              >
+                <Text size="body" tone="primary" className={styles.text}>
+                  {note.text}
+                </Text>
                 <Button
                   variant="ghost"
                   size="sm"

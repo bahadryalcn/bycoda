@@ -14,6 +14,23 @@
   },
   "suites": [
     {
+      "id": "canvas-paired",
+      "config": "tests/browser/crews/playwright.canvas-paired.config.ts",
+      "files": ["canvas-paired.spec.ts", "canvas-dot-paired.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/crews/vite.canvas-paired.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/crews/canvas-paired.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["canvas-paired.spec.ts", "canvas-dot-paired.spec.ts"]
+        }
+      ]
+    },
+    {
       "id": "attachment-cards",
       "config": "tests/browser/chat/attachment-cards.playwright.config.ts",
       "files": ["attachment-cards.spec.ts"],

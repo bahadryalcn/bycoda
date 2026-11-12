@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AgentTranscript } from "./AgentTranscript";
@@ -156,11 +158,11 @@ function LocalAgentTabView({
   if (!session) {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
-        <p className="max-w-sm text-ui-caption leading-5 text-(--ui-text-secondary)">
+        <Text as="p" tone="secondary" leading="relaxed" className="max-w-sm">
           {t(
             "This agent is no longer running. Its work is summarised in the orchestrator's conversation.",
           )}
-        </p>
+        </Text>
       </div>
     );
   }
@@ -199,14 +201,22 @@ function LocalAgentTabView({
           triggerContainer={findTriggerContainer}
         />
       </div>
-      <footer className="flex shrink-0 items-center gap-1.5 border-t border-(--ui-tone-neutral-border) px-3 py-1.5 font-sans text-ui-micro text-(--ui-text-secondary)">
+      <Text
+        as="footer"
+        size="micro"
+        tone="secondary"
+        {...surfaceAttributes(
+          { frame: "neutral", edge: "top" },
+          "flex shrink-0 items-center gap-1.5  border-(--ui-tone-neutral-border) px-3 py-1.5 font-sans",
+        )}
+      >
         <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
-        <span className="min-w-0 truncate" title={title}>
+        <Text size="inherit" tone="inherit" truncate className="min-w-0" title={title}>
           {model} · {HARNESS_TITLE[session.harness]}
-        </span>
+        </Text>
         <span className="ml-auto shrink-0">{t("Run by the orchestrator · read-only")}</span>
         <span ref={setFindTriggerContainer} className="shrink-0" />
-      </footer>
+      </Text>
     </div>
   );
 }

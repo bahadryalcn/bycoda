@@ -14,6 +14,7 @@ import { defaultModelSettings, resolveModel } from "../../sessions/model/models"
 import { RUNTIME_MODES, RUNTIME_MODE_LABEL } from "../../sessions/model/session";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../connections/model/protocol";
 import { TimeTriggerSentence } from "../../automations/ui/TriggerEditor";
+import { Text } from "../../../shared/ui/Text";
 import styles from "./AssistantView.module.css";
 
 /** One finite owner-reviewed schedule. No inheritance or Run now action. */
@@ -101,11 +102,11 @@ export function AssistantQuickAutomationFields({
         </div>
         <FieldGroup legend={t("Automation schedule")} className={styles.scheduleField}>
           {value.scheduleKind === "once" && value.runAt !== undefined ? (
-            <p className={styles.muted}>
+            <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
               {t("Runs once on {p0}, then turns itself off.", {
                 p0: formatDate(value.runAt, { dateStyle: "full", timeStyle: "short" }),
               })}
-            </p>
+            </Text>
           ) : (
             <div className={styles.scheduleRow}>
               <div className={styles.scheduleKind}>
@@ -127,7 +128,13 @@ export function AssistantQuickAutomationFields({
                   }
                 />
               </div>
-              <div className={styles.scheduleSentence}>
+              <Text
+                as="div"
+                size="secondary"
+                tone="neutral"
+                leading="inherit"
+                className={styles.scheduleSentence}
+              >
                 <TimeTriggerSentence
                   trigger={
                     value as AssistantQuickAutomationAction & {
@@ -140,7 +147,7 @@ export function AssistantQuickAutomationFields({
                     if (!disabled) onChange(next);
                   }}
                 />
-              </div>
+              </Text>
             </div>
           )}
         </FieldGroup>
@@ -158,11 +165,11 @@ export function AssistantQuickAutomationFields({
             onChange={(maxRunsPerDay) => update({ maxRunsPerDay })}
           />
         </div>
-        <p className={styles.muted}>
+        <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
           {t(
             "Zero means no limit. These run limits and the automation lifecycle are managed in Automations, independently of the assistant token budget.",
           )}
-        </p>
+        </Text>
         <div className={styles.fieldRow}>
           <Switch
             label={t("Isolate each run in a worktree")}

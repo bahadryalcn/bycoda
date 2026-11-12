@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
@@ -114,16 +115,27 @@ export function ConversationView({
         <div className="inbox-conversation-heading">
           {item ? <SocialAvatar name={title} platform={item.platform} size="lg" /> : null}
           <div className="inbox-conversation-who">
-            <Heading size="page" level={3} className="inbox-conversation-title">
+            <Heading size="page" level={3} truncate className="inbox-conversation-title">
               {title}
             </Heading>
             {item ? (
-              <span className="inbox-conversation-account">
+              <Text
+                size="caption"
+                tone="muted"
+                leading="inherit"
+                className="inbox-conversation-account"
+              >
                 <PlatformIcon platform={item.platform} className="icon-xs" />
-                <span className="inbox-conversation-account-name">
+                <Text
+                  size="inherit"
+                  tone="inherit"
+                  leading="inherit"
+                  truncate
+                  className="inbox-conversation-account-name"
+                >
                   {[channelName(item.platform), accountName].filter(Boolean).join(" · ")}
-                </span>
-              </span>
+                </Text>
+              </Text>
             ) : null}
           </div>
           {item ? (
@@ -189,10 +201,14 @@ export function ConversationView({
 
       <MessageTimeline lines={lines} />
       {lines.length === 0 ? (
-        <p className="inbox-note">{t("No messages in this conversation yet.")}</p>
+        <Text as="p" size="caption" tone="muted" leading="inherit" className="inbox-note">
+          {t("No messages in this conversation yet.")}
+        </Text>
       ) : null}
       {timeline.data?.truncated ? (
-        <p className="inbox-note">{t("Older messages are not shown.")}</p>
+        <Text as="p" size="caption" tone="muted" leading="inherit" className="inbox-note">
+          {t("Older messages are not shown.")}
+        </Text>
       ) : null}
 
       <ReplyBox key={conversation.id} client={client} thread={conversation} />

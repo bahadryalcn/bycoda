@@ -1,8 +1,10 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
+import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { openExternal } from "../../../../platform/tauri/openExternal";
 import { CapabilityList } from "../common/CapabilityList";
@@ -102,13 +104,16 @@ export function AccountConnection({
   const connectLabel = account.connected ? t("Reconnect") : t("Connect");
 
   return (
-    <section className="social-card" aria-label={t("Connection")}>
+    <section
+      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      aria-label={t("Connection")}
+    >
       <Heading size="item">{t("Connection")}</Heading>
-      <p className="social-muted">
+      <Text as="p" tone="muted" leading="snug" className="social-muted">
         {onThisComputer
           ? t("This account is connected on the selected computer.")
           : t("This account is connected on another computer.")}
-      </p>
+      </Text>
       <CapabilityList capabilities={capabilities} onConnect={disabled ? undefined : onConnect} />
       {usesBrowser ? (
         <div className="social-field-row">
@@ -131,7 +136,9 @@ export function AccountConnection({
             {t("Check connection")}
           </Button>
           {browser ? (
-            <span className="social-muted">{browserStatusText(browser.status)}</span>
+            <Text as="span" tone="muted" leading="snug" className="social-muted">
+              {browserStatusText(browser.status)}
+            </Text>
           ) : null}
         </div>
       ) : null}

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useState } from "react";
@@ -54,14 +56,15 @@ export function SummaryPanel({
                 variant="ghost"
                 type="button"
                 onClick={() => onOpenTask(item.key)}
-                className="max-w-full truncate text-left"
+                truncate
+                className="max-w-full text-left"
               >
                 {item.title}
               </Button>
-              <span className="task-ops-caption">
+              <Text size="caption" tone="secondary" leading="inherit" className="task-ops-caption">
                 {item.project} · {item.machineName}
                 {item.detail ? ` · ${item.detail}` : ""}
-              </span>
+              </Text>
             </li>
           ))}
         </ul>
@@ -74,14 +77,21 @@ export function SummaryPanel({
         <ul className="task-ops-frame">
           {goals.map((goal) => (
             <li key={`${goal.machineName}:${goal.title}`} className="task-ops-row">
-              <span className="task-ops-title">{goal.title}</span>
-              <span className="task-ops-caption task-ops-num">
+              <Text as="span" size="body" weight="medium" tone="primary" leading="inherit" truncate>
+                {goal.title}
+              </Text>
+              <Text
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className="task-ops-caption task-ops-num"
+              >
                 {goal.done}
                 {t(" of ")}
                 {goal.total}
                 {t(" tasks done · ")}
                 {goal.machineName}
-              </span>
+              </Text>
             </li>
           ))}
         </ul>
@@ -104,16 +114,25 @@ export function SummaryPanel({
       ]
     : [];
   return (
-    <section aria-label={t("Summary")} className="task-ops-panel max-h-[45%]">
+    <section
+      aria-label={t("Summary")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "task-ops-panel max-h-[45%]")}
+    >
       <div className="task-ops-head">
-        <p className="task-ops-caption task-ops-head-text">
+        <Text
+          as="p"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className="task-ops-caption task-ops-head-text"
+        >
           {summary
             ? t("From {p0} to {p1}", {
                 p0: summaryTime(summary.since),
                 p1: summaryTime(summary.until),
               })
             : t("No summary yet. One is sent every day at the time set in Settings.")}
-        </p>
+        </Text>
         <Button
           reserveLabels={[t("Refreshing…")]}
           variant="secondary"
@@ -134,9 +153,31 @@ export function SummaryPanel({
           ) : (
             <div className="task-ops-kpis">
               {kpis.map((kpi) => (
-                <div key={kpi.label} className="task-ops-kpi">
-                  <span className="task-ops-kpi-value">{kpi.value}</span>
-                  <span className="task-ops-caption">{kpi.label}</span>
+                <div
+                  key={kpi.label}
+                  {...surfaceAttributes(
+                    { frame: "card", edge: "all", radius: "card" },
+                    "task-ops-kpi",
+                  )}
+                >
+                  <Text
+                    as="span"
+                    size="heading"
+                    tone="primary"
+                    weight="medium"
+                    leading="inherit"
+                    className="task-ops-kpi-value"
+                  >
+                    {kpi.value}
+                  </Text>
+                  <Text
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    className="task-ops-caption"
+                  >
+                    {kpi.label}
+                  </Text>
                 </div>
               ))}
             </div>
@@ -159,27 +200,47 @@ export function SummaryPanel({
               <ul className="task-ops-frame">
                 {summary.usage.map((entry) => (
                   <li key={entry.machineName} className="task-ops-row">
-                    <span className="task-ops-title">{entry.machineName}</span>
-                    <span className="task-ops-caption task-ops-num">
+                    <Text
+                      as="span"
+                      size="body"
+                      weight="medium"
+                      tone="primary"
+                      leading="inherit"
+                      truncate
+                    >
+                      {entry.machineName}
+                    </Text>
+                    <Text
+                      size="caption"
+                      tone="secondary"
+                      leading="inherit"
+                      className="task-ops-caption task-ops-num"
+                    >
                       {formatAgentMinutes(entry.usedMinutes)}
                       {entry.dailyAgentMinutes
                         ? t(" of {p0}", { p0: formatAgentMinutes(entry.dailyAgentMinutes) })
                         : ""}
                       {entry.usageUncertain ? ` · ${t("Incomplete")}` : ""}
-                    </span>
+                    </Text>
                   </li>
                 ))}
               </ul>
             </section>
           ) : null}
           {summary.unreachable.length || summary.outdated.length ? (
-            <p className="task-ops-caption">
+            <Text
+              as="p"
+              size="caption"
+              tone="secondary"
+              leading="inherit"
+              className="task-ops-caption"
+            >
               {t("Not included:")}{" "}
               {[
                 ...summary.unreachable.map((name) => `${name} (not reachable)`),
                 ...summary.outdated.map((name) => `${name} (host needs an update)`),
               ].join(", ")}
-            </p>
+            </Text>
           ) : null}
         </>
       ) : null}

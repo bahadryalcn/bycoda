@@ -985,6 +985,11 @@ function validate(schema: any, value: any, path: string): void {
   } else if (schema.type === "array") {
     if (!Array.isArray(value) || value.length < schema.minItems || value.length > schema.maxItems)
       throw new Error("Invalid list.");
+    if (
+      schema.uniqueItems &&
+      new Set(value.map((item: unknown) => JSON.stringify(item))).size !== value.length
+    )
+      throw new Error("List items must be unique.");
     for (const [index, item] of value.entries()) validate(schema.items, item, `${path}[${index}]`);
   }
 }

@@ -9,15 +9,7 @@
   gap: var(--space-2);
   max-inline-size: min(360px, calc(100vw - 40px));
   padding: 4px 6px 4px 10px;
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: var(--radius-pill);
-  background: var(--ui-surface-floating);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-micro);
 }
 .text {
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }

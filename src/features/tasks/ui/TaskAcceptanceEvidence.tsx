@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -43,27 +44,32 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
         variant="row"
         summary={
           <>
-            <span className="font-medium">
+            <Text weight="medium" size="inherit" tone="inherit">
               {t("Acceptance evidence · {p0}/{p1} verified", {
                 p0: verified,
                 p1: rows.length,
               })}
-            </span>
+            </Text>
             {failed ? (
-              <span className="ml-2 text-(--ui-tone-danger-fg)">
+              <Text tone="danger" size="inherit" className="ml-2">
                 {t("{p0} failed", { p0: failed })}
-              </span>
+              </Text>
             ) : null}
             {unresolved ? (
-              <span className="ml-2 text-(--ui-tone-warning-fg)">
+              <Text tone="warning" size="inherit" className="ml-2">
                 {t("{p0} unresolved", { p0: unresolved })}
-              </span>
+              </Text>
             ) : null}
           </>
         }
       >
         {report && matches ? (
-          <div className="flex flex-wrap items-center justify-between gap-1 text-ui-micro text-(--ui-text-secondary)">
+          <Text
+            as="div"
+            size="micro"
+            tone="secondary"
+            className="flex flex-wrap items-center justify-between gap-1"
+          >
             <Timestamp
               value={report.checkedAt}
               format="datetime-seconds"
@@ -79,9 +85,9 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
                 {t("Open review session")}
               </Button>
             ) : null}
-          </div>
+          </Text>
         ) : null}
-        <p className="text-ui-micro text-(--ui-text-secondary)">
+        <Text as="p" size="micro" tone="secondary">
           {report && !matches
             ? t(
                 "The recorded evidence does not match the current acceptance criteria. Recheck the task.",
@@ -91,8 +97,8 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
               : t(
                   "No criterion evidence recorded. A passing review alone does not verify these criteria.",
                 )}
-        </p>
-        <ol className="space-y-3 text-ui-caption">
+        </Text>
+        <Text as="ol" size="caption" tone="inherit" className="space-y-3">
           {rows.map(({ criterion, record, verdict }, index) => (
             <li key={index} className="min-w-0 space-y-1" data-acceptance-verdict={verdict}>
               <div className="flex min-w-0 flex-wrap items-start gap-2">
@@ -109,34 +115,43 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
                         ? t("Unresolved")
                         : t("Not verified")}
                 </Badge>
-                <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-(--ui-tone-neutral-fg)">
+                <Text
+                  tone="neutral"
+                  size="inherit"
+                  className="min-w-0 flex-1 whitespace-pre-wrap break-words"
+                >
                   {criterion}
-                </span>
+                </Text>
               </div>
               {record?.note ? (
-                <p className="whitespace-pre-wrap break-words text-(--ui-text-secondary)">
+                <Text
+                  as="p"
+                  tone="secondary"
+                  size="inherit"
+                  className="whitespace-pre-wrap break-words"
+                >
                   {record.note}
-                </p>
+                </Text>
               ) : null}
               {record?.evidence.length ? (
-                <ul className="space-y-1 text-ui-micro text-(--ui-text-secondary)">
+                <Text as="ul" size="micro" className="space-y-1">
                   {record.evidence.map((evidence, evidenceIndex) => (
                     <li key={evidenceIndex} className="whitespace-pre-wrap break-all">
                       {evidence}
                     </li>
                   ))}
-                </ul>
+                </Text>
               ) : null}
             </li>
           ))}
-        </ol>
+        </Text>
       </Disclosure>
       {report && matches && !report.workspaceFingerprint ? (
-        <p role="status" className="text-ui-micro text-(--ui-tone-warning-fg)">
+        <Text as="p" size="micro" tone="warning" role="status">
           {t(
             "File freshness could not be checked. Recheck changed outputs before relying on this evidence.",
           )}
-        </p>
+        </Text>
       ) : null}
     </div>
   );

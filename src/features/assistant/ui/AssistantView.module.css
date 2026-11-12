@@ -24,27 +24,18 @@
   margin-block-start: 20px;
 }
 .muted {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-micro);
   overflow-wrap: anywhere;
 }
 .empty {
   margin: 0;
   padding-block: 16px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .error {
-  color: var(--ui-tone-danger-fg);
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
   margin: 0;
 }
 .feedback {
   padding: 10px 16px;
-  border-block-end: 1px solid var(--ui-pane-border);
-  color: var(--ui-tone-danger-fg);
-  font-size: var(--ui-font-caption);
 }
 .collectionTools {
   margin-block-end: 12px;
@@ -79,8 +70,6 @@
 }
 .scheduleSentence {
   display: contents;
-  font-size: var(--ui-font-secondary);
-  color: var(--ui-tone-neutral-fg);
 }
 .scheduleSentence > * {
   display: flex;
@@ -148,9 +137,6 @@
   min-inline-size: 0;
 }
 .jobsTitle span {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 .content[data-view="Jobs"] .collectionTools > :nth-child(2) {

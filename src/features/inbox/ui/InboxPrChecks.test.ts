@@ -634,7 +634,7 @@ it("keeps rows compact enough for a 360 px panel", () => {
   );
   const row = rows.querySelector("li button");
   expect(row?.className).toContain("w-full");
-  const name = row?.querySelector(".truncate");
+  const name = row?.querySelector("[data-truncate]");
   expect(name?.className).toContain("min-w-0");
   expect(row?.textContent).not.toContain(
     "pushes the row wide", // nothing renders untruncated even for long names

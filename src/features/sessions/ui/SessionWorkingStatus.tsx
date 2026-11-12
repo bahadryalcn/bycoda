@@ -4,6 +4,7 @@ import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { formatLiveMinutes } from "../model/liveAgents";
 import { usePresentationVisible } from "./presentationVisibility";
 import { Clock } from "../../../shared/ui/icons";
+import { Text } from "../../../shared/ui/Text";
 import { sessionWaitReason, type SessionWait } from "../model/sessionWait";
 import { TerminalSpinner } from "./TerminalSpinner";
 
@@ -36,14 +37,17 @@ export function SessionWorkingStatus({
   const word = t(wait ? "Waiting" : "Working");
   const reason = wait ? sessionWaitReason(wait) : word;
   return (
-    <span
+    <Text
+      as="span"
+      size={labelled ? "inherit" : "micro"}
+      tone="inherit"
       data-session-working-status
       data-session-waiting={wait ? "" : undefined}
       role="img"
       aria-label={[reason, elapsed].filter(Boolean).join(", ")}
       title={[reason, elapsed].filter(Boolean).join(", ")}
       className={`inline-flex shrink-0 items-center gap-1 ${
-        labelled ? "" : "text-ui-micro text-(--color-active)"
+        labelled ? "" : "text-(--color-active)"
       }`}
     >
       {wait ? <Clock className="icon-xs" strokeWidth={1.75} aria-hidden /> : <TerminalSpinner />}
@@ -53,6 +57,6 @@ export function SessionWorkingStatus({
         </span>
       ) : null}
       {elapsed ? <span className="shrink-0 tabular-nums">{elapsed}</span> : null}
-    </span>
+    </Text>
   );
 }

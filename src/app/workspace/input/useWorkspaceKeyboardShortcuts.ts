@@ -88,8 +88,16 @@ export function useWorkspaceKeyboardShortcuts({
         hasActiveModalOverlay() &&
         !resolveZoomKeybinding(e) &&
         !pressed("App: Toggle Full Screen", isFullscreenShortcut(e))
-      )
+      ) {
+        // The open picker keeps its query/focus, but its chords must not fall
+        // through to WebView printing (Ctrl+P / Ctrl+Shift+P).
+        if (filePickerOpenRef.current) {
+          const shortcut = resolveAppShortcut(e);
+          if (shortcut === "App: Go to File" || shortcut === "App: Command Palette")
+            e.preventDefault();
+        }
         return;
+      }
       const layout = customCommand ? LAYOUT_SHORTCUTS[customCommand] : undefined;
       if (layout) {
         if (

@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -105,7 +106,15 @@ export function ContentEditorAi({
           ) : null}
           {suggestion ? (
             <Surface variant="card" padding="sm" className="content-ai-suggestion">
-              <p className="content-preview-text">{suggestion.text}</p>
+              <Text
+                as="p"
+                size="body"
+                tone="inherit"
+                leading="inherit"
+                className="content-preview-text"
+              >
+                {suggestion.text}
+              </Text>
               <Button
                 variant="primary"
                 size="sm"

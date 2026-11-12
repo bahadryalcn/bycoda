@@ -12,7 +12,9 @@ describe("consumeDelegationCommand", () => {
     expect(command?.name).toBe("subagents");
     expect(command?.request).toBe("audit the host\nand the app");
     expect(command?.prompt.startsWith("audit the host\nand the app\n\n")).toBe(true);
-    expect(command?.prompt).toContain("native subagents, using up to 4 at once.");
+    expect(command?.prompt).toContain(
+      "this session offers (built-in or agents.delegate), using up to 4 at once.",
+    );
   });
 
   it("caps the subagent count and treats a missing count as unbounded", () => {

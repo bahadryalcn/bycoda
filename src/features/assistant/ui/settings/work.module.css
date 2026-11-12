@@ -12,15 +12,9 @@
 .label {
   margin: 0;
   padding: 0;
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-  line-height: 1.4;
 }
 .hint {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .permission {
@@ -32,13 +26,6 @@
   display: grid;
   gap: 2px;
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
-}
-.permissionText strong {
-  font-weight: 500;
-  color: inherit;
 }
 /* The work-mode options span the row (and both setup columns) instead of shrinking to their text. */
 .fill {

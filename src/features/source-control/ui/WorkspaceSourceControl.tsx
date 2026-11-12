@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   checkoutTitle,
@@ -290,14 +291,19 @@ export function WorkspaceSourceControl({
         </div>
       ) : null}
       {error ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-x-2 px-2 text-ui-caption text-(--ui-text-secondary)">
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          className="flex shrink-0 flex-wrap items-center gap-x-2 px-2"
+        >
           <p role="status" className="min-w-0" title={error}>
             {t("Could not refresh repositories. Refresh source control to retry.")}
           </p>
           <Button variant="link" size="sm" disabled={!enabled} onClick={refreshAll}>
             {t("Retry")}
           </Button>
-        </div>
+        </Text>
       ) : null}
       <div
         id={repositoryListId}

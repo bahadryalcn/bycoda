@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t } from "../../../../shared/i18n";
 import { formatRelativeTime } from "../../../../shared/i18n/format";
@@ -19,13 +20,13 @@ export function ConversationDayLabel({ at }: { at: number }) {
   const now = useMinuteNow();
   const days = Math.round((start(now) - start(at)) / DAY);
   return (
-    <div className={styles.dayDivider}>
+    <Text as="div" size="caption" tone="secondary" leading="inherit" className={styles.dayDivider}>
       {days === 0
         ? t("Today")
         : days === 1
           ? t("Yesterday")
           : formatDate(at, { day: "numeric", month: "long", year: "numeric" })}
-    </div>
+    </Text>
   );
 }
 
@@ -65,11 +66,13 @@ export function ConversationMessage({
     <article className={styles.message} data-author={message.role}>
       <div className={styles.bubble}>
         {message.ownerQuestionId && (
-          <span className={styles.note}>
+          <Text size="caption" tone="secondary" leading="inherit" className={styles.note}>
             {t(message.ownerQuestionAction === "snooze" ? "Question postponed" : "Answer recorded")}
-          </span>
+          </Text>
         )}
-        <p className={styles.bubbleText}>{message.text}</p>
+        <Text as="p" size="body" tone="inherit" leading="relaxed" className={styles.bubbleText}>
+          {message.text}
+        </Text>
         {!!message.toolActions?.length && (
           <Disclosure size="sm" summary={t("Recorded actions")} count={message.toolActions.length}>
             <ul className={styles.detailsList}>
@@ -97,9 +100,15 @@ export function ConversationMessage({
                     {job.title}
                   </Button>
                 ) : (
-                  <span key={id} className={styles.note}>
+                  <Text
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    key={id}
+                    className={styles.note}
+                  >
                     {id}
-                  </span>
+                  </Text>
                 );
               })}
             </div>
@@ -107,17 +116,25 @@ export function ConversationMessage({
         )}
       </div>
       <ActionHost className={styles.meta}>
-        {message.role !== "user" && <span>{authorName}</span>}
-        {message.via === "voice" && <span>{t("Voice")}</span>}
-        <ConversationMessageTime at={message.createdAt} />
-        <InlineAction
-          reveal="always"
-          label={t("Delete message")}
-          disabled={clearing}
-          onClick={() => onDelete(message)}
+        <Text
+          as="div"
+          size="micro"
+          tone="secondary"
+          leading="inherit"
+          className={styles.metaContent}
         >
-          <Trash2 className="icon-xs" />
-        </InlineAction>
+          {message.role !== "user" && <span>{authorName}</span>}
+          {message.via === "voice" && <span>{t("Voice")}</span>}
+          <ConversationMessageTime at={message.createdAt} />
+          <InlineAction
+            reveal="always"
+            label={t("Delete message")}
+            disabled={clearing}
+            onClick={() => onDelete(message)}
+          >
+            <Trash2 className="icon-xs" />
+          </InlineAction>
+        </Text>
       </ActionHost>
     </article>
   );

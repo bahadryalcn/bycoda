@@ -1,9 +1,8 @@
-import { useId, useMemo } from "react";
+import { useMemo } from "react";
 import { t } from "../../../shared/i18n";
 import { useRemoteMachines } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import { decisionModelsClient, DecisionModelsSettings } from "../../decision-models";
-import { Heading } from "../../../shared/ui/Heading";
 import { SettingsFeedback, settingDomId } from "./settingsControls";
 
 /**
@@ -15,18 +14,14 @@ export function ProviderDecisionModels() {
   const host = machines.find(isLocalSyncMachine) ?? machines[0];
   const hostId = host?.id;
   const client = useMemo(() => (hostId ? decisionModelsClient(hostId) : null), [hostId]);
-  const headingId = useId();
   return (
     <section
       id={settingDomId("decision-models")}
       data-setting-id="decision-models"
       tabIndex={-1}
-      aria-labelledby={headingId}
+      aria-label={t("Decision models")}
       className="flex min-w-0 flex-col gap-4"
     >
-      <Heading id={headingId} className="settings-section-title">
-        {t("Decision models")}
-      </Heading>
       {client ? (
         <DecisionModelsSettings client={client} />
       ) : (

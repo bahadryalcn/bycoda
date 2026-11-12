@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, type ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -96,9 +97,9 @@ export function CrewSessions({
     // line (and Manage), so an idle project spends no rows on an empty state.
     <section aria-label={t("Crew work")} className="px-1.5 pt-1">
       <div className="flex min-h-7 items-center gap-1 ps-2.5 pe-0.5">
-        <span className="min-w-0 flex-1 text-ui-caption font-medium text-(--ui-text-muted)">
+        <Text tone="muted" weight="medium" className="min-w-0 flex-1">
           {t("Crew work")}
-        </span>
+        </Text>
         <Button
           variant="ghost"
           size="sm"
@@ -114,11 +115,11 @@ export function CrewSessions({
         </Button>
       ) : null}
       {sharedConnectionIssue && !data ? (
-        <p role="status" className="px-2.5 py-1 text-ui-caption text-(--ui-text-muted)">
+        <Text role="status" as="p" tone="muted" className="px-2.5 py-1">
           {t("Not connected")}
-        </p>
+        </Text>
       ) : null}
-      <div className="flex flex-col gap-px empty:hidden">
+      <div className="flex flex-col gap-0 empty:hidden">
         {runs.map((run) => (
           <Button
             key={run.id}
@@ -131,11 +132,15 @@ export function CrewSessions({
             tooltipWhen="overflow"
           >
             <span className="min-w-0 flex-1 text-start">
-              <span className="block truncate font-medium">{crewRunTitle(run)}</span>
-              <span className="mt-0.5 flex min-w-0 items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
-                <span className="truncate">{run.definition.name}</span>
+              <Text size="inherit" tone="inherit" weight="medium" truncate className="block">
+                {crewRunTitle(run)}
+              </Text>
+              <Text className="mt-0.5 flex min-w-0 items-center gap-2">
+                <Text size="inherit" tone="inherit" truncate>
+                  {run.definition.name}
+                </Text>
                 <CrewWorkStatusText run={run} />
-              </span>
+              </Text>
             </span>
             <ChevronRight className="icon-sm shrink-0" />
           </Button>

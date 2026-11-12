@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -153,15 +156,22 @@ export function LinkedWorkItemUpdateNotice({
           className="block w-full text-left"
         >
           <span className="flex min-w-0 items-center gap-1.5">
-            <KindIcon className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-            <span className="min-w-0 truncate text-ui-secondary font-medium hover:underline">
+            <KindIcon tone="secondary" className="icon-sm shrink-0" strokeWidth={1.75} />
+            <Text
+              as="span"
+              size="secondary"
+              weight="medium"
+              tone="inherit"
+              truncate
+              className="hover:underline"
+            >
               {card.title}
-            </span>
+            </Text>
           </span>
         </Button>
-        <p className="text-ui-micro text-(--ui-text-secondary)">
+        <Text as="p" size="micro" tone="secondary">
           {linkedWorkItemUpdateSummary(card)}
-        </p>
+        </Text>
 
         {card.entries.length > 0 ? (
           <div className="max-h-52 overflow-y-auto border-t border-(--ui-tone-neutral-border) divide-y divide-stroke">
@@ -179,26 +189,33 @@ export function LinkedWorkItemUpdateNotice({
                 }}
                 className="w-full text-left"
               >
-                <span className="mt-0.5 text-(--ui-text-secondary)">
+                <Text size="inherit" tone="secondary" className="mt-0.5">
                   <ActivityIcon entry={entry} />
-                </span>
+                </Text>
                 <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-center gap-1.5 text-ui-micro">
-                    <span className="font-medium text-(--ui-text-secondary)">
+                  <Text size="micro" tone="inherit" className="flex min-w-0 items-center gap-1.5">
+                    <Text size="inherit" tone="secondary" weight="medium">
                       {entryKindLabel(entry)}
-                    </span>
+                    </Text>
                     {entry.author ? (
-                      <span className="min-w-0 truncate text-(--ui-text-secondary)">
+                      <Text size="inherit" tone="secondary" truncate className="min-w-0">
                         @{entry.author}
-                      </span>
+                      </Text>
                     ) : null}
-                    <span className="ml-auto shrink-0 text-(--ui-text-secondary)">
+                    <Text size="inherit" tone="secondary" className="ml-auto shrink-0">
                       {formatRelativeTime(entry.createdAt)}
-                    </span>
-                  </span>
-                  <span className="mt-0.5 line-clamp-2 block text-ui-caption text-(--ui-text-secondary)">
+                    </Text>
+                  </Text>
+                  <ClampText
+                    as="span"
+                    lines={2}
+                    expandable={false}
+                    size="caption"
+                    tone="secondary"
+                    className="mt-0.5"
+                  >
                     {entry.text || t("No message")}
-                  </span>
+                  </ClampText>
                 </span>
               </Button>
             ))}
@@ -206,8 +223,8 @@ export function LinkedWorkItemUpdateNotice({
         ) : null}
 
         {terminalState ? (
-          <div className="border-t border-(--ui-tone-neutral-border) pt-2">
-            <div className="flex items-center gap-2 text-ui-micro">
+          <div {...surfaceAttributes({ frame: "neutral", edge: "top" }, "pt-2")}>
+            <Text as="div" size="micro" tone="inherit" className="flex items-center gap-2">
               <Badge
                 tone={terminalState === "pr_merged" ? "accent" : "success"}
                 size="xs"
@@ -216,8 +233,10 @@ export function LinkedWorkItemUpdateNotice({
               >
                 {terminalLabel}
               </Badge>
-              <span className="text-(--ui-text-secondary)">{t("Clean up this session")}</span>
-            </div>
+              <Text size="inherit" tone="secondary">
+                {t("Clean up this session")}
+              </Text>
+            </Text>
             <div className="mt-2 flex items-center gap-1.5">
               <Button
                 variant="ghost"
@@ -231,7 +250,9 @@ export function LinkedWorkItemUpdateNotice({
                 ) : (
                   <Archive className="icon-xs shrink-0" strokeWidth={1.75} />
                 )}
-                <span className="min-w-0 truncate whitespace-nowrap">{t("Archive session")}</span>
+                <Text size="inherit" tone="inherit" truncate className="min-w-0 whitespace-nowrap">
+                  {t("Archive session")}
+                </Text>
               </Button>
               <Button
                 variant="ghost"
@@ -246,19 +267,30 @@ export function LinkedWorkItemUpdateNotice({
                 ) : (
                   <Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />
                 )}
-                <span className="min-w-0 truncate whitespace-nowrap">{t("Delete…")}</span>
+                <Text size="inherit" tone="inherit" truncate className="min-w-0 whitespace-nowrap">
+                  {t("Delete…")}
+                </Text>
               </Button>
             </div>
           </div>
         ) : null}
 
-        <div className="flex min-w-0 items-center gap-1.5 border-t border-(--ui-tone-neutral-border) pt-2 text-ui-micro">
+        <Text
+          as="div"
+          size="micro"
+          tone="inherit"
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "top" },
+            "flex min-w-0 items-center gap-1.5 pt-2",
+          )}
+        >
           <Button
             variant="ghost"
             type="button"
             tooltip={agentLabel}
             tooltipWhen="overflow"
-            className="min-w-0 flex-1 truncate"
+            truncate
+            className="min-w-0 flex-1"
             onClick={() => {
               onAcknowledge();
               onAddToChat(linkedWorkItemActivityPrompt(card));
@@ -271,12 +303,13 @@ export function LinkedWorkItemUpdateNotice({
             type="button"
             tooltip={openLabel}
             tooltipWhen="overflow"
-            className="min-w-0 flex-1 truncate"
+            truncate
+            className="min-w-0 flex-1"
             onClick={openActivity}
           >
             {openLabel}
           </Button>
-        </div>
+        </Text>
       </div>
     </TransientNotice>
   );

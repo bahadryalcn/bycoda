@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
@@ -64,13 +65,14 @@ export function ActionList({
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onActive(index)}
             onClick={() => onRun(action)}
-            className={`  flex min-h-(--ui-control-height) w-full items-center gap-2 text-left leading-none  ${
+            leading="none"
+            className={`  flex min-h-(--ui-control-height) w-full items-center gap-2 text-left  ${
               highlighted ? "" : ""
             }   `}
           >
-            <span className="min-w-0 flex-1 truncate">
+            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
               <MatchText text={action.label} positions={action.positions} active={Boolean(query)} />
-            </span>
+            </Text>
             {action.hint ? (
               <ShortcutKbd size="xs" className="ml-auto shrink-0">
                 {action.hint}
@@ -157,14 +159,15 @@ export function FileList({
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onRowEnter(index)}
             onClick={() => onPick(file)}
-            className={`  flex min-h-(--ui-control-height) w-full items-center gap-2 text-left leading-none  ${
+            leading="none"
+            className={`  flex min-h-(--ui-control-height) w-full items-center gap-2 text-left  ${
               highlighted ? "" : ""
             }   `}
           >
             <span className="shrink-0">
               <FileTypeIcon name={file.name} isDir={false} />
             </span>
-            <span className="min-w-0 flex-1 truncate">
+            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
               <MatchText
                 text={file.name}
                 positions={file.positions
@@ -172,15 +175,20 @@ export function FileList({
                   .map((pos) => pos - nameOffset)}
                 active={Boolean(query.trim())}
               />
-            </span>
+            </Text>
             {dir ? (
-              <span className="min-w-0 max-w-[45%] truncate font-mono text-ui-caption text-(--ui-text-secondary)">
+              <Text
+                size="caption"
+                tone="secondary"
+                truncate
+                className="min-w-0 max-w-[45%] font-mono"
+              >
                 <MatchText
                   text={dir}
                   positions={file.positions.filter((pos) => pos < slash)}
                   active={Boolean(query.trim())}
                 />
-              </span>
+              </Text>
             ) : null}
           </Button>
         );

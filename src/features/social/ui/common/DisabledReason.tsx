@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { Button, type ButtonProps } from "../../../../shared/ui/Button";
+import { Text } from "../../../../shared/ui/Text";
 import "./common.css";
 
 /** A disabled control must say why: `reason` is required whenever `disabled` is true. */
@@ -36,9 +37,15 @@ export function DisabledReason({ disabled, reason, children, ...button }: Disabl
         {children}
       </Button>
       {disabled && reason ? (
-        <span id={reasonId} className="social-disabled-reason-text">
+        <Text
+          as="span"
+          tone="secondary"
+          leading="snug"
+          id={reasonId}
+          className="social-disabled-reason-text"
+        >
           {reason}
-        </span>
+        </Text>
       ) : null}
     </span>
   );

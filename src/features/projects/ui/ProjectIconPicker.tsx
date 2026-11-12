@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Select } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
@@ -36,9 +37,13 @@ export function ProjectIconPicker({
           className="size-6 shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <p className="text-ui-micro text-(--ui-text-secondary)">{t("Project icon")}</p>
+          <Text as="p" size="micro" tone="secondary">
+            {t("Project icon")}
+          </Text>
           <OverflowTooltip label={selected.label}>
-            <p className="truncate text-ui-caption text-[var(--color-content)]">{selected.label}</p>
+            <Text truncate as="p" size="caption" tone="primary">
+              {selected.label}
+            </Text>
           </OverflowTooltip>
         </div>
         <Button
@@ -95,9 +100,9 @@ export function ProjectIconPicker({
               className="flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 px-0.5"
             >
               <ProjectMascot project={project} name={icon.name} className="size-6 shrink-0" />
-              <span className="max-w-full truncate text-ui-micro text-(--ui-text-secondary)">
+              <Text truncate size="micro" tone="secondary" className="max-w-full">
                 {icon.label.split(" / ")[0]}
-              </span>
+              </Text>
             </Button>
           ))}
         </div>

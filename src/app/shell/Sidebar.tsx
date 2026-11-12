@@ -1,3 +1,8 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
+import { Text } from "../../shared/ui/Text";
+import { ScrollArea } from "../../shared/ui/ScrollArea";
+import { motionAttributes } from "../../shared/ui/Motion";
+import { ClampText } from "../../shared/ui/ClampText";
 import { useCrewManagedIndex } from "../../features/crews/public/managed";
 import { folderCandidates, projectSessionCollection } from "./sidebarSessionCollections";
 import { isUserConversation } from "../../shared/model/host-contracts/delegation";
@@ -44,7 +49,7 @@ import { motion as layoutMotion } from "motion/react";
 import { sessionStatusOrder } from "../../features/sessions/model/sessionStatusOrder";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { t, useLocale, useT } from "../../shared/i18n";
-import { formatInteger } from "../../shared/lib/numbers";
+import { DiffStat } from "../../shared/ui/DiffStat";
 import { formatGitLabel } from "./sessionGitLabel";
 import { SocialShortcut } from "../../features/social/ui/SocialShortcut";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
@@ -329,7 +334,7 @@ import { Tooltip } from "../../shared/ui/Tooltip";
 import { Spinner } from "../../shared/ui/Spinner";
 import { PaneHeader } from "../../shared/ui/PaneHeader";
 import { Sash } from "../../shared/ui/Sash";
-import { DevModeIndicator, IconButton, TabVisitNav } from "./TitleBar";
+import { IconButton, TabVisitNav } from "./TitleBar";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { Popover } from "../../shared/ui/Popover";
 import { useProjectMenu } from "./useProjectMenu";
@@ -2690,9 +2695,9 @@ function SidebarComponent({
       titleFeedback={
         titleActions[session.id] ? (
           titleActions[session.id].pending ? (
-            <span className="text-ui-caption text-(--ui-text-secondary)">
+            <Text size="caption" tone="secondary">
               {t("Regenerating title…")}
-            </span>
+            </Text>
           ) : (
             <Alert tone="danger">
               {titleActions[session.id].error}
@@ -3194,20 +3199,26 @@ function SidebarComponent({
             if (sortable.consumeClick()) return;
             onTabPick(itemId);
           }}
-          className="flex min-w-0 flex-1 items-center justify-center gap-1 self-center overflow-hidden px-1 leading-none"
+          leading="none"
+          className="flex min-w-0 flex-1 items-center justify-center gap-1 self-center overflow-hidden px-1"
         >
           <Icon className="workspace-tab-icon" aria-hidden="true" />
           <span className="workspace-tab-content flex min-w-0 items-center justify-center">
             {/* The label is never clipped: the container steps in bycoda.css drop it, then the
                 churn, then the badge before any of them would need an ellipsis. */}
-            <span className="workspace-tab-label block whitespace-nowrap leading-label">
+            <Text
+              as="span"
+              size="inherit"
+              leading="snug"
+              className="workspace-tab-label block whitespace-nowrap"
+            >
               {TAB_LABELS[itemId]}
-            </span>
+            </Text>
           </span>
           {/* Outside the label so the churn outlives it: the icon already names the tab. */}
           {isChangesTab && hasChangeStats ? (
             <span className="workspace-tab-stats ms-1 min-w-0">
-              <DiffStat additions={changeAdditions} deletions={changeDeletions} />
+              <SidebarDiffStat additions={changeAdditions} deletions={changeDeletions} />
             </span>
           ) : null}
           {/* Outside .workspace-tab-content so they survive the icon-only widths. Wide and medium
@@ -3279,9 +3290,9 @@ function SidebarComponent({
               switchError={workspaceSwitchError}
             />
           ) : (
-            <span className="text-ui-title font-medium">
+            <Text as="span" size="title" weight="medium" tone="inherit">
               {t(lastSessionsOpen ? "Last sessions" : "Workspace")}
-            </span>
+            </Text>
           )
         }
         actions={
@@ -3355,7 +3366,7 @@ function SidebarComponent({
           {workspaceHeader()}
           <WorkspaceTabList
             value={tab}
-            className="bycoda-workspace-tabs flex shrink-0 items-center gap-px border-b border-(--ui-pane-border)"
+            className="bycoda-workspace-tabs flex shrink-0 items-center gap-0 border-b border-(--ui-pane-border)"
           >
             {workspaceTabItems}
           </WorkspaceTabList>
@@ -3409,7 +3420,7 @@ function SidebarComponent({
           ) : null}
           <WorkspaceTabList
             value={tab}
-            className="bycoda-workspace-tabs flex shrink-0 items-center gap-px overflow-visible border-b border-(--ui-pane-border)"
+            className="bycoda-workspace-tabs flex shrink-0 items-center gap-0 overflow-visible border-b border-(--ui-pane-border)"
           >
             {workspaceTabItems}
           </WorkspaceTabList>
@@ -3456,9 +3467,9 @@ function SidebarComponent({
               onClose={closeFilesSearch}
             />
           ) : (
-            <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
               {t("No project folder")}
-            </p>
+            </Text>
           )}
         </div>
         {/* The tools live in the Workspace header row; without that row they get their own slim one. */}
@@ -3466,17 +3477,23 @@ function SidebarComponent({
           <PaneHeader actions={sessionToolbar} />
         ) : null}
         {tab === "sessions" && !lastSessionsOpen && cwd && cwd !== "~" && showBulkBar ? (
-          <div
+          <Text
             role="toolbar"
             aria-label={t("Selected conversations")}
             data-session-bulk-bar
             data-session-selection-keep
-            className="flex min-h-8 shrink-0 flex-wrap items-center gap-x-1 gap-y-0.5 border-b border-(--ui-pane-border) px-2 py-1 text-ui-caption text-(--ui-text-secondary)"
+            as="div"
+            size="caption"
+            tone="secondary"
+            {...surfaceAttributes(
+              { frame: "pane", edge: "bottom" },
+              "flex min-h-8 shrink-0 flex-wrap items-center gap-x-1 gap-y-0.5 px-2 py-1",
+            )}
           >
-            <span className="mr-auto shrink-0 pl-0.5 tabular-nums text-content">
+            <Text size="inherit" tone="primary" className="mr-auto shrink-0 pl-0.5 tabular-nums">
               {selectedSessionIds.size}
               {t(" selected")}
-            </span>
+            </Text>
             <Button
               variant="ghost"
               motion="none"
@@ -3500,7 +3517,7 @@ function SidebarComponent({
               {selectedSessionIds.size > 0 ? t("Clear") : t("Done")}
             </Button>
             {selectedSessionIds.size > 0 ? (
-              <span className="flex shrink-0 items-center gap-px">
+              <span className="flex shrink-0 items-center gap-0">
                 {onOpenSessionsSideBySide && selectedOrderedIds.length > 1 ? (
                   <BulkBarAction
                     label={t("Open Side by Side")}
@@ -3546,7 +3563,7 @@ function SidebarComponent({
                 ) : null}
               </span>
             ) : null}
-          </div>
+          </Text>
         ) : null}
         <SessionDeletionNotice
           cwd={cwd}
@@ -3596,9 +3613,9 @@ function SidebarComponent({
           {lastSessionsOpen ? (
             <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
               {lastSessionsData?.remoteHistoryLimited && !lastSessionsData.rows.length ? (
-                <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+                <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
                   {t("Remote sessions shown from available history")}
-                </p>
+                </Text>
               ) : null}
               {lastSessionsData?.error && !lastSessionsData.rows.length ? (
                 <Alert tone="danger">
@@ -3614,9 +3631,9 @@ function SidebarComponent({
                 </Alert>
               ) : null}
               {lastSessionsData?.loading && !lastSessionsData.rows.length ? (
-                <p role="status" className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+                <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-2">
                   {t("Loading conversations…")}
-                </p>
+                </Text>
               ) : lastSessionsData?.error && !lastSessionsData.rows.length ? null : (
                 (() => {
                   const rows = filterSessionsByQuery(
@@ -3699,9 +3716,9 @@ function SidebarComponent({
               ) : null}
             </SessionSearchQueryContext.Provider>
           ) : !cwd || cwd === "~" ? (
-            <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+            <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
               {t("No project folder")}
-            </p>
+            </Text>
           ) : (
             <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
               <div>
@@ -3719,9 +3736,12 @@ function SidebarComponent({
                 {remoteProject &&
                 projectSessions.length === 0 &&
                 !["ready", "empty"].includes(remote.dataState.phase) ? null : pendingFirstLoad ? (
-                  <p
+                  <Text
                     role="status"
-                    className="flex items-center gap-2 px-3 py-2 text-ui-caption text-(--ui-text-secondary)"
+                    as="p"
+                    size="caption"
+                    tone="secondary"
+                    className="flex items-center gap-2 px-3 py-2"
                   >
                     <Spinner className="shrink-0" />
                     {remoteLoading
@@ -3729,7 +3749,7 @@ function SidebarComponent({
                         ? t("Loading sessions from {p0}…", { p0: remote.machine.name })
                         : t("Connecting to this project’s machine…")
                       : t("Loading conversations…")}
-                  </p>
+                  </Text>
                 ) : remoteProject && remote.failed && projectSessions.length === 0 ? (
                   <Alert tone="danger">
                     <p>
@@ -3787,16 +3807,21 @@ function SidebarComponent({
                           {clearFilters}
                         </SessionsNoMatch>
                       ) : (
-                        <div className="flex flex-col items-start gap-1.5 px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+                        <Text
+                          as="div"
+                          size="caption"
+                          tone="secondary"
+                          className="flex flex-col items-start gap-1.5 px-3 py-2"
+                        >
                           <p role="status">{t("No sessions match these filters")}</p>
                           {clearFilters}
-                        </div>
+                        </Text>
                       );
                     })()
                   ) : remoteProject && !remote.machine ? (
-                    <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+                    <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
                       {t("This project’s machine isn’t connected on this computer.")}
-                    </p>
+                    </Text>
                   ) : (
                     <SessionsEmpty message="Sessions you start will show up here" />
                   )
@@ -3836,7 +3861,10 @@ function SidebarComponent({
                 set it apart from the scrolling list above, whatever the tab. */}
             <div
               data-live-agents-band
-              className="mt-1 shrink-0 border-t border-(--ui-pane-border) px-2 pt-2 empty:hidden"
+              {...surfaceAttributes(
+                { frame: "pane", edge: "top" },
+                "mt-1 shrink-0 px-2 pt-2 empty:hidden",
+              )}
             >
               <LiveAgentsPreview
                 agents={liveAgents}
@@ -3861,7 +3889,6 @@ function SidebarComponent({
             ) : null}
           </>
         ) : null}
-        {railVisible || titleBarAbove ? null : <DevModeIndicator />}
       </>
       {sessionMenu ? (
         <ExplorerMenu
@@ -4184,6 +4211,7 @@ function SidebarComponent({
           socialActive={socialActive}
           assistantActive={assistantActive}
           onTogglePanel={onToggleProjectRail}
+          onCollapse={compactProjectRail ? onToggleProjectRail : undefined}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
           onOpenSyncedProject={onOpenSyncedProject}
@@ -4331,9 +4359,16 @@ function ProjectsFlyoutChrome({
     <>
       <div className="flex shrink-0 flex-col gap-1.5 px-2 pb-1.5 pt-2">
         <div className="flex items-center gap-1 ps-1">
-          <span className="min-w-0 flex-1 truncate text-ui-body font-medium">
+          <Text
+            as="span"
+            truncate
+            size="body"
+            tone="inherit"
+            weight="medium"
+            className="min-w-0 flex-1"
+          >
             {t("Projects and groups")}
-          </span>
+          </Text>
           <Button
             variant="ghost"
             motion="none"
@@ -5810,37 +5845,40 @@ const SessionCard = memo(function SessionCard({
         <SessionSearchText text={model} />
       </span>
       {providerHistory.providers.map((harness) => (
-        <span
+        <Text
+          as="span"
+          size="inherit"
           key={harness}
           data-session-provider={harness}
           data-provider-active={harness === providerHistory.activeHarness ? "true" : "false"}
           title={HARNESS_TITLE[harness]}
+          tone={harness === providerHistory.activeHarness ? "primary" : "muted"}
           className={
-            harness === providerHistory.activeHarness
-              ? "text-content"
-              : "session-provider-inactive text-(--ui-text-muted)"
+            harness === providerHistory.activeHarness ? undefined : "session-provider-inactive"
           }
         >
           <HarnessIcon
             harness={harness}
             className={`${compact ? "icon-xs" : "icon-md"} shrink-0`}
           />
-        </span>
+        </Text>
       ))}
     </span>
   ) : null;
   const BranchIcon = worktree ? FolderTree : GitBranch;
   const branchLabel =
     showBranch && !compact && branchText ? (
-      <span
+      <Text
         data-session-row-branch
-        className="session-row-branch flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)"
+        size="caption"
+        tone="secondary"
+        className="session-row-branch flex min-w-0 items-center gap-1"
       >
         <span className="sr-only">{t(worktree ? "Worktree" : "Branch")}</span>
-        <span className="min-w-0 truncate">
+        <Text as="span" truncate size="inherit" tone="inherit">
           <SessionSearchText text={branchText} />
-        </span>
-      </span>
+        </Text>
+      </Text>
     ) : null;
   // The Pinned section names the state, so its cards keep their project mark at rest.
   const markPinned = session.pinned && !compact && !inPinnedSection && !showProjectAppearance;
@@ -5876,7 +5914,7 @@ const SessionCard = memo(function SessionCard({
     <span
       data-session-row-actions
       data-action-slot="collapse"
-      className={`relative flex shrink-0 items-center ${compact ? "" : "gap-px"}`}
+      className={`relative flex shrink-0 items-center ${compact ? "" : "gap-0"}`}
     >
       {compact ? pinAction() : null}
       {settleable ? <SessionSettleAction session={session} title={title} /> : null}
@@ -5918,18 +5956,20 @@ const SessionCard = memo(function SessionCard({
     </span>
   );
   const actions = (
-    <span className="relative flex shrink-0 items-center gap-px">
+    <span className="relative flex shrink-0 items-center gap-0">
       {workItemBadge}
       {session.automationId ? (
         <Tooltip label={t("Started by an automation")}>
-          <span
+          <Text
             data-automation-icon
             role="img"
             aria-label={t("Started by an automation")}
-            className="grid size-5 -mr-1 shrink-0 place-items-center text-warning"
+            size="inherit"
+            tone="warning"
+            className="grid size-5 -mr-1 shrink-0 place-items-center"
           >
             <Zap className="icon-xs" strokeWidth={1.75} />
-          </span>
+          </Text>
         </Tooltip>
       ) : null}
       {orchestration ? (
@@ -5977,6 +6017,9 @@ const SessionCard = memo(function SessionCard({
   const metaLine = (children: ReactNode) => (
     <span className="relative flex min-h-5 min-w-0 items-center gap-1.5">{children}</span>
   );
+  const pressMotion = pressing
+    ? motionAttributes({ transition: "colors", duration: "ambient", easing: "linear" })
+    : undefined;
 
   return (
     <div ref={detailRootRef} className="group relative">
@@ -6009,26 +6052,22 @@ const SessionCard = memo(function SessionCard({
           onSelect(session.id, event);
         }}
         onContextMenu={onContextMenu ? (event) => onContextMenu(session.id, event) : undefined}
+        tone={dropTarget || isSelected || pressing || isActive ? "primary" : "secondary"}
+        {...pressMotion}
         className={`relative border flex w-full ${onPlaceOnPane || onListDrop || onPopOut ? "cursor-grab" : "cursor-default"} select-none touch-none flex-col items-stretch gap-0 rounded-md px-2.5 text-left ${cardPaddingY} ${
           dragging ? "opacity-0" : ""
-        } border-transparent ${
-          dropTarget
-            ? "text-content"
-            : isSelected
-              ? "text-content"
-              : pressing
-                ? "bg-(--ui-surface-pressed) text-content transition-colors duration-500 ease-linear"
-                : isActive
-                  ? "text-content"
-                  : "text-(--ui-text-secondary) hover:text-content"
+        } border-transparent hover:text-content ${pressMotion?.className ?? ""} ${
+          pressing ? "bg-(--ui-surface-pressed)" : ""
         }`}
       >
         {/* The landing mark (line, group frame) is drawn on this card by setDropIndicator. */}
         {/* Actions sit beside the row's button, never inside it. */}
         {!compact ? (
-          <span
+          <Text
             data-session-row-project
-            className="relative flex min-h-5 min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)"
+            size="caption"
+            tone="secondary"
+            className="relative flex min-h-5 min-w-0 items-center gap-1.5"
           >
             <span
               data-session-project-slot
@@ -6040,15 +6079,15 @@ const SessionCard = memo(function SessionCard({
               </span>
               {pinAction("col-start-1 row-start-1")}
             </span>
-            <span className="min-w-0 flex-1 truncate">
+            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
               <SessionSearchText text={project.name} />
-            </span>
+            </Text>
             {rowCommands}
             <span className="flex shrink-0 items-center gap-1.5">
               {linkedUpdateDot}
               {status}
             </span>
-          </span>
+          </Text>
         ) : null}
         <span className="relative flex min-h-5 min-w-0 items-center gap-1.5">
           {renameEditor ?? (
@@ -6080,29 +6119,45 @@ const SessionCard = memo(function SessionCard({
               className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color)"
             >
               {selectionMode ? (
-                <span
+                <Text
+                  size="inherit"
+                  tone={isSelected ? "on-solid" : "inherit"}
                   aria-hidden
                   data-session-checkbox={isSelected ? "checked" : "unchecked"}
-                  className={`grid size-3.5 shrink-0 place-items-center rounded-sm border ${
-                    isSelected
-                      ? "border-active bg-active text-on-solid"
-                      : "border-(--ui-text-muted)"
-                  }`}
+                  {...surfaceAttributes(
+                    { radius: "sm" },
+                    `grid size-3.5 shrink-0 place-items-center border ${
+                      isSelected ? "border-active bg-active" : "border-(--ui-text-muted)"
+                    }`,
+                  )}
                 >
                   {isSelected ? <Check className="icon-xs" strokeWidth={2} /> : null}
-                </span>
+                </Text>
               ) : null}
               {compact && session.pinned && !inPinnedSection && !showProjectAppearance ? (
-                <Pin className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+                <Pin className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
               ) : null}
               {titleHit ? (
-                <span className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content">
+                <ClampText
+                  as="span"
+                  lines={1}
+                  expandable={false}
+                  size="secondary"
+                  tone="primary"
+                  weight="medium"
+                  leading="snug"
+                  className="min-w-0 flex-1"
+                >
                   <MatchText text={title} positions={titleHit.positions} active />
-                </span>
+                </ClampText>
               ) : (
                 <ParticleText
                   text={title}
-                  className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content"
+                  size="secondary"
+                  tone="primary"
+                  weight="medium"
+                  leading="snug"
+                  lines={1}
                 />
               )}
               <AssistantManagedBadge
@@ -6195,9 +6250,18 @@ const SessionCard = memo(function SessionCard({
           restoreFocus={false}
           className="pointer-events-none overflow-hidden p-2.5"
         >
-          <p className="line-clamp-2 break-words text-ui-secondary font-medium leading-snug text-content">
+          <ClampText
+            as="p"
+            lines={2}
+            expandable={false}
+            size="secondary"
+            tone="primary"
+            weight="medium"
+            leading="snug"
+            className="break-words"
+          >
             {title}
-          </p>
+          </ClampText>
           {/* Every row shares one icon column, so labels line up like the list rows. */}
           <DescriptionList hideTerms size="sm" className="mt-2 items-center gap-y-1.5">
             <DescriptionItem
@@ -6210,23 +6274,29 @@ const SessionCard = memo(function SessionCard({
                 )
               }
             >
-              <span className="min-w-0 truncate text-content">{project.name}</span>
+              <Text as="span" truncate size="inherit" tone="primary" className="min-w-0">
+                {project.name}
+              </Text>
               {/* The full location sits under the name; a long path keeps its last folder. */}
-              <span
-                className="col-start-2 -mt-1 min-w-0 overflow-hidden text-ui-micro text-(--ui-text-muted)"
+              <Text
+                size="micro"
+                tone="muted"
+                className="col-start-2 -mt-1 min-w-0 overflow-hidden"
                 dir="auto"
               >
                 <MiddleTruncate mode="path" title={false}>
                   {detailPath}
                 </MiddleTruncate>
-              </span>
+              </Text>
             </DescriptionItem>
             {branchText ? (
               <DescriptionItem
                 term={t(worktree ? "Worktree" : "Branch")}
                 icon={<BranchIcon className="icon-xs shrink-0" strokeWidth={1.75} />}
               >
-                <span className="min-w-0 truncate">{gitLabel}</span>
+                <Text as="span" truncate size="inherit" tone="inherit" className="min-w-0">
+                  {gitLabel}
+                </Text>
               </DescriptionItem>
             ) : null}
             <DescriptionItem
@@ -6235,15 +6305,17 @@ const SessionCard = memo(function SessionCard({
                 <HarnessIcon harness={providerHistory.activeHarness} className="icon-xs shrink-0" />
               }
             >
-              <span className="min-w-0 truncate">{model}</span>
+              <Text as="span" truncate size="inherit" tone="inherit" className="min-w-0">
+                {model}
+              </Text>
             </DescriptionItem>
             {providerHistory.handedOffFrom ? (
               <DescriptionItem term={t("Provider")} icon={<Share className="icon-xs shrink-0" />}>
-                <span className="min-w-0 truncate">
+                <Text size="inherit" tone="inherit" truncate className="min-w-0">
                   {t("Handed off from {p0}", {
                     p0: HARNESS_TITLE[providerHistory.handedOffFrom],
                   })}
-                </span>
+                </Text>
               </DescriptionItem>
             ) : null}
           </DescriptionList>
@@ -6251,7 +6323,12 @@ const SessionCard = memo(function SessionCard({
             session={session}
             runningSince={statusKind === "working" ? startedAt : undefined}
           />
-          <div className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-(--ui-frosted-divider) pt-2 text-ui-caption text-(--ui-text-secondary)">
+          <Text
+            as="div"
+            size="caption"
+            tone="secondary"
+            className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-(--ui-frosted-divider) pt-2"
+          >
             <span className="sr-only">{t("Status")}</span>
             {idle ? (
               <span className="flex min-w-0 items-center gap-1.5 tabular-nums">
@@ -6262,14 +6339,18 @@ const SessionCard = memo(function SessionCard({
               <>
                 {status}
                 {working ? null : (
-                  <span className="ml-auto flex shrink-0 items-center gap-1 tabular-nums text-(--ui-text-muted)">
+                  <Text
+                    size="inherit"
+                    tone="muted"
+                    className="ml-auto flex shrink-0 items-center gap-1 tabular-nums"
+                  >
                     <Clock className="icon-xs shrink-0" strokeWidth={1.75} />
                     <RelativeSessionTime at={session.lastActivityAt ?? session.updatedAt} />
-                  </span>
+                  </Text>
                 )}
               </>
             )}
-          </div>
+          </Text>
         </Popover>
       ) : null}
       {orchestration && orchestrationTooltipOpen ? (
@@ -6286,11 +6367,13 @@ const SessionCard = memo(function SessionCard({
           className="pointer-events-none overflow-y-auto p-2.5"
         >
           <div className="flex items-center justify-between gap-3">
-            <span className="text-ui-caption font-medium text-content">{t("Subagents")}</span>
-            <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+            <Text as="span" weight="medium" tone="primary">
+              {t("Subagents")}
+            </Text>
+            <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
               {orchestrationDone}/{orchestration.tasks.length}
               {t(" done")}
-            </span>
+            </Text>
           </div>
           <div className="mt-1.5 flex flex-col gap-0.5">
             {orchestration.tasks.map((task) => {
@@ -6298,28 +6381,33 @@ const SessionCard = memo(function SessionCard({
               return (
                 <div
                   key={task.sessionId}
-                  className="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-1"
+                  {...surfaceAttributes(
+                    { radius: "row" },
+                    "flex min-w-0 items-center gap-1.5 px-1 py-1",
+                  )}
                 >
                   <HarnessIcon harness={task.harness} className="icon-sm shrink-0 opacity-75" />
-                  <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
+                  <Text as="span" truncate className="min-w-0 flex-1">
                     {task.title}
-                  </span>
-                  <span
-                    className={`shrink-0 text-ui-caption ${
+                  </Text>
+                  <Text
+                    size="caption"
+                    tone={
                       task.needsInput ||
                       task.status === "failed" ||
                       task.status === "blocked" ||
                       task.status === "interrupted"
-                        ? "text-warning"
+                        ? "warning"
                         : label === "Working"
-                          ? "text-accent"
+                          ? "accent"
                           : task.status === "completed"
-                            ? "text-success"
-                            : "text-(--ui-text-secondary)"
-                    }`}
+                            ? "success"
+                            : "secondary"
+                    }
+                    className="shrink-0"
                   >
                     {label}
-                  </span>
+                  </Text>
                 </div>
               );
             })}
@@ -6421,46 +6509,31 @@ function SessionRenameRow({
         onChange={(e) => setValue(e.target.value)}
         onBlur={() => finish(true)}
         onKeyDown={onKeyDown}
-        className="w-full leading-snug"
+        leading="snug"
+        className="w-full"
       />
       {error ? <Alert tone="danger">{error}</Alert> : null}
     </div>
   );
 }
 
-function DiffStat({ additions, deletions }: { additions: number; deletions: number }) {
+function SidebarDiffStat({ additions, deletions }: { additions: number; deletions: number }) {
   if (additions <= 0 && deletions <= 0) return null;
 
   return (
-    <span className="scrollbar-none flex h-full w-full min-w-0 items-center [justify-content:safe_center] overflow-x-auto overflow-y-hidden overscroll-contain">
-      <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap font-sans text-ui-micro font-medium tabular-nums">
-        {additions > 0 ? (
-          <span className="text-diff-add-fg">
-            +<TightDiffNumber value={additions} />
-          </span>
-        ) : null}
-        {deletions > 0 ? (
-          <span className="text-diff-del-fg">
-            -<TightDiffNumber value={deletions} />
-          </span>
-        ) : null}
-      </span>
-    </span>
-  );
-}
-
-function TightDiffNumber({ value }: { value: number }) {
-  useLocale();
-  const [first, ...rest] = formatInteger(value).split(",");
-  return (
-    <>
-      {first}
-      {rest.map((part, index) => (
-        <span key={index}>
-          <span className="-mr-px">,</span>
-          {part}
-        </span>
-      ))}
-    </>
+    <ScrollArea
+      as="span"
+      axis="x"
+      scrollbar="hidden"
+      className="flex h-full w-full min-w-0 items-center [justify-content:safe_center] overscroll-contain"
+    >
+      <DiffStat
+        additions={additions}
+        deletions={deletions}
+        size="micro"
+        weight="medium"
+        className="font-sans"
+      />
+    </ScrollArea>
   );
 }

@@ -1,0 +1,17 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+.stat {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.stat > [data-side="added"] {
+  color: var(--color-diff-add-fg);
+}
+.stat > [data-side="removed"] {
+  color: var(--color-diff-del-fg);
+}

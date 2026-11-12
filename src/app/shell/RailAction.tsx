@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { Button } from "../../shared/ui/Button";
@@ -84,12 +85,20 @@ export function RailAction({
         </Badge>
       ) : null}
       <Icon
-        className={`icon-sm shrink-0 ${active ? "text-content" : "text-(--ui-text-secondary)"} ${badge != null ? "ml-4" : ""}`}
+        className={`icon-sm shrink-0 ${badge != null ? "ml-4" : ""}`}
+        tone={active ? "primary" : "secondary"}
         strokeWidth={1.75}
       />
-      <span className="min-w-0 flex-1 truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden">
+      <Text
+        size="caption"
+        tone="inherit"
+        weight="medium"
+        leading="tight"
+        truncate
+        className="min-w-0 flex-1 @max-[140px]/rail:hidden"
+      >
         {label}
-      </span>
+      </Text>
       {dot ? (
         <StatusDot
           label={ariaLabel ?? label}
@@ -97,13 +106,15 @@ export function RailAction({
           className="shrink-0 @max-[140px]/rail:absolute @max-[140px]/rail:right-2 @max-[140px]/rail:top-1.5"
         />
       ) : shortcut ? (
-        <span
+        <Text
           data-tooltip-shortcut=""
           aria-hidden
-          className="shrink-0 text-ui-caption text-(--ui-text-secondary) @max-[200px]/rail:hidden"
+          size="caption"
+          tone="secondary"
+          className="shrink-0 @max-[200px]/rail:hidden"
         >
           {shortcut}
-        </span>
+        </Text>
       ) : null}
     </Button>
   );
@@ -144,22 +155,29 @@ export function RailSearch({
       aria-label={ariaLabel ?? label}
       className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
     >
-      <Icon className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-      <span
+      <Icon className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
+      <Text
         data-rail-search-label
-        className="min-w-0 flex-1 truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden"
+        size="caption"
+        tone="inherit"
+        weight="medium"
+        leading="tight"
+        truncate
+        className="min-w-0 flex-1 @max-[140px]/rail:hidden"
       >
         {label}
-      </span>
+      </Text>
       {shortcut ? (
-        <span
+        <Text
           data-rail-search-shortcut
           data-tooltip-shortcut=""
           aria-hidden
-          className="shrink-0 text-ui-caption text-(--ui-text-secondary) @max-[200px]/rail:hidden"
+          size="caption"
+          tone="secondary"
+          className="shrink-0 @max-[200px]/rail:hidden"
         >
           {shortcut}
-        </span>
+        </Text>
       ) : null}
     </Button>
   );

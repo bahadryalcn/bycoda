@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { createContext, useContext, useEffect } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -202,24 +204,31 @@ function SubagentPanel({
 
   // Identity row: marks, name and the model beside it; the name gives room
   // back so a run named with its whole brief cannot push the state off the row.
-  const nameClass = "min-w-0 truncate text-start font-sans text-ui-body font-medium";
+  const nameClass = "min-w-0 text-start font-sans";
   const label = (
     <span className="flex min-w-0 flex-1 items-baseline gap-2">
       {active ? (
-        <Shimmer className={nameClass} duration={1.6}>
+        <Shimmer className={nameClass} truncate size="body" weight="medium" duration={1.6}>
           {name}
         </Shimmer>
       ) : (
-        <span
-          className={`${nameClass} transition-colors duration-200 ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg)"}`}
+        <Text
+          size="body"
+          weight="medium"
+          truncate
+          tone={state === "rejected" ? "danger" : "secondary"}
+          {...motionAttributes(
+            { transition: "colors", duration: "standard" },
+            `${nameClass} ${state === "rejected" ? "" : "group-hover:text-(--ui-tone-neutral-fg)"}`,
+          )}
         >
           {name}
-        </span>
+        </Text>
       )}
       {(delegated?.subtitle ?? model) ? (
-        <span className="max-w-[40%] shrink-0 truncate text-ui-caption text-(--ui-text-muted)">
+        <Text size="caption" tone="muted" truncate className="max-w-[40%] shrink-0">
           {delegated?.subtitle ?? model}
-        </span>
+        </Text>
       ) : null}
     </span>
   );
@@ -309,9 +318,11 @@ function SubagentPanel({
           {label}
           {stateLine}
           <ChevronRight
-            className={`icon-sm shrink-0 text-(--ui-text-secondary) transition-transform duration-200 group-hover:text-(--ui-text-secondary) ${
-              open ? "rotate-90" : ""
-            }`}
+            {...motionAttributes(
+              { transition: "transform", duration: "standard" },
+              `icon-sm shrink-0 ${open ? "rotate-90" : ""}`,
+            )}
+            tone="secondary"
             aria-hidden
           />
         </Button>

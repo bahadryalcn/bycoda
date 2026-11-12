@@ -1,3 +1,4 @@
+import { Code } from "../../shared/ui/Code";
 import type { BrowserElementTarget } from "../../shared/lib/browserAnnotation";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { Button } from "../../shared/ui/Button";
@@ -84,7 +85,7 @@ export function BrowserInspectorNavigation({
             {ancestor.tag}
           </Button>
         ))}
-        <code>{element.tag}</code>
+        <Code tone="secondary">{element.tag}</Code>
       </div>
     </div>
   );

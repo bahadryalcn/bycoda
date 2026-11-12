@@ -1,14 +1,17 @@
+import { DiffStat } from "../../../shared/ui/DiffStat";
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { Surface } from "../../../shared/ui/Surface";
+import { ClampText } from "../../../shared/ui/ClampText";
+import { motionAttributes } from "../../../shared/ui/Motion";
+import { surfaceAttributes, Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
-import { formatInteger } from "../../../shared/lib/numbers";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import type { GithubPrDiff } from "../model/githubTasks";
@@ -89,14 +92,22 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
         </SurfaceSelection>
       ) : excerpt.text ? (
         <SurfaceSelection cwd={cwd} contentVersion={body}>
-          <p className="line-clamp-4 whitespace-pre-line text-ui-secondary leading-relaxed text-(--ui-text-secondary)">
+          <ClampText
+            as="p"
+            lines={4}
+            expandable={false}
+            size="secondary"
+            tone="secondary"
+            leading="relaxed"
+            className="whitespace-pre-line"
+          >
             {excerpt.text}
-          </p>
+          </ClampText>
         </SurfaceSelection>
       ) : (
-        <p className="text-ui-secondary text-(--ui-text-secondary)">
+        <Text as="p" size="secondary" tone="secondary">
           {t("Description is media only")}
-        </p>
+        </Text>
       )}
       <Button
         variant="link"
@@ -106,14 +117,17 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
         className="self-start"
       >
         <ChevronDown
-          className={`icon-sm transition-transform ${expanded ? "rotate-180" : ""}`}
+          {...motionAttributes(
+            { transition: "transform", duration: "standard", easing: "sheen" },
+            `icon-sm ${expanded ? "rotate-180" : ""}`,
+          )}
           strokeWidth={1.75}
         />
         {expanded ? t("Show less") : t("Show full description")}
         {!expanded && excerpt.images > 0 ? (
-          <span className="text-(--ui-text-secondary)">
+          <Text size="inherit" tone="secondary">
             · {excerpt.images} {excerpt.images === 1 ? t("image") : t("images")}
-          </span>
+          </Text>
         ) : null}
       </Button>
     </Surface>
@@ -138,20 +152,23 @@ export function InboxPrChangesGlance({
 
   return (
     <section data-inbox-pr-glance className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
+      <Text as="div" size="caption" tone="secondary" className="flex items-center gap-2">
         <SectionLabel as="h2">{t("Changed files")}</SectionLabel>
         {diff ? (
           <>
             <span className="tabular-nums">
               {files.length} {files.length === 1 ? t("file") : t("files")}
             </span>
-            <span className="flex items-center gap-1.5 text-ui-micro font-medium tabular-nums">
-              <span className="text-diff-add-fg">+{formatInteger(diff.additions)}</span>
-              <span className="text-diff-del-fg">-{formatInteger(diff.deletions)}</span>
-            </span>
+            <DiffStat
+              additions={diff.additions}
+              deletions={diff.deletions}
+              showZero
+              size="micro"
+              weight="medium"
+            />
           </>
         ) : null}
-        {loading ? <Spinner size="xs" className="text-(--ui-text-secondary)" /> : null}
+        {loading ? <Spinner size="xs" tone="secondary" /> : null}
         {files.length > 0 ? (
           <Button variant="ghost" type="button" onClick={() => onOpenFile()} className="ml-auto">
             {files.length > shown.length
@@ -160,7 +177,7 @@ export function InboxPrChangesGlance({
             <ChevronRight className="icon-sm" strokeWidth={1.75} />
           </Button>
         ) : null}
-      </div>
+      </Text>
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {diff && files.length === 0 ? (
         <EmptyState size="inline" kind="empty" description={t("No file changes")} />
@@ -188,26 +205,36 @@ export function InboxPrChangesGlance({
                   className="w-full min-w-0"
                 >
                   <FileTypeIcon name={name} isDir={false} />
-                  <span className="flex min-w-0 flex-1 flex-wrap font-mono text-ui-caption">
-                    <span className="min-w-0 truncate text-(--ui-text-secondary)">{dir}</span>
-                    <span className="min-w-0 wrap-anywhere text-(--ui-text-secondary)">{name}</span>
-                  </span>
+                  <Text
+                    size="caption"
+                    tone="inherit"
+                    className="flex min-w-0 flex-1 flex-wrap font-mono"
+                  >
+                    <Text size="inherit" tone="secondary" truncate className="min-w-0">
+                      {dir}
+                    </Text>
+                    <Text size="inherit" tone="secondary" className="min-w-0 wrap-anywhere">
+                      {name}
+                    </Text>
+                  </Text>
                   <span
                     aria-hidden
-                    className="flex h-1.5 shrink-0 overflow-hidden rounded-full @max-[420px]/linked:hidden"
+                    {...surfaceAttributes(
+                      { radius: "pill" },
+                      "flex h-1.5 shrink-0 overflow-hidden @max-[420px]/linked:hidden",
+                    )}
                     style={{ width }}
                   >
                     <span className="shrink-0 bg-diff-add" style={{ width: added }} />
                     <span className="flex-1 bg-diff-del" />
                   </span>
-                  <span className="flex w-20 shrink-0 items-center justify-end gap-1.5 text-ui-micro font-medium tabular-nums">
-                    {file.additions > 0 ? (
-                      <span className="text-diff-add-fg">+{formatInteger(file.additions)}</span>
-                    ) : null}
-                    {file.deletions > 0 ? (
-                      <span className="text-diff-del-fg">-{formatInteger(file.deletions)}</span>
-                    ) : null}
-                  </span>
+                  <DiffStat
+                    additions={file.additions}
+                    deletions={file.deletions}
+                    size="micro"
+                    weight="medium"
+                    className="w-20 shrink-0 justify-end"
+                  />
                 </Button>
               </li>
             );

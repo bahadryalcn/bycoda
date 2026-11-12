@@ -20,8 +20,6 @@
   flex-direction: column;
   gap: 0.5rem;
   text-align: center;
-  font-size: var(--ui-font-secondary);
-  line-height: 1.5;
 }
 
 .phone-pairing-actions {

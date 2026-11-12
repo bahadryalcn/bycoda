@@ -1,3 +1,4 @@
+import { Text } from "../../../../../shared/ui/Text";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { t } from "../../../../../shared/i18n";
@@ -84,10 +85,10 @@ export function ImageDropZone({
         onClick={() => onChoose()}
       >
         {children ?? (
-          <span className={styles.dropEmpty}>
+          <Text size="caption" tone="muted" leading="inherit" className={styles.dropEmpty}>
             <ImagePlus className="icon-md" aria-hidden />
             <span>{t("Drop an image here or click to choose")}</span>
-          </span>
+          </Text>
         )}
       </Button>
     </div>

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { projectDisplayName } from "../../projects/public/projectNames";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
@@ -146,7 +148,7 @@ export function TaskForm({
     >
       <div className="task-form-body">
         <FieldGroup variant="bare" disabled={saving} inert={saving}>
-          <div className="task-form-fields">
+          <div {...surfaceAttributes({ frame: "none" }, "task-form-fields")}>
             <TextField
               hideLabel
               label=""
@@ -179,7 +181,9 @@ export function TaskForm({
                 ) : null}
                 {draft.id ? (
                   // A task stays in the project it was created for.
-                  <span className="truncate">{projectName}</span>
+                  <Text truncate size="inherit" tone="inherit">
+                    {projectName}
+                  </Text>
                 ) : (
                   <SearchableSelect
                     hideLabel
@@ -206,14 +210,20 @@ export function TaskForm({
                 )}
                 <ProjectDiscoveryStatus state={projectState} />
               </div>
-              <div className="task-form-targets-note">
+              <Text
+                as="div"
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className="task-form-targets-note"
+              >
                 {target && !looksLikeProject(draft.cwd) ? (
                   <span>{t("Choose project")}</span>
                 ) : machine ? (
-                  <span className="truncate">
+                  <Text truncate size="inherit" tone="inherit">
                     {t("Runs on ")}
                     {machine}
-                  </span>
+                  </Text>
                 ) : (
                   <InlineMessage tone="warning" live="assertive">
                     {TASK_MACHINE_ERROR}
@@ -222,7 +232,7 @@ export function TaskForm({
                 {!draft.id && todoUnsupported ? (
                   <InlineMessage tone="warning">{todoUnsupported}</InlineMessage>
                 ) : null}
-              </div>
+              </Text>
             </div>
             <SkillPromptField
               value={draft.prompt}
@@ -243,7 +253,13 @@ export function TaskForm({
               onValidityChange={setCrewValid}
             />
             {draft.crewDefinitionId ? (
-              <div className="task-form-context">
+              <Text
+                as="div"
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className="task-form-context"
+              >
                 <AccessPicker
                   value={draft.runtimeMode}
                   onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
@@ -257,7 +273,7 @@ export function TaskForm({
                   options={RUN_TIME_LIMIT_OPTIONS}
                   onChange={(value) => update("maxRunMinutes", Number(value))}
                 />
-              </div>
+              </Text>
             ) : null}
             {draft.crewDefinitionId ? null : (
               <TaskFormAgent
@@ -280,7 +296,13 @@ export function TaskForm({
               onOpenChange={setAdvancedOpen}
               summary={t("Advanced")}
             >
-              <div className="task-form-section">
+              <Text
+                as="div"
+                size="caption"
+                tone="inherit"
+                leading="inherit"
+                className="task-form-section"
+              >
                 <TextField
                   label={t("Check command")}
                   value={draft.verifyCommand}
@@ -289,7 +311,7 @@ export function TaskForm({
                   spellCheck={false}
                   monospace
                 />
-              </div>
+              </Text>
               {!draft.crewDefinitionId ? (
                 <Disclosure
                   className="task-advanced-options"
@@ -362,7 +384,7 @@ export function TaskForm({
           </div>
         </FieldGroup>
       </div>
-      <div className="task-form-footer">
+      <div {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, "task-form-footer")}>
         <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
           {t("Cancel")}
         </Button>

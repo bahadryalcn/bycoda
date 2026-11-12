@@ -1,3 +1,4 @@
+import { Text } from "../../../../../shared/ui/Text";
 import { useSyncExternalStore } from "react";
 import { CrewScene } from "../../../../sessions/public/CrewScene";
 import { useStoredPreferenceState } from "../../../../../shared/hooks/useStoredPreferenceState";
@@ -94,7 +95,15 @@ export function CrewStageCard() {
           feedback={
             <div className="crew-stage-card">
               <CrewScene workingCount={3} />
-              <p className="settings-help-text crew-stage-hint">{crewThemeHint(theme)}</p>
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="normal"
+                className="settings-help-text crew-stage-hint"
+              >
+                {crewThemeHint(theme)}
+              </Text>
             </div>
           }
         >

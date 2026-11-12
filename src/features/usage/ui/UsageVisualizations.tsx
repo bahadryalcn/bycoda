@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useMemo, useState } from "react";
 import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
@@ -92,16 +94,22 @@ export function UsageTrend({
     [buckets, series, resolution, percent, metric],
   );
   return (
-    <section className="usage-panel usage-trend" data-usage-chart="trend">
+    <section
+      {...surfaceAttributes(
+        { frame: "card", edge: "all", radius: "card", variant: "card" },
+        "usage-panel usage-trend",
+      )}
+      data-usage-chart="trend"
+    >
       <div className="usage-section-heading">
         <div>
           <Heading size="item" level={3}>
             {t("Usage over time")}
           </Heading>
-          <p className="usage-muted">
+          <Text as="p" leading="inherit" className="usage-muted">
             {t(metricNames[metric])} ·{" "}
             {t({ "15m": "15 minutes", hour: "Hourly", day: "Daily", week: "Weekly" }[resolution])}
-          </p>
+          </Text>
         </div>
         <Button
           size="sm"
@@ -117,10 +125,10 @@ export function UsageTrend({
       </div>
       {buckets.length === 1 ? (
         <div className="usage-single-period">
-          <p className="usage-muted">
+          <Text as="p" leading="inherit" className="usage-muted">
             {formatBucket(buckets[0].start, resolution)} –{" "}
             {formatBucket(buckets[0].end, resolution)}
-          </p>
+          </Text>
           {series.map((item) => (
             <p key={item.key}>
               <Checkbox
@@ -157,6 +165,7 @@ export function UsageTrend({
                 variant="ghost"
                 size="sm"
                 aria-pressed={!hiddenSeries.includes(item.key)}
+                textTone={hiddenSeries.includes(item.key) ? "secondary" : undefined}
                 onClick={() =>
                   setHiddenSeries((hidden) =>
                     hidden.includes(item.key)
@@ -199,11 +208,13 @@ export function UsageTrend({
         </>
       )}
       <Disclosure size="sm" summary={t("Show as table")}>
-        <ContinuousUsageTable
-          caption={t("Usage over time")}
-          rows={buckets.map((b) => ({ ...b, label: formatBucket(b.start, resolution) }))}
-          metric={metric}
-        />
+        <Text as="div" leading="inherit">
+          <ContinuousUsageTable
+            caption={t("Usage over time")}
+            rows={buckets.map((b) => ({ ...b, label: formatBucket(b.start, resolution) }))}
+            metric={metric}
+          />
+        </Text>
       </Disclosure>
     </section>
   );
@@ -222,7 +233,13 @@ export function UsageShare({
 }) {
   useLocale();
   return (
-    <section className="usage-panel usage-share" data-usage-chart="share">
+    <section
+      {...surfaceAttributes(
+        { frame: "card", edge: "all", radius: "card", variant: "card" },
+        "usage-panel usage-share",
+      )}
+      data-usage-chart="share"
+    >
       <div className="usage-section-heading">
         <Heading size="item" level={3}>
           {t("By provider")}
@@ -279,26 +296,35 @@ export function Contribution({
   useLocale();
   const total = usageTotals(rows)[metric];
   return (
-    <section className="usage-panel">
+    <section
+      {...surfaceAttributes(
+        { frame: "card", edge: "all", radius: "card", variant: "card" },
+        "usage-panel",
+      )}
+    >
       <div className="usage-section-heading">
         <Heading size="item" level={3}>
           {title}
         </Heading>
-        <span>{t("Share of selected usage")}</span>
+        <Text as="span" leading="inherit">
+          {t("Share of selected usage")}
+        </Text>
       </div>
       <div className="usage-contributions">
         {rows.slice(0, 5).map((row) => (
           <div className="usage-contribution" key={row.key}>
-            <Button variant="link" onClick={() => onSelect(row.key)}>
+            <Button variant="link" truncate onClick={() => onSelect(row.key)}>
               {row.providers?.map((provider) => (
                 <UsageProviderIdentity key={provider} provider={provider} label="" />
               ))}
               {usageLabel(row.label)}
             </Button>
-            <span>
+            <Text size="caption" tone="primary" leading="inherit">
               {formatMetric(row[metric], metric)}{" "}
-              <small>{formatUsagePercent(total ? (row[metric] / total) * 100 : 0)}</small>
-            </span>
+              <Text as="small" size="inherit" tone="secondary">
+                {formatUsagePercent(total ? (row[metric] / total) * 100 : 0)}
+              </Text>
+            </Text>
             <div className="usage-rank-track" aria-hidden="true">
               <span
                 style={{
@@ -310,8 +336,16 @@ export function Contribution({
           </div>
         ))}
       </div>
-      {!rows.length && <p className="usage-muted">{t("No records")}</p>}
-      {rows.length > 5 && <p className="usage-muted">{t("Top 5 shown")}</p>}
+      {!rows.length && (
+        <Text as="p" leading="inherit" className="usage-muted">
+          {t("No records")}
+        </Text>
+      )}
+      {rows.length > 5 && (
+        <Text as="p" leading="inherit" className="usage-muted">
+          {t("Top 5 shown")}
+        </Text>
+      )}
     </section>
   );
 }
@@ -427,7 +461,13 @@ export function TimeDistribution({
   return (
     <div className="usage-time-layout">
       <div className="usage-time-secondary">
-        <section className="usage-panel usage-hourly-chart" data-usage-chart="hourly">
+        <section
+          {...surfaceAttributes(
+            { frame: "card", edge: "all", radius: "card", variant: "card" },
+            "usage-panel usage-hourly-chart",
+          )}
+          data-usage-chart="hourly"
+        >
           <div className="usage-section-heading">
             <Heading size="item" level={3}>
               {t(metricNames[metric])}
@@ -455,12 +495,20 @@ export function TimeDistribution({
           />
         </section>
         {calendarDays.length >= 56 && (
-          <section className="usage-panel" data-usage-chart="calendar">
+          <section
+            {...surfaceAttributes(
+              { frame: "card", edge: "all", radius: "card", variant: "card" },
+              "usage-panel",
+            )}
+            data-usage-chart="calendar"
+          >
             <div className="usage-section-heading">
               <Heading size="item" level={3}>
                 {t("Daily activity")}
               </Heading>
-              <span>{t("Latest 90 days within the selected interval")}</span>
+              <Text as="span" leading="inherit">
+                {t("Latest 90 days within the selected interval")}
+              </Text>
             </div>
             <ActivityHeatmap
               days={calendarDays}
@@ -483,15 +531,21 @@ export function TimeDistribution({
           </section>
         )}
       </div>
-      <section className="usage-panel usage-week-panel" data-usage-chart="week">
+      <section
+        {...surfaceAttributes(
+          { frame: "card", edge: "all", radius: "card", variant: "card" },
+          "usage-panel usage-week-panel",
+        )}
+        data-usage-chart="week"
+      >
         <div className="usage-section-heading">
           <div>
             <Heading size="item" level={3}>
               {t("Day and hour activity")}
             </Heading>
-            <p className="usage-muted">
+            <Text as="p" leading="inherit" className="usage-muted">
               {dateLabel(from)} – {dateLabel(dates[dates.length - 1])}
-            </p>
+            </Text>
           </div>
           <div className="usage-controls">
             <Button
@@ -523,17 +577,29 @@ export function TimeDistribution({
           }}
         >
           <div role="row" className="usage-week-row">
-            <span role="columnheader">{t("Time")}</span>
+            <Text size="caption" tone="secondary" leading="inherit" role="columnheader">
+              {t("Time")}
+            </Text>
             {dates.map((date) => (
-              <span key={date} role="columnheader">
-                <b>{new Date(date).toLocaleDateString(locale, { weekday: "short" })}</b>
+              <Text
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                key={date}
+                role="columnheader"
+              >
+                <Text as="b" size="inherit" tone="primary" weight="medium">
+                  {new Date(date).toLocaleDateString(locale, { weekday: "short" })}
+                </Text>
                 {new Date(date).toLocaleDateString(locale, { day: "numeric" })}
-              </span>
+              </Text>
             ))}
           </div>
           {hours.map((hour, rowIndex) => (
             <div role="row" className="usage-week-row" key={hour.key}>
-              <span role="rowheader">{hour.label}</span>
+              <Text size="caption" tone="secondary" leading="inherit" role="rowheader">
+                {hour.label}
+              </Text>
               {dates.map((day, columnIndex) => {
                 const amount = cells.get(`${dayKey(day)}:${rowIndex}`) ?? 0;
                 const start = new Date(day);
@@ -549,6 +615,7 @@ export function TimeDistribution({
                     variant="item"
                     motion="none"
                     className="usage-hour-cell"
+                    textTone={amount > 0 && amount / maximum > 0.75 ? "on-solid" : "primary"}
                     disabled={outside}
                     tabIndex={effectiveFocus === key ? 0 : -1}
                     data-level={
@@ -627,20 +694,28 @@ export function TimeDistribution({
                       target?.focus();
                     }}
                   >
-                    <span aria-hidden>{amount > 0 ? formatMetric(amount, metric) : ""}</span>
+                    <Text size="caption" tone="inherit" leading="inherit" aria-hidden>
+                      {amount > 0 ? formatMetric(amount, metric) : ""}
+                    </Text>
                   </Button>
                 );
               })}
             </div>
           ))}
         </div>
-        <div className="usage-heat-legend">
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className="usage-heat-legend"
+        >
           <span>{t("Less")}</span>
           {[0, 1, 2, 3, 4].map((level) => (
             <i key={level} data-level={level} />
           ))}
           <span>{t("More")}</span>
-        </div>
+        </Text>
       </section>
     </div>
   );

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { Button, type ButtonProps } from "./Button";
-import { ButtonGroup } from "./ButtonGroup";
+import { ButtonGroup, ButtonGroupSelection } from "./ButtonGroup";
 
 it("swaps confirmed success in place, gives pending priority and resets when edited", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -256,6 +256,42 @@ it("renders ButtonGroup as one labelled joined group of ordinary Buttons", async
     // Loading keeps focus and announces busy without disabling its neighbours.
     expect(merge.getAttribute("aria-busy")).toBe("true");
     expect(approve.getAttribute("aria-busy")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("moves the one ButtonGroup selection plate to the selected segment", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const group = (selected: string) =>
+    createElement(
+      ButtonGroup,
+      { "aria-label": "Tools", selection: "plate" },
+      ...["Servers", "Inbox"].map((name) =>
+        createElement(
+          Button,
+          { key: name, selected: name === selected, motion: "none" },
+          name === selected ? createElement(ButtonGroupSelection) : null,
+          name,
+        ),
+      ),
+    );
+  const plateOwner = () => {
+    const plates = container.querySelectorAll("[data-button-group-selection]");
+    expect(plates).toHaveLength(1);
+    return plates[0].closest("button")?.textContent;
+  };
+  try {
+    await act(async () => root.render(group("Servers")));
+    expect(container.querySelector<HTMLElement>('[role="group"]')!.dataset.selection).toBe("plate");
+    expect(plateOwner()).toBe("Servers");
+    await act(async () => root.render(group("Inbox")));
+    expect(plateOwner()).toBe("Inbox");
   } finally {
     await act(async () => root.unmount());
     container.remove();

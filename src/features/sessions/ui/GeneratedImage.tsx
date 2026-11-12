@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -117,9 +118,9 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
       style={state.status === "loading" ? { minHeight: knownHeights.get(image.path) } : undefined}
     >
       {state.status === "loading" ? (
-        <div className="px-4 py-3 text-ui-caption text-(--ui-text-secondary)" role="status">
+        <Text as="div" size="caption" tone="secondary" className="px-4 py-3" role="status">
           {t("Loading generated image…")}
-        </div>
+        </Text>
       ) : state.status === "error" ? (
         <Alert tone="danger">{t("Could not open generated image.")}</Alert>
       ) : (
@@ -144,10 +145,17 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
               className="mx-auto block h-auto w-auto max-h-[min(50dvh,480px)] max-w-full object-contain"
             />
           </Button>
-          <div className="mt-1 flex min-w-0 items-center gap-2 text-ui-micro text-(--ui-text-secondary)">
-            <span className="truncate">{image.name}</span>
+          <Text
+            as="div"
+            size="micro"
+            tone="secondary"
+            className="mt-1 flex min-w-0 items-center gap-2"
+          >
+            <Text size="inherit" tone="inherit" truncate>
+              {image.name}
+            </Text>
             <span>{formatFileSize(state.size)}</span>
-          </div>
+          </Text>
           {open ? <ImageLightbox src={state.url} alt={alt} onClose={() => setOpen(false)} /> : null}
         </div>
       )}

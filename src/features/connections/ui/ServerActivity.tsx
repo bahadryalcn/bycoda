@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useState } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -37,9 +38,9 @@ export function ServerActivity({
           onCheckedChange={setBookmarkedOnly}
         />
       </div>
-      <p className="mbs-2 text-(--ui-text-muted)">
+      <Text as="p" size="inherit" tone="muted" className="mbs-2">
         {t("Launch metadata only. Terminal contents are not recorded.")}
-      </p>
+      </Text>
       {error ? <InlineError className="mbs-2">{error}</InlineError> : null}
       {!visibleActivity.length ? (
         <EmptyState
@@ -56,7 +57,7 @@ export function ServerActivity({
             <li key={event.id} className="flex min-w-0 items-center gap-2 py-1">
               <div className="min-w-0 flex-1">
                 <p>{t("Terminal opened")}</p>
-                <Timestamp value={event.at} className="text-(--ui-text-muted)" />
+                <Timestamp value={event.at} tone="muted" />
               </div>
               <Button
                 variant="ghost"
@@ -88,13 +89,15 @@ export function ServerActivity({
     </>
   );
   return expanded ? (
-    <section className="text-ui-caption">
+    <Text as="section" size="caption" tone="inherit">
       <SectionLabel as="h3">{title}</SectionLabel>
       {content}
-    </section>
+    </Text>
   ) : (
-    <Disclosure size="sm" className="text-ui-caption" summary={title}>
-      {content}
+    <Disclosure size="sm" textSize="caption" summary={title}>
+      <Text as="div" size="caption" tone="inherit">
+        {content}
+      </Text>
     </Disclosure>
   );
 }

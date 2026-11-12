@@ -7,10 +7,7 @@
   border: 1px solid var(--ui-card-border);
   border-radius: var(--radius-panel);
   background: var(--ui-surface-floating);
-  color: var(--color-content);
   font-family: var(--font-sans);
-  font-size: var(--text-ui-body);
-  line-height: 1.5;
   text-align: start;
   overflow-wrap: anywhere;
 }
@@ -22,8 +19,6 @@
   padding-inline: var(--space-6) var(--space-2);
   border-block-end: 1px solid var(--color-stroke);
   flex-shrink: 0;
-  font-size: var(--text-ui-caption);
-  color: var(--ui-text-secondary);
 }
 .usage-guide-progress {
   margin-inline-start: auto;
@@ -37,7 +32,6 @@
   min-block-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   padding: var(--space-6);
 }
 .usage-guide-hero {
@@ -56,8 +50,6 @@
 .usage-guide-companion {
   display: block;
   margin-block-start: var(--space-3);
-  color: var(--ui-text-muted);
-  font-size: var(--text-ui-caption);
 }
 .usage-guide-character {
   flex: 0 0 auto;
@@ -69,12 +61,7 @@
 .usage-guide-content p {
   margin: 0;
 }
-.usage-guide-content {
-  font-size: var(--text-ui-title);
-  font-weight: 400;
-}
 .usage-guide-description {
-  color: var(--ui-text-secondary);
 }
 .usage-guide-example {
   display: flex;
@@ -84,13 +71,11 @@
   margin-inline: 0;
   padding: var(--space-4);
   border-inline-start: 2px solid var(--accent);
-  background: var(--ui-surface-muted);
   border-radius: 0 var(--radius-control) var(--radius-control) 0;
 }
 .usage-guide-example > svg {
   flex-shrink: 0;
   margin-block-start: var(--space-1);
-  color: var(--ui-text-muted);
 }
 .usage-guide-tips {
   display: grid;
@@ -103,15 +88,12 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  color: var(--ui-text-secondary);
 }
 .usage-guide-tips svg {
   flex-shrink: 0;
   margin-block-start: var(--space-1);
-  color: var(--ui-text-muted);
 }
 .usage-guide-shortcut-section {
-  border-block-start: 1px solid var(--color-stroke);
   padding-block-start: var(--space-4);
 }
 .usage-guide-shortcut-title {
@@ -138,8 +120,6 @@
   margin-block: var(--space-4);
   padding-inline-start: var(--space-3);
   border-inline-start: 2px solid var(--ui-tone-neutral-border);
-  font-size: var(--text-ui-caption);
-  color: var(--ui-text-secondary);
 }
 .usage-guide-missing-actions {
   display: flex;
@@ -157,7 +137,6 @@
     block-size: 96px;
   }
   .usage-guide-intro h2 {
-    font-size: var(--text-ui-heading);
   }
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -197,9 +176,6 @@
 .usage-guide-tour-title {
   margin: 0 0 var(--space-2);
   text-wrap: balance;
-}
-.usage-guide-panel--compact .usage-guide-content {
-  font-size: var(--text-ui-body);
 }
 .usage-guide-tryit {
   margin-block-start: var(--space-3);

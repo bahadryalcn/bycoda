@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -30,17 +32,21 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <div
-      className={`flex min-w-0 flex-col gap-1 text-ui-caption font-medium text-(--ui-text-secondary) ${wide ? "sm:col-span-2" : ""}`}
+    <Text
+      as="div"
+      size="caption"
+      tone="secondary"
+      weight="medium"
+      className={`flex min-w-0 flex-col gap-1 ${wide ? "sm:col-span-2" : ""}`}
     >
       <span>{label}</span>
       {children}
       {hint ? (
-        <span className="text-ui-micro font-normal leading-snug text-(--ui-text-secondary)">
+        <Text size="micro" tone="secondary" weight="regular" leading="snug">
           {hint}
-        </span>
+        </Text>
       ) : null}
-    </div>
+    </Text>
   );
 }
 
@@ -93,10 +99,12 @@ function AcpSettingsShell({
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
         <div className="min-w-0">
-          <p className="text-ui-caption leading-snug text-(--ui-text-secondary)">{scope}</p>
-          <p className="text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary" leading="snug">
+            {scope}
+          </Text>
+          <Text as="p" size="caption" tone="secondary">
             {t("Changes require saving")}
-          </p>
+          </Text>
         </div>
         {action}
       </div>
@@ -315,15 +323,15 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           >
             <div className="min-w-0 flex-1">
               <OverflowTooltip label={config.name}>
-                <div className="truncate text-ui-caption font-medium text-content">
+                <Text as="div" size="caption" tone="primary" weight="medium" truncate>
                   {config.name}
-                </div>
+                </Text>
               </OverflowTooltip>
               <OverflowTooltip label={config.command}>
-                <div className="truncate text-ui-caption text-(--ui-text-secondary)">
+                <Text as="div" size="caption" tone="secondary" truncate>
                   {config.command} · {config.envKeys.length}
                   {t(" environment values")}
-                </div>
+                </Text>
               </OverflowTooltip>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
@@ -386,11 +394,18 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 });
               }}
             >
-              <p className="text-ui-micro font-normal leading-snug text-(--ui-text-secondary) sm:col-span-2">
+              <Text
+                as="p"
+                size="micro"
+                tone="secondary"
+                weight="regular"
+                leading="snug"
+                className="sm:col-span-2"
+              >
                 {t(
                   "Configure an executable on the session's machine. Credentials and environment values stay on that machine. Arguments are a JSON array; commands are launched without a shell.",
                 )}
-              </p>
+              </Text>
               <Field label={t("Agent id")}>
                 <TextField
                   label={t("Agent id")}
@@ -527,7 +542,10 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         <div
           id="setting-acp-registry"
           data-setting-id="acp-registry"
-          className="border-t border-(--ui-tone-neutral-border)"
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "top" },
+            "border-(--ui-tone-neutral-border)",
+          )}
         >
           <Disclosure
             variant="row"
@@ -538,16 +556,19 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           >
             <div
               id="setting-acp-registry-results"
-              className="border-t border-(--ui-tone-neutral-border)"
+              {...surfaceAttributes(
+                { frame: "neutral", edge: "top" },
+                "border-(--ui-tone-neutral-border)",
+              )}
             >
-              <p className="px-3 pt-2 text-ui-micro text-(--ui-text-secondary)">
+              <Text as="p" size="micro" tone="secondary" className="px-3 pt-2">
                 {t("Install compatible ACP agents from the registry.")}
-              </p>
-              <p className="px-3 py-2 text-ui-caption leading-snug text-(--ui-text-secondary)">
+              </Text>
+              <Text as="p" size="caption" tone="secondary" leading="snug" className="px-3 py-2">
                 {t(
                   "Install downloads an exact package version into isolated host storage and may run package installation scripts. Binary and Python distributions can be configured as local commands.",
                 )}
-              </p>
+              </Text>
               {registryState === "loading" ? (
                 <Alert tone="info">{t("Loading ACP registry…")}</Alert>
               ) : registryState === "error" ? null : registryState === "loaded" &&
@@ -560,16 +581,24 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                     >
                       <div className="min-w-0 flex-1">
                         <OverflowTooltip label={`${entry.name} ${entry.version}`}>
-                          <div className="truncate text-ui-caption font-medium text-content">
+                          <Text as="div" size="caption" tone="primary" weight="medium" truncate>
                             {entry.name}{" "}
-                            <span className="text-(--ui-text-secondary)">{entry.version}</span>
-                          </div>
+                            <Text size="inherit" tone="secondary">
+                              {entry.version}
+                            </Text>
+                          </Text>
                         </OverflowTooltip>
-                        <p className="mt-0.5 text-ui-caption leading-snug text-(--ui-text-secondary)">
+                        <Text
+                          as="p"
+                          size="caption"
+                          tone="secondary"
+                          leading="snug"
+                          className="mt-0.5"
+                        >
                           {entry.supported
                             ? entry.description
                             : `${entry.description} ${entry.unsupportedReason ?? ""}`.trim()}
-                        </p>
+                        </Text>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
                         {entry.supported ? (
@@ -607,9 +636,9 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   ))}
                 </div>
               ) : registryState === "loaded" ? (
-                <p className="px-3 pb-2 text-ui-micro text-(--ui-text-secondary)">
+                <Text as="p" size="micro" tone="secondary" className="px-3 pb-2">
                   {t("No ACP registry entries found.")}
-                </p>
+                </Text>
               ) : null}
             </div>
           </Disclosure>

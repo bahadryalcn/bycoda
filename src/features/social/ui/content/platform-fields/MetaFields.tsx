@@ -1,3 +1,4 @@
+import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NativeSelect } from "../../../../../shared/ui/Select";
@@ -9,7 +10,9 @@ export function MetaFields({ account, value, disabled, onChange }: PlatformField
   const name = SOCIAL_PLATFORM_NAMES[account.platform];
   if (account.platform !== "facebook")
     return (
-      <p className="content-platform-note">{t("Attach either one video or up to four images.")}</p>
+      <Text as="p" size="caption" tone="muted" leading="inherit" className="content-platform-note">
+        {t("Attach either one video or up to four images.")}
+      </Text>
     );
   const target = value.facebook?.target ?? "feed";
   return (

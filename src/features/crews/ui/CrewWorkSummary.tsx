@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { formatDuration } from "../../../shared/i18n/format";
 import { t, useLocale } from "../../../shared/i18n";
 import { Surface } from "../../../shared/ui/Surface";
@@ -21,41 +22,55 @@ export function CrewWorkSummary({ run }: { run: CrewRunView }) {
       aria-label={t("Work summary")}
       className="mt-3 flex flex-col gap-2"
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-ui-caption text-(--ui-text-secondary)">
+      <Text as="div" className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {doers.length ? <CrewFaces members={doers} max={5} /> : null}
         <span className="tabular-nums">
           {t("Took {p0}", { p0: formatDuration(crewRunElapsedMs(run, run.updatedAt)) })}
         </span>
         {usage ? <span className="tabular-nums">{usage}</span> : null}
-      </div>
+      </Text>
       {summary.done.length ? (
         <div>
-          <p className="text-ui-caption font-medium text-(--ui-text-secondary)">
+          <Text as="p" weight="medium">
             {t("Accepted ({p0})", { p0: summary.done.length })}
-          </p>
-          <ul className="mt-1 list-disc ps-4 text-ui-secondary">
+          </Text>
+          <ul className="mt-1 list-disc ps-4">
             {summary.done.map((item) => (
-              <li key={item.taskId} className="break-words [overflow-wrap:anywhere]">
+              <Text
+                as="li"
+                size="secondary"
+                tone="inherit"
+                key={item.taskId}
+                className="break-words [overflow-wrap:anywhere]"
+              >
                 {item.title}
-              </li>
+              </Text>
             ))}
           </ul>
         </div>
       ) : (
-        <p className="text-ui-secondary text-(--ui-text-secondary)">{t("No task was accepted.")}</p>
+        <Text as="p" size="secondary">
+          {t("No task was accepted.")}
+        </Text>
       )}
       {summary.open.length ? (
         <div>
-          <p className="text-ui-caption font-medium text-(--ui-text-secondary)">
+          <Text as="p" weight="medium">
             {t("Left open ({p0})", { p0: summary.open.length })}
-          </p>
-          <ul className="mt-1 list-disc ps-4 text-ui-secondary">
+          </Text>
+          <ul className="mt-1 list-disc ps-4">
             {summary.open.map((item) => (
-              <li key={item.taskId} className="break-words [overflow-wrap:anywhere]">
+              <Text
+                as="li"
+                size="secondary"
+                tone="inherit"
+                key={item.taskId}
+                className="break-words [overflow-wrap:anywhere]"
+              >
                 {item.status === "blocked"
                   ? t("Blocked: {p0}", { p0: item.title })
                   : t("Not accepted: {p0}", { p0: item.title })}
-              </li>
+              </Text>
             ))}
           </ul>
         </div>

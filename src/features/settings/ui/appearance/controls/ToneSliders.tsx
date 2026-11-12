@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { useColorScheme } from "../../../../../shared/hooks/useColorScheme";
+import { Text } from "../../../../../shared/ui/Text";
 import {
   THEME_DARK_LIGHTNESS_MAX,
   THEME_DARK_LIGHTNESS_MIN,
@@ -106,7 +107,9 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
             ).map(([step, label]) => (
               <span key={step} className="tone-step" data-step={step}>
                 <span className="tone-swatch" />
-                <small>{label}</small>
+                <Text as="span" size="caption" tone="secondary" truncate>
+                  {label}
+                </Text>
               </span>
             ))}
           </div>

@@ -38,7 +38,6 @@
 
 .label {
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -47,12 +46,6 @@
   align-items: center;
   gap: 0.25rem;
   min-inline-size: 0;
-}
-
-.details {
-  margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--text-sm);
 }
 
 @media (forced-colors: active) {

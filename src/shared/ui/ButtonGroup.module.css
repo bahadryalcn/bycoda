@@ -21,6 +21,25 @@
   background: var(--ui-navigation-control);
 }
 
+.group[data-surface="transparent"] {
+  background: transparent;
+}
+
+.group[data-surface="transparent"]::after {
+  display: none;
+}
+
+/* `selection="plate"`: the one selected fill, behind the segment's content. It sits just
+   inside the segment, so neighbouring segments need no divider to stay apart. */
+.selection {
+  position: absolute;
+  z-index: -1;
+  inset: 2px;
+  border-radius: calc(var(--ui-control-radius) - 2px);
+  background: var(--ui-surface-selected);
+  pointer-events: none;
+}
+
 .group::after {
   content: "";
   position: absolute;

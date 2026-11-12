@@ -1,15 +1,13 @@
 ---
 name: feature-inline-visuals
-description: "Change conversation inline HTML/CSS/SVG snapshots, visuals.preview/render, validation, persistence, sandbox, source fallback and expansion."
+description: "Use when changing inline visual tools, snapshots and sandbox rendering. Not for Markdown preview; see feature-markdown-preview."
 ---
 
 # Inline visuals
 
 Own the typed inline snapshot and its isolated renderer. Ordinary HTML attachments remain source/file previews. Rendering adds conversation output; it grants no external publication, native bridge, filesystem mutation or operator authority.
 
-## Source entry points
-
-Code paths below are repository-root relative.
+## Source starts
 
 - `host/conversation/conversation-visual-tools.ts` and `host/conversation/inline-visual-store.ts`
 - `src/features/sessions/model/inlineVisual.ts`
@@ -38,10 +36,13 @@ Code paths below are repository-root relative.
 - HTML asset reads use bounded background admission and release the preview registry during filesystem I/O. Recheck the original live issuer and token before returning bytes; overload and read failure retain no-store and sandbox headers.
 - Mobile needs its own nonprivileged WebView contract and source fallback; desktop support cannot silently enable a native bridge or establish device acceptance.
 
-## Verification and references
+## Focused checks
 
 - Use conversation-visual-tools, inlineVisual reducer/persistence and HtmlPreview tests for the changed seam.
 - Exercise sandbox denial in the actual native renderer when enforcement changes, plus reopen/theme/expansion at project-required dimensions. Pure tests and fixtures do not establish native sandbox enforcement.
+
+## References
+
 - Lasting contract choices: [decisions](references/decisions.md).
-- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
-- [Host authority](../../../docs/reference/host-runtime.md)
+- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners.
+- [Host authority](../../../docs/reference/host-runtime.md) when changing this boundary.

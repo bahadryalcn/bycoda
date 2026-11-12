@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { useState } from "react";
 import { projectName } from "../../../shared/lib/paths";
@@ -77,7 +78,17 @@ export function WorkspaceManagedRow({
             <span className={`settings-collection-main ${styles.identity}`}>
               <span className={styles.line}>
                 <Tooltip label={title} when="overflow">
-                  <span className={styles.title}>{title}</span>
+                  <Text
+                    as="span"
+                    size="secondary"
+                    tone="inherit"
+                    weight="medium"
+                    leading="inherit"
+                    truncate
+                    className={styles.title}
+                  >
+                    {title}
+                  </Text>
                 </Tooltip>
                 <Badge size="sm">{lifecycleLabel(workspace.state)}</Badge>
                 {missing && (
@@ -101,7 +112,15 @@ export function WorkspaceManagedRow({
                 {workspace.pinned && <Badge size="sm">{t("Pinned")}</Badge>}
               </span>
               <Tooltip label={caption} when="overflow">
-                <span className={styles.caption}>{caption}</span>
+                <Text
+                  size="caption"
+                  tone="muted"
+                  leading="inherit"
+                  truncate
+                  className={styles.caption}
+                >
+                  {caption}
+                </Text>
               </Tooltip>
               {pinError && <InlineError className="break-words">{pinError}</InlineError>}
             </span>

@@ -26,6 +26,7 @@ export type ProviderDefaultsChange = {
 };
 
 export type DefaultsDraft = {
+  providerScope?: "all";
   defaultProvider?: HarnessId;
   providers: Partial<Record<HarnessId, ProviderDefaultsChange>>;
   /** Account overrides are machine-wide whatever the target. Keyed by `accountDraftKey`. */
@@ -50,6 +51,8 @@ export function targetValue(target: DefaultsTarget): string {
 }
 
 export function parseTargetValue(value: string, groups: readonly ProjectGroup[]): DefaultsTarget {
+  if (value.startsWith("["))
+    return parseTargetValue(selectedTargetValues(value)[0] ?? "global", groups);
   if (value.startsWith(PROJECT_PREFIX))
     return { kind: "project", path: value.slice(PROJECT_PREFIX.length) };
   if (value.startsWith(GROUP_PREFIX)) {
@@ -57,6 +60,25 @@ export function parseTargetValue(value: string, groups: readonly ProjectGroup[])
     if (group) return { kind: "group", id: group.id, workspace: Boolean(group.workspaceFile) };
   }
   return { kind: "global" };
+}
+
+/** Window-local selection encoding; Global always supplies the preview when selected. */
+export function selectedTargetValues(value: string, available?: readonly string[]): string[] {
+  let values: string[];
+  try {
+    const parsed: unknown = value.startsWith("[") ? JSON.parse(value) : [value];
+    values = Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === "string")
+      : [];
+  } catch {
+    values = [];
+  }
+  const unique = [
+    ...new Set(values.map((entry) => (available && !available.includes(entry) ? "global" : entry))),
+  ];
+  return unique.includes("global")
+    ? ["global", ...unique.filter((entry) => entry !== "global")]
+    : unique;
 }
 
 export function accountDraftKey(harness: HarnessId, accountId: string): string {

@@ -2,13 +2,23 @@
 import { act, createElement, type CSSProperties, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as pickerData from "../model/modelPickerData";
+import { setProjectProviderHidden } from "../model/projectProviders";
 
+const availability = vi.hoisted(() => ({
+  version: 0,
+  grok: true,
+  listeners: new Set<() => void>(),
+}));
 vi.mock("../../../integrations/harness/core/availability", () => ({
-  getHarnessAvailabilitySnapshot: () => 0,
+  getHarnessAvailabilitySnapshot: () => availability.version,
   hasProbedHarnessAvailability: () => true,
-  isHarnessAvailable: () => true,
+  isHarnessAvailable: (id: string) => id !== "grok" || availability.grok,
   probeHarnessAvailability: () => Promise.resolve(),
-  subscribeHarnessAvailability: () => () => undefined,
+  subscribeHarnessAvailability: (listener: () => void) => {
+    availability.listeners.add(listener);
+    return () => availability.listeners.delete(listener);
+  },
 }));
 
 vi.mock("../../../integrations/harness/core/registry", () => ({
@@ -71,6 +81,7 @@ import {
   resetHarnessModelOverlays,
   resetDisabledModels,
   saveModelEnabled,
+  savePickerProviderVisible,
   saveRecentModelChoice,
   setHarnessModels,
 } from "../model/models";
@@ -78,6 +89,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(async () => {
+  availability.grok = true;
   await preloadModelPicker();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
@@ -123,6 +135,128 @@ async function inputText(input: HTMLInputElement, value: string) {
 }
 
 describe("model picker", () => {
+  it("refreshes account labels and open account choices after account changes", async () => {
+    renameProviderAccount("claude", "default", "personal");
+    await act(async () =>
+      root.render(
+        createElement(ModelPicker, {
+          harness: "claude",
+          model: "claude:opus-5",
+          values: {},
+          hideSettings: true,
+          accountChoices: true,
+          onChange: vi.fn(),
+          onSettingsChange: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.querySelector("[data-model-account]")).toBeNull();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click(),
+    );
+    const count = container.querySelectorAll('[role="option"]').length;
+    await act(async () =>
+      saveProviderAccount({ id: "live-work", provider: "claude", label: "work" }),
+    );
+    expect(container.querySelector("[data-model-account]")?.textContent).toBe("personal");
+    expect(container.querySelectorAll('[role="option"]')).toHaveLength(count * 2);
+    expect(container.textContent).toContain("Opus 5 work");
+  });
+
+  it.each(["global", "project", "availability"])(
+    "refreshes provider tabs after %s store changes",
+    async (store) => {
+      await act(async () =>
+        root.render(
+          createElement(ModelPicker, {
+            harness: "claude",
+            model: "claude:opus-5",
+            project: "G:/reactive-picker",
+            values: {},
+            hideSettings: true,
+            allowedHarnesses: ["claude", "grok"],
+            onChange: vi.fn(),
+            onSettingsChange: vi.fn(),
+          }),
+        ),
+      );
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click(),
+      );
+      const grokTab = () => container.querySelector('[role="tab"][aria-label="Grok Build"]');
+      expect(grokTab()).not.toBeNull();
+      await act(async () => {
+        if (store === "global") savePickerProviderVisible("grok", false);
+        else if (store === "project") setProjectProviderHidden("G:/reactive-picker", "grok", true);
+        else {
+          availability.grok = false;
+          availability.version++;
+          for (const listener of availability.listeners) listener();
+        }
+      });
+      expect(grokTab()).toBeNull();
+    },
+  );
+
+  it("refreshes an open recent menu when a model is disabled", async () => {
+    saveRecentModelChoice("claude", "claude:opus-5");
+    await act(async () =>
+      root.render(
+        createElement(ModelPicker, {
+          harness: "grok",
+          model: "grok:grok-4.6",
+          values: {},
+          onChange: vi.fn(),
+          onSettingsChange: vi.fn(),
+        }),
+      ),
+    );
+    await contextMenu(container.querySelector('button[aria-haspopup="dialog"]')!);
+    expect(container.querySelectorAll('[role="menuitemradio"]')).toHaveLength(2);
+    await act(async () => saveModelEnabled("claude:opus-5", false));
+    expect(container.querySelectorAll('[role="menuitemradio"]')).toHaveLength(1);
+  });
+
+  it("refreshes delegation settings when enabled catalog models change", async () => {
+    const models = [
+      { id: "claude:opus-4-6", name: "Reactive Opus", harness: "claude" as const },
+      { id: "claude:sonnet-5", name: "Reactive Sonnet", harness: "claude" as const },
+    ];
+    const source = {
+      modelsFor: () => models,
+      resolve: () => models[0],
+      find: (id: string) => models.find((item) => item.id === id),
+      available: () => true,
+      probed: () => true,
+      refresh: () => {},
+    };
+    const settings = vi.spyOn(pickerData, "menuSettings");
+    try {
+      await act(async () =>
+        root.render(
+          createElement(
+            ModelSourceContext.Provider,
+            { value: source },
+            createElement(ModelPicker, {
+              harness: "claude",
+              model: models[0].id,
+              values: {},
+              allowedHarnesses: ["claude"],
+              onChange: vi.fn(),
+              onSettingsChange: vi.fn(),
+            }),
+          ),
+        ),
+      );
+      const options = () => JSON.stringify(settings.mock.results.at(-1)?.value);
+      expect(options()).toContain("Reactive Sonnet");
+      await act(async () => saveModelEnabled("claude:sonnet-5", false));
+      expect(options()).not.toContain("Reactive Sonnet");
+    } finally {
+      settings.mockRestore();
+    }
+  });
+
   it("selects a model and its named account together and searches account names", async () => {
     renameProviderAccount("claude", "default", "personal");
     saveProviderAccount({

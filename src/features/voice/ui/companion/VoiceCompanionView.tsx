@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Text } from "../../../../shared/ui/Text";
 import type { HTMLAttributes, ReactNode, RefObject } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import { LiveText } from "../../../../shared/ui/LiveText";
@@ -102,7 +104,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           <VoiceErrorMark error={p.error} onShow={p.compact ? p.onToggleCompact : undefined} />
         ) : null}
         {p.compact ? (
-          <div className={styles.heading}>
+          <Text as="div" size="inherit" tone="inherit" leading="snug" className={styles.heading}>
             <Tooltip
               asChild
               label={p.targetTitle}
@@ -113,11 +115,18 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               </SectionLabel>
             </Tooltip>
             <OverflowTooltip label={p.summary}>
-              <span className={styles.summary} aria-hidden="true">
+              <Text
+                truncate
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className={styles.summary}
+                aria-hidden="true"
+              >
                 {truncateGraphemes(p.summary, 96)}
-              </span>
+              </Text>
             </OverflowTooltip>
-          </div>
+          </Text>
         ) : (
           <SectionLabel as="h2" className={styles.title}>
             {p.title}
@@ -179,7 +188,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           </Button>
         )}
       </header>
-      <LiveText className={styles.srOnly} text={p.liveText} />
+      <LiveText {...surfaceAttributes({ frame: "none" }, styles.srOnly)} text={p.liveText} />
       {/* Unmounted when compact so open menus and popovers close with the expanded panel. */}
       {!p.compact && (
         <>
@@ -205,11 +214,15 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
             {p.error ? <VoiceErrorNotice error={p.error} onDismiss={p.onDismissError} /> : null}
             <LiveText
               mode="assertive"
-              className={styles.srOnly}
+              {...surfaceAttributes({ frame: "none" }, styles.srOnly)}
               text={[...new Set(p.error ? [voiceErrorTitle(p.error), p.error] : [])].join(": ")}
             />
             {p.recovery}
-            {p.pushHint ? <p className={parts.caption}>{p.pushHint}</p> : null}
+            {p.pushHint ? (
+              <Text as="p" size="caption" tone="secondary" leading="snug" className={parts.caption}>
+                {p.pushHint}
+              </Text>
+            ) : null}
           </div>
           {/* Questions and job review open in their own panel beside the companion, so the
               conversation stays readable while they are answered. */}
@@ -219,7 +232,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               {p.jobReview}
             </VoiceSidePanel>
           ) : null}
-          <div className={styles.actions}>
+          <div {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, styles.actions)}>
             <VoiceCompanionControls
               status={p.status}
               startDisabled={p.startDisabled}

@@ -6,10 +6,13 @@ import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import type { Transition } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
+import { optionalTextAttributes, type TextRoles } from "../../Text";
 import styles from "./switch.module.css";
 
 export interface SwitchProps extends ComponentPropsWithoutRef<typeof SwitchPrimitive.Root> {
   label?: ReactNode;
+  /** Visible label typography; unset preserves Arc defaults. */
+  labelText?: TextRoles;
   /** Which side of the track the label sits on. `start` suits settings rows with the switch at the end. */
   labelPosition?: "end" | "start";
   /** Secondary line under the label. Needs `label`. */
@@ -28,6 +31,7 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
   function Switch(
     {
       label,
+      labelText,
       labelPosition = "end",
       description,
       compact = false,
@@ -77,7 +81,7 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
     const textNode =
       label != null && label !== false && label !== "" ? (
         <span className={styles.text}>
-          <span className={styles.label}>{label}</span>
+          <span {...optionalTextAttributes(labelText ?? {}, styles.label)}>{label}</span>
           {hasDescription ? (
             <span id={descriptionId} className={styles.description}>
               {description}

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
@@ -25,7 +26,9 @@ export function GitGraphColumnFilter({
   return (
     <>
       <span className="flex min-w-0 items-center gap-1">
-        <span className="truncate">{label}</span>
+        <Text size="inherit" tone="inherit" truncate>
+          {label}
+        </Text>
         <FilterTrigger
           label={name}
           activeCount={activeCount}
@@ -43,10 +46,12 @@ export function GitGraphColumnFilter({
           onDismiss={() => setAnchor(null)}
         >
           <div className="flex flex-col gap-3 p-3">
-            <span className="text-ui-caption font-medium">{name}</span>
-            <span className="text-ui-caption text-(--ui-text-secondary)">
+            <Text as="span" size="caption" tone="inherit" weight="medium">
+              {name}
+            </Text>
+            <Text size="caption" tone="secondary">
               {t("Filters apply to loaded commits")}
-            </span>
+            </Text>
             {keys.map((key) => (
               <TextField
                 key={key}

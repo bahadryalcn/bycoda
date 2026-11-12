@@ -147,6 +147,8 @@ export function VoicePersonaDialog({
               <Checkbox
                 key={duty}
                 className={styles.choice}
+                size="body"
+                tone="primary"
                 label={t(label)}
                 checked={draft.duties.includes(duty)}
                 onChange={(event) => toggleDuty(duty, event.target.checked)}

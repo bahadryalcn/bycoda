@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -56,7 +57,9 @@ export function ActivitySources({ overview }: { overview: ActivityOverview }) {
           ]}
         />
       ) : null}
-      <p className="text-ui-secondary text-(--ui-text-muted)">{activitySourceNote(overview)}</p>
+      <Text as="p" size="secondary" tone="muted">
+        {activitySourceNote(overview)}
+      </Text>
       {rows.length > 1 ? (
         <DescriptionList size="sm">
           {rows.map((row) => (

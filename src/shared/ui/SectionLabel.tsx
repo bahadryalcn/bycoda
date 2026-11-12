@@ -1,4 +1,5 @@
 import type { ComponentPropsWithRef, ReactNode } from "react";
+import { optionalTextAttributes, type TextTone } from "./Text";
 import { ActionHost } from "./ActionHost";
 import { Button } from "./Button";
 import { ChevronRight } from "./icons";
@@ -24,10 +25,17 @@ export type SectionLabelClassNames = {
 };
 
 export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> & {
-  /** Compact standalone caption inside a menu; section actions and disclosure do not apply. */
-  variant?: "section" | "menu";
-  /** Type size: `caption` (12px, default) or `micro` (11px) for dense popovers and cards. */
-  size?: "caption" | "micro";
+  /** Standalone menu caption or inline group label; section actions and disclosure do not apply. */
+  variant?: "section" | "menu" | "inline";
+  /** Type size: `caption` (12px, default), `micro` (11px), or `secondary` (13px). */
+  size?: "caption" | "micro" | "secondary";
+  /**
+   * One line with an ellipsis, for the `inline` and `menu` variants (the section row always
+   * truncates). Needs a block box: a flex or grid item.
+   */
+  truncate?: boolean;
+  /** Label ink; unset preserves the section hierarchy. */
+  tone?: TextTone;
   /** The group name, in sentence case (no uppercase eyebrow). */
   children: ReactNode;
   /** Heading element for the label. Default `h3`; use `div`/`span` when it is not a heading. */
@@ -81,12 +89,14 @@ export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> &
  * Section caption over a list or group: caption size, medium weight, secondary colour, sentence case, never uppercase.
  * Optional `count`, trailing `actions` (always visible) and `collapsible` (heading wraps the button; actions stay outside).
  * `variant="menu"` is a compact standalone menu caption.
+ * `variant="inline"` renders a standalone span without a row or actions.
  * `labelAction` (collapsible) splits the row: the chevron collapses, the label text opens the section's page.
  * @group text
  * @use Caption for a group of rows, or a collapsible group heading over a list (Pinned, Groups).
  * @avoid Showing or hiding detail content: Disclosure. Pane or panel titles: PanelHeader / PaneHeader.
  *
  * @example
+ * <SectionLabel variant="inline" size="secondary">{t("Groups")}</SectionLabel>
  * <SectionLabel count={pinned.length} actions={<Button variant="ghost" iconOnly label={t("Add")}>…</Button>}>
  *   {t("Pinned")}
  * </SectionLabel>
@@ -99,6 +109,8 @@ export function SectionLabel({
   children,
   variant = "section",
   size = "caption",
+  truncate = false,
+  tone,
   as: Heading = "h3",
   labelId,
   count,
@@ -121,12 +133,28 @@ export function SectionLabel({
   className,
   ...props
 }: SectionLabelProps) {
+  if (variant === "inline") {
+    return (
+      <span
+        {...(props as ComponentPropsWithRef<"span">)}
+        id={labelId ?? props.id}
+        {...optionalTextAttributes({ tone }, [styles.inline, className].filter(Boolean).join(" "))}
+        data-size={size === "caption" ? undefined : size}
+        data-truncate={truncate || undefined}
+      >
+        {children}
+      </span>
+    );
+  }
   if (variant === "menu") {
     return (
       <div
         {...props}
+        {...optionalTextAttributes({ tone })}
         className={[
+          optionalTextAttributes({ tone }).className,
           "px-2 pb-0.5 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)",
+          truncate && "min-w-0 truncate",
           className,
         ]
           .filter(Boolean)
@@ -168,7 +196,10 @@ export function SectionLabel({
       <span
         data-rail-section-text={compactRail || undefined}
         id={labelId}
-        className={[styles.text, classNames?.label].filter(Boolean).join(" ")}
+        {...optionalTextAttributes(
+          { tone },
+          [styles.text, classNames?.label].filter(Boolean).join(" "),
+        )}
       >
         {children}
       </span>
@@ -194,7 +225,7 @@ export function SectionLabel({
       {...props}
       {...(host ? { selected } : {})}
       data-section-label=""
-      data-size={size === "micro" ? "micro" : undefined}
+      data-size={size === "caption" ? undefined : size}
       data-compact-rail={compactRail || undefined}
       className={[styles.root, headerProps?.className, className].filter(Boolean).join(" ")}
     >

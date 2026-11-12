@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import "./task-form.css";
 import { t, useLocale } from "../../../shared/i18n";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
@@ -46,11 +47,11 @@ export function TaskBudgetControls({
             onChange={(event) => update("maxTokens", event.target.value)}
           />
         </div>
-        <p className="task-form-hint">
+        <Text as="p" size="micro" tone="secondary" leading="inherit" className="task-form-hint">
           {t(
             "Includes planning, workers, reviewers and correction runs. Empty or zero means unlimited. Token limits depend on provider reporting.",
           )}
-        </p>
+        </Text>
       </div>
     </Disclosure>
   );
@@ -76,15 +77,15 @@ export function TaskBudgetUsage({
       (budget.maxTokens && usage.reportedTokens >= budget.maxTokens * threshold)),
   );
   return (
-    <div className="min-w-0 space-y-1 text-ui-caption">
-      <p className="text-(--ui-text-muted)">
+    <Text as="div" size="caption" tone="inherit" className="min-w-0 space-y-1">
+      <Text as="p" tone="muted" size="inherit">
         {t("Run usage")}
         {nearing ? (
-          <span className="ml-2 text-(--ui-tone-warning-fg)">
+          <Text tone="warning" size="inherit" className="ml-2">
             {t("Run budget is nearing its limit.")}
-          </span>
+          </Text>
         ) : null}
-      </p>
+      </Text>
       {usage ? (
         <DescriptionList size="sm">
           <DescriptionItem term={t("Agent minutes")}>
@@ -101,17 +102,17 @@ export function TaskBudgetUsage({
         </DescriptionList>
       ) : null}
       {stop ? (
-        <p role="status" className="break-words text-(--ui-tone-warning-fg)">
+        <Text as="p" tone="warning" size="inherit" role="status" className="break-words">
           {stop}
-        </p>
+        </Text>
       ) : null}
       {usage?.historyComplete === false ? (
-        <p className="text-ui-micro text-(--ui-tone-warning-fg)">
+        <Text as="p" size="micro" tone="warning">
           {t(
             "Earlier runs are missing from the usage history. Recorded readings are lower bounds.",
           )}
-        </p>
+        </Text>
       ) : null}
-    </div>
+    </Text>
   );
 }

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -152,7 +153,7 @@ export function WorkspaceRewindPreview({
         </ModalActions>
       }
     >
-      <div className="flex min-w-0 flex-col gap-3 text-ui-secondary text-(--ui-text-secondary)">
+      <Text as="div" size="secondary" tone="secondary" className="flex min-w-0 flex-col gap-3">
         <p>
           {t("Turns: {p0} · Commits: {p1} · Files: {p2}", {
             p0: plan.removedUserBlockIds.length,
@@ -160,10 +161,10 @@ export function WorkspaceRewindPreview({
             p2: plan.affectedPaths.length,
           })}
         </p>
-        <p className="break-words font-mono text-ui-caption">
+        <Text as="p" size="caption" tone="inherit" className="break-words font-mono">
           {plan.branchRef.replace(/^refs\/heads\//, "")} · {plan.currentHead.slice(0, 12)} →{" "}
           {plan.targetHead.slice(0, 12)}
-        </p>
+        </Text>
         {plan.merged ? (
           <Alert tone="info">{t("Main is not rewound. The merged result stays in main.")}</Alert>
         ) : null}
@@ -171,14 +172,20 @@ export function WorkspaceRewindPreview({
           <p>{t("Published branches stay unchanged. This rewind only changes this workspace.")}</p>
         ) : null}
         <Disclosure summary={t("Affected commits and files")} size="sm">
-          <ul className="mbs-2 max-h-48 overflow-auto break-words font-mono text-ui-caption">
+          <Text
+            as="ul"
+            size="caption"
+            tone="inherit"
+            leading="inherit"
+            className="mbs-2 max-h-48 overflow-auto break-words font-mono"
+          >
             {plan.affectedCommits.map((commit) => (
               <li key={commit}>{commit}</li>
             ))}
             {plan.affectedPaths.map((path) => (
               <li key={path}>{path}</li>
             ))}
-          </ul>
+          </Text>
         </Disclosure>
         {plan.blockers.map((blocker) => (
           <Alert key={blocker} tone="warning">
@@ -191,7 +198,7 @@ export function WorkspaceRewindPreview({
           </Alert>
         ) : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
-      </div>
+      </Text>
     </Modal>
   );
 }
@@ -225,7 +232,7 @@ export function WorkspaceRewindPreviewHost({ sessionId }: { sessionId: string })
   return (
     <>
       {currentUndo ? (
-        <div className="flex flex-wrap items-center gap-2 text-ui-caption">
+        <Text as="div" size="caption" tone="inherit" className="flex flex-wrap items-center gap-2">
           <Button
             variant="ghost"
             loading={pending}
@@ -246,7 +253,7 @@ export function WorkspaceRewindPreviewHost({ sessionId }: { sessionId: string })
             {t("Undo rewind")}
           </Button>
           {error ? <InlineError>{error}</InlineError> : null}
-        </div>
+        </Text>
       ) : null}
       {current ? (
         <WorkspaceRewindPreview

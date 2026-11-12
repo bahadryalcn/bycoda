@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -15,23 +16,21 @@ const SHOWN_TEAMS = 2;
 /** The teams a library member is in: small crew icons with names, `+N` for the rest. */
 export function CrewMemberTeams({ teams }: { teams: readonly CrewDefinition[] }) {
   useLocale();
-  if (!teams.length)
-    return (
-      <span className="text-ui-caption font-normal text-(--ui-text-secondary)">
-        {t("Not in a team")}
-      </span>
-    );
+  if (!teams.length) return <Text weight="regular">{t("Not in a team")}</Text>;
   const hidden = teams.slice(SHOWN_TEAMS);
   return (
-    <span
-      className="flex min-w-0 items-center gap-2 text-ui-caption font-normal text-(--ui-text-secondary)"
+    <Text
+      weight="regular"
+      className="flex min-w-0 items-center gap-2"
       aria-label={t("Teams")}
       role="group"
     >
       {teams.slice(0, SHOWN_TEAMS).map((team) => (
         <span key={team.id} className="flex min-w-0 items-center gap-1">
           <CrewAvatar crew={team} className="icon-sm shrink-0" />
-          <span className="min-w-0 truncate">{team.name}</span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {team.name}
+          </Text>
         </span>
       ))}
       {hidden.length ? (
@@ -39,7 +38,7 @@ export function CrewMemberTeams({ teams }: { teams: readonly CrewDefinition[] })
           {t("+{p0}", { p0: hidden.length })}
         </span>
       ) : null}
-    </span>
+    </Text>
   );
 }
 

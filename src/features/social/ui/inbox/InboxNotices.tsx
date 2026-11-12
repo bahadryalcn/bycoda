@@ -1,6 +1,7 @@
 import { t } from "../../../../shared/i18n";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import type { UnreadableAccount } from "./inboxTypes";
+import { Text } from "../../../../shared/ui/Text";
 import { unreadableText } from "./inboxModel";
 import "./inbox.css";
 
@@ -29,11 +30,11 @@ export function UnreadableNotice({
       <InlineMessage tone="warning">
         {t("Can't read messages on {p0} accounts.", { p0: accounts.length })}
       </InlineMessage>
-      <ul className="inbox-notice-list">
+      <Text as="ul" size="caption" tone="secondary" leading="inherit" className="inbox-notice-list">
         {accounts.map((account) => (
           <li key={account.accountId}>{text(account)}</li>
         ))}
-      </ul>
+      </Text>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n";
 import type { AssistantSnapshot } from "../../../shared/model/host-contracts/assistant";
 import { assistantPresenceState } from "../model/assistantBriefing";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Text } from "../../../shared/ui/Text";
 import { AssistantPresenceIndicator } from "./AssistantPresenceIndicator";
 import styles from "./AssistantPresenceIndicator.module.css";
 
@@ -54,14 +55,14 @@ export function AssistantPresenceStatus({
       </span>
       {details && (
         <InfoPopover label={t("About computer presence")}>
-          <p className={styles.details}>
+          <Text as="p" tone="muted" leading="inherit">
             {t("Computer presence: {p0}", { p0: label(state.detected) })}
-          </p>
-          <p className={styles.details}>
+          </Text>
+          <Text as="p" tone="muted" leading="inherit">
             {t(
               "Automatic activity comes from this computer. Your Away or Do not disturb choice takes priority.",
             )}
-          </p>
+          </Text>
         </InfoPopover>
       )}
     </div>

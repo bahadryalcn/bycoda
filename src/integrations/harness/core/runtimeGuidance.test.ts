@@ -40,7 +40,8 @@ it("advertises only available bridges and states the CLI fallback once", async (
   const hint = await harnessRuntimeHints("session");
   expect(hint).toContain("skills.search");
   expect(hint).toContain("skills.read");
-  expect(hint).toContain("bycoda-skill-router");
+  expect(hint).toContain("Ordinary code work needs no skill search.");
+  expect(hint).not.toContain("bycoda-skill-router");
   expect(hint).not.toContain("ask whether the owner wants");
   expect(hint).toContain("without owner authorization");
   expect(hint).toContain("does not enable disabled skills");

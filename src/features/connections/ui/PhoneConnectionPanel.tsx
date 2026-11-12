@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useSyncExternalStore } from "react";
 import { Switch } from "../../../shared/ui/Switch";
 import {
@@ -51,9 +52,9 @@ export function PhoneConnectionPanel({
       className="flex flex-col gap-3"
       aria-label={t("Connect your phone")}
     >
-      <p className="text-ui-secondary leading-relaxed text-(--ui-text-muted)">
+      <Text as="p" size="secondary" tone="muted" leading="relaxed">
         {t("Scan a QR code with bycoda on your phone to manage this computer.")}
-      </p>
+      </Text>
       {state.stage !== "closed" ? (
         <PhonePairingFlow
           variant="inline"

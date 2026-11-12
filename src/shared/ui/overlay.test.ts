@@ -466,6 +466,48 @@ it("keeps the live Sash drag width when the container resizes mid-drag", async (
   expect(pane.style.width).toBe("460px");
 });
 
+it("collapses instead of committing when a pointer drag ends below collapseBelow", async () => {
+  const onCollapse = vi.fn();
+  const onCommit = vi.fn();
+  let sash: ReturnType<typeof useDragResize>["sashProps"] | null = null;
+  function Example() {
+    const resize = useDragResize({
+      min: 140,
+      max: () => 360,
+      initial: 176,
+      defaultWidth: 176,
+      collapseBelow: 100,
+      onCollapse,
+      onCommit,
+    });
+    sash = resize.sashProps;
+    return createElement("div", { ref: resize.setPaneRef });
+  }
+  await act(async () => root.render(createElement(Example)));
+  const pane = container.firstElementChild as HTMLElement;
+  const end = (delta: number, keyboard: boolean) =>
+    act(async () => {
+      sash!.onResizeStart();
+      sash!.onResize(delta);
+      sash!.onResizeEnd(delta, { cancelled: false, moved: true, keyboard });
+    });
+  // Between the collapse threshold and the min: clamps and commits.
+  await end(-60, false);
+  expect(pane.style.width).toBe("140px");
+  expect(onCollapse).not.toHaveBeenCalled();
+  expect(onCommit).toHaveBeenLastCalledWith(140);
+  // Keyboard resizing past the threshold only clamps.
+  await end(-100, true);
+  expect(onCollapse).not.toHaveBeenCalled();
+  expect(pane.style.width).toBe("140px");
+  onCommit.mockClear();
+  // A pointer drag past the threshold collapses and keeps the previous width.
+  await end(-60, false);
+  expect(onCollapse).toHaveBeenCalledTimes(1);
+  expect(onCommit).not.toHaveBeenCalled();
+  expect(pane.style.width).toBe("140px");
+});
+
 it("changes resize axis without retaining the previous dimension", async () => {
   function Example({ vertical }: { vertical: boolean }) {
     const resize = useDragResize({

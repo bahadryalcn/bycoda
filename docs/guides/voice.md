@@ -226,6 +226,11 @@ secondary actions, such as finishing the turn and muting the speaker. The status
 row shows the connection state and the **Global** scope toggle. Your speech and
 replies appear as chat bubbles.
 
+Drag any edge or corner of the expanded companion to resize it. The opposite
+edge stays in place, and the panel stays inside the window. Size and position
+are saved on this device. The header resize button also supports arrow keys;
+double-click it to return to automatic sizing.
+
 Choose **Settings → Voice assistant → Companion → Visual style** to select
 **bycoda mark** (default), **Wave**, **Dots** or **Orb**. Each option has a live
 preview. Changing the style updates an open companion immediately and keeps the

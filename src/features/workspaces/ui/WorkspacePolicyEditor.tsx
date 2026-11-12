@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useId } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -142,11 +144,13 @@ export function WorkspacePolicyEditor({
         id="setting-workspace-retention"
         data-setting-id="workspace-retention"
         aria-labelledby={retentionHeadingId}
-        className={styles.block}
+        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, styles.block)}
       >
         <Heading size="item" id={retentionHeadingId} className={styles.subheading}>
           {t("Automatic cleanup")}
-          <small className={styles.muted}>{t("Active and pinned workspaces are excluded")}</small>
+          <Text as="span" size="caption" tone="secondary" weight="regular" leading="inherit">
+            {t("Active and pinned workspaces are excluded")}
+          </Text>
         </Heading>
         <div className={styles.grid4}>
           {retentionStates.map((state) => {
@@ -154,7 +158,9 @@ export function WorkspacePolicyEditor({
             const label = lifecycleLabel(state);
             return (
               <div key={state} className={styles.cell}>
-                <span className={styles.cellLabel}>{label}</span>
+                <Text size="caption" tone="secondary" leading="inherit">
+                  {label}
+                </Text>
                 <Select
                   hideLabel
                   className="w-full"
@@ -199,14 +205,16 @@ export function WorkspacePolicyEditor({
         id="setting-workspace-disk-policy"
         data-setting-id="workspace-disk-policy"
         aria-labelledby={limitsHeadingId}
-        className={styles.block}
+        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, styles.block)}
       >
         <Heading size="item" id={limitsHeadingId} className={styles.subheading}>
           {t("Limits")}
         </Heading>
         <div className={styles.grid3}>
           <div className={styles.cell}>
-            <span className={styles.cellLabel}>{t("Directory budget (GiB)")}</span>
+            <Text size="caption" tone="secondary" leading="inherit">
+              {t("Directory budget (GiB)")}
+            </Text>
             <NumberField
               className="w-full"
               label={t("Directory budget (GiB)")}
@@ -228,7 +236,9 @@ export function WorkspacePolicyEditor({
             />
           </div>
           <div className={styles.cell}>
-            <span className={styles.cellLabel}>{t("Warn at (%)")}</span>
+            <Text size="caption" tone="secondary" leading="inherit">
+              {t("Warn at (%)")}
+            </Text>
             <NumberField
               className="w-full"
               label={t("Warn at (%)")}
@@ -251,7 +261,9 @@ export function WorkspacePolicyEditor({
             />
           </div>
           <div className={styles.cell}>
-            <span className={styles.cellLabel}>{t("Minimum free space (GiB)")}</span>
+            <Text size="caption" tone="secondary" leading="inherit">
+              {t("Minimum free space (GiB)")}
+            </Text>
             <NumberField
               className="w-full"
               label={t("Minimum free space (GiB)")}
@@ -275,7 +287,13 @@ export function WorkspacePolicyEditor({
         </div>
       </section>
       {dirty && (
-        <div className={styles.saveBar}>
+        <Text
+          as="div"
+          size="caption"
+          tone="inherit"
+          leading="inherit"
+          {...surfaceAttributes({ radius: "popup", variant: "floating" }, styles.saveBar)}
+        >
           <span className={styles.saveDot} aria-hidden="true" />
           <span>{t("Unsaved changes")}</span>
           <span className={styles.saveSpacer} />
@@ -291,7 +309,7 @@ export function WorkspacePolicyEditor({
           >
             {t("Save")}
           </Button>
-        </div>
+        </Text>
       )}
     </Group>
   );

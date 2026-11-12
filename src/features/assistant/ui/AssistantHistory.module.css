@@ -11,11 +11,6 @@
   gap: 8px;
   min-inline-size: 0;
 }
-.heading span {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-variant-numeric: tabular-nums;
-}
 .history {
   display: grid;
   gap: 16px;
@@ -33,8 +28,6 @@
   padding: 0;
   list-style: none;
   min-inline-size: 0;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
   overflow: hidden;
 }
 .event {
@@ -48,16 +41,12 @@
   border-block-start: 1px solid var(--ui-pane-border);
 }
 .time {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   white-space: nowrap;
   min-inline-size: 0;
 }
 .summary {
   margin: 0;
   min-inline-size: 0;
-  font-size: var(--ui-font-secondary);
-  line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -70,7 +59,6 @@
   display: block;
   margin: 0;
   padding-block: 24px;
-  color: var(--ui-text-secondary);
   text-align: center;
 }
 /* An empty live region must keep no height; the empty state still occupies its place only while it has text. */

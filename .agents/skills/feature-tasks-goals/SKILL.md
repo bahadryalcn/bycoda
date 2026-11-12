@@ -1,15 +1,13 @@
 ---
 name: feature-tasks-goals
-description: "Change task boards, goals, sprints, stewards, budgets, dependencies, attempts, review/acceptance or execution workspace and delivery workflows."
+description: "Use when changing task boards, goals, sprints, stewards and review. Not for worktree policy; see feature-managed-workspaces."
 ---
 
 # Tasks and goals
 
 Own background-work lifecycle and UI. Crews owns team/member/run composition; managed-workspaces owns execution/delivery contracts; Host runtime owns operation writers and transport. A task tool or PASS result grants no merge/push/publication permission.
 
-## Source entry points
-
-Code paths below are repository-root relative.
+## Source starts
 
 - `src/features/tasks/ui/TasksView.tsx`
 - `src/features/tasks/model/taskClient.ts`
@@ -28,8 +26,7 @@ Code paths below are repository-root relative.
 - Scope initial reads and retries to the selected project Host; optional collections and unrelated Host failures must not make a successfully read empty task list unavailable. Publish project and sprint data incrementally; coalesce slow polling and retain stale limits with explicit read errors.
 - New-task creation keeps a stable receipt identity separate from edit mode. Reconcile an uncertain save before resending; optional metadata must not invalidate an accepted save. Start acknowledges persisted queue admission, not completion of the global scheduler pass.
 - Keep custom provider/model/reasoning values, drafts, budgets/concurrency and manual-start policy. Omitted reviewer configuration differs from explicit null.
-- Implementation completion, review PASS, acceptance, delivery/merge, installation and release are separate states with separate authority.
-- Retain attempt history, artifact/handoff manifests, findings/rechecks, goal plan approval and sprint/steward recovery/reporting/daily-limit semantics.
+- Implementation completion, review PASS, acceptance, delivery/merge, installation and release are separate states with separate authority. Retain attempt history, artifact/handoff manifests, findings/rechecks, goal plan approval and sprint/steward recovery/reporting/daily-limit semantics.
 - Count confirmed monotonic run intervals by exact run identity and local calendar day. Preserve unknown intervals across recovery; limited new work must wait rather than treating unknown usage as zero or exhausted. Transcript durations do not prove active time; retain token and cost completeness independently.
 - Bound task history with a transactional sequence floor. A cursor below it reports a gap; reseed only the affected source scope and retain the report's incomplete-history boundary.
 - Owner UI approval binds reviewed identities; overlapping delivery must refuse without destroying unrelated dirty target work or source/recovery records.

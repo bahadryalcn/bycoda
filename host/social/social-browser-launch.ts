@@ -6,14 +6,13 @@ import type { NativeGuardianChild } from "../provider-guardian";
 import type { BrowserVisibility } from "./browser-layers/types";
 
 /**
- * Chromium arguments for a browser window's visibility. Hidden keeps a normal headful window on a
- * position outside every display, never minimized, so pages behave as they do for the owner and
- * nothing is shown. Visible adds no argument. The launcher applies these only when it runs in background mode.
+ * Hidden uses Chrome's current headless engine so no desktop window is created.
+ * Visible adds no argument. Used only for background execution.
  */
 export function launchArgs(visibility: BrowserVisibility): string[] {
   return visibility === "hidden"
     ? [
-        "--window-position=-32000,-32000",
+        "--headless=new",
         "--disable-renderer-backgrounding",
         "--disable-backgrounding-occluded-windows",
       ]

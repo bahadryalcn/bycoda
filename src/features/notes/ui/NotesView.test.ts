@@ -46,7 +46,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 function pickerRows(scope: ParentNode = document): { button: HTMLButtonElement; path: string }[] {
   const picker = scope.querySelector('[aria-label="Project picker"]') ?? scope;
   return [...picker.querySelectorAll<HTMLButtonElement>("button")].flatMap((button) => {
-    const [name, parent] = [...button.querySelectorAll("span.truncate")].map(
+    const [name, parent] = [...button.querySelectorAll("span.truncate, span[data-truncate]")].map(
       (span) => span.textContent ?? "",
     );
     return name !== undefined && parent !== undefined

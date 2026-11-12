@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -180,14 +181,14 @@ export function WorktreePicker({
             }}
           />
           {worktreeRemoved && (
-            <p className="shrink-0 px-3 pt-2 pb-1 text-ui-micro text-(--ui-text-secondary)">
+            <Text as="p" size="micro" tone="secondary" className="shrink-0 px-3 pt-2 pb-1">
               {t("This session’s worktree was deleted. Select a working copy to continue.")}
-            </p>
+            </Text>
           )}
           {opensNewSession && !worktreeRemoved && (
-            <p className="shrink-0 px-3 pt-2 pb-1 text-ui-micro text-(--ui-text-secondary)">
+            <Text as="p" size="micro" tone="secondary" className="shrink-0 px-3 pt-2 pb-1">
               {t("Another working copy opens a new session.")}
-            </p>
+            </Text>
           )}
           <div
             className="min-h-0 overflow-y-auto p-1"
@@ -214,18 +215,15 @@ export function WorktreePicker({
                 className={" flex w-full items-center gap-2 text-left "}
               >
                 {tree.isMain ? (
-                  <GitBranch className="icon-sm shrink-0 text-(--ui-text-secondary)" />
+                  <GitBranch className="icon-sm shrink-0" tone="secondary" />
                 ) : (
-                  <FolderTree className="icon-sm shrink-0 text-(--ui-text-secondary)" />
+                  <FolderTree className="icon-sm shrink-0" tone="secondary" />
                 )}
                 <span className="min-w-0 flex-1">
-                  <MiddleTruncate mode="text" className="text-ui-body">
+                  <MiddleTruncate mode="text" size="body">
                     {tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) })}
                   </MiddleTruncate>
-                  <MiddleTruncate
-                    mode="path"
-                    className="text-ui-caption text-(--ui-text-secondary)"
-                  >
+                  <MiddleTruncate mode="path" size="caption" tone="secondary">
                     {`${tree.isMain ? `${t("Project folder")} · ` : ""}${prettyCwd(tree.path)}${tree.missing ? t(" · Missing") : ""}`}
                   </MiddleTruncate>
                 </span>
@@ -255,7 +253,12 @@ export function WorktreePicker({
               {error || loadError}
             </InlineError>
           )}
-          <div className="shrink-0 border-t border-stroke p-1 text-ui-caption">
+          <Text
+            as="div"
+            size="caption"
+            tone="inherit"
+            className="shrink-0 border-t border-stroke p-1"
+          >
             <Button
               variant="item"
               motion="none"
@@ -300,7 +303,7 @@ export function WorktreePicker({
                 {t("Manage worktrees…")}
               </Button>
             )}
-          </div>
+          </Text>
         </Popover>
       )}
       {creating && (

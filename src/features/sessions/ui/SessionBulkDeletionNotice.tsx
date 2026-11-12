@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -33,11 +34,7 @@ export function SessionBulkDeletionNotice({
     <InlineMessage
       tone={error && !progress ? "danger" : "neutral"}
       icon={
-        progress ? (
-          <Spinner className="text-(--ui-tone-danger-fg)" />
-        ) : success ? (
-          <Check className="icon-sm" />
-        ) : undefined
+        progress ? <Spinner tone="danger" /> : success ? <Check className="icon-sm" /> : undefined
       }
       data-session-delete-status
       aria-label={
@@ -52,14 +49,16 @@ export function SessionBulkDeletionNotice({
     >
       <span className="flex min-w-0 items-center gap-2">
         <OverflowTooltip label={text}>
-          <span className="min-w-0 flex-1 truncate">{text}</span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+            {text}
+          </Text>
         </OverflowTooltip>
         {progress ? (
           <span className="shrink-0 tabular-nums">
             {progress.completed}/{progress.total}
           </span>
         ) : null}
-        <Trash2 className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" aria-hidden />
+        <Trash2 className="icon-sm shrink-0" tone="danger" aria-hidden />
         {!progress ? (
           <Button
             variant="ghost"

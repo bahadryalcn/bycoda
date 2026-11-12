@@ -23,8 +23,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
 }
 .quote {
   margin: 0;
@@ -34,9 +32,6 @@
   overflow: auto;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.65;
 }
 .footer {
   display: flex;

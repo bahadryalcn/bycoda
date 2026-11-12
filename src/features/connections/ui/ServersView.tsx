@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Heading } from "../../../shared/ui/Heading";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -386,10 +388,13 @@ export function ServersView({
   const saveColor = (serverId: string, patch: ServerMetadataPatch) =>
     void runAction(() => updateServerMetadata(serverId, patch));
   return (
-    <section
+    <Text
+      as="section"
+      size="inherit"
+      tone="primary"
       aria-label={t("Servers")}
       data-app-servers
-      className="@container/servers flex min-h-0 min-w-0 flex-1 flex-col text-content"
+      className="@container/servers flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <PaneHeader
         dragRegion
@@ -401,10 +406,17 @@ export function ServersView({
         trailing={IS_MAC ? null : <WindowControls />}
       >
         <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-body">
-            <Server aria-hidden className="icon-sm shrink-0 text-(--ui-text-muted)" />
-            <span className="truncate">{t("Servers")}</span>
-          </div>
+          <Text
+            as="div"
+            size="body"
+            tone="inherit"
+            className="flex min-w-0 flex-1 items-center gap-2 px-3"
+          >
+            <Server aria-hidden className="icon-sm shrink-0" tone="muted" />
+            <Text size="inherit" tone="inherit" truncate>
+              {t("Servers")}
+            </Text>
+          </Text>
         </ToolHeader>
       </PaneHeader>
       <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
@@ -431,9 +443,9 @@ export function ServersView({
               >
                 <ListFilter aria-hidden className="icon-sm" />
                 {filterCount > 0 ? (
-                  <span aria-hidden className="text-ui-caption tabular-nums">
+                  <Text aria-hidden tone="inherit" className="tabular-nums">
                     {filterCount}
-                  </span>
+                  </Text>
                 ) : null}
               </Button>
               {filtersOpen ? (
@@ -624,9 +636,15 @@ export function ServersView({
             />
           ) : null}
           {servers.length > 0 || !loaded ? (
-            <div
+            <Text
+              as="div"
+              size="caption"
+              tone="inherit"
               aria-busy={bulkBusy}
-              className="servers-selection-bar sticky top-0 z-1 bg-(--ui-workspace-reading-base) text-ui-caption"
+              {...surfaceAttributes(
+                { variant: "reading-base" },
+                "servers-selection-bar sticky top-0 z-1",
+              )}
             >
               {checkedServers.length > 0 ? (
                 <Checkbox
@@ -649,22 +667,22 @@ export function ServersView({
               ) : null}
               <Heading size="section" className="min-w-0">
                 {t("Servers")}{" "}
-                <span className="text-(--ui-text-muted) tabular-nums">
+                <Text size="inherit" tone="muted" className="tabular-nums">
                   {loaded
                     ? filtered.length === servers.length
                       ? servers.length
                       : `${filtered.length} / ${servers.length}`
                     : null}
-                </span>
+                </Text>
               </Heading>
               {checkedServers.length ? (
                 <>
-                  <span role="status" className="text-(--ui-text-secondary)">
+                  <Text role="status" size="inherit">
                     {t("{p0} selected", { p0: checkedServers.length })}
                     {checkedServers.length > visibleChecked
                       ? ` · ${t("{p0} hidden", { p0: checkedServers.length - visibleChecked })}`
                       : ""}
-                  </span>
+                  </Text>
                   <Button
                     variant="ghost"
                     disabled={bulkBusy}
@@ -695,16 +713,18 @@ export function ServersView({
                   </div>
                 </>
               ) : (
-                <span className="ms-auto min-w-0 text-right text-(--ui-text-muted)">
+                <Text size="inherit" tone="muted" className="ms-auto min-w-0 text-right">
                   {filterSummary ? (
                     <Tooltip label={filterSummary} when="overflow">
-                      <span className="block truncate">{filterSummary}</span>
+                      <Text size="inherit" tone="inherit" truncate className="block">
+                        {filterSummary}
+                      </Text>
                     </Tooltip>
                   ) : null}
                   {recentFirst ? <span className="block">{t("Recently used first")}</span> : null}
-                </span>
+                </Text>
               )}
-            </div>
+            </Text>
           ) : null}
           <ul
             aria-label={t("Servers")}
@@ -760,9 +780,9 @@ export function ServersView({
               className="flex min-h-0 min-w-0 flex-col"
             >
               <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-4 py-3">
-                <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
+                <Server aria-hidden className="icon-md shrink-0" tone="muted" />
                 <OverflowTooltip label={selected.name}>
-                  <Heading size="section" className="min-w-0 flex-1 truncate">
+                  <Heading size="section" truncate className="min-w-0 flex-1">
                     {selected.name}
                   </Heading>
                 </OverflowTooltip>
@@ -893,7 +913,7 @@ export function ServersView({
             </div>
           }
         >
-          <div className="flex flex-col gap-3 text-ui-body">
+          <Text as="div" size="body" tone="inherit" className="flex flex-col gap-3">
             <p>
               {t(
                 "Removes saved connections from bycoda. Remote machines and their running sessions are not deleted.",
@@ -902,10 +922,12 @@ export function ServersView({
             <ul className="max-h-48 overflow-auto">
               {bulkTargets.map((server) => (
                 <li key={server.id} className="py-1">
-                  <span className="font-medium">{server.name}</span>
-                  <span className="block break-all text-ui-caption text-(--ui-text-muted)">
+                  <Text as="span" size="inherit" tone="inherit" weight="medium">
+                    {server.name}
+                  </Text>
+                  <Text tone="muted" className="block break-all">
                     {address(server)}
-                  </span>
+                  </Text>
                 </li>
               ))}
             </ul>
@@ -914,7 +936,7 @@ export function ServersView({
                 <span className="whitespace-pre-wrap">{actionError}</span>
               </Alert>
             ) : null}
-          </div>
+          </Text>
         </Modal>
       ) : null}
       {deleteTarget ? (
@@ -928,15 +950,17 @@ export function ServersView({
             if (!deleting) setDeleteTarget(undefined);
           }}
         >
-          <div className="flex flex-col gap-3 p-3 text-ui-body">
-            <p className="font-medium">{t("Delete {p0}?", { p0: deleteTarget.server.name })}</p>
-            <p className="text-ui-caption text-(--ui-text-muted)">
+          <Text as="div" size="body" tone="inherit" className="flex flex-col gap-3 p-3">
+            <Text as="p" size="inherit" tone="inherit" weight="medium">
+              {t("Delete {p0}?", { p0: deleteTarget.server.name })}
+            </Text>
+            <Text as="p" tone="muted">
               {deleteTarget.server.kind === "ssh"
                 ? t("Removes this SSH server from bycoda. The remote machine is not changed.")
                 : t(
                     "Removes this machine from this desktop only. The host and its sessions keep running.",
                   )}
-            </p>
+            </Text>
             <ConfirmMorph
               label={t("Delete")}
               icon={<Trash2 aria-hidden className="icon-sm" />}
@@ -949,7 +973,7 @@ export function ServersView({
               }}
               onCancel={() => setDeleteTarget(undefined)}
             />
-          </div>
+          </Text>
         </Popover>
       ) : null}
       {quickConnect ? <QuickConnect onClose={() => setQuickConnect(false)} /> : null}
@@ -978,6 +1002,6 @@ export function ServersView({
           }}
         />
       ) : null}
-    </section>
+    </Text>
   );
 }

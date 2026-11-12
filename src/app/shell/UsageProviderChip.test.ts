@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import type { ProviderRateLimits } from "../../features/providers/model/rateLimits";
 import { projectKey } from "../../shared/lib/paths";
-import { saveTabGroupMascot } from "../../features/workspace/model/tabGroups";
+import {
+  saveTabGroupCustomColor,
+  saveTabGroupMascot,
+} from "../../features/workspace/model/tabGroups";
 import { needsProviderLogin } from "../../features/providers/model/accountUsage";
 import { UsageProviderChip } from "./UsageProviderChip";
 import { saveShowRemainingUsage } from "../../features/settings/model/displayPrefs";
@@ -690,6 +693,8 @@ describe("UsageProviderChip", () => {
     await act(async () => button("Codex usage details").click());
     const mascot = document.querySelector('[data-reset-mascot-mood="happy"]');
     expect(mascot?.getAttribute("data-mascot-name")).toBe("link");
+    act(() => saveTabGroupCustomColor(projectKey(project), "#123456"));
+    expect((mascot as HTMLElement).style.color).toBe("#123456");
   });
 
   it("hides the banked resets card when no resets are available", async () => {

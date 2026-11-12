@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { canRunHarnessTextPrompt } from "../../../../integrations/harness";
 import { HARNESSES } from "../../../../shared/model/harnessIdentity";
@@ -19,12 +20,12 @@ export function BuilderModelStep({
   onChange: (choice: TranslationChoice) => void;
 }) {
   return (
-    <div className={styles.stage}>
-      <p className={styles.muted}>
+    <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.stage}>
+      <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.muted}>
         {t(
           "A model asks you a few questions about how you want your assistant to look, sound and behave, then proposes a full profile. Nothing changes until you review it and save.",
         )}
-      </p>
+      </Text>
       <ModelPicker
         harness={choice.harness}
         model={choice.model}
@@ -47,6 +48,6 @@ export function BuilderModelStep({
         }
         onSettingsChange={(modelSettings) => onChange({ ...choice, modelSettings })}
       />
-    </div>
+    </Text>
   );
 }

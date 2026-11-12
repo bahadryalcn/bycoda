@@ -1,4 +1,6 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useState } from "react";
+import { Text } from "../../../../shared/ui/Text";
 import { t, useLocale } from "../../../../shared/i18n";
 import { copyText } from "../../../../platform/tauri/clipboard";
 import { Button } from "../../../../shared/ui/Button";
@@ -118,7 +120,15 @@ function SlackAccountForm({ account, onSaved, onCancel }: AccountFormProps) {
             t("Invite the bot to each channel it should read with /invite."),
           ]}
         >
-          <p className="integration-code">{SLACK_BOT_SCOPES.join(" ")}</p>
+          <Text
+            as="p"
+            size="caption"
+            tone="secondary"
+            leading="inherit"
+            {...surfaceAttributes({ radius: "card", variant: "plain" }, "integration-code")}
+          >
+            {SLACK_BOT_SCOPES.join(" ")}
+          </Text>
           <div className="integration-actions">
             <Button
               stableWidth

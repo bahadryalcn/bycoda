@@ -1,9 +1,11 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Heading } from "../../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../../shared/ui/InlineError";
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
+import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { DisabledReason, gateProps, type ActionGate } from "../../common/DisabledReason";
 import type { XProfilePatch, XProfileState } from "../../../model/socialBrowser";
@@ -86,9 +88,14 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
   );
 
   return (
-    <section className="social-card" aria-label={t("X profile")}>
+    <section
+      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      aria-label={t("X profile")}
+    >
       <Heading size="item">{t("X profile and following")}</Heading>
-      <p className="social-muted">{t("Public profile fields of {p1}.", { p1: accountName })}</p>
+      <Text as="p" tone="muted" leading="snug" className="social-muted">
+        {t("Public profile fields of {p1}.", { p1: accountName })}
+      </Text>
       <Button
         variant="secondary"
         size="sm"
@@ -100,7 +107,7 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
       </Button>
       {values ? (
         <form
-          className="social-card"
+          {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
           onSubmit={(event) => {
             event.preventDefault();
             if (!saveGate.disabled) save();
@@ -150,11 +157,11 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
         </DisabledReason>
       </div>
       {followed ? (
-        <p className="social-muted">
+        <Text as="p" tone="muted" leading="snug" className="social-muted">
           {followed.following
             ? t("Following @{p1}", { p1: followed.handle })
             : t("Not following @{p1}", { p1: followed.handle })}
-        </p>
+        </Text>
       ) : null}
       {error ? (
         <InlineMessage tone="danger" retry={{ onRetry: read, label: t("Read profile") }}>

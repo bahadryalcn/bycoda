@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useMemo, type ReactNode } from "react";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
@@ -29,13 +30,14 @@ function MemberLinkMark({ link }: { link?: "linked" | "customized" }) {
   if (link !== "customized") return null;
   return (
     <Tooltip label={t("Not following library profile")} asChild>
-      <span
+      <Text
         role="img"
         aria-label={t("Not following library profile")}
-        className="inline-flex shrink-0 text-(--ui-text-secondary)"
+        size="inherit"
+        className="inline-flex shrink-0"
       >
         <GitBranch className="icon-xs" aria-hidden />
-      </span>
+      </Text>
     </Tooltip>
   );
 }
@@ -174,11 +176,11 @@ export function CrewMemberTable({
   if (agents.length === 0)
     return (
       <div className="flex flex-col items-start gap-3 py-2">
-        <p className="text-ui-body text-(--ui-text-secondary)">
+        <Text as="p" size="body">
           {t(
             "A crew needs a coordinator, at least one specialist and a reviewer. Pick members from your library or start with one of each.",
           )}
-        </p>
+        </Text>
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" startIcon={<Plus />} onClick={() => onAdd()}>
             {t("Add members")}
@@ -191,9 +193,7 @@ export function CrewMemberTable({
             {t("Use starter roster")}
           </Button>
         </div>
-        {unfinishedNote ? (
-          <p className="text-ui-caption text-(--ui-text-secondary)">{unfinishedNote}</p>
-        ) : null}
+        {unfinishedNote ? <Text as="p">{unfinishedNote}</Text> : null}
       </div>
     );
 
@@ -210,12 +210,12 @@ export function CrewMemberTable({
             onChange={(event) => onQueryChange(event.target.value)}
           />
           {queryActive ? (
-            <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
+            <Text className="tabular-nums">
               {t("{p0} of {p1} members shown", {
                 p0: matchCount,
                 p1: agents.length,
               })}
-            </span>
+            </Text>
           ) : null}
         </div>
       ) : null}
@@ -232,9 +232,9 @@ export function CrewMemberTable({
               <Heading size="item" level={4}>
                 {section.title}
               </Heading>
-              <span className="min-w-0 flex-1 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+              <Text className="min-w-0 flex-1 tabular-nums">
                 {queryActive ? `${shown.length}/${all.length}` : all.length}
-              </span>
+              </Text>
               {all.length > 0 && (section.role === "specialist" || section.role === "advisor") ? (
                 <Button
                   variant="ghost"
@@ -247,12 +247,12 @@ export function CrewMemberTable({
               ) : null}
             </div>
             {section.issue ? (
-              <p role="status" className="text-ui-caption text-danger">
+              <Text role="status" as="p" tone="danger">
                 {section.issue}
-              </p>
+              </Text>
             ) : null}
             {shown.length ? (
-              <ul className="flex min-w-0 flex-col gap-px">
+              <ul className="flex min-w-0 flex-col gap-0">
                 {shown.map((agent) => {
                   const problem = issues.members[agent.id];
                   const open = expandedId === agent.id;
@@ -288,25 +288,29 @@ export function CrewMemberTable({
                           onClick={() => onExpandedChange(open ? null : agent.id)}
                         >
                           <span className="flex min-w-0 flex-1 items-baseline gap-2 text-start">
-                            <span className="min-w-0 truncate text-ui-body font-medium">
+                            <Text
+                              size="body"
+                              tone="inherit"
+                              weight="medium"
+                              truncate
+                              className="min-w-0"
+                            >
                               {name}
-                            </span>
+                            </Text>
                             {data.identitySupported ? (
                               <MemberLinkMark link={memberLink(agent, data.agents)?.state} />
                             ) : null}
                             {agent.handle ? (
-                              <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
-                                @{agent.handle}
-                              </span>
+                              <Text className="shrink-0">@{agent.handle}</Text>
                             ) : null}
                             {problem ? (
-                              <span className="shrink-0 text-ui-caption text-danger">
+                              <Text tone="danger" className="shrink-0">
                                 {problem === "model" ? t("Choose a model") : t("Add a name")}
-                              </span>
+                              </Text>
                             ) : agent.groups?.length ? (
-                              <span className="min-w-0 flex-1 basis-0 truncate text-ui-caption text-(--ui-text-secondary)">
+                              <Text truncate className="min-w-0 flex-1 basis-0">
                                 {agent.groups.join(", ")}
-                              </span>
+                              </Text>
                             ) : null}
                           </span>
                         </Button>
@@ -333,10 +337,10 @@ export function CrewMemberTable({
                               endIcon={<ChevronDown aria-hidden />}
                               onClick={() => onExpandedChange(agent.id)}
                             >
-                              <span className="truncate">
+                              <Text size="inherit" tone="inherit" truncate>
                                 {(agent.pool && poolNames.get(agent.pool.id)) ||
                                   memberModelSummary(data.catalog, agent)}
-                              </span>
+                              </Text>
                             </Button>
                           )}
                         </div>
@@ -355,9 +359,7 @@ export function CrewMemberTable({
                 })}
               </ul>
             ) : all.length ? (
-              <p className="text-ui-caption text-(--ui-text-secondary)">
-                {t("No matching members.")}
-              </p>
+              <Text as="p">{t("No matching members.")}</Text>
             ) : (
               <Button
                 variant="secondary"
@@ -384,9 +386,9 @@ export function CrewMemberTable({
         </p>
       ) : null}
       {issues.size === "large" ? (
-        <p role="status" className="text-ui-caption text-danger">
+        <Text role="status" as="p" tone="danger">
           {t("A crew can have at most 20 members.")}
-        </p>
+        </Text>
       ) : null}
     </div>
   );

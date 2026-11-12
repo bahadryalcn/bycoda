@@ -76,6 +76,16 @@ class FakeHost {
     }
     const entry = this.entries.get(String(command.sessionId));
     if (!entry) throw new Error("missing session");
+    if (command.type === "configure") {
+      entry.session = {
+        ...entry.session,
+        harness: command.harness,
+        model: command.model,
+        providerAccountId: command.providerAccountId,
+        modelSettings: command.modelSettings,
+      } as Session;
+      return {};
+    }
     if (command.type === "send") {
       entry.status = "running";
       entry.runId = `turn-${++this.seq}`;
@@ -207,6 +217,7 @@ describe("agents.options", () => {
           model: "claude:sonnet-5",
           label: "Claude Sonnet 5",
           available: true,
+          effortLevels: [],
         },
         {
           ref: "codex:gpt-5",
@@ -214,6 +225,7 @@ describe("agents.options", () => {
           model: "codex:gpt-5",
           label: "GPT 5",
           available: true,
+          effortLevels: [],
         },
       ],
       advisor: {
@@ -222,6 +234,7 @@ describe("agents.options", () => {
         model: "codex:gpt-6.1",
         label: "GPT 6.1",
         available: true,
+        effortLevels: [],
       },
       running: { subagents: 0, advisors: 0 },
       limits: {
@@ -674,4 +687,238 @@ describe("recursion and caller checks", () => {
     setup();
     await expect(call("agents.explode")).rejects.toThrow("Unsupported agents tool.");
   });
+});
+
+describe("continuations and multi-wait", () => {
+  const reply = (runId: unknown, requestId = "answer", message = "Use option B") =>
+    call("agents.reply", { runId, requestId, message });
+
+  it.each(["succeeded", "failed", "cancelled"])(
+    "continues a %s child with context and idempotent receipts",
+    async (status) => {
+      setup({ subagents: [codexFive] });
+      const first = await delegate("first");
+      const sessionId = String(first.sessionId);
+      if (status === "succeeded") host.finish(sessionId, "Which option?");
+      else host.fail(sessionId, status === "cancelled" ? STOPPED_BY_USER : "Failed");
+      const continued = await reply(first.runId);
+      expect(continued).toMatchObject({ runId: first.runId, sessionId, status: "running" });
+      expect(continued).not.toHaveProperty("ownerFollowUp");
+      expect(host.commandsOf("create")).toHaveLength(1);
+      expect(host.commandsOf("send")[1]).toMatchObject({
+        sessionId,
+        text: expect.stringContaining("Use option B"),
+      });
+      expect(host.commandsOf("send")[1]!.text).toContain("untrusted data");
+      await reply(first.runId);
+      expect(host.commandsOf("send")).toHaveLength(2);
+      await expect(reply(first.runId, "answer", "Different")).rejects.toThrow("different payload");
+      host.finish(sessionId, "Done B");
+      expect(await call("agents.wait", { runId: first.runId })).toMatchObject({ result: "Done B" });
+      // Receipts survive Host service recreation and newer reply turns.
+      delegation = new ConversationDelegation(deps);
+      await reply(first.runId, "answer-2");
+      expect(await reply(first.runId)).toMatchObject({ status: "running" });
+      expect(host.commandsOf("send")).toHaveLength(3);
+    },
+  );
+
+  it("rejects running, approval-blocked, foreign and recursive replies", async () => {
+    setup({ subagents: [codexFive] });
+    const first = await delegate("first");
+    await expect(reply(first.runId)).rejects.toThrow("Wait or cancel");
+    host.needInput(String(first.sessionId));
+    await expect(reply(first.runId)).rejects.toThrow("approval");
+    host.add("other");
+    await expect(
+      call(
+        "agents.reply",
+        { runId: first.runId, requestId: "x", message: "x" },
+        { sessionId: "other", projectId: "p" },
+      ),
+    ).rejects.toThrow("Run not found");
+    await expect(
+      call(
+        "agents.reply",
+        { runId: first.runId, requestId: "x", message: "x" },
+        { sessionId: String(first.sessionId), projectId: "p" },
+      ),
+    ).rejects.toThrow("cannot start");
+  });
+
+  it("keeps advisors read-only and restores recorded model/account", async () => {
+    setup({ advisor: { ...codexSix, providerAccountId: "work" } });
+    const first = await consult("first");
+    host.finish(String(first.sessionId), "Question?");
+    await reply(first.runId);
+    expect(host.commandsOf("send")[1]).toMatchObject({ intent: "plan" });
+    expect(host.commandsOf("configure")[0]).toMatchObject({
+      model: codexSix.model,
+      providerAccountId: "work",
+      harness: "codex",
+    });
+    expect(await call("agents.options")).toMatchObject({ running: { advisors: 1 } });
+  });
+
+  it.each(["signedOut", "unknown"] as const)("rechecks %s sign-in", async (auth) => {
+    setup({ subagents: [codexFive] });
+    const first = await delegate("first");
+    host.finish(String(first.sessionId), "Question?");
+    deps.authStatus = async () => auth;
+    await expect(reply(first.runId)).rejects.toThrow("sign-in");
+    expect(host.commandsOf("send")).toHaveLength(1);
+  });
+
+  it.each(["subagent", "advisor"])("counts replies against the %s running limit", async (kind) => {
+    setup({ subagents: [codexFive], advisor: codexSix });
+    const start = kind === "advisor" ? consult : delegate;
+    const first = await start("first");
+    host.finish(String(first.sessionId), "Question?");
+    const limit = kind === "advisor" ? 1 : 16;
+    expect(DELEGATION_LIMITS.runningSubagents).toBe(16);
+    for (let i = 0; i < limit; i++) await start(`next-${i}`);
+    await expect(reply(first.runId)).rejects.toThrow("limit reached");
+  });
+
+  it("rejects request IDs shared with launches and invalid inputs", async () => {
+    setup({ subagents: [codexFive] });
+    const first = await delegate("first");
+    host.finish(String(first.sessionId), "Question?");
+    await expect(reply(first.runId, "first")).rejects.toThrow("different payload");
+    for (const message of ["", "x".repeat(DELEGATION_LIMITS.promptChars + 1)])
+      await expect(reply(first.runId, "answer", message)).rejects.toThrow("message");
+    await expect(reply(first.runId, "bad id")).rejects.toThrow("requestId");
+  });
+
+  it("multi-wait returns finished and needsInput rows in input order", async () => {
+    setup({ subagents: [codexFive] });
+    const first = await delegate("first");
+    const second = await delegate("second");
+    host.finish(String(first.sessionId), "Done");
+    host.needInput(String(second.sessionId));
+    expect(await call("agents.wait", { runIds: [second.runId, first.runId] })).toMatchObject({
+      runs: [
+        { runId: second.runId, status: "needsInput" },
+        { runId: first.runId, status: "succeeded", result: "Done" },
+      ],
+    });
+    host.finish(String(second.sessionId), "Also done");
+    expect(await call("agents.wait", { runIds: [first.runId, second.runId] })).toMatchObject({
+      runs: [{ status: "succeeded" }, { status: "succeeded" }],
+    });
+  });
+
+  it("waits for all running rows and times out with mixed states", async () => {
+    setup({ subagents: [codexFive] });
+    const first = await delegate("first");
+    const second = await delegate("second");
+    host.finish(String(first.sessionId), "Done");
+    expect(
+      await call("agents.wait", { runIds: [first.runId, second.runId], timeoutSeconds: 1 }),
+    ).toMatchObject({ runs: [{ status: "succeeded" }, { status: "running" }] });
+  });
+
+  it.each([
+    {},
+    { runId: "x", runIds: ["x"] },
+    { runIds: [] },
+    { runIds: ["x", "x"] },
+    { runIds: Array.from({ length: 17 }, (_, i) => String(i)) },
+  ])("rejects invalid wait IDs %j", async (args) => {
+    setup({});
+    await expect(call("agents.wait", args)).rejects.toThrow();
+  });
+
+  it.each(["claude", "codex", "grok", "cursor"])(
+    "enforces %s provider wait cap and default",
+    async (harness) => {
+      setup({ subagents: [codexFive] });
+      host.entries.get("parent")!.session.harness = harness as Session["harness"];
+      const first = await delegate("first");
+      host.finish(String(first.sessionId), "Done");
+      const maximum = harness === "cursor" ? 50 : 240;
+      expect(
+        await call("agents.wait", { runId: first.runId, timeoutSeconds: maximum }),
+      ).toMatchObject({ status: "succeeded" });
+      expect(await call("agents.wait", { runId: first.runId })).toMatchObject({
+        status: "succeeded",
+      });
+      // Above the provider deadline is shortened, not rejected.
+      expect(
+        await call("agents.wait", { runId: first.runId, timeoutSeconds: maximum + 1 }),
+      ).toMatchObject({ status: "succeeded" });
+      await expect(call("agents.wait", { runId: first.runId, timeoutSeconds: 0 })).rejects.toThrow(
+        "positive integer",
+      );
+    },
+  );
+});
+
+it("lists effort options and separates subagent defaults from advisor inheritance", async () => {
+  setup({ subagents: [codexFive], advisor: codexFive });
+  deps.models = async () => ({
+    ...catalog,
+    models: {
+      ...catalog.models,
+      codex: [
+        {
+          ...catalog.models.codex![1]!,
+          settings: [
+            {
+              id: "reasoningEffort",
+              label: "Reasoning",
+              kind: "select",
+              value: "low",
+              options: ["low", "medium", "high"].map((value) => ({ value, label: value })),
+            },
+          ],
+        },
+      ],
+    },
+  });
+  expect(await call("agents.options")).toMatchObject({
+    subagents: [{ effortLevels: ["low", "medium", "high"], defaultEffort: "low" }],
+  });
+  await delegate("default");
+  await delegate("explicit", { effort: "medium" });
+  await delegate("closest", { effort: "ultra" });
+  await consult("advisor");
+  expect(
+    host
+      .commandsOf("create")
+      .map((command) => (command.modelSettings as Record<string, string>).reasoningEffort),
+  ).toEqual(["low", "medium", "high", "high"]);
+  await expect(delegate("invalid", { effort: "expensive" })).rejects.toThrow("Unknown effort");
+  await expect(delegate("explicit", { effort: "low" })).rejects.toThrow("different payload");
+});
+
+it("does not flag a parent reply as ownerFollowUp during concurrent waits", async () => {
+  setup({ subagents: [codexFive] });
+  const first = await delegate("first");
+  host.finish(String(first.sessionId), "Question?");
+  const command = host.engine.command;
+  let release!: () => void;
+  let sending!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    sending = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  host.engine.command = async (input) => {
+    const result = await command(input);
+    if (input.type === "send") {
+      sending();
+      await blocked;
+    }
+    return result;
+  };
+  const reply = call("agents.reply", { runId: first.runId, requestId: "answer", message: "B" });
+  await entered;
+  const wait = call("agents.wait", { runId: first.runId, timeoutSeconds: 1 });
+  release();
+  expect(await reply).not.toHaveProperty("ownerFollowUp");
+  host.finish(String(first.sessionId), "Done B");
+  expect(await wait).toMatchObject({ result: "Done B" });
+  expect(await call("agents.wait", { runId: first.runId })).not.toHaveProperty("ownerFollowUp");
 });

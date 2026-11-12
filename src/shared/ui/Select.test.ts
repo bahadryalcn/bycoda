@@ -249,3 +249,25 @@ it("shows the label by default and keeps it for assistive tech only with hideLab
   expect(trigger().getAttribute("aria-label")).toBe("Choice: Alpha");
   expect(container.querySelector(".max-w-52")).not.toBeNull();
 });
+
+it("retains option icons in both selected trigger and list", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Select, {
+        label: "Provider",
+        value: "a",
+        options: [
+          {
+            value: "a",
+            label: "Alpha",
+            icon: createElement("span", { "data-provider-icon": true }),
+          },
+        ],
+        onValueChange: change,
+      }),
+    ),
+  );
+  expect(trigger().querySelector("[data-provider-icon]")).not.toBeNull();
+  await act(async () => trigger().click());
+  expect(menu()?.querySelector("[data-provider-icon]")).not.toBeNull();
+});

@@ -19,8 +19,7 @@
 
 .usage-active-source {
   margin-inline-start: auto;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
+
   overflow-wrap: anywhere;
 }
 
@@ -48,8 +47,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
+
   cursor: pointer;
 }
 @media (hover: hover) and (pointer: fine) {
@@ -96,7 +94,6 @@
 }
 
 .usage-account-provider {
-  color: var(--ui-text-secondary);
 }
 
 .usage-account-subtitle {
@@ -113,17 +110,13 @@
 
 .usage-account-default {
   flex-shrink: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
-  font-weight: 400;
 }
 
 .usage-account-observed {
   flex-shrink: 0;
   margin-inline-start: auto;
   padding-block-start: 2px;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
+
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -151,7 +144,6 @@
 
 .usage-quota-heading {
   flex-wrap: nowrap;
-  font-size: var(--ui-font-caption);
 }
 
 /* The quota title stacks its reset countdown under the period name and may wrap. */
@@ -160,14 +152,12 @@ span.usage-quota-title {
   gap: 2px;
   overflow: visible;
   white-space: normal;
-  text-overflow: clip;
 }
 
 span.usage-budget-title {
   overflow: visible;
   white-space: normal;
   overflow-wrap: anywhere;
-  text-overflow: clip;
 }
 
 .usage-quota-heading p {
@@ -175,19 +165,13 @@ span.usage-budget-title {
   flex-shrink: 0;
   align-items: baseline;
   gap: 4px;
-  color: var(--ui-text-secondary);
 }
 
 .usage-quota-heading strong {
-  color: var(--color-content);
-  font-size: var(--ui-font-body);
-  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
 .usage-quota-reset {
-  color: var(--ui-text-muted);
-  font-weight: 400;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }

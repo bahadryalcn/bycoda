@@ -77,6 +77,25 @@ export function remoteProjectFor(path: string): RemoteProject | undefined {
   );
 }
 
+/** Subscribes to registry writes in this window and storage changes in other windows. */
+export function subscribeRemoteProjects(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === null || event.key === KEY) onChange();
+  };
+  window.addEventListener(REMOTE_PROJECTS_CHANGED, onChange);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(REMOTE_PROJECTS_CHANGED, onChange);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+/** A primitive snapshot stays identical while the registered project is unchanged. */
+export function remoteProjectSnapshot(path: string): string {
+  return JSON.stringify(remoteProjectFor(path) ?? null);
+}
+
 export function rememberRemoteProject(environmentId: string, project: HostProject): RemoteProject {
   const remote: RemoteProject = {
     key: remoteProjectKey(environmentId, project.cwd),

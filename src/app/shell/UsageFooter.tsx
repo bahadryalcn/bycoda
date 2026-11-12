@@ -1,3 +1,5 @@
+import { ScrollArea } from "../../shared/ui/ScrollArea";
+import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import {
   useRateLimitQuery,
@@ -311,13 +313,18 @@ export function UsageFooter({
           : undefined;
 
   return (
-    <footer
+    <Text
+      as="footer"
+      size="micro"
+      tone="secondary"
       aria-label={ariaLabel}
-      className={`@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 px-1.5 text-ui-micro text-(--ui-text-secondary) ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
+      className={`@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 px-1.5 ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
     >
-      <div
+      <ScrollArea
+        axis="both"
+        scrollbar="hidden"
         data-provider-usage
-        className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain"
+        className="flex min-w-0 flex-1 items-center gap-1 overscroll-x-contain"
       >
         {session?.harness === "pi" ? (
           <PiUsage key={`${session.id}:${session.model}`} model={session.model} now={now} />
@@ -374,7 +381,7 @@ export function UsageFooter({
         ) : session ? (
           <SessionChip key={session.id ?? session.harness} session={session} />
         ) : null}
-      </div>
+      </ScrollArea>
       {tools || showTerminals || showTerminalButton ? (
         <div className="ms-auto flex shrink-0 items-center gap-1">
           {tools ? <ConversationToolsButton tools={tools} /> : null}
@@ -403,7 +410,7 @@ export function UsageFooter({
           ) : null}
         </div>
       ) : null}
-    </footer>
+    </Text>
   );
 }
 
@@ -474,7 +481,11 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
       >
         <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
-        {authRequired ? <span className="text-ui-caption text-warning">{t("sign in")}</span> : null}
+        {authRequired ? (
+          <Text size="caption" tone="warning">
+            {t("sign in")}
+          </Text>
+        ) : null}
       </Button>
       {open ? (
         <Popover
@@ -488,14 +499,15 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
           role="dialog"
           aria-label={t("{p0} sign-in", { p0: HARNESS_TITLE[session.harness] })}
           tabIndex={-1}
-          className="text-content"
         >
-          <ProviderSignInPanel
-            harness={session.harness}
-            state={loginState}
-            error={loginError}
-            onSignIn={() => void signIn()}
-          />
+          <Text as="div" size="inherit" tone="primary">
+            <ProviderSignInPanel
+              harness={session.harness}
+              state={loginState}
+              error={loginError}
+              onSignIn={() => void signIn()}
+            />
+          </Text>
         </Popover>
       ) : null}
     </>

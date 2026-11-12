@@ -11,6 +11,7 @@ import { ScheduleHours } from "./ScheduleHours";
 import { ProfileSwitch, useProfileRows } from "./SettingsProfileRow";
 import styles from "./schedule.module.css";
 import viewStyles from "../AssistantView.module.css";
+import { Text } from "../../../../shared/ui/Text";
 import roleStyles from "../AssistantProfileFields.module.css";
 
 const notificationOptions = [
@@ -23,17 +24,19 @@ const notificationOptions = [
 export function AssistantScheduleInfo() {
   return (
     <InfoPopover label={t("About presence and hours")}>
-      <p className={viewStyles.muted}>{t("Idle and away are based on inactivity.")}</p>
-      <p className={viewStyles.muted}>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+        {t("Idle and away are based on inactivity.")}
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
           "Outside work hours, new work waits and accepted turns can finish. Quiet hours hold notifications for the next briefing.",
         )}
-      </p>
-      <p className={viewStyles.muted}>
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
           "Task observations use only projects enabled for manual supervision. Notifications still follow presence and quiet hours.",
         )}
-      </p>
+      </Text>
     </InfoPopover>
   );
 }
@@ -57,20 +60,22 @@ export function AssistantScheduleFields({
     values.map((value) => ({ value, label: t("{p0} min", { p0: value }) }));
   const availabilityInfo = (
     <InfoPopover label={t("About availability")}>
-      <p className={viewStyles.muted}>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
           "Matching work hours allow work all day. Outside these hours, accepted turns can finish; new work waits.",
         )}
-      </p>
-      <p className={viewStyles.muted}>
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t("Do not disturb and quiet hours hold notifications for your next briefing.")}
-      </p>
-      <p className={viewStyles.muted}>
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
           "Prevents sleep only while this Host is supervising active jobs. Locking the screen still protects your desktop.",
         )}
-      </p>
-      <p className={viewStyles.muted}>{t("Work tracking continues while voice is off.")}</p>
+      </Text>
+      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+        {t("Work tracking continues while voice is off.")}
+      </Text>
     </InfoPopover>
   );
   const validPolicy = validAssistantPolicy(value);
@@ -224,9 +229,9 @@ export function AssistantScheduleFields({
           />
         </div>
         <div className={styles.hintRow}>
-          <p className={viewStyles.muted}>
+          <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
             {t("Observed tasks in projects enabled for manual supervision.")}
-          </p>
+          </Text>
           {!observationTasksAvailable && (
             <Badge tone="warning" size="xs">
               {t("Readiness not confirmed")}

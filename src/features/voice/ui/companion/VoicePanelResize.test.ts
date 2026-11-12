@@ -23,6 +23,10 @@ afterEach(() => {
 });
 
 it("keeps a chosen size inside the window and above the minimum", () => {
+  expect(clampVoicePanelSize({ width: 480, height: 600 }, 300, 240)).toEqual({
+    width: 284,
+    height: 224,
+  });
   expect(clampVoicePanelSize({ width: 2000, height: 50 }, 1280, 800)).toEqual({
     width: 1264,
     height: 260,
@@ -190,3 +194,110 @@ it("keeps the growth direction chosen at grab time while resizing", () => {
   act(() => grip.dispatchEvent(pointer("pointermove", { clientX: 620, clientY: 200 })));
   expect(node.style.getPropertyValue("--voice-panel-width")).toBe("620px");
 });
+
+function renderResizablePanel() {
+  window.innerWidth = 1280;
+  window.innerHeight = 800;
+  Element.prototype.setPointerCapture = vi.fn();
+  Element.prototype.releasePointerCapture = vi.fn();
+  const panel = createRef<HTMLElement>();
+  const onPosition = vi.fn();
+  act(() =>
+    root.render(
+      createElement(
+        "section",
+        { ref: panel },
+        createElement(VoicePanelResize, { panel, position: null, onPosition }),
+      ),
+    ),
+  );
+  const node = panel.current!;
+  vi.spyOn(node, "getBoundingClientRect").mockImplementation(
+    () =>
+      new DOMRect(
+        Number.parseFloat(node.style.left) || 300,
+        Number.parseFloat(node.style.top) || 250,
+        Number.parseFloat(node.style.getPropertyValue("--voice-panel-width")) || 400,
+        Number.parseFloat(node.style.getPropertyValue("--voice-panel-height")) || 300,
+      ) as DOMRect,
+  );
+  return { node, onPosition };
+}
+
+it.each([
+  ["n", 300, 280, 400, 270],
+  ["s", 300, 250, 400, 330],
+  ["e", 300, 250, 440, 300],
+  ["w", 340, 250, 360, 300],
+  ["ne", 300, 280, 440, 270],
+  ["nw", 340, 280, 360, 270],
+  ["se", 300, 250, 440, 330],
+  ["sw", 340, 250, 360, 330],
+])("resizes from %s while keeping the opposite edges fixed", (direction, x, y, width, height) => {
+  const { node, onPosition } = renderResizablePanel();
+  const handle = node.querySelector<HTMLElement>(`[data-resize-direction="${direction}"]`);
+  expect(handle).not.toBeNull();
+  act(() => handle!.dispatchEvent(pointer("pointerdown", { clientX: 0, clientY: 0 })));
+  act(() => handle!.dispatchEvent(pointer("pointermove", { clientX: 40, clientY: 30 })));
+  expect(node.getBoundingClientRect()).toMatchObject({ x, y, width, height });
+  act(() => handle!.dispatchEvent(pointer("pointerup", { clientX: 40, clientY: 30 })));
+  expect(onPosition).toHaveBeenLastCalledWith({ x, y });
+  expect(JSON.parse(localStorage.getItem("bycoda:voice-size")!)).toEqual({ width, height });
+  expect(JSON.parse(localStorage.getItem("bycoda:voice-position")!)).toEqual({ x, y });
+});
+
+it("limits edge growth at the viewport without moving the opposite edges", () => {
+  const { node } = renderResizablePanel();
+  const handle = node.querySelector<HTMLElement>('[data-resize-direction="nw"]');
+  expect(handle).not.toBeNull();
+  act(() => handle!.dispatchEvent(pointer("pointerdown", { clientX: 0, clientY: 0 })));
+  act(() => handle!.dispatchEvent(pointer("pointermove", { clientX: -2000, clientY: -2000 })));
+  expect(node.getBoundingClientRect()).toMatchObject({
+    x: 8,
+    y: 8,
+    right: 700,
+    bottom: 550,
+  });
+});
+
+it("preserves automatic height when only a side edge is dragged", () => {
+  const { node } = renderResizablePanel();
+  node.style.setProperty("--voice-panel-height", "190px");
+  const handle = node.querySelector<HTMLElement>('[data-resize-direction="e"]')!;
+  act(() => handle.dispatchEvent(pointer("pointerdown", { clientX: 0, clientY: 0 })));
+  act(() => handle.dispatchEvent(pointer("pointermove", { clientX: 40, clientY: 30 })));
+  expect(node.getBoundingClientRect()).toMatchObject({ x: 300, y: 250, width: 440, height: 190 });
+});
+
+it("ignores secondary buttons and unrelated pointers during edge resizing", () => {
+  const { node, onPosition } = renderResizablePanel();
+  const handle = node.querySelector<HTMLElement>('[data-resize-direction="e"]');
+  expect(handle).not.toBeNull();
+  act(() => handle!.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 2 })));
+  act(() => handle!.dispatchEvent(pointer("pointermove", { clientX: 40, clientY: 30 })));
+  expect(node.hasAttribute("data-sized")).toBe(false);
+  act(() => handle!.dispatchEvent(pointer("pointerdown", { clientX: 0, clientY: 0 })));
+  const otherPointer = new MouseEvent("pointermove", { bubbles: true, clientX: 400, clientY: 300 });
+  Object.defineProperty(otherPointer, "pointerId", { value: 2 });
+  act(() => handle!.dispatchEvent(otherPointer));
+  expect(node.hasAttribute("data-sized")).toBe(false);
+  expect(onPosition).not.toHaveBeenCalled();
+});
+
+it.each(["pointercancel", "lostpointercapture"])(
+  "saves the last size on %s and ends the gesture",
+  (event) => {
+    const { node, onPosition } = renderResizablePanel();
+    const handle = node.querySelector<HTMLElement>('[data-resize-direction="se"]')!;
+    act(() => handle.dispatchEvent(pointer("pointerdown", { clientX: 0, clientY: 0 })));
+    act(() => handle.dispatchEvent(pointer("pointermove", { clientX: 40, clientY: 30 })));
+    act(() => handle.dispatchEvent(pointer(event, { clientX: 40, clientY: 30 })));
+    expect(onPosition).toHaveBeenLastCalledWith({ x: 300, y: 250 });
+    expect(JSON.parse(localStorage.getItem("bycoda:voice-size")!)).toEqual({
+      width: 440,
+      height: 330,
+    });
+    act(() => handle.dispatchEvent(pointer("pointermove", { clientX: 80, clientY: 60 })));
+    expect(node.getBoundingClientRect()).toMatchObject({ width: 440, height: 330 });
+  },
+);

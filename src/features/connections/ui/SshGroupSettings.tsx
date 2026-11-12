@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -219,18 +221,19 @@ export function SshGroupSettings({
       }
     >
       <div className="flex min-w-0 flex-col gap-3">
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted">
           {t("Target")}: {server.name}
-        </p>
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        </Text>
+        <Text as="p" tone="muted">
           {t(
             "Local connection values stay saved. Only checked fields inherit from the selected group.",
           )}
-        </p>
+        </Text>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <LiveText
           text={notice === "applied" ? t("SSH inheritance updated.") : ""}
-          className="text-ui-caption text-(--ui-text-muted)"
+          size="caption"
+          tone="muted"
         />
         <div className="flex min-w-0 flex-wrap items-end gap-2">
           <div className="min-w-48 flex-1">
@@ -288,7 +291,8 @@ export function SshGroupSettings({
                 }
                 label={t(labels[field])}
                 key={field}
-                className="flex items-center gap-1 text-ui-caption"
+                size="caption"
+                className="flex items-center gap-1"
               />
             ))}
             <Checkbox
@@ -296,18 +300,22 @@ export function SshGroupSettings({
               checked={environment}
               onChange={(event) => change(() => setEnvironment(event.target.checked))}
               label={t("Remote environment")}
-              className="flex items-center gap-1 text-ui-caption"
+              size="caption"
+              className="flex items-center gap-1"
             />
           </div>
         </FieldGroup>
         {activePreview ? (
-          <section
+          <Text
+            as="section"
+            size="caption"
+            tone="inherit"
             aria-label={t("Effective SSH configuration")}
-            className="min-w-0 text-ui-caption"
+            className="min-w-0"
           >
-            <p className="break-all font-medium">
+            <Text as="p" size="inherit" tone="inherit" weight="medium" className="break-all">
               {sshEndpointPreview(activePreview.value.configuration.endpoint)}
-            </p>
+            </Text>
             <DescriptionList size="sm" className="mbs-2">
               {Object.entries(activePreview.value.configuration.provenance).map(
                 ([field, source]) => (
@@ -316,9 +324,9 @@ export function SshGroupSettings({
                     term={t(labels[field as SshInheritedField] ?? field)}
                   >
                     {effectiveValue(field) !== undefined ? (
-                      <code className="block">{effectiveValue(field)}</code>
+                      <Code className="block">{effectiveValue(field)}</Code>
                     ) : null}
-                    <span className="text-(--ui-text-muted)">
+                    <Text size="inherit" tone="muted">
                       {t(
                         source.source === "group"
                           ? "Group"
@@ -329,7 +337,7 @@ export function SshGroupSettings({
                       {source.groupId
                         ? ` · ${groups.find((group) => group.id === source.groupId)?.name ?? source.groupId} · r${source.revision}`
                         : ""}
-                    </span>
+                    </Text>
                   </DescriptionItem>
                 ),
               )}
@@ -344,14 +352,14 @@ export function SshGroupSettings({
                 </p>
                 {activePreview.value.configuration.environment.map((entry) => (
                   <p key={entry.name} className="break-all">
-                    <code>
+                    <Code>
                       {entry.name}={entry.value}
-                    </code>
+                    </Code>
                   </p>
                 ))}
               </Disclosure>
             ) : null}
-          </section>
+          </Text>
         ) : null}
         {draft ? (
           <section
@@ -392,81 +400,81 @@ export function SshGroupSettings({
               disabled={busy}
               onChange={(event) => editDraft({ certificateFile: event.target.value })}
             />
-            <p className="text-ui-caption text-(--ui-text-muted)">
+            <Text as="p" tone="muted">
               {t("Use absolute paths or ~/ for group key and certificate references.")}
-            </p>
-            <Disclosure
-              size="sm"
-              className="text-ui-caption text-(--ui-text-muted)"
-              summary={t("Remote environment")}
-            >
-              <p>
-                {t(
-                  "Literal non-secret values apply only to new interactive SSH terminals. SFTP and port forwarding inherit connection defaults only. Do not put passwords, tokens or private keys here.",
-                )}
-              </p>
-              <FieldGroup variant="bare" disabled={busy}>
-                <SegmentedControl
-                  label={t("Environment shell")}
-                  value={draft.value.shellKind}
-                  onValueChange={(value) =>
-                    editDraft({ shellKind: value as "posix" | "powershell" })
+            </Text>
+            <Disclosure size="sm" textSize="caption" tone="muted" summary={t("Remote environment")}>
+              <Text as="div" size="caption" tone="muted">
+                <p>
+                  {t(
+                    "Literal non-secret values apply only to new interactive SSH terminals. SFTP and port forwarding inherit connection defaults only. Do not put passwords, tokens or private keys here.",
+                  )}
+                </p>
+                <FieldGroup variant="bare" disabled={busy}>
+                  <SegmentedControl
+                    label={t("Environment shell")}
+                    value={draft.value.shellKind}
+                    onValueChange={(value) =>
+                      editDraft({ shellKind: value as "posix" | "powershell" })
+                    }
+                    options={[
+                      { value: "posix", label: "POSIX" },
+                      { value: "powershell", label: "PowerShell" },
+                    ]}
+                  />
+                </FieldGroup>
+                {draft.value.environment.map((entry, index) => (
+                  <div key={environmentIds[index]} className="mbs-2 flex min-w-0 items-end gap-1">
+                    <TextField
+                      fieldClassName="min-w-0 flex-1"
+                      label={`${t("Variable name")} ${index + 1}`}
+                      value={entry.name}
+                      disabled={busy}
+                      onChange={(event) =>
+                        editDraft({
+                          environment: draft.value.environment.map((item, i) =>
+                            i === index ? { ...item, name: event.target.value } : item,
+                          ),
+                        })
+                      }
+                    />
+                    <TextField
+                      fieldClassName="min-w-0 flex-1"
+                      label={`${t("Literal value")} ${index + 1}`}
+                      value={entry.value}
+                      disabled={busy}
+                      onChange={(event) =>
+                        editDraft({
+                          environment: draft.value.environment.map((item, i) =>
+                            i === index ? { ...item, value: event.target.value } : item,
+                          ),
+                        })
+                      }
+                    />
+                    <Button
+                      disabled={busy}
+                      onClick={() => {
+                        environmentIds.splice(index, 1);
+                        editDraft({
+                          environment: draft.value.environment.filter((_, i) => i !== index),
+                        });
+                      }}
+                    >
+                      {t("Remove")}
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  disabled={busy || draft.value.environment.length >= 32}
+                  onClick={() =>
+                    editDraft({
+                      environment: [...draft.value.environment, { name: "", value: "" }],
+                    })
                   }
-                  options={[
-                    { value: "posix", label: "POSIX" },
-                    { value: "powershell", label: "PowerShell" },
-                  ]}
-                />
-              </FieldGroup>
-              {draft.value.environment.map((entry, index) => (
-                <div key={environmentIds[index]} className="mbs-2 flex min-w-0 items-end gap-1">
-                  <TextField
-                    fieldClassName="min-w-0 flex-1"
-                    label={`${t("Variable name")} ${index + 1}`}
-                    value={entry.name}
-                    disabled={busy}
-                    onChange={(event) =>
-                      editDraft({
-                        environment: draft.value.environment.map((item, i) =>
-                          i === index ? { ...item, name: event.target.value } : item,
-                        ),
-                      })
-                    }
-                  />
-                  <TextField
-                    fieldClassName="min-w-0 flex-1"
-                    label={`${t("Literal value")} ${index + 1}`}
-                    value={entry.value}
-                    disabled={busy}
-                    onChange={(event) =>
-                      editDraft({
-                        environment: draft.value.environment.map((item, i) =>
-                          i === index ? { ...item, value: event.target.value } : item,
-                        ),
-                      })
-                    }
-                  />
-                  <Button
-                    disabled={busy}
-                    onClick={() => {
-                      environmentIds.splice(index, 1);
-                      editDraft({
-                        environment: draft.value.environment.filter((_, i) => i !== index),
-                      });
-                    }}
-                  >
-                    {t("Remove")}
-                  </Button>
-                </div>
-              ))}
-              <Button
-                disabled={busy || draft.value.environment.length >= 32}
-                onClick={() =>
-                  editDraft({ environment: [...draft.value.environment, { name: "", value: "" }] })
-                }
-              >
-                {t("Add environment value")}
-              </Button>
+                >
+                  {t("Add environment value")}
+                </Button>
+              </Text>
             </Disclosure>
             {!profile ? (
               <InlineError live="polite">

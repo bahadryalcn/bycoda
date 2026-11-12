@@ -272,7 +272,7 @@ it("prevents double-click connection when the target cannot connect", async () =
   expect(onConnect).not.toHaveBeenCalled();
   const address = [...row.querySelectorAll("span")].find(
     (element) =>
-      element.className.includes("text-ui-caption") &&
+      element.getAttribute("data-size") === "caption" &&
       element.textContent?.endsWith("user@long-address.example.test:2222"),
   );
   expect(address?.className).toContain("whitespace-normal");

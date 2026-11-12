@@ -1,6 +1,7 @@
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
+import { Text } from "../../../../shared/ui/Text";
 import type { OutreachChannel, Sequence } from "../../model/outreach";
 import { DisabledReason } from "../common/DisabledReason";
 import { PlatformIcon } from "../common/PlatformIcon";
@@ -70,9 +71,9 @@ export function OutreachSequenceCard({
         <Badge size="sm" tone={sequenceStatusTone(sequence.status)}>
           {sequenceStatusLabel(sequence.status)}
         </Badge>
-        <span className="audience-caption">
+        <Text as="span" tone="muted" leading="inherit">
           {t("{p0} steps", { p0: formatNumber(sequence.steps.length) })}
-        </span>
+        </Text>
       </div>
       {sequence.steps.length ? (
         <ol className="audience-chain" aria-label={t("Steps")}>

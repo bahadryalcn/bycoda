@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -136,9 +137,9 @@ export function QuestionFields({
       }}
     >
       {question.multiSelect ? (
-        <p className="[margin-block-start:0.5rem] text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary" className="[margin-block-start:0.5rem]">
           {t("Select all that apply")}
-        </p>
+        </Text>
       ) : null}
       {options.length === 0 && question.allowCustom ? (
         <TextareaField
@@ -163,6 +164,7 @@ export function QuestionFields({
             <RadioGroup
               variant="list"
               className={styles.radio}
+              legendText={{ size: "body", tone: "neutral", weight: "medium", leading: "normal" }}
               label={question.prompt}
               name={question.id}
               value={selected[0] ?? ""}
@@ -186,10 +188,14 @@ export function QuestionFields({
                 onFocus={() => setHighlighted(optionIndex)}
                 onChange={() => onSelect(option.id)}
                 label={
-                  <span className={styles.copy}>
+                  <Text size="secondary" tone="inherit" leading="normal" className={styles.copy}>
                     <span>{option.label}</span>
-                    {option.description ? <small>{option.description}</small> : null}
-                  </span>
+                    {option.description ? (
+                      <Text as="small" size="caption" leading="normal">
+                        {option.description}
+                      </Text>
+                    ) : null}
+                  </Text>
                 }
               />
             ))

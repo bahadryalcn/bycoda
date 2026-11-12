@@ -38,14 +38,10 @@
 
 .embeddedError {
   padding: 8px 16px;
-  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 
 .saveArea > p {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 
 .saveArea {

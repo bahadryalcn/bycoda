@@ -1,15 +1,13 @@
 ---
 name: feature-mobile
-description: "Change the bycoda mobile app, pairing, projects/sessions, management, Host tools or a desktop/Host contract consumed by phones."
+description: "Use when changing mobile pairing, routes and workspace screens. Not for Host execution; see feature-host-runtime."
 ---
 
 # Mobile
 
 The mobile app is a separate nested repository under mobile/. Inspect its own rules, Git state and dependency links before work. This skill routes platform-wide changes; use the specific domain skill for task, Inbox, settings, voice or Host semantics.
 
-## Source entry points
-
-Code paths below are repository-root relative.
+## Source starts
 
 - `mobile/AGENTS.md`
 - `mobile/app/`
@@ -41,10 +39,13 @@ Code paths below are repository-root relative.
 - A computer may keep several paired routes (local network, Tailscale). Pairing again adds a route; route selection only switches the active saved route, prefers the local network, and never replays in-flight work. The paired local WSS bootstrap applies only on the local-network route.
 - Host compatibility is the shared protocol version, not the provider or capability list. Unknown providers are dropped from the offer, never fatal; a version mismatch names the side to update. Additive Host changes must not bump the version.
 
-## Verification and references
+## Focused checks
 
 - Use packageManager-pinned pnpm in mobile/; normal pnpm typecheck uses tsc-rs, with pnpm typecheck:fast only when explicitly chosen. Select affected existing mobile tests.
 - Run available simulator/device and live-Host checks appropriate to the change; report them separately from source, fixture, APK/IPA packaging, installed and released evidence.
-- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
-- [Host platform contracts](../../../docs/reference/host-runtime.md)
-- [Execution identity](../../../docs/reference/managed-workspaces.md)
+
+## References
+
+- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners.
+- [Host platform contracts](../../../docs/reference/host-runtime.md) when changing the linked contract.
+- [Execution identity](../../../docs/reference/managed-workspaces.md) when changing the linked contract.

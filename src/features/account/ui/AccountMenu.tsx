@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button, type ButtonSize } from "../../../shared/ui/Button";
@@ -64,12 +65,12 @@ export function AccountMenu({
       id: "identity",
       node: (
         <div className="flex min-w-0 flex-col px-2 py-1.5" data-account-identity>
-          <span className="truncate text-ui-body font-medium text-content">
+          <Text size="body" tone="primary" weight="medium" truncate>
             {user ? user.displayName || user.email : t("Guest")}
-          </span>
-          <span className="truncate text-ui-caption text-muted">
+          </Text>
+          <Text size="caption" tone="muted" truncate>
             {user ? user.email : t("Not signed in")}
-          </span>
+          </Text>
         </div>
       ),
     },

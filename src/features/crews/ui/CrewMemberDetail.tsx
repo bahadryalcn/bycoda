@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -83,15 +84,15 @@ export function CrewMemberDetail({
         aria-label={t("Member library")}
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2"
       >
-        <span className="flex min-w-0 flex-1 basis-56 flex-wrap items-center gap-x-2 text-ui-caption text-(--ui-text-secondary)">
+        <Text className="flex min-w-0 flex-1 basis-56 flex-wrap items-center gap-x-2">
           <span className="inline-flex min-w-0 items-center gap-1">
-            <span className="min-w-0 truncate">
+            <Text size="inherit" tone="inherit" truncate className="min-w-0">
               {link
                 ? t("Library: {p0}", { p0: link.profile.name })
                 : source
                   ? t("From library: {p0}", { p0: source.name })
                   : t("Member library")}
-            </span>
+            </Text>
             {link?.state === "linked" ? (
               <InfoPopover label={t("About the library profile")}>
                 <p>
@@ -103,7 +104,7 @@ export function CrewMemberDetail({
             ) : null}
           </span>
           {link?.state === "customized" ? <span>{t("customized")}</span> : null}
-        </span>
+        </Text>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
           {link?.state === "customized" ? (
             <Button
@@ -142,7 +143,9 @@ export function CrewMemberDetail({
         </div>
       </section>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <span className="text-ui-body font-medium">{t("Responsibility in the crew")}</span>
+        <Text size="body" tone="inherit" weight="medium">
+          {t("Responsibility in the crew")}
+        </Text>
         <SegmentedControl
           label={t("Responsibility in the crew")}
           value={agent.role}
@@ -211,7 +214,7 @@ export function CrewMemberDetail({
                 {t("Inspect saved capabilities")}
               </Button>
               {inspection?.map((c) => (
-                <p key={c.model} className="text-ui-caption text-(--ui-text-secondary)">
+                <Text key={c.model} as="p">
                   {c.model} · {t("Image generation")}:{" "}
                   {t(
                     c.imageGeneration === true
@@ -225,7 +228,7 @@ export function CrewMemberDetail({
                     p0: c.observations.count,
                     p1: c.observations.accepted,
                   })}
-                </p>
+                </Text>
               ))}
             </div>
           ) : null

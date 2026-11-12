@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -354,9 +355,9 @@ function PlanSurface({
   if (!block || !plan) {
     return (
       <div className="grid h-full place-items-center p-6 text-center">
-        <p role="status" className="text-ui-secondary text-(--ui-text-secondary)">
+        <Text role="status" as="p" size="secondary" tone="secondary">
           {t("This plan is no longer in the session.")}
-        </p>
+        </Text>
       </div>
     );
   }
@@ -446,7 +447,8 @@ function PlanSurface({
               onChange={(event) =>
                 onUpdatePlan(plan.sessionId, block.id, event.currentTarget.value)
               }
-              className="h-full w-full resize-none overflow-auto px-4 py-3 leading-6"
+              leading="snug"
+              className="h-full w-full resize-none overflow-auto px-4 py-3"
             />
           </SurfaceSelection>
         }

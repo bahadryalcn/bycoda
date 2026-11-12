@@ -1,4 +1,5 @@
 import { dateTimeFormat } from "../lib/intl";
+import { numberFormat } from "./numberFormat";
 import english from "./en-overrides.json";
 
 import { isLocale, resolveLocale, type Locale, type LanguagePreference } from "./languages";
@@ -224,7 +225,7 @@ export function translateAt(
     : translated;
 }
 export function formatNumber(value: number, options?: Intl.NumberFormatOptions) {
-  return new Intl.NumberFormat(locale, options).format(value);
+  return numberFormat(locale, options).format(value);
 }
 export function formatDate(value: Date | number, options?: Intl.DateTimeFormatOptions) {
   return dateTimeFormat(locale, options).format(value);

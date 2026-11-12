@@ -1,11 +1,16 @@
+import "./decisionModels.css";
+import { connectedCandidate } from "../model/presentation";
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
-import { t } from "../../../shared/i18n";
+import { formatNumber, t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import { RefreshCw } from "../../../shared/ui/icons";
+import { Badge } from "../../../shared/ui/Badge";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { RefreshCw, Lock, Check, CircleAlert, Server } from "../../../shared/ui/icons";
 import { Switch } from "../../../shared/ui/Switch";
-import { Group, Row } from "../../settings/public/settingsControls";
+import { Group } from "../../settings/public/settingsControls";
 import { useDecisionModels } from "../hooks/useDecisionModels";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import type { DecisionSource, DiscoveryCandidate } from "../model/decisionTypes";
@@ -22,16 +27,14 @@ import { ManualPathDialog, type ManualPrefill } from "./ManualPathDialog";
 import { RoutingTable } from "./RoutingTable";
 import { ScanSettings } from "./ScanSettings";
 import { SourcesList } from "./SourcesList";
-
 type Dialog =
   | { kind: "folder"; modelPath?: string }
-  | { kind: "manual"; prefill?: ManualPrefill }
+  | { kind: "manual"; prefill?: ManualPrefill; initialMode?: "endpoint" }
   | { kind: "custom"; prefill?: CustomPrefill }
   | { kind: "api"; preselectId?: string }
   | { kind: "local" }
   | { kind: "edit"; source: DecisionSource }
   | null;
-
 /**
  * The "Decision models" section under Providers. Sources, what the scan found, task routing and the
  * personal-data switch. Each add path opens its own dialog; nothing is connected without an explicit action.
@@ -43,16 +46,15 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
   const [topError, setTopError] = useState<unknown>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
   const busy = model.isPending("add") || model.isPending("routing");
-
   const pick = (path: AddPath) => {
     setTopError(null);
     if (path === "folder") setDialog({ kind: "folder" });
+    else if (path === "service") setDialog({ kind: "manual", initialMode: "endpoint" });
     else if (path === "manual") setDialog({ kind: "manual" });
     else if (path === "local") setDialog({ kind: "local" });
     else if (path === "api") setDialog({ kind: "api" });
     else setDialog({ kind: "custom" });
   };
-
   const addCandidate = (candidate: DiscoveryCandidate) => {
     const input = candidateSourceInput(candidate);
     if (input) {
@@ -70,7 +72,6 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
       });
     }
   };
-
   const remove = async (source: DecisionSource, mode: "source" | "local") => {
     const confirmed = await confirm({
       title: mode === "local" ? t("Uninstall this local model?") : t("Remove this source?"),
@@ -92,12 +93,10 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
       setTopError(error);
     }
   };
-
   const changePersonalData = (value: boolean) => {
     setTopError(null);
     actions.changeLocalOnly(value).catch((error: unknown) => setTopError(error));
   };
-
   const closeDialog = () => setDialog(null);
   const scanAction = model.scanning ? (
     <Button
@@ -118,27 +117,61 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
       {t("Scan again")}
     </Button>
   );
-
   return (
-    <div className="flex w-full min-w-0 flex-col gap-7">
-      <p className="text-ui-body text-(--ui-text-secondary)">
-        {t(
-          "Decision models answer small questions, such as choosing a button or classifying a message. Add your local model folder to get started.",
-        )}
-      </p>
+    <div
+      className="decision-models-page"
+      style={{ "--settings-group-gap": "var(--space-1)" } as React.CSSProperties}
+    >
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 py-2">
+        <div className="flex items-center gap-2">
+          {model.sources === null ? (
+            <Text size="caption">{t("Loading…")}</Text>
+          ) : (
+            <>
+              <Badge size="xs" icon={<Server />}>
+                {t("{p1} connected", { p1: formatNumber(model.sources.length) })}
+              </Badge>
+              <Badge size="xs" tone="success" icon={<Check />}>
+                {t("{p1} working", {
+                  p1: formatNumber(
+                    model.sources.filter((source) => source.status === "ready").length,
+                  ),
+                })}
+              </Badge>
+              {model.sources.some((source) => source.status === "error") ? (
+                <Badge size="xs" tone="danger" icon={<CircleAlert />}>
+                  {t("{p1} failed", {
+                    p1: formatNumber(
+                      model.sources.filter((source) => source.status === "error").length,
+                    ),
+                  })}
+                </Badge>
+              ) : null}
+            </>
+          )}
+        </div>
+        <div className="flex min-w-0 items-center gap-2">
+          <Lock className="icon-sm shrink-0" aria-hidden="true" />
+          <Tooltip
+            label={t(
+              "Messages, profiles and contacts are sent only to local sources when this is on.",
+            )}
+          >
+            <Text size="caption">{t("Personal data stays on this computer")}</Text>
+          </Tooltip>
+          <Switch
+            aria-label={t("Personal data stays on this computer")}
+            checked={model.localOnly}
+            disabled={model.isPending("routing-local-only")}
+            onCheckedChange={changePersonalData}
+          />
+        </div>
+      </div>
       {topError !== null ? <ErrorNotice error={topError} /> : null}
-
       <Group
         title={t("Connected models")}
         description={t("Models and services the app can ask. Test a source before you rely on it.")}
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="primary" size="sm" onClick={() => pick("folder")}>
-              {t("Add from folder")}
-            </Button>
-            <AddMenu onPick={pick} />
-          </div>
-        }
+        action={<AddMenu onPick={pick} />}
       >
         <SourcesList
           sources={model.sources}
@@ -146,64 +179,68 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
           onRetry={() => void actions.reloadSources().catch(() => undefined)}
           actions={actions}
           isPending={model.isPending}
-          emptyAction={null}
+          emptyAction={
+            <Button variant="primary" size="sm" onClick={() => pick("folder")}>
+              {t("Add from folder")}
+            </Button>
+          }
           onEdit={(source) => setDialog({ kind: "edit", source })}
           onRemove={(source, mode) =>
             void remove(source, mode).catch((error: unknown) => setTopError(error))
           }
         />
       </Group>
-
-      <Disclosure summary={t("Advanced discovery")} summaryActions={scanAction} variant="card">
-        <Group
-          title={t("Found on this computer")}
-          description={t("Found by the scan. Nothing is connected until you press Add.")}
-        >
-          <FoundList
-            found={model.found}
-            scanning={model.scanning}
-            scanError={model.scanError}
-            incomplete={model.scanIncomplete}
-            busy={busy}
-            onScan={() => void actions.scan().catch(() => undefined)}
-            onAdd={addCandidate}
-          />
-        </Group>
-
-        <Group title={t("Scan settings")}>
-          <ScanSettings client={client} onScan={actions.scan} scanning={model.scanning} />
-        </Group>
+      <Disclosure
+        summary={
+          model.found === null
+            ? t("Found on this computer")
+            : t("Found on this computer: {p1} not added", {
+                p1: formatNumber(
+                  model.found.filter(
+                    (candidate) => !connectedCandidate(candidate, model.sources ?? []),
+                  ).length,
+                ),
+              })
+        }
+        summaryActions={scanAction}
+        variant="row"
+      >
+        <div className="decision-discovery-body">
+          <Group
+            title={null}
+            description={t("Found by the scan. Nothing is connected until you press Add.")}
+          >
+            <FoundList
+              found={model.found}
+              sources={model.sources ?? []}
+              scanning={model.scanning}
+              scanError={model.scanError}
+              incomplete={model.scanIncomplete}
+              busy={busy}
+              onScan={() => void actions.scan().catch(() => undefined)}
+              onAdd={addCandidate}
+            />
+          </Group>
+          <Group title={t("Scan settings")}>
+            <ScanSettings client={client} onScan={actions.scan} scanning={model.scanning} />
+          </Group>
+        </div>
       </Disclosure>
-
       <Group
         title={t("Task routing")}
         description={t("Which source answers each kind of question, in order.")}
       >
         {model.sources?.length ? (
-          <>
-            <p className="text-ui-body px-4 py-2.5 text-(--ui-text-secondary)">
-              {Object.keys(model.routing).length > 0
-                ? t("Custom routing is active. Tasks without a custom route use Automatic.")
-                : t(
-                    "Automatic: connected local models are tried first. Customize only when a task needs a different model.",
-                  )}
-            </p>
-            <Disclosure
-              summary={t("Customize task routing")}
-              defaultOpen={Object.keys(model.routing).length > 0}
-            >
-              <RoutingTable
-                routing={model.routing}
-                sources={model.sources}
-                busy={model.isPending("routing")}
-                onSave={(next) => actions.saveRouting(next)}
-              />
-            </Disclosure>
-          </>
+          <RoutingTable
+            routing={model.routing}
+            sources={model.sources}
+            busy={model.isPending("routing")}
+            onSave={(next) => actions.saveRouting(next)}
+          />
         ) : model.sources !== null ? (
-          <p className="text-ui-body px-4 py-2.5 text-(--ui-text-secondary)">
+          <Text as="p" size="body" tone="secondary" className="px-4 py-2.5">
             {t("Connect a model before customizing task routing.")}
-          </p>
+          </Text>
         ) : null}
         {model.routingError !== null ? (
           <div className="px-4 py-2.5">
@@ -211,23 +248,6 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
           </div>
         ) : null}
       </Group>
-
-      <Group title={t("Privacy")}>
-        <Row
-          label={t("Personal data stays on this computer")}
-          description={t(
-            "Messages, profiles and contacts are sent only to local sources when this is on.",
-          )}
-        >
-          <Switch
-            aria-label={t("Personal data stays on this computer")}
-            checked={model.localOnly}
-            disabled={model.isPending("routing-local-only")}
-            onCheckedChange={changePersonalData}
-          />
-        </Row>
-      </Group>
-
       {dialog?.kind === "folder" ? (
         <FolderModelDialog
           client={client}
@@ -240,6 +260,7 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
       {dialog?.kind === "manual" ? (
         <ManualPathDialog
           prefill={dialog.prefill}
+          initialMode={dialog.initialMode}
           onAdd={(input) => actions.addSource(input)}
           onTest={(id) => actions.testSource(id)}
           onClose={closeDialog}

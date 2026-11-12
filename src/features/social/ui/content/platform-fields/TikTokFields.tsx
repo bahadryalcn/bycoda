@@ -1,3 +1,4 @@
+import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { Checkbox } from "../../../../../shared/ui/Checkbox";
@@ -35,12 +36,26 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
   return (
     <FieldGroup legend={t("TikTok")} className="content-platform" disabled={locked}>
       {!creator ? (
-        <p className="content-platform-note">{t("Loading your TikTok options…")}</p>
+        <Text
+          as="p"
+          size="caption"
+          tone="muted"
+          leading="inherit"
+          className="content-platform-note"
+        >
+          {t("Loading your TikTok options…")}
+        </Text>
       ) : null}
       {duration ? (
-        <p className="content-platform-note">
+        <Text
+          as="p"
+          size="caption"
+          tone="muted"
+          leading="inherit"
+          className="content-platform-note"
+        >
           {t("Video length {p0} seconds.", { p0: Math.round(duration) })}
-        </p>
+        </Text>
       ) : null}
       <NativeSelect
         aria-label={t("Who can see this video")}
@@ -65,13 +80,20 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
             <>
               {item.label}
               {item.blocked ? (
-                <span className="content-check-reason">
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className="content-check-reason"
+                >
                   {t("Turned off in your TikTok settings")}
-                </span>
+                </Text>
               ) : null}
             </>
           }
           key={item.key}
+          size="body"
+          leading="inherit"
           className="content-check"
         />
       ))}
@@ -79,24 +101,32 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
         checked={options.brandContent === true}
         onChange={(event) => change({ brandContent: event.target.checked })}
         label={t("Branded content (paid partnership)")}
+        size="body"
+        leading="inherit"
         className="content-check"
       />
       <Checkbox
         checked={options.brandOrganic === true}
         onChange={(event) => change({ brandOrganic: event.target.checked })}
         label={t("Promotes my own brand or business")}
+        size="body"
+        leading="inherit"
         className="content-check"
       />
       <Checkbox
         checked={options.isAigc === true}
         onChange={(event) => change({ isAigc: event.target.checked })}
         label={t("Contains AI-generated content")}
+        size="body"
+        leading="inherit"
         className="content-check"
       />
       <Checkbox
         checked={options.consent === true}
         onChange={(event) => change({ consent: event.target.checked })}
         label={t("I confirm the consent needed to post this video to TikTok.")}
+        size="body"
+        leading="inherit"
         className="content-check"
       />
     </FieldGroup>

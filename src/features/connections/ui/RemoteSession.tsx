@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
@@ -4099,7 +4100,10 @@ function ConnectedRemoteSession({
               <span className="min-w-0 break-words">
                 {notice.text}
                 {notice.detail ? (
-                  <span className="text-(--ui-text-muted)"> {notice.detail}</span>
+                  <Text size="inherit" tone="muted">
+                    {" "}
+                    {notice.detail}
+                  </Text>
                 ) : null}
               </span>
             </Alert>

@@ -1,5 +1,6 @@
 import type { ComponentPropsWithoutRef } from "react";
 import styles from "./Spinner.module.css";
+import { optionalTextAttributes, type TextTone } from "./Text";
 
 export type SpinnerSize = "xs" | "sm" | "md";
 
@@ -8,6 +9,8 @@ export type SpinnerProps = Omit<ComponentPropsWithoutRef<"span">, "children"> & 
   size?: SpinnerSize;
   /** Accessible name. Omit when the initiating control already announces progress (aria-busy). */
   label?: string;
+  /** Glyph ink; unset inherits the surrounding colour. */
+  tone?: TextTone;
   /**
    * Inside running text or a label: the glyph follows the surrounding font size (1em) and sits
    * on the text line instead of the icon box. `size` is ignored.
@@ -22,11 +25,18 @@ export type SpinnerProps = Omit<ComponentPropsWithoutRef<"span">, "children"> & 
  * @use Short pending state on the control that started the work (button, row action, inline label).
  * @avoid Standard loading line: LoadingText. Known final layout: Skeleton. Animated status text: Shimmer. Never spin a lucide Loader icon.
  */
-export function Spinner({ size = "sm", label, inline = false, className, ...props }: SpinnerProps) {
+export function Spinner({
+  size = "sm",
+  label,
+  inline = false,
+  className,
+  tone,
+  ...props
+}: SpinnerProps) {
   return (
     <span
       {...props}
-      className={[styles.spinner, className].filter(Boolean).join(" ")}
+      {...optionalTextAttributes({ tone }, [styles.spinner, className].filter(Boolean).join(" "))}
       data-size={inline ? "inline" : size}
       role={label ? "status" : undefined}
       aria-label={label}

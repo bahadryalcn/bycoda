@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -30,9 +31,9 @@ export function SshSetupPromptForm({
         void respond(prompt.confirm ? "yes" : answer);
       }}
     >
-      <p className="whitespace-pre-wrap break-words text-ui-caption leading-relaxed text-content">
+      <Text as="p" tone="primary" leading="relaxed" className="whitespace-pre-wrap break-words">
         {prompt.message}
-      </p>
+      </Text>
       {!prompt.confirm && (
         <PasswordField
           autoFocus

@@ -1,20 +1,15 @@
 ---
 name: feature-notes
-description: "Change Notes library, Markdown editing, formatting, save/conflict/image recovery and session-note context without losing canonical source or draft ownership."
+description: "Use when changing Notes library, editing, saves and images. Not for shared Markdown rendering; see feature-markdown-preview."
 ---
 
 # Notes changes
-
-## When and scope
 
 Use for Notes library and session-note surfaces. Markdown rendering is shared selectively; session and library draft stores must be traced independently. Native admission and Host transport changes also require their runtime owner.
 
 ## Source starts
 
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
-
-- `src/features/notes/ui/NotesView.tsx`, `NoteEditablePreview.tsx`, `SessionNotesPanel.tsx`: library, editor and session dock.
+- `src/features/notes/ui/NotesView.tsx`, `src/features/notes/ui/NoteEditablePreview.tsx`, `src/features/notes/ui/SessionNotesPanel.tsx`: library, editor and session dock.
 - `src/features/notes/`: library paging/search, Markdown commands, save queues, images and context.
 - `src/app/workspace/layout/WorkspaceToolPanels.tsx`: workspace mounting/navigation.
 - `src-tauri/src/notes.rs`, `host/domains/notes/`, `mobile/`: follow actual storage/RPC/mobile consumers when changing shared operations.
@@ -39,7 +34,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 Run `pnpm exec vitest run src/features/notes/ui/NotesView.test.ts src/features/notes/ui/NoteEditablePreview.test.ts src/features/notes/ui/SessionNotesPanel.test.ts` plus affected library/Markdown/save/image/context tests.
 For storage contracts, include actual Host/Native consumers. Inspect complex Markdown, toolbar targeting after mode changes, IME/undo, deep search, large paged libraries and failed/conflicted saves. Distinguish fixture from native/installed acceptance.
 
-## Read when needed
+## References
 
 - [Markdown](../feature-markdown-preview/SKILL.md) for shared visibility/scroll changes; [Host runtime](../feature-host-runtime/SKILL.md) for admission/transport work.
 - [Editor recovery](../../../docs/guides/editor-draft-recovery.md) when changing retained file-copy behavior.

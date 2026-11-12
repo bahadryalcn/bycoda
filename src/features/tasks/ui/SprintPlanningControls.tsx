@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -82,13 +83,26 @@ export function SprintPlanningControls({
   const firstRef = tasks.length === 1 ? board.taskRef(tasks[0]) : undefined;
   const current = firstRef ? board.planning.get(sprintTaskKey(firstRef)) : undefined;
   return (
-    <section className="task-planning" data-layout={layout} aria-label={t("Planning")}>
+    <Text
+      as="section"
+      size="secondary"
+      leading="inherit"
+      className="task-planning"
+      data-layout={layout}
+      aria-label={t("Planning")}
+    >
       {tasks.length === 1 ? (
-        <p className="task-planning-current">
+        <Text
+          as="p"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className="task-planning-current"
+        >
           {t("Sprint")}:{" "}
           {board.sprints.find((sprint) => sprint.id === current?.sprintId)?.name ?? t("Backlog")} ·{" "}
           {t("Story points")}: {current?.storyPoints ?? t("Unestimated")}
-        </p>
+        </Text>
       ) : null}
       <div className="task-planning-fields">
         <div className="task-planning-field">
@@ -130,25 +144,47 @@ export function SprintPlanningControls({
         </Button>
       </div>
       {results.length ? (
-        <p role="status" className="task-planning-note">
+        <Text
+          as="p"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          role="status"
+          className="task-planning-note"
+        >
           {t("Updated {p0} of {p1} tasks", {
             p0: results.length - failures.length,
             p1: tasks.length,
           })}
-        </p>
+        </Text>
       ) : null}
       {failures.length ? (
-        <ul className="task-planning-errors" aria-label={t("Tasks that could not be updated")}>
+        <Text
+          as="ul"
+          size="caption"
+          tone="danger"
+          leading="inherit"
+          className="task-planning-errors"
+          aria-label={t("Tasks that could not be updated")}
+        >
           {failures.map((row) => (
             <li key={row.id}>
               {row.title}: {row.error}
             </li>
           ))}
-        </ul>
+        </Text>
       ) : null}
       {!board.supported ? (
-        <p className="task-planning-note">{t("Reconnect or update the selected planning Host.")}</p>
+        <Text
+          as="p"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className="task-planning-note"
+        >
+          {t("Reconnect or update the selected planning Host.")}
+        </Text>
       ) : null}
-    </section>
+    </Text>
   );
 }

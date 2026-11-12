@@ -74,7 +74,7 @@ it("keeps wide detail and compact mark in one decorative slot, with the full cha
   const container = await renderRail(["/work/both"]);
   const button = rowButton(container, "/work/both");
   const mark = button.querySelector<HTMLElement>("[data-project-git]")!;
-  expect(mark.querySelector("[data-git-detail]")?.textContent).toBe("+120,149-1,344");
+  expect(mark.querySelector("[data-git-detail]")?.textContent).toBe("+120,149−1,344");
   expect(mark.querySelector("[data-git-compact] [data-git-count]")?.textContent).toBe("3");
   expect(mark.hasAttribute("data-git-bucket")).toBe(true);
   // Decorative: the button's accessible name and tooltip carry files and lines separately.

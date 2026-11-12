@@ -12,7 +12,7 @@ import { Select } from "./Select";
 import { Switch } from "./Switch";
 import { SegmentedControl } from "./SegmentedControl";
 import { NumberField } from "./NumberField";
-import { DateRangePicker } from "./DateRangePicker";
+import { DateRangePicker, type DateRange } from "./DateRangePicker";
 import { PasswordField } from "./PasswordField";
 import { RadioGroup } from "./RadioGroup";
 import { TagInput } from "./TagInput";
@@ -328,6 +328,7 @@ function ActionsMatrix() {
 function FieldsMatrix() {
   const t = useT();
   const [query, setQuery] = useState("");
+  const [range, setRange] = useState<DateRange | null>(null);
   const [title, setTitle] = useState("Review notes");
   const longValue = t("Project with a very long descriptive name that exceeds the field width");
   return (
@@ -405,10 +406,20 @@ function FieldsMatrix() {
         testId="matrix-field-dates"
         className="flex min-w-0 flex-wrap items-start gap-2"
       >
-        <DateRangePicker label={t("Matrix range")} />
-        <DateRangePicker label={t("Disabled range")} disabled />
-        <DateRangePicker label={t("Read only range")} readOnly />
-        <DateRangePicker label={t("Invalid range")} invalid />
+        <DateRangePicker
+          label={t("Matrix range")}
+          value={range}
+          onChange={setRange}
+          onClear={() => setRange(null)}
+        />
+        <DateRangePicker label={t("Disabled range")} value={range} onChange={setRange} disabled />
+        <DateRangePicker label={t("Read only range")} value={range} onChange={setRange} readOnly />
+        <DateRangePicker
+          label={t("Invalid range")}
+          value={range}
+          onChange={setRange}
+          error={t("Invalid range")}
+        />
       </MatrixGroup>
       <MatrixGroup name={t("Inline editing")} testId="matrix-field-inline">
         <InlineEdit label={t("Matrix title")} value={title} onSave={(next) => setTitle(next)} />

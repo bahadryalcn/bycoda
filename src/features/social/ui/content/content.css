@@ -25,16 +25,12 @@
 }
 
 .content-range-label {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
   font-variant-numeric: tabular-nums;
   margin-inline-start: 0.5rem;
 }
 
 /* One outer frame; day columns and month cells are separated by hairlines, not boxes. */
 .content-calendar {
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
   overflow: hidden;
   min-width: 0;
 }
@@ -47,10 +43,6 @@
 }
 
 .content-calendar-weekdays {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-  border-block-end: 1px solid var(--ui-pane-border);
 }
 
 .content-calendar-weekdays > span {
@@ -86,10 +78,6 @@
   background: var(--ui-fill-faint);
 }
 
-.content-day[data-outside] .content-day-number {
-  color: var(--ui-text-muted);
-}
-
 .content-day-head {
   display: flex;
   align-items: flex-start;
@@ -108,8 +96,6 @@
 }
 
 .content-day-weekday {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 .content-day-number {
@@ -118,21 +104,17 @@
   justify-content: center;
   min-inline-size: 1.75rem;
   block-size: 1.75rem;
-  border-radius: var(--radius-pill);
-  font-size: var(--ui-font-title);
+
   font-variant-numeric: tabular-nums;
-  line-height: 1;
 }
 
 .content-calendar[data-view="month"] .content-day-number {
-  font-size: var(--ui-font-secondary);
   min-inline-size: 1.5rem;
   block-size: 1.5rem;
 }
 
 .content-day[data-today] .content-day-number {
   background: var(--ui-tone-accent-solid);
-  color: var(--ui-tone-accent-on-solid);
 }
 
 /* Post chip: the surface is the ActionHost wrapper; the item Button inside only supplies the click
@@ -169,45 +151,22 @@
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  color: var(--ui-text-secondary);
   min-width: 0;
 }
 
 .content-entry-time {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 
 .content-entry-text {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-caption);
-  color: var(--color-content);
-}
-
-.content-calendar[data-view="month"] .content-entry-text {
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
 }
 
 .content-chip-status {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-micro);
   min-width: 0;
-}
-
-.content-chip-status > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Narrow columns (about 800 px window): the dot stays, its word stays readable to assistive tech. */
@@ -223,8 +182,6 @@
 }
 
 .content-entry-more {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   padding-inline: 0.5rem;
 }
 
@@ -247,8 +204,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-card);
+
   overflow: hidden;
 }
 
@@ -291,22 +247,13 @@
 }
 
 .content-row-name {
-  font-weight: 500;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
 }
 
 .content-row-text {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
   overflow-wrap: anywhere;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 .content-row-meta {
@@ -315,8 +262,6 @@
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 .content-row-time {
@@ -337,8 +282,6 @@
 }
 
 .content-platform-note {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
   margin: 0;
 }
 
@@ -370,12 +313,9 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-  font-size: var(--ui-font-body);
 }
 
 .content-check-reason {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   flex-basis: 100%;
   padding-inline-start: 0;
 }
@@ -407,14 +347,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  font-size: var(--ui-font-secondary);
   min-width: 0;
-}
-
-.content-media-list li span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .content-ai {
@@ -448,10 +381,6 @@
   max-width: 100%;
 }
 
-.content-preview[data-over] .content-preview-count {
-  color: var(--ui-tone-danger-fg);
-}
-
 .content-preview-head {
   display: flex;
   align-items: center;
@@ -463,21 +392,16 @@
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-body);
 }
 
 .content-preview-note,
 .content-preview-count {
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }
 
 .content-preview-problems {
   margin: 0;
   padding-inline-start: 1rem;
-  color: var(--ui-tone-danger-fg);
-  font-size: var(--ui-font-caption);
 }
 
 .content-advanced-body {

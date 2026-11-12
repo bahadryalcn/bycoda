@@ -1,16 +1,14 @@
 ---
 name: bycoda
-description: How to use the bycoda app you are running in. Read before acting on bycoda features or answering how-to questions about them. Covers other sessions/conversations, tasks, goals, crews, notes, automations, stewards, projects and groups, the file explorer, Git and checkpoints, terminals, dev servers, Servers/machines, devices, the browser, logs, settings, the Inbox/PR reviews and social.
+description: Use when calling bycoda tools (conversation_* from bycoda-conversation, bycoda-social, bycoda-runtime-logs) or explaining how bycoda works. Not for code, file, Git or test work with your own tools.
 ---
 
 # bycoda
 
-You run inside bycoda. It exposes its features to you through the Conversation Tools
-MCP server (`bycoda-conversation`; tools are named `conversation_<group>_<action>`),
-plus `bycoda-social` and `bycoda-runtime-logs`. Use them when they fit the request,
-even if the user does not name a tool. If MCP is missing, use the CLI fallback from
-your session's "bycoda tools" hint. Run `conversation_tools_list` to see which actions
-this session has; each tool description carries its exact rules.
+Use bycoda tools when they fit the request, even if the user does not name a tool.
+Run `conversation_tools_list` to see which actions this session has.
+Use the session's bycoda tools hint for the CLI fallback when MCP is unavailable.
+Each tool description defines its exact rules.
 
 ## User intent -> tool
 
@@ -40,12 +38,12 @@ is not proof it is offered, enabled, connected, ready or authorized for this ses
 | write a post, reply or message                               | `bycoda-social`, starting with `social_policy_get`                                                            |
 | use a skill                                                  | `skills.search`, then `skills.read`                                                                           |
 
-Details live next to this file (`skills.read` returns its path):
+Read references relative to the path returned by `skills.read`:
 
-- `references/work.md`: sessions, tasks, goals, crews, notes, automations, stewards
-- `references/workspace.md`: projects, groups, explorer, Git, terminals, settings, panels
-- `references/runtime.md`: dev servers, Servers, machines, devices, browser, logs
-- `references/inbox-social.md`: Inbox, PR reviews, social
+- `references/work.md`: read when coordinating sessions, tasks, goals, crews, notes, automations, or stewards.
+- `references/workspace.md`: read when using projects, groups, files, Git, terminals, settings, or panels.
+- `references/runtime.md`: read when using dev servers, Servers, machines, devices, browser, or logs.
+- `references/inbox-social.md`: read when using Inbox, PR reviews, or social.
 
 ## Rules
 

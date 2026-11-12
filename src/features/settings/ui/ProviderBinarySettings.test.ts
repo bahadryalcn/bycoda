@@ -117,3 +117,15 @@ it("preserves the existing settings popover save flow", async () => {
   expect(loadProviderBinaryPath("codex")).toBe("D:/custom/codex.exe");
   expect(saved).toHaveBeenCalledOnce();
 });
+
+it("labels a missing CLI setup action without changing the setup dialog", async () => {
+  await act(async () =>
+    root.render(
+      createElement(ProviderBinaryControl, { provider: "codex", showLabel: true, missing: true }),
+    ),
+  );
+  expect(container.textContent).toContain("Set up");
+  const trigger = container.querySelector<HTMLButtonElement>("button")!;
+  await act(async () => trigger.click());
+  expect(document.body.textContent).toContain("CLI");
+});

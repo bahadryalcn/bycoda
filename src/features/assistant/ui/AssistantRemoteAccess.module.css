@@ -7,9 +7,6 @@
 .status,
 .note {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 .grid {
   display: grid;
@@ -31,14 +28,10 @@
 .request p {
   margin: 0;
   overflow-wrap: anywhere;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 .result {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-secondary);
 }
 .actions {
   display: flex;
@@ -48,7 +41,6 @@
 .identity {
   display: grid;
   gap: 4px;
-  font-size: var(--ui-font-caption);
   min-inline-size: 0;
 }
 .identity p {

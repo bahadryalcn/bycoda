@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { StickyNote } from "../../../shared/ui/icons";
@@ -69,17 +71,20 @@ export function FileMentionPicker({
   return (
     <div
       data-mention-picker
-      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-floating)"
+      {...surfaceAttributes(
+        { radius: "card", frame: "neutral", edge: "all" },
+        "overflow-hidden   border-(--ui-tone-neutral-border) bg-(--ui-surface-floating)",
+      )}
     >
       {files.length === 0 && failed && loading ? (
         <div className="flex items-center justify-between gap-2 px-3 py-2">
-          <p className="text-ui-caption text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary">
             {t("Could not index files.")}
-          </p>
+          </Text>
           <Button onClick={onRetry}>{t("Retry")}</Button>
         </div>
       ) : files.length === 0 ? (
-        <p className="px-3 py-2.5 text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary" className="px-3 py-2.5">
           {loading
             ? t("Indexing files…")
             : query.trim()
@@ -89,7 +94,7 @@ export function FileMentionPicker({
               : includeNotes
                 ? t("No files or notes found")
                 : t("No files or folders found")}
-        </p>
+        </Text>
       ) : (
         <div
           ref={lockOverscroll}
@@ -117,12 +122,15 @@ export function FileMentionPicker({
             return (
               <Fragment key={file.path}>
                 {heading ? (
-                  <div
+                  <Text
+                    as="div"
                     role="presentation"
-                    className="px-2 pb-0.5 pt-1.5 text-ui-micro text-(--ui-text-secondary)"
+                    size="micro"
+                    tone="secondary"
+                    className="px-2 pb-0.5 pt-1.5"
                   >
                     {heading}
-                  </div>
+                  </Text>
                 ) : null}
                 <Button
                   className="w-full text-left"
@@ -150,8 +158,12 @@ export function FileMentionPicker({
                     <CrewMentionText target={crew} positions={file.positions} query={query} />
                   ) : (
                     <>
-                      <span
-                        className={`min-w-0 flex-1 truncate ${highlighted ? "text-mention" : ""}`}
+                      <Text
+                        as="span"
+                        size="inherit"
+                        tone="inherit"
+                        truncate
+                        className={`min-w-0 flex-1 ${highlighted ? "text-mention" : ""}`}
                       >
                         <MatchText
                           text={file.name}
@@ -159,19 +171,25 @@ export function FileMentionPicker({
                           active={Boolean(query.trim())}
                         />
                         {file.isDir ? "/" : null}
-                      </span>
+                      </Text>
                       {note ? (
-                        <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-secondary)">
+                        <Text size="micro" tone="secondary" className="shrink-0 font-mono">
                           {t("Note")}
-                        </span>
+                        </Text>
                       ) : dir ? (
-                        <span className="min-w-0 max-w-[45%] truncate font-mono text-ui-micro text-(--ui-text-secondary)">
+                        <Text
+                          as="span"
+                          size="micro"
+                          tone="secondary"
+                          truncate
+                          className="min-w-0 max-w-[45%] font-mono"
+                        >
                           <MatchText
                             text={dir}
                             positions={file.positions.filter((pos) => pos < slash)}
                             active={Boolean(query.trim())}
                           />
-                        </span>
+                        </Text>
                       ) : null}
                     </>
                   )}

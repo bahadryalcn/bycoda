@@ -212,7 +212,6 @@
   display: flex;
   gap: 10px;
   margin-inline-start: auto;
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 
@@ -230,7 +229,6 @@
   min-block-size: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   border: 1px solid var(--color-stroke);
   border-radius: 0;
   background: var(--ui-workspace-reading-base);
@@ -284,7 +282,6 @@
   align-items: center;
   gap: 7px;
   min-inline-size: 0;
-  font-size: var(--ui-font-caption);
 }
 
 .runtime-log-meta time {
@@ -300,7 +297,6 @@
   align-items: center;
   gap: 4px;
   white-space: nowrap;
-  font-size: var(--ui-font-caption);
 }
 
 .runtime-log-kind::before {
@@ -336,9 +332,6 @@
   flex: 1;
   min-inline-size: 25px;
   color: var(--runtime-log-muted);
-  white-space: nowrap;
-  overflow: clip;
-  text-overflow: ellipsis;
 }
 
 .runtime-log-count {
@@ -367,11 +360,6 @@
 .runtime-log-message {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: var(--ui-font-micro);
-  line-height: 1.5;
-  white-space: nowrap;
-  overflow: clip;
-  text-overflow: ellipsis;
 }
 
 .runtime-log-detail-body {
@@ -379,7 +367,6 @@
   gap: 9px;
   padding-block: 4px 12px;
   padding-inline: 2px 10px;
-  font-size: var(--ui-font-micro);
   min-inline-size: 0;
   overflow-wrap: break-word;
 }
@@ -486,15 +473,12 @@
 
 .runtime-logs-selection {
   gap: 6px;
-  font-size: var(--ui-font-micro);
   color: var(--runtime-log-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .runtime-logs-hint {
   margin: 0;
-  font-size: var(--ui-font-micro);
-  line-height: 1.5;
   overflow-wrap: break-word;
 }
 
@@ -574,11 +558,9 @@
   color: var(--runtime-row-color);
 }
 .runtime-log-row .runtime-log-message {
-  color: var(--color-content);
 }
 .runtime-log-meta > .runtime-log-kind {
   font-family: var(--font-mono);
-  font-weight: 500;
 }
 .runtime-log-meta > .runtime-log-kind::before {
   content: none;
@@ -667,7 +649,6 @@
 .runtime-logs-footer .runtime-logs-totals {
   gap: 6px;
   margin-inline-start: auto;
-  font-size: var(--ui-font-micro);
 }
 
 @container (max-width: 620px) {

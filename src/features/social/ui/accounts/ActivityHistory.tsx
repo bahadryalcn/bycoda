@@ -1,6 +1,8 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatDate, t } from "../../../../shared/i18n";
 import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
+import { Text } from "../../../../shared/ui/Text";
 import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { ActivityRow } from "../common/ActivityRow";
@@ -111,7 +113,10 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
     accounts.find((account) => account.id === accountId)?.name ?? "";
 
   return (
-    <section className="social-card" aria-label={t("Activity")}>
+    <section
+      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      aria-label={t("Activity")}
+    >
       <Heading size="item">{t("Activity")}</Heading>
       {loadError ? (
         <InlineMessage tone="danger" retry={{ onRetry: reload, label: t("Try again") }}>
@@ -120,10 +125,14 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
       ) : null}
       {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
       {loading && !jobs.length && !actions.length ? (
-        <p className="social-muted">{t("Loading…")}</p>
+        <Text as="p" tone="muted" leading="snug" className="social-muted">
+          {t("Loading…")}
+        </Text>
       ) : null}
       {!loading && !jobs.length && !actions.length && !loadError ? (
-        <p className="social-muted">{t("Nothing has been sent or changed yet.")}</p>
+        <Text as="p" tone="muted" leading="snug" className="social-muted">
+          {t("Nothing has been sent or changed yet.")}
+        </Text>
       ) : null}
       {jobs.map((job) => (
         <div key={job.id}>

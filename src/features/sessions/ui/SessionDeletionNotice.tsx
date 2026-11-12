@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Alert } from "../../../shared/ui/Alert";
@@ -81,7 +82,7 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
       >
         <span className="min-w-0 break-words">
           <span className="block">{status.title}</span>
-          <span className="block text-ui-caption text-(--ui-text-secondary)">
+          <Text size="caption" tone="secondary" className="block">
             {pending
               ? stages[status.stage]
               : status.outcome === "failed"
@@ -89,19 +90,18 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
                 : status.error
                   ? t("Conversation deleted. Its worktree was kept.")
                   : t("Conversation deleted.")}
-          </span>
+          </Text>
           {status.error ? (
-            <span className="block break-words text-ui-caption">{status.error}</span>
+            <Text size="caption" tone="inherit" className="block break-words">
+              {status.error}
+            </Text>
           ) : null}
         </span>
       </Alert>
       {pending && elapsed >= 10 ? (
-        <span
-          className="block text-ui-caption text-(--ui-text-secondary) tabular-nums"
-          aria-hidden="true"
-        >
+        <Text size="caption" tone="secondary" className="block tabular-nums" aria-hidden="true">
           {t("Still working… {p0}s elapsed", { p0: elapsed })}
-        </span>
+        </Text>
       ) : null}
     </div>
   );

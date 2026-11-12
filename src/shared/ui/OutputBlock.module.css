@@ -1,0 +1,50 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* Root placement stays caller-adjustable (F3 style-ownership contract). */
+@layer components {
+  .block {
+    min-inline-size: 0;
+  }
+}
+
+.block {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.block[data-face="mono"] {
+  font-family: var(--font-mono);
+}
+.block[data-face="sans"] {
+  font-family: var(--font-sans);
+}
+
+/* Opened lines: the body line height from the shared scale, under every size. */
+.block.block[data-density="comfortable"]:not([data-leading]) {
+  line-height: var(--ui-leading-body);
+}
+
+.block[data-frame="card"] {
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+  border: 1px solid var(--ui-card-border);
+  border-radius: var(--ui-radius-card);
+}
+.block[data-frame="filled"] {
+  padding: 0.625rem;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-raised);
+}
+
+.block[data-scroll] {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* No wrapping: lines stay whole and the block scrolls sideways. */
+.block[data-wrap="false"] {
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}

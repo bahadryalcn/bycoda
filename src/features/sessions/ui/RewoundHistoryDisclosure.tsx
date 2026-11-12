@@ -1,3 +1,5 @@
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Surface } from "../../../shared/ui/Surface";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -20,9 +22,9 @@ export function RewoundHistoryDisclosure({
       className="mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto border-b border-(--ui-tone-neutral-border) px-3 py-2"
     >
       {truncated ? (
-        <p className="mt-1 text-[var(--ui-text-disabled)]">
+        <Text as="p" size="inherit" tone="disabled" className="mt-1">
           {t("Showing a preview of rewound history.")}
-        </p>
+        </Text>
       ) : null}
       <div className="mt-2 flex flex-col gap-3">
         {[...history].reverse().map((entry) => (
@@ -31,7 +33,7 @@ export function RewoundHistoryDisclosure({
               value={entry.createdAt}
               format="datetime-seconds"
               tooltip={false}
-              className="text-[var(--ui-text-disabled)]"
+              tone="disabled"
             />
             {entry.blocks
               .filter(
@@ -49,12 +51,17 @@ export function RewoundHistoryDisclosure({
                   className="min-w-0"
                 >
                   {block.text ? (
-                    <pre className="select-text whitespace-pre-wrap break-words font-sans text-(--ui-tone-neutral-fg)">
+                    <OutputBlock size="inherit" tone="neutral" face="sans">
                       {block.text}
-                    </pre>
+                    </OutputBlock>
                   ) : null}
                   {block.attachments?.length ? (
-                    <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[var(--ui-text-secondary)]">
+                    <Text
+                      as="div"
+                      size="inherit"
+                      tone="secondary"
+                      className="mt-1 flex min-w-0 items-center gap-1.5"
+                    >
                       <span className="shrink-0">{t("Attachments")}:</span>
                       <BadgeList
                         label={t("Attachments")}
@@ -65,7 +72,7 @@ export function RewoundHistoryDisclosure({
                           label: file.name,
                         }))}
                       />
-                    </div>
+                    </Text>
                   ) : null}
                 </Surface>
               ))}

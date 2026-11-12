@@ -1,3 +1,5 @@
+import { Text } from "../../shared/ui/Text";
+import { OutputBlock } from "../../shared/ui/OutputBlock";
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { Modal, ModalActions } from "../../shared/ui/Modal";
@@ -121,9 +123,16 @@ export function SidebarUpdateFooter({
         <>
           {actionIcon}
           {!repositoryPrompt && !icon ? (
-            <span className="truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden">
+            <Text
+              size="caption"
+              tone="inherit"
+              weight="medium"
+              leading="tight"
+              truncate
+              className="@max-[140px]/rail:hidden"
+            >
               {actionText}
-            </span>
+            </Text>
           ) : null}
         </>
       )}
@@ -147,15 +156,20 @@ export function SidebarUpdateFooter({
           }
         >
           <div className="flex flex-col gap-3">
-            <p className="text-ui-body text-content">
+            <Text as="p" size="body" tone="primary">
               v{snapshot.currentVersion} → v{snapshot.availableVersion}
-            </p>
+            </Text>
             {snapshot.error ? <InlineError>{snapshot.error}</InlineError> : null}
             {notes ? (
               <Disclosure summary={t("Release notes")}>
-                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-ui-secondary [margin-block-start:0.5rem]">
+                <OutputBlock
+                  face="sans"
+                  size="secondary"
+                  scroll
+                  className="max-h-48 [margin-block-start:0.5rem]"
+                >
                   {notes}
-                </pre>
+                </OutputBlock>
               </Disclosure>
             ) : null}
           </div>
@@ -225,15 +239,24 @@ export function SidebarUpdate({
         {busy ? (
           <Spinner size="md" className="opacity-70" />
         ) : (
-          <ArrowDownCircle className="icon-md text-accent" aria-hidden />
+          <ArrowDownCircle className="icon-md" tone="accent" aria-hidden />
         )}
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-3">
-        <span className="block truncate text-ui-caption font-medium leading-tight">{label}</span>
+        <Text
+          size="caption"
+          tone="inherit"
+          weight="medium"
+          leading="tight"
+          truncate
+          className="block"
+        >
+          {label}
+        </Text>
         {!compact ? (
-          <span className="ms-auto block shrink-0 text-ui-micro text-muted">
+          <Text as="span" size="micro" tone="inherit" className="ms-auto block shrink-0">
             v{snapshot.currentVersion}
-          </span>
+          </Text>
         ) : null}
       </span>
     </Button>

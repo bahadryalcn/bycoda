@@ -1,3 +1,4 @@
+import { Text, textAttributes } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { useT } from "../../../shared/i18n";
@@ -19,11 +20,11 @@ const WARNING_PERCENT = 75;
 const DANGER_PERCENT = 90;
 
 /** Text tone matching the meter's own: neutral, amber, red. */
-function ringClass(ratio: number): string {
+function ringTone(ratio: number): "danger" | "warning" | "secondary" {
   const tone = meterTone(ratio * 100, { warning: WARNING_PERCENT, danger: DANGER_PERCENT });
-  if (tone === "danger") return "context-meter-danger";
-  if (tone === "warning") return "context-meter-warning";
-  return "context-meter-neutral";
+  if (tone === "danger") return "danger";
+  if (tone === "warning") return "warning";
+  return "secondary";
 }
 
 /**
@@ -73,12 +74,14 @@ export function ContextMeter({
   const agents = subagentReadings(contextBlocks);
   if ((!usage || ratio === null) && agents.size === 0 && !speed) {
     return empty && !usage && !sessionUsage ? (
-      <span
+      <Text
+        tone="disabled"
+        leading="inherit"
         title={`0% · ${t("No context used yet")}`}
         className="context-meter-summary context-meter-empty"
       >
         <ContextSignal ratio={0} label={`0% · ${t("No context used yet")}`} />
-      </span>
+      </Text>
     ) : null;
   }
 
@@ -97,11 +100,25 @@ export function ContextMeter({
 
   // Built only while a panel shows: the meter re-renders with the composer.
   const renderPanel = () => (
-    <>
-      <div className="context-meter-heading">
+    <Text as="div" tone="neutral" leading="normal">
+      <Text
+        as="div"
+        size="inherit"
+        tone="inherit"
+        weight="medium"
+        className="context-meter-heading"
+      >
         <span>{t("Context usage")}</span>
-        <strong className={ringClass(ratio ?? 0)}>{percent}</strong>
-      </div>
+        <Text
+          as="strong"
+          size="secondary"
+          leading="inherit"
+          weight="medium"
+          tone={ringTone(ratio ?? 0)}
+        >
+          {percent}
+        </Text>
+      </Text>
       {ratio !== null ? (
         <Meter
           label={t("Context usage")}
@@ -113,44 +130,60 @@ export function ContextMeter({
           className="my-3"
         />
       ) : null}
-      <div className="context-meter-tokens">
+      <Text as="div" size="inherit" tone="secondary" className="context-meter-tokens">
         <span>
           {usage
             ? `${formatTokens(usage.used)}${ratio !== null ? ` / ${formatTokens(usage.window!)}` : ""}`
             : t("Unavailable")}
         </span>
         {usage ? <span>{t("tokens")}</span> : null}
-      </div>
+      </Text>
       <section className="context-meter-speed-details" aria-label={t("Response speed")}>
-        <div className="context-meter-heading">
+        <Text
+          as="div"
+          size="inherit"
+          tone="inherit"
+          weight="medium"
+          className="context-meter-heading"
+        >
           <span className="inline-flex items-center gap-1">{t("Response speed")}</span>
-          <strong>{speed ? `${speed.tps.toFixed(1)} TPS` : t("Unavailable")}</strong>
-        </div>
-        <p className="context-meter-hint">
+          <Text as="strong" size="secondary" tone="inherit" weight="medium" leading="inherit">
+            {speed ? `${speed.tps.toFixed(1)} TPS` : t("Unavailable")}
+          </Text>
+        </Text>
+        <Text as="p" size="inherit" tone="secondary" className="context-meter-hint">
           {t("Average over the full turn, including tools and waiting; not live generation speed.")}
-        </p>
+        </Text>
       </section>
       {agents.size > 0 ? (
         <section className="context-meter-agents" aria-label={t("Subagents")}>
-          <div className="context-meter-heading">
+          <Text
+            as="div"
+            size="inherit"
+            tone="inherit"
+            weight="medium"
+            className="context-meter-heading"
+          >
             {t("Subagents")} · {agents.size}
-          </div>
+          </Text>
           <ul className="context-meter-agent-list" tabIndex={0} aria-label={t("Subagents")}>
             {[...agents].map(([id, agent]) => {
               const agentRatio = contextRatio(agent.usage);
               return (
                 <li key={id} className="context-meter-agent">
                   <span className="context-meter-agent-name">{agent.name}</span>
-                  <span className="context-meter-agent-value">
+                  <Text size="inherit" tone="secondary" className="context-meter-agent-value">
                     {agentRatio !== null ? (
-                      <span className={ringClass(agentRatio)}>{Math.round(agentRatio * 100)}%</span>
+                      <Text size="inherit" tone={ringTone(agentRatio)}>
+                        {Math.round(agentRatio * 100)}%
+                      </Text>
                     ) : null}
                     <span>
                       {agent.usage === undefined
                         ? t("Unavailable")
                         : `${formatTokens(agent.usage.used)}${agentRatio !== null ? ` / ${formatTokens(agent.usage.window!)}` : ""} ${t("tokens")}`}
                     </span>
-                  </span>
+                  </Text>
                 </li>
               );
             })}
@@ -183,11 +216,13 @@ export function ContextMeter({
             {t("Compact now")}
           </Button>
           {compactDisabled ? (
-            <p className="context-meter-hint">{t("Wait for the current operation to finish")}</p>
+            <Text as="p" size="inherit" tone="secondary" className="context-meter-hint">
+              {t("Wait for the current operation to finish")}
+            </Text>
           ) : null}
         </div>
       ) : null}
-    </>
+    </Text>
   );
 
   return (
@@ -266,10 +301,10 @@ function ContextSignal({
       />
       <span className="context-speed-pulse">
         <svg
+          {...textAttributes({ tone: "neutral" }, "context-speed-bolt")}
           width={24}
           height={24}
           viewBox="0 0 24 24"
-          className="context-speed-bolt"
           fill="none"
           aria-hidden="true"
           focusable="false"
@@ -284,7 +319,7 @@ function ContextSignal({
             stroke="currentColor"
             strokeWidth="0.7"
             strokeLinejoin="round"
-            className="context-speed-outline"
+            {...textAttributes({ tone: "disabled" }, "context-speed-outline")}
           />
           {fill > 0 ? (
             <path

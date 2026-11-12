@@ -304,6 +304,7 @@ export function TaskActions({
     >
       {reviewAction ? (
         <Button
+          truncate
           variant="secondary"
           size="sm"
           startIcon={<GitBranch className="icon-xs" />}
@@ -316,6 +317,7 @@ export function TaskActions({
       ) : null}
       {visible.map((action) => (
         <Button
+          truncate
           key={action.id}
           variant="secondary"
           size="sm"
@@ -378,6 +380,7 @@ export function TaskActions({
       {!compact
         ? destructive.map((action) => (
             <Button
+              truncate
               key={action.id}
               variant="ghost"
               tone="danger"

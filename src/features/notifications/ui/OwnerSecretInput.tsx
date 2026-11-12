@@ -1,3 +1,5 @@
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { useState, type FormEvent } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -30,11 +32,11 @@ export function OwnerSecretForm({ request }: { request: OwnerSecretInput }) {
         autoCorrect="off"
         spellCheck={false}
       />
-      <p className="text-ui-caption text-(--ui-text-secondary)">
+      <Text as="p" size="caption" tone="secondary">
         {t(
           "The agent receives only a reference. The value is encrypted on this device, stays saved for this project until you remove it in Settings → Secrets, and never appears in chat or transcripts.",
         )}
-      </p>
+      </Text>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" type="button" onClick={() => cancelOwnerSecretInput(request.id)}>
           {t(request.cancelLabel)}
@@ -53,9 +55,9 @@ export function OwnerSecretDialog({ request }: { request: OwnerSecretInput }) {
   return (
     <Modal onClose={() => cancelOwnerSecretInput(request.id)} title={t("Secret request")} size="sm">
       <div className="flex flex-col gap-3">
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+        <OutputBlock size="caption" tone="secondary" className="max-h-48 overflow-auto break-words">
           {request.message}
-        </pre>
+        </OutputBlock>
         <OwnerSecretForm request={request} />
       </div>
     </Modal>

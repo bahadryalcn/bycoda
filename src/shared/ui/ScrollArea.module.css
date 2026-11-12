@@ -11,6 +11,14 @@
   overflow: auto;
 }
 
+.area[data-axis="x"][data-scrollbar="always"],
+.area[data-axis="both"][data-scrollbar="always"] {
+  overflow-x: scroll;
+}
+.area[data-axis="y"][data-scrollbar="always"] {
+  overflow-y: scroll;
+}
+
 .area[data-gutter="stable"] {
   scrollbar-gutter: stable;
 }

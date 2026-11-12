@@ -1,15 +1,19 @@
 ---
 name: feature-platform-foundation
-description: Change repository/package boundaries, build inputs, CI selection, test distribution, model evaluations or packaging. Preserve source provenance and development workflows; account/company product design is outside this scope.
+description: "Use when changing packages, builds, CI and packaging. Not for Host execution; see feature-host-runtime."
 ---
 
 # Platform foundation development
 
 Use for cross-runtime module extraction, CI/build changes and package provenance.
 Host execution authority belongs to `feature-host-runtime`; worktree policy belongs
-to `feature-managed-workspaces`. Source paths below are repository-relative.
+to `feature-managed-workspaces`.
 
-## Start and workflow
+## Source starts
+
+- `.artifact`, `package.json`, `host/` and `src-tauri/` identify package and runtime boundaries.
+
+## Workflow
 
 1. Read `.artifact`, package manifests and the affected consumer graph before
    moving a module. Follow JavaScript imports, native embeds and build inputs.
@@ -38,7 +42,13 @@ to `feature-managed-workspaces`. Source paths below are repository-relative.
 - Keep guarded Windows runner admission and private caches. Workflow labels alone
   are not an authorization boundary; fixture checks do not establish live admission.
 
-## Conditional references and checks
+## Focused checks
+
+Use normal `pnpm check:web` / `pnpm host:build` only when their inputs are affected;
+use the focused graph/build helper tests identified in the map. Keep local,
+cross-platform, signed-package and installed acceptance separate in the handoff.
+
+## References
 
 - Build/test edits: [testing](../../../docs/reference/testing.md),
   [CI](../../../.github/CI.md) and [quality](../../../docs/reference/quality.md).
@@ -48,7 +58,3 @@ to `feature-managed-workspaces`. Source paths below are repository-relative.
   Ordinary JavaScript Host builds must not require this native toolchain.
 - Windows runner infrastructure: [runner contracts](../../../docs/reference/windows-runners.md).
 - Scope decisions: [historical provenance](references/decisions.md).
-
-Use normal `pnpm check:web` / `pnpm host:build` only when their inputs are affected;
-use the focused graph/build helper tests identified in the map. Keep local,
-cross-platform, signed-package and installed acceptance separate in the handoff.

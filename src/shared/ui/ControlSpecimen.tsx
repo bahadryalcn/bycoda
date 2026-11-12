@@ -394,13 +394,19 @@ function StateMatrix({ layout }: { layout: ControlMatrixLayout }) {
 
       <Family name="Date, time and colour">
         <Cell state="date-time normal">
-          <DateTimePicker value={when} onChange={setWhen} />
+          <DateTimePicker label={t("Date and time")} value={when} onChange={setWhen} />
         </Cell>
         <Cell state="date-time disabled">
-          <DateTimePicker value={when} onChange={setWhen} disabled />
+          <DateTimePicker label={t("Date and time")} value={when} onChange={setWhen} disabled />
         </Cell>
         <Cell state="date-time readOnly / invalid">
-          <DateTimePicker value={when} onChange={setWhen} readOnly invalid />
+          <DateTimePicker
+            label={t("Date and time")}
+            value={when}
+            onChange={setWhen}
+            readOnly
+            error={t("Choose a valid date and time.")}
+          />
         </Cell>
         <Cell state="colour normal">
           <ColorPickerPopover value={color} onChange={setColor} />

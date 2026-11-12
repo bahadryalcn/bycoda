@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { type FormEvent, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -171,7 +173,7 @@ export function GoalForm({
                   </>
                 }
                 toolbarTrailing={
-                  <span className="flex items-center gap-2 text-ui-micro text-(--ui-text-secondary)">
+                  <Text size="micro" tone="secondary" className="flex items-center gap-2">
                     {t("Time limit")}
                     <SearchableSelect
                       hideLabel
@@ -183,13 +185,18 @@ export function GoalForm({
                       options={RUN_TIME_LIMIT_OPTIONS}
                       onChange={(value) => update("maxRunMinutes", Number(value))}
                     />
-                  </span>
+                  </Text>
                 }
               />
             </GoalSection>
 
             <GoalSection title={t("Where")} framed={false}>
-              <div className="goal-section-rows">
+              <div
+                {...surfaceAttributes(
+                  { frame: "card", edge: "all", radius: "card" },
+                  "goal-section-rows",
+                )}
+              >
                 <GoalOption title={t("Machine")}>
                   <SearchableSelect
                     hideLabel
@@ -210,11 +217,28 @@ export function GoalForm({
                   />
                 </GoalOption>
                 <div className="goal-option-wide grid min-w-0 gap-2">
-                  <div className="goal-projects">
+                  <Text
+                    as="div"
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    className="goal-projects"
+                  >
                     <span className="shrink-0">{t("Projects")}</span>
                     {draft.cwds.map((cwd) => (
-                      <span key={cwd} data-goal-project={cwd} className="goal-project-chip">
-                        <span className="min-w-0 truncate">{projectDisplayName(cwd)}</span>
+                      <Text
+                        size="inherit"
+                        tone="secondary"
+                        key={cwd}
+                        data-goal-project={cwd}
+                        {...surfaceAttributes(
+                          { frame: "pane", edge: "all", radius: "pill" },
+                          "goal-project-chip",
+                        )}
+                      >
+                        <Text truncate size="inherit" tone="inherit" className="min-w-0">
+                          {projectDisplayName(cwd)}
+                        </Text>
                         {cwd === lead ? <span className="shrink-0">{t("lead")}</span> : null}
                         <InlineAction
                           reveal="always"
@@ -225,7 +249,7 @@ export function GoalForm({
                         >
                           <X />
                         </InlineAction>
-                      </span>
+                      </Text>
                     ))}
                     {draft.cwds.length < MAX_GOAL_PROJECTS ? (
                       <SearchableSelect
@@ -260,20 +284,20 @@ export function GoalForm({
                         />
                       </span>
                     ) : null}
-                  </div>
+                  </Text>
                   {machine ? (
-                    <span className="text-ui-caption text-(--ui-text-secondary)">
+                    <Text size="caption" tone="secondary">
                       {t("Runs on ")}
                       {machine}
-                    </span>
+                    </Text>
                   ) : draft.cwds.length ? (
                     <InlineMessage tone="warning" live="assertive">
                       {TASK_MACHINE_ERROR}
                     </InlineMessage>
                   ) : (
-                    <span className="text-ui-caption text-(--ui-text-secondary)">
+                    <Text size="caption" tone="secondary">
                       {t("Choose the projects the job may touch, all on one machine.")}
-                    </span>
+                    </Text>
                   )}
                 </div>
               </div>
@@ -281,7 +305,9 @@ export function GoalForm({
                 <div className="task-form-section-body">
                   {draft.cwds.map((cwd) => (
                     <div key={cwd}>
-                      <p className="font-medium text-ui-caption">{projectDisplayName(cwd)}</p>
+                      <Text as="p" size="caption" tone="inherit" weight="medium">
+                        {projectDisplayName(cwd)}
+                      </Text>
                       <TaskWorkspacePicker
                         headingHidden
                         machine={target}
@@ -380,9 +406,9 @@ export function GoalForm({
                   onChange={(checked) => update("autoMerge", checked)}
                 />
                 {draft.isolate !== true ? (
-                  <span className="goal-option-reason">
+                  <Text size="micro" tone="muted" leading="inherit" className="goal-option-reason">
                     {t("Needs a separate worktree for each task.")}
-                  </span>
+                  </Text>
                 ) : null}
               </div>
             </GoalSection>
@@ -397,7 +423,7 @@ export function GoalForm({
           </div>
         </FieldGroup>
       </div>
-      <div className="task-form-footer">
+      <div {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, "task-form-footer")}>
         <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
           {t("Cancel")}
         </Button>

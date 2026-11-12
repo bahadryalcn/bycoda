@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
@@ -229,7 +231,7 @@ export function ModelBrowser({
           >
             {leading}
             {models.length === 0 ? (
-              <div className="px-2 py-3 text-ui-caption text-(--ui-text-secondary)">
+              <Text as="div" size="caption" tone="secondary" className="px-2 py-3">
                 {tab === "favorites" && !query.trim()
                   ? t("No favorite models")
                   : tab !== "favorites" && !source.available(tab)
@@ -237,7 +239,7 @@ export function ModelBrowser({
                     : tab === "codex" && !query.trim()
                       ? t("Loading Codex models…")
                       : t("No matching models")}
-              </div>
+              </Text>
             ) : (
               groups.map((group) => (
                 <div key={group.id} role={group.name ? "group" : undefined} aria-label={group.name}>
@@ -310,9 +312,8 @@ function ModelRow({
   return (
     <ActionHost
       selected={highlighted && !disabled}
-      className={`h-(--ui-control-height-compact) rounded-lg px-1 ${
-        disabled ? "text-(--ui-text-secondary)" : "text-(--ui-tone-neutral-fg)"
-      }`}
+      tone={disabled ? "secondary" : "neutral"}
+      className="h-(--ui-control-height-compact) rounded-lg px-1"
       onMouseEnter={onActive}
     >
       <Button
@@ -333,24 +334,38 @@ function ModelRow({
       >
         {accountColor ? (
           <span
-            className="size-1.5 shrink-0 rounded-full"
+            {...surfaceAttributes({ radius: "pill" }, "size-1.5 shrink-0 ")}
             style={{ backgroundColor: accountColor }}
             aria-hidden
           />
         ) : null}
-        <span className="min-w-0 flex-1 truncate">
+        <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
           {modelChoiceBaseName(item as AccountModelChoice)}
-        </span>
+        </Text>
         {accountLabel ? (
           <>
             {" "}
-            <span className="max-w-[45%] shrink-0 truncate ui-caption-text">{accountLabel}</span>
+            <Text
+              size="inherit"
+              tone="inherit"
+              truncate
+              className="max-w-[45%] shrink-0 ui-caption-text"
+            >
+              {accountLabel}
+            </Text>
           </>
         ) : null}
       </Button>
       {tab === "favorites" ? (
         <OverflowTooltip label={provenance}>
-          <span className="max-w-24 shrink-0 truncate ui-caption-text">{provenance}</span>
+          <Text
+            size="inherit"
+            tone="inherit"
+            truncate
+            className="max-w-24 shrink-0 ui-caption-text"
+          >
+            {provenance}
+          </Text>
         </OverflowTooltip>
       ) : null}
       {isDefault ? (
@@ -370,7 +385,8 @@ function ModelRow({
           onClick={() => defaultMark.onPin(item)}
         >
           <Home
-            className={`icon-sm ${pinned ? "text-(--ui-tone-accent-fg)" : ""}`}
+            className="icon-sm"
+            tone={pinned ? "accent" : undefined}
             strokeWidth={pinned ? 2.25 : 1.75}
           />
         </InlineAction>
@@ -387,7 +403,7 @@ function ModelRow({
       </InlineAction>
       {selected ? (
         <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center">
-          <Check className="icon-sm text-(--ui-text-secondary)" strokeWidth={2} />
+          <Check className="icon-sm" tone="secondary" strokeWidth={2} />
         </span>
       ) : null}
     </ActionHost>

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { User } from "@bycoda/account-contracts";
 import { useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
@@ -21,6 +22,7 @@ import {
   securityEventTone,
   signInMethodLabel,
 } from "../model/securityActivity";
+import sectionStyles from "./accountSections.module.css";
 
 /** The last 90 days of sign-ins and account changes, newest first, loaded page by page. */
 function SecurityActivity() {
@@ -33,7 +35,7 @@ function SecurityActivity() {
       title={t("Recent activity")}
       description={t("Sign-ins and account changes of the last 90 days. No IP addresses are kept.")}
     >
-      <Row label={t("Events")} stacked>
+      <div className={sectionStyles.activity}>
         {query.isPending ? <LoadingText>{t("Loading activity…")}</LoadingText> : null}
         {query.isError ? (
           <InlineError retry={{ onRetry: () => query.refetch(), pending: query.isFetching }}>
@@ -67,7 +69,7 @@ function SecurityActivity() {
             {t("Show older activity")}
           </Button>
         ) : null}
-      </Row>
+      </div>
     </Group>
   );
 }
@@ -119,10 +121,7 @@ export function AccountSecurity({
         <Row label={t("E-mail")}>
           <PrivateEmail email={user.email} />
         </Row>
-        <Row
-          label={t("Sign-in methods")}
-          description={t("Any of these opens your account on a new device.")}
-        >
+        <Row label={t("Sign-in methods")}>
           {user.signInMethods.length ? (
             <BadgeList
               label={t("Sign-in methods")}
@@ -132,7 +131,9 @@ export function AccountSecurity({
               }))}
             />
           ) : (
-            <span className="text-ui-body text-muted">{t("None recorded")}</span>
+            <Text size="body" tone="muted">
+              {t("None recorded")}
+            </Text>
           )}
         </Row>
         {url ? (

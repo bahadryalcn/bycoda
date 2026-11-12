@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -75,9 +76,9 @@ export function UsageLimitNotice({
               </Button>
             ) : null}
             {!waiting && !onResume ? (
-              <span className="text-ui-caption text-(--ui-text-secondary)">
+              <Text size="caption" tone="secondary">
                 {t("Send a message to continue.")}
-              </span>
+              </Text>
             ) : !waiting ? (
               <Button variant="secondary" type="button" onClick={onResume}>
                 <Play className="icon-sm" />

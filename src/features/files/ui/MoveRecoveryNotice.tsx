@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { revealPath } from "../../../platform/tauri/fs";
 import { t } from "../../../shared/i18n/technical";
@@ -12,16 +13,16 @@ export function MoveRecoveryNotice({ notice }: { notice: CopyNotice }) {
   const [error, setError] = useState<string | null>(null);
   if (typeof notice === "string")
     return (
-      <p role="status" className="px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
+      <Text role="status" as="p" size="caption" tone="secondary" className="px-2 py-1">
         {notice}
-      </p>
+      </Text>
     );
   const reveal = () => {
     setError(null);
     return revealPath(notice.recoveryPath);
   };
   return (
-    <div className="px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
+    <Text as="div" size="caption" tone="secondary" className="px-2 py-1">
       <p role="status">
         {t("Moved. Recovery copy retained")}: {notice.recoveryPath}
       </p>
@@ -37,6 +38,6 @@ export function MoveRecoveryNotice({ notice }: { notice: CopyNotice }) {
       </Button>
       {notice.warning ? <InlineError>{notice.warning}</InlineError> : null}
       {error ? <InlineError>{error}</InlineError> : null}
-    </div>
+    </Text>
   );
 }

@@ -1,3 +1,4 @@
+import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { TextField } from "../../../shared/ui/TextField";
@@ -22,17 +23,19 @@ import type { AutomationSchedule } from "../model/automationSchedule";
 export function TriggerMark({
   kind,
   className,
+  tone,
 }: {
   kind: AutomationTriggerKind;
   className?: string;
+  tone?: TextTone;
 }) {
   useLocale();
   if (kind === "time") {
-    return <Clock className={className} strokeWidth={1.75} />;
+    return <Clock className={className} tone={tone} strokeWidth={1.75} />;
   }
-  if (kind === "tasks") return <CheckCircle className={className} strokeWidth={1.75} />;
-  if (kind === "social") return <Inbox className={className} strokeWidth={1.75} />;
-  return <InboxProviderMark provider={kind} className={className} />;
+  if (kind === "tasks") return <CheckCircle className={className} tone={tone} strokeWidth={1.75} />;
+  if (kind === "social") return <Inbox className={className} tone={tone} strokeWidth={1.75} />;
+  return <InboxProviderMark provider={kind} className={className} tone={tone} />;
 }
 
 export function TriggerRow({
@@ -111,8 +114,13 @@ export function TriggerRow({
 
   return (
     <ActionHost className="-mx-2 min-h-10 gap-2.5 px-2 py-1">
-      <TriggerMark kind={trigger.kind} className="icon-sm shrink-0 text-(--ui-text-muted)" />
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-ui-secondary text-(--ui-tone-neutral-fg)">
+      <TriggerMark kind={trigger.kind} className="icon-sm shrink-0" tone="muted" />
+      <Text
+        as="div"
+        size="secondary"
+        tone="neutral"
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1"
+      >
         {trigger.kind === "time" ? (
           <TimeTriggerSentence
             trigger={trigger}
@@ -128,7 +136,7 @@ export function TriggerRow({
             onChange={onChange}
           />
         )}
-      </div>
+      </Text>
       <InlineAction label={t("Remove trigger")} onClick={onRemove}>
         <X />
       </InlineAction>
@@ -193,18 +201,18 @@ export function TimeTriggerSentence<T extends AutomationSchedule>({
           onChange={(value) => onChange({ ...trigger, time: value })}
         />
       )}
-      <span className="text-(--ui-text-muted)">
+      <Text size="inherit" tone="muted">
         {executionTimeZone === undefined
           ? gmtOffsetLabel()
           : (executionTimeZone ?? t("Execution host timezone unavailable"))}
-      </span>
-      <span className="ml-1 text-(--ui-text-muted)">
+      </Text>
+      <Text size="inherit" tone="muted" className="ml-1">
         {executionTimeZone === undefined
           ? nextRunPreview(nextAt)
           : executionTimeZone && nextAt
             ? `${t("Next run")} ${formatDate(nextAt, { timeZone: executionTimeZone, timeZoneName: "short" })}`
             : t("Host schedule preview unavailable")}
-      </span>
+      </Text>
     </>
   );
 }

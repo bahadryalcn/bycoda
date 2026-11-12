@@ -4,6 +4,7 @@ import { deferDuringResize } from "../../../shared/lib/resizeGesture";
 import { defaultRangeExtractor, useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import {
   Fragment,
+  memo,
   useCallback,
   type ContextType,
   useContext,
@@ -91,7 +92,7 @@ function MeasuredTranscriptRows({
   );
   const anchorId = scroll ? owner?.anchorId(scroll) : undefined;
   const pins = useMemo(
-    () => pinnedRowIndexes(rows, owner, target, anchorId),
+    () => pinnedRowIndexes(rows, owner, target, anchorId, activeVersion),
     // activeVersion: `owner.activeBlocks` changes without a new owner.
     [rows, target, anchorId, owner, activeVersion],
   );
@@ -295,7 +296,8 @@ function useRowNode(
   return { element, setNode };
 }
 
-function MeasuredRow({
+// oxlint-disable-next-line bycoda/compiler-owns-memo -- component-level bailout must also protect stable rows in uncompiled React
+const MeasuredRow = memo(function MeasuredRow({
   row,
   index,
   ownerId,
@@ -360,7 +362,7 @@ function MeasuredRow({
       {row.render()}
     </div>
   );
-}
+});
 
 function sameRange(a: readonly number[] | null, b: readonly number[] | null): boolean {
   return a?.[0] === b?.[0] && a?.[1] === b?.[1];
@@ -380,6 +382,7 @@ function pinnedRowIndexes(
   owner: ContextType<typeof TranscriptVirtualizationContext>,
   target: string | null,
   anchorId: string | undefined,
+  _activeVersion: number,
 ): number[] {
   return rows.flatMap((row, index) =>
     row.pinned ||

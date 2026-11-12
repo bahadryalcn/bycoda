@@ -34,7 +34,7 @@ import { inboxComposerCard, type InboxItem } from "../../../features/inbox/model
 import { inboxTrackerDescription } from "../../../features/inbox/model/inboxContext";
 import { linkedWorkItemFromInboxItem } from "../../../features/sessions/model/sessionWorkItem";
 import { looksLikeProject, sameProjectPath } from "../../../features/projects/model/recents";
-import { type NoteComposerCard } from "../../../features/notes";
+import { type NoteChatRequest } from "../../../features/notes";
 import { type SidebarTabId } from "../../../features/settings/model/appearance";
 import { isProjectLockedIn, type LockSnapshot } from "../../../features/group-lock/model/lockState";
 import { pathKey } from "../../../shared/lib/paths";
@@ -99,7 +99,7 @@ export interface NewSessionActions {
     options?: { preview?: boolean },
   ) => void;
   onStartInboxItem: (item: InboxItem, body?: string) => Promise<void>;
-  onAddNoteToChat: (card: NoteComposerCard) => void;
+  onAddNoteToChat: (card: NoteChatRequest) => void;
 }
 
 /** Callbacks that create a session and a workspace tab for it. */
@@ -365,7 +365,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
   );
 
   const onAddNoteToChat = useCallback(
-    (card: NoteComposerCard) => {
+    ({ targetCwd, ...card }: NoteChatRequest) => {
       if (!card.id) return;
       setSearchViewOpen(false);
       setInboxViewOpen(false);
@@ -373,6 +373,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
       setAutomationsViewOpen(false);
       setServersViewOpen?.(false);
       const cwd =
+        (targetCwd && looksLikeProject(targetCwd) ? targetCwd : undefined) ||
         (card.sourceCwd && looksLikeProject(card.sourceCwd) ? card.sourceCwd : undefined) ||
         active?.cwd ||
         sessionDefaults?.cwd ||

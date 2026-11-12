@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -72,49 +73,74 @@ export function TaskReviewNotes({
                 data-review-note={note.id}
                 className="space-y-1.5"
               >
-                <div className="flex flex-wrap items-center gap-2 text-ui-caption">
+                <Text
+                  as="div"
+                  size="caption"
+                  tone="inherit"
+                  className="flex flex-wrap items-center gap-2"
+                >
                   <Badge tone={resolved ? "success" : "warning"}>
                     {resolved ? t("Fixed") : t("Open")}
                   </Badge>
                   {note.readAt === undefined ? (
-                    <span className="text-(--ui-tone-info-fg)">{t("New")}</span>
+                    <Text tone="info" size="inherit">
+                      {t("New")}
+                    </Text>
                   ) : null}
                   {note.kind === "suggestion" ? (
-                    <span className="text-(--ui-text-secondary)">{t("Optional suggestion")}</span>
+                    <Text tone="secondary" size="inherit">
+                      {t("Optional suggestion")}
+                    </Text>
                   ) : null}
                   {note.category === "external" ? (
-                    <span className="text-(--ui-tone-warning-fg)">
+                    <Text tone="warning" size="inherit">
                       {t("External verification")}
-                    </span>
+                    </Text>
                   ) : null}
                   {note.occurrences > 1 ? (
-                    <span className="text-(--ui-text-secondary)">
+                    <Text tone="secondary" size="inherit">
                       {t("Reported ")}
                       {note.occurrences}
                       {t(" times")}
-                    </span>
+                    </Text>
                   ) : null}
                   <Timestamp
                     value={note.createdAt}
                     format="datetime-seconds"
                     tooltip={false}
-                    className="text-(--ui-text-secondary)"
+                    size="inherit"
+                    tone="secondary"
                   />
-                </div>
-                <p className="whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+                </Text>
+                <Text
+                  as="p"
+                  size="caption"
+                  tone="secondary"
+                  className="whitespace-pre-wrap break-words"
+                >
                   {note.finding}
-                </p>
+                </Text>
                 {note.suggestion ? (
-                  <p className="whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+                  <Text
+                    as="p"
+                    size="caption"
+                    tone="secondary"
+                    className="whitespace-pre-wrap break-words"
+                  >
                     {t("Suggested correction: ")}
                     {note.suggestion}
-                  </p>
+                  </Text>
                 ) : null}
                 {note.details ? (
                   <Disclosure size="sm" summary={t("Review details")}>
-                    <p className="whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+                    <Text
+                      as="p"
+                      size="caption"
+                      tone="secondary"
+                      className="whitespace-pre-wrap break-words"
+                    >
                       {note.details}
-                    </p>
+                    </Text>
                   </Disclosure>
                 ) : null}
                 <div className="flex flex-wrap gap-1">
@@ -163,9 +189,9 @@ export function TaskReviewNotes({
           })}
         </ul>
       )}
-      <p className="text-ui-micro text-(--ui-text-muted)">
+      <Text as="p" size="micro" tone="muted">
         {t("Marking a note fixed does not complete this task. Its checks and review still apply.")}
-      </p>
+      </Text>
     </section>
   );
 }

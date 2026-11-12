@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Pencil } from "../../../shared/ui/icons";
@@ -174,9 +176,7 @@ export function NoteEditablePreview({
               }}
             >
               {block.definition ? (
-                <pre className="whitespace-pre-wrap text-ui-caption text-(--ui-text-secondary)">
-                  {block.text}
-                </pre>
+                <OutputBlock>{block.text}</OutputBlock>
               ) : (
                 <AgentMarkdown
                   text={`${block.text}\n\n${referencesFor(block.text)}`}
@@ -210,7 +210,9 @@ export function NoteEditablePreview({
       {currentActive ? (
         <>
           {before}
-          <div className="note-active-block">
+          <div
+            {...surfaceAttributes({ radius: "control", variant: "selected" }, "note-active-block")}
+          >
             <NoteMarkdownEditor
               inputObserver={inputObserver}
               viewRef={viewRef}

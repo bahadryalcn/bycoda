@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -15,9 +16,18 @@ export function ConnectionSyncLine({
   const sync = useSyncStatus(machineId);
   const { tone, text } = summarizeSync(sync, wallClockNow());
   return (
-    <div className="connection-sync" data-sync-tone={tone}>
+    <Text
+      as="div"
+      size="caption"
+      tone="inherit"
+      leading="inherit"
+      className="connection-sync"
+      data-sync-tone={tone}
+    >
       {tone === "muted" ? (
-        <span className="min-w-0 text-(--ui-text-muted)">{text}</span>
+        <Text size="inherit" tone="muted" className="min-w-0">
+          {text}
+        </Text>
       ) : (
         <InlineMessage
           tone={tone}
@@ -31,6 +41,6 @@ export function ConnectionSyncLine({
           {text}
         </InlineMessage>
       )}
-    </div>
+    </Text>
   );
 }

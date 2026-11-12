@@ -19,7 +19,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 function noteRow(title: string): HTMLButtonElement | null {
   return (
     [...document.querySelectorAll<HTMLButtonElement>("[data-collection-key] button")].find(
-      (button) => button.querySelector("span.truncate")?.textContent === title,
+      (button) => button.querySelector("span[data-truncate]")?.textContent === title,
     ) ?? null
   );
 }

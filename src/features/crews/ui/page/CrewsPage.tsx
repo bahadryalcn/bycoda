@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -99,7 +100,13 @@ export function CrewsPage({
     [state.data, cwd],
   );
   return (
-    <div data-app-crews className="flex min-h-0 min-w-0 flex-1 flex-col text-content">
+    <Text
+      data-app-crews
+      as="div"
+      size="inherit"
+      tone="primary"
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
+    >
       <Tabs value={tab} onValueChange={setTab} panels="shared">
         <PaneHeader
           dragRegion
@@ -193,6 +200,6 @@ export function CrewsPage({
         setDialog={setDialog}
         onOpenSession={onOpenSession}
       />
-    </div>
+    </Text>
   );
 }

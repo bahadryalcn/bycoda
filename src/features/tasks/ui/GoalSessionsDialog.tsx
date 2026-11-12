@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
@@ -31,21 +32,23 @@ export function GoalSessionsDialog({
       size="lg"
       onClose={() => goals.setSessionsFor(null)}
     >
-      <div className="grid text-ui-secondary">
+      <Text as="div" size="secondary" tone="inherit" className="grid">
         <SectionLabel count={goalTasks.length}>{t("Tasks")}</SectionLabel>
         {goalTasks.map((task) => {
           const sessions = taskSessionIds(task);
           return (
             <div key={task.id} className="goal-session-task">
               <div className="goal-session-head">
-                <span>{task.title}</span>
+                <Text as="span" size="inherit" tone="inherit" weight="medium">
+                  {task.title}
+                </Text>
                 <Badge size="sm" appearance="subtle">
                   {t(STATUS_LABELS[task.status])}
                 </Badge>
               </div>
-              <span className="break-all text-ui-micro text-(--ui-text-secondary)">
+              <Text size="micro" tone="secondary" className="break-all">
                 {task.branch} {task.worktreeCwd ?? task.workspace?.checkoutCwd ?? task.cwd}
-              </span>
+              </Text>
               <div className="flex flex-wrap items-center gap-2">
                 {sessions.worker ? (
                   <Button
@@ -60,9 +63,9 @@ export function GoalSessionsDialog({
                     {t("Open worker session")}
                   </Button>
                 ) : (
-                  <span className="text-ui-caption text-(--ui-text-secondary)">
+                  <Text size="caption" tone="secondary">
                     {t("Session will appear when this task starts.")}
-                  </span>
+                  </Text>
                 )}
                 {sessions.review ? (
                   <Button
@@ -81,7 +84,7 @@ export function GoalSessionsDialog({
             </div>
           );
         })}
-      </div>
+      </Text>
     </Modal>
   );
 }

@@ -1,8 +1,10 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
+import { Divider } from "../../../shared/ui/Divider";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Star } from "../../../shared/ui/icons";
@@ -114,7 +116,9 @@ export function GuestSupport() {
   return (
     <section className={styles.section} aria-labelledby="account-guest-support">
       <SectionLabel labelId="account-guest-support">{t("Support")}</SectionLabel>
-      <p className={styles.lead}>{t("Questions or problems? Write to us.")}</p>
+      <Text as="p" size="body" tone="secondary" className={styles.lead}>
+        {t("Questions or problems? Write to us.")}
+      </Text>
       <div className={styles.actions}>
         <Button variant="secondary" onClick={openFeedbackDialog}>
           {t("Send feedback")}
@@ -152,11 +156,11 @@ export function AccountSupport() {
   return (
     <section className={styles.section} aria-labelledby="account-support">
       <SectionLabel labelId="account-support">{t("Contact support")}</SectionLabel>
-      <p className={styles.lead}>
+      <Text as="p" size="body" tone="secondary" className={styles.lead}>
         {t(
           "Nothing from your sessions, code, logs or file paths is attached automatically. Do not paste passwords, tokens or other secrets.",
         )}
-      </p>
+      </Text>
       {result?.status === "sent" ? (
         <InlineMessage tone="success">
           {t("Your request was sent. Reference: {p0}", { p0: result.reference })}
@@ -195,12 +199,15 @@ export function AccountSupport() {
         <Button variant="primary" loading={busy} onClick={send}>
           {t("Send to support")}
         </Button>
+      </div>
+      <Divider />
+      <div className={styles.actions}>
         <Button variant="secondary" onClick={openFeedbackDialog}>
           {t("Send feedback")}
         </Button>
         <ContactByEmail />
+        <ProjectLinks />
       </div>
-      <ProjectLinks />
     </section>
   );
 }

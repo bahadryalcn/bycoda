@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import {
   AddServerModal,
   ProviderIcon,
@@ -105,9 +106,17 @@ function ExpandableWarning({ children }: { children: ReactNode }) {
         ) : undefined
       }
     >
-      <span ref={text} className={styles.clamp} data-expanded={expanded || undefined}>
+      <Text
+        as="span"
+        size="inherit"
+        tone="inherit"
+        lines={expanded ? undefined : 2}
+        ref={text}
+        className={styles.clamp}
+        data-expanded={expanded || undefined}
+      >
         {children}
-      </span>
+      </Text>
     </SettingsFeedback>
   );
 }
@@ -379,7 +388,10 @@ function McpConnections({
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <Heading size="section">{t("MCP connections")}</Heading>
-            <span
+            <Text
+              size="caption"
+              tone="muted"
+              leading="inherit"
               id="setting-mcp-scopes"
               data-setting-id="mcp-scopes"
               tabIndex={-1}
@@ -404,7 +416,7 @@ function McpConnections({
                   )}
                 </p>
               </InfoPopover>
-            </span>
+            </Text>
             {projectPicker(busy !== null)}
           </div>
         </div>
@@ -459,14 +471,14 @@ function McpConnections({
             <ListFilter className="icon-sm" />
           </Button>
           {effectiveFilter !== "all" || scopeFilter !== "all" ? (
-            <span className={styles.filterLabel}>
+            <Text size="caption" tone="secondary" leading="inherit" className={styles.filterLabel}>
               {[
                 effectiveFilter !== "all" ? MCP_PROVIDER_LABELS[effectiveFilter] : "",
                 scopeFilter !== "all" ? scopeLabel(scopeFilter) : "",
               ]
                 .filter(Boolean)
                 .join(" · ")}
-            </span>
+            </Text>
           ) : null}
         </div>
       ) : null}
@@ -478,7 +490,13 @@ function McpConnections({
           width={360}
           onDismiss={() => setFiltersOpen(false)}
         >
-          <div className={styles.filterPanel}>
+          <Text
+            as="div"
+            size="secondary"
+            tone="primary"
+            leading="inherit"
+            className={styles.filterPanel}
+          >
             <SectionLabel as="h3">{t("Provider")}</SectionLabel>
             <SegmentedControl
               label={t("Filter MCP servers by provider")}
@@ -545,7 +563,7 @@ function McpConnections({
             >
               {t("Reset filters")}
             </Button>
-          </div>
+          </Text>
         </Popover>
       ) : null}
       {actionError ? (
@@ -609,9 +627,26 @@ function McpConnections({
                     <ProviderIcon provider={server.provider} />
                   </span>
                   <OverflowTooltip label={server.name}>
-                    <span className={styles.name}>{server.name}</span>
+                    <Text
+                      as="span"
+                      size="secondary"
+                      tone="inherit"
+                      weight="medium"
+                      leading="inherit"
+                      truncate
+                    >
+                      {server.name}
+                    </Text>
                   </OverflowTooltip>
-                  <span className={styles.scope}>{scopeLabel(server.scope)}</span>
+                  <Text
+                    as="span"
+                    size="caption"
+                    tone="muted"
+                    leading="inherit"
+                    className={styles.scope}
+                  >
+                    {scopeLabel(server.scope)}
+                  </Text>
                   {!checking && needsMcpSignIn(server) ? (
                     <Button
                       stableWidth
@@ -619,6 +654,7 @@ function McpConnections({
                       variant="ghost"
                       size="sm"
                       className={styles.signIn}
+                      textTone="warning"
                       loading={busy?.server === serverRowKey(server) && busy.action === "login"}
                       disabled={loading || busy !== null}
                       onClick={() => void login(server)}
@@ -692,7 +728,7 @@ function McpConnections({
         </SettingsFeedback>
       ) : null}
       {busy ? (
-        <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
+        <Text role="status" as="p" size="caption" tone="secondary">
           {t(
             "Operation in progress for {p0}. Wait for the result before starting another operation.",
             {
@@ -704,7 +740,7 @@ function McpConnections({
               })(),
             },
           )}
-        </p>
+        </Text>
       ) : null}
       {menu ? (
         <DropdownMenu

@@ -11,13 +11,6 @@
   gap: 0.25rem;
   min-inline-size: 0;
 }
-.tone-step > small {
-  overflow: hidden;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .tone-swatch {
   block-size: 2rem;
   border-radius: var(--ui-control-radius);

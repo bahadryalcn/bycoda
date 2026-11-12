@@ -8,6 +8,7 @@ import {
   releaseNotesForVersion,
   releaseNotesMarkdown,
   releaseNotesTitle,
+  releaseNotesTitleForName,
 } from "./releaseNotes";
 
 const fixture = `# Changelog
@@ -123,3 +124,12 @@ describe("formatReleaseDate", () => {
     expect(formatReleaseDate(value)).toBe(value);
   });
 });
+
+it.each(["0.1.2", "", "Unreleased", "  version  "])(
+  "keeps the explicit-name title identical for %j",
+  (version) => {
+    expect(releaseNotesTitleForName(version, "Test Product Native")).toBe(
+      releaseNotesTitle(version),
+    );
+  },
+);

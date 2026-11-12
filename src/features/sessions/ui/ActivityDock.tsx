@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
@@ -5,6 +7,8 @@ import { useLocale, useT } from "../../../shared/i18n";
 import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { Shimmer } from "../../../shared/ui/Shimmer";
+import { ClampText } from "../../../shared/ui/ClampText";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { useDelegatedRunDiscovery } from "../../connections/public/delegatedRuns";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -243,34 +247,42 @@ function DockBody({
   const stopAll = stop.onAll ? stopAllWhenWired : null;
 
   return (
-    <section
+    <Text
+      as="section"
+      tone="inherit"
       aria-label={t("Turn activity")}
       data-activity-dock={dock.state}
-      className={`activity-dock mb-1.5 overflow-hidden rounded-lg font-sans text-ui-caption ${
-        dock.state === "done" ? "activity-dock-done" : ""
-      }`}
+      {...surfaceAttributes(
+        { radius: "card" },
+        `activity-dock mb-1.5 overflow-hidden  font-sans ${
+          dock.state === "done" ? "activity-dock-done" : ""
+        }`,
+      )}
     >
-      <div className="relative" data-activity-status-row>
+      <Text as="div" size="inherit" tone="secondary" className="relative" data-activity-status-row>
         <div className="relative flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1">
           <div className="activity-dock-summary">
             <DockMark state={dock.state} />
-            <span
-              className={`min-w-0 truncate ${
+            <Text
+              as="span"
+              size="inherit"
+              tone={
                 dock.state === "needs-input"
-                  ? "text-(--ui-tone-warning-fg)"
+                  ? "warning"
                   : dock.state === "done"
-                    ? "text-(--ui-tone-success-fg)"
-                    : "activity-dock-label"
-              }`}
+                    ? "success"
+                    : "secondary"
+              }
+              truncate
             >
               {dock.state === "working" ? (
-                <Shimmer className="truncate" duration={1.6}>
+                <Shimmer truncate duration={1.6}>
                   {label}
                 </Shimmer>
               ) : (
                 label
               )}
-            </span>
+            </Text>
             {clock ? <DockClock startedAt={clockOrigin} /> : null}
             {/* Inside the summary: a narrow dock gives the summary a full row, and the
                 walker must stay on it instead of wrapping below the label. */}
@@ -318,16 +330,17 @@ function DockBody({
               >
                 <span className="tabular-nums">{counts}</span>
                 <ChevronUp
-                  className={`icon-xs shrink-0 transition-transform duration-150 motion-reduce:transition-none ${
-                    open ? "rotate-180" : ""
-                  }`}
+                  {...motionAttributes(
+                    { transition: "transform", duration: "standard" },
+                    `icon-xs shrink-0 ${open ? "rotate-180" : ""}`,
+                  )}
                   strokeWidth={1.75}
                 />
               </Button>
             </>
           ) : null}
         </div>
-      </div>
+      </Text>
       {open ? (
         <div
           id={listId}
@@ -349,7 +362,7 @@ function DockBody({
             ))}
         </div>
       ) : null}
-    </section>
+    </Text>
   );
 }
 
@@ -357,7 +370,11 @@ function DockBody({
 function DockClock({ startedAt }: { startedAt?: number }) {
   useLocale();
   const elapsed = formatElapsed(useElapsedFrom(startedAt, false));
-  return <span className="activity-dock-clock shrink-0 tabular-nums">{elapsed}</span>;
+  return (
+    <Text as="span" size="inherit" className="activity-dock-clock shrink-0 tabular-nums">
+      {elapsed}
+    </Text>
+  );
 }
 
 function DockMark({ state }: { state: ActivityDockModel["state"] }) {
@@ -365,19 +382,14 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
   if (state === "done" || state === "background") {
     return (
       <Check
-        className={`icon-sm shrink-0 ${
-          state === "done"
-            ? "activity-dock-check text-(--ui-tone-success-fg)"
-            : "text-(--ui-tone-success-fg)"
-        }`}
+        className={`icon-sm shrink-0 ${state === "done" ? "activity-dock-check" : ""}`}
+        tone="success"
         strokeWidth={2}
       />
     );
   }
   if (state === "needs-input") {
-    return (
-      <CircleAlert className="icon-sm shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
-    );
+    return <CircleAlert className="icon-sm shrink-0" tone="warning" strokeWidth={1.75} />;
   }
   return (
     <StatusDot
@@ -441,16 +453,24 @@ function DockAgentRow({
           <AgentStatusDot status={agent.status} />
         </span>
         <span className="activity-dock-agent-identity flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="line-clamp-2 block font-medium whitespace-pre-wrap text-(--ui-tone-neutral-fg) [overflow-wrap:anywhere]">
+          <ClampText
+            as="span"
+            lines={2}
+            expandable={false}
+            size="inherit"
+            tone="neutral"
+            weight="medium"
+            className="whitespace-pre-wrap [overflow-wrap:anywhere]"
+          >
             {agent.name}
             {agent.crewMember?.handle ? (
-              <span className="ml-1.5 font-normal text-(--ui-text-muted)">
+              <Text size="inherit" tone="muted" weight="regular" className="ml-1.5">
                 @{agent.crewMember.handle}
-              </span>
+              </Text>
             ) : null}
-          </span>
+          </ClampText>
           {agent.kind === "agent" ? (
-            <span className="flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-muted)">
+            <Text size="micro" tone="muted" className="flex min-w-0 items-center gap-1.5">
               <SubagentMarks
                 name={agent.name}
                 member={agent.crewMember}
@@ -458,31 +478,49 @@ function DockAgentRow({
                 active={agent.status === "running"}
                 failed={agent.status === "failed"}
               />
-              <span className="truncate">{agent.model ?? t("Subagent")}</span>
+              <Text size="inherit" tone="inherit" truncate>
+                {agent.model ?? t("Subagent")}
+              </Text>
               {account ? <AccountColorDot account={account} /> : null}
-              {accountLabel ? <span className="truncate">{accountLabel}</span> : null}
-            </span>
+              {accountLabel ? (
+                <Text size="inherit" tone="inherit" truncate>
+                  {accountLabel}
+                </Text>
+              ) : null}
+            </Text>
           ) : null}
         </span>
-        <span className="activity-dock-agent-metrics flex shrink-0 flex-wrap items-center justify-end gap-x-2 text-(--ui-text-secondary)">
+        <Text
+          size="inherit"
+          tone="secondary"
+          className="activity-dock-agent-metrics flex shrink-0 flex-wrap items-center justify-end gap-x-2"
+        >
           {agent.detail ? (
-            <span
-              className={`min-w-0 ${agent.status === "failed" ? "text-(--ui-tone-danger-fg)" : agent.status === "stopped" || agent.status === "interrupted" ? "text-(--ui-tone-warning-fg)" : ""}`}
+            <Text
+              size="inherit"
+              tone={
+                agent.status === "failed"
+                  ? "danger"
+                  : agent.status === "stopped" || agent.status === "interrupted"
+                    ? "warning"
+                    : "inherit"
+              }
+              className="min-w-0"
             >
               {agent.detailParts ? (
                 <SubagentStatusSummary parts={agent.detailParts} />
               ) : (
                 agent.detail
               )}
-            </span>
+            </Text>
           ) : null}
           <AgentClock
             startedAt={agent.startedAt}
             endedAt={agent.endedAt}
             live={agent.status === "running"}
           />
-        </span>
-        <ChevronRight className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+        </Text>
+        <ChevronRight className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
       </Button>
       {stoppable ? (
         <Button
@@ -518,15 +556,15 @@ function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
   useLocale();
   if (status === "running") return <WorkingIndicator size="xs" />;
   if (status === "done")
-    return <Check className="icon-xs shrink-0 text-(--ui-tone-success-fg)" strokeWidth={2} />;
+    return <Check className="icon-xs shrink-0" tone="success" strokeWidth={2} />;
   if (status === "failed") {
-    return <X className="icon-xs shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
+    return <X className="icon-xs shrink-0" tone="danger" strokeWidth={2} />;
   }
   if (status === "stopped") {
-    return <Square className="icon-xs shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
+    return <Square className="icon-xs shrink-0" tone="warning" strokeWidth={2} />;
   }
   if (status === "interrupted") {
-    return <CircleAlert className="icon-xs shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
+    return <CircleAlert className="icon-xs shrink-0" tone="warning" strokeWidth={2} />;
   }
   return null;
 }

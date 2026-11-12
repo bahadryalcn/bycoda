@@ -18,6 +18,9 @@ export type DelegationRecord = {
   title: string;
   requestKey: string;
   payloadHash: string;
+  /** Durable idempotency receipts for continuation turns. */
+  replies?: { requestKey: string; payloadHash: string }[];
+  modelSettings?: Record<string, string>;
   startedAt: number;
   finishedAt?: number;
   status?: "succeeded" | "failed" | "cancelled";
@@ -81,7 +84,11 @@ export class DelegationStore {
   }
 
   async findByRequestKey(requestKey: string): Promise<DelegationRecord | undefined> {
-    return (await this.load()).find((record) => record.requestKey === requestKey);
+    return (await this.load()).find(
+      (record) =>
+        record.requestKey === requestKey ||
+        record.replies?.some((reply) => reply.requestKey === requestKey),
+    );
   }
 
   async isChild(sessionId: string): Promise<boolean> {

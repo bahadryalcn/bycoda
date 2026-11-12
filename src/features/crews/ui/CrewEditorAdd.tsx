@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Heading } from "../../../shared/ui/Heading";
 import { Button } from "../../../shared/ui/Button";
@@ -87,17 +88,17 @@ export function CrewEditorAddFooter({
     <>
       <div role="status" className="flex min-w-0 flex-col gap-0.5">
         {mode === "new" && issues && (!newMember.name.trim() || !newMember.candidates.length) ? (
-          <span className="min-w-0 break-words text-ui-caption text-danger">
+          <Text tone="danger" className="min-w-0 break-words">
             {t("Every member needs a name and a model.")}
-          </span>
+          </Text>
         ) : null}
         {mode === "library" && livePicked.length ? (
           // The picker names the picks and what its filter hides; the add keeps every pick.
-          <span className="min-w-0 break-words text-ui-caption text-(--ui-text-secondary)">
+          <Text className="min-w-0 break-words">
             {t("Adds all {p0} picked members, including any the filter hides.", {
               p0: livePicked.length,
             })}
-          </span>
+          </Text>
         ) : null}
       </div>
       <div className="flex min-w-0 flex-wrap justify-end gap-2">

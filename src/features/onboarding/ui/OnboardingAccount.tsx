@@ -3,6 +3,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Text } from "../../../shared/ui/Text";
 import { useAccount } from "../../account";
 
 /**
@@ -20,11 +21,11 @@ export function OnboardingAccount({ onGuest }: { onGuest: () => void }) {
         <Heading size="page" level={3}>
           {t("Sign in to sync your stats across devices")}
         </Heading>
-        <p>
+        <Text as="p" size="inherit" tone="muted" leading="normal">
           {t(
             "An account is optional. Your sessions, projects and settings stay on this computer either way.",
           )}
-        </p>
+        </Text>
       </div>
       <div className="onboarding-scroll">
         {state.phase === "starting" ? <LoadingText>{t("Loading account…")}</LoadingText> : null}
@@ -38,9 +39,9 @@ export function OnboardingAccount({ onGuest }: { onGuest: () => void }) {
         {state.phase === "signing-in" ? (
           <>
             <LoadingText delay={false}>{t("Waiting for your browser…")}</LoadingText>
-            <p className="onboarding-hint">
+            <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-hint">
               {t("Complete the sign-in in the browser window that opened, then return to bycoda.")}
-            </p>
+            </Text>
             <div className="onboarding-actions">
               <Button variant="secondary" onClick={() => cancelSignIn().catch(() => undefined)}>
                 {t("Cancel")}
@@ -70,7 +71,9 @@ export function OnboardingAccount({ onGuest }: { onGuest: () => void }) {
                 {t("Continue as guest")}
               </Button>
             </div>
-            <p className="onboarding-hint">{t("You can sign in later in Settings → Account.")}</p>
+            <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-hint">
+              {t("You can sign in later in Settings → Account.")}
+            </Text>
           </>
         ) : null}
       </div>

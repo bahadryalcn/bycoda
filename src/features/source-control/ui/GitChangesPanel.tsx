@@ -1,8 +1,10 @@
-import { SplitButton, type SplitButtonAction } from "../../../shared/ui/SplitButton";
+import { GitCommitActions } from "./GitCommitActions";
+import { Text } from "../../../shared/ui/Text";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Popover } from "../../../shared/ui/Popover";
-import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { FileSection } from "./FileSection";
+export { FileSection } from "./FileSection";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useOwnedTimeout } from "../../../shared/hooks/useOwnedTimeout";
 import { t, useLocale, useT } from "../../../shared/i18n/git";
@@ -10,20 +12,12 @@ import { amendPushedCopy, discardSelectedCopy, discardUnstagedCopy } from "./git
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
-  ArrowDown,
-  ArrowUp,
-  Check,
   ChevronDown,
   ChevronRight,
-  CloudUpload,
-  ExternalLink,
   FileDiff,
   ListFilter,
   FolderTree,
-  GitPullRequest,
-  ListBullet,
   Minus,
-  MoreHorizontal,
   Plus,
   PanelLeft,
   PanelRight,
@@ -85,7 +79,6 @@ import {
   type GitDiffIndex,
   type GitFileDiffKind,
   type GitHistoryCommit,
-  type GitPr,
 } from "../../../platform/tauri/fs";
 import type { HarnessId } from "../../sessions";
 import { recordInboxSelfActivity } from "../../inbox/model/inboxSelfActivity";
@@ -137,6 +130,7 @@ import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
 import { CheckoutIdentity } from "./CheckoutIdentity";
+import { UpstreamLabel } from "./UpstreamLabel";
 import { InlineAction } from "../../../shared/ui/ActionHost";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -313,9 +307,9 @@ export function GitChangesPanel({
 
   if (!cwd || cwd === "~") {
     return (
-      <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+      <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
         {t("No project folder")}
-      </p>
+      </Text>
     );
   }
 
@@ -323,8 +317,8 @@ export function GitChangesPanel({
   // the actions in a grouped repository row.
   const branchControl =
     detailsOpen && index?.repository !== false && (index?.branch || repository) ? (
-      <span
-        className={`flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary) ${repository ? "max-w-48 shrink-4" : "-ms-1.5 max-w-[65%] shrink-0"}`}
+      <Text
+        className={`flex min-w-0 items-center gap-1 ${repository ? "max-w-48 shrink-4" : "-ms-1.5 max-w-[65%] shrink-0"}`}
       >
         <BranchPicker
           key={cwd}
@@ -337,7 +331,7 @@ export function GitChangesPanel({
             changesRef.current?.refreshPr?.();
           }}
         />
-      </span>
+      </Text>
     ) : null;
   // Operation results sit next to the actions that produced them (below the commit
   // and sync controls); a collapsed repository row shows them in place.
@@ -401,7 +395,10 @@ export function GitChangesPanel({
       onContextMenu={embedded ? undefined : preferences.onContextMenu}
     >
       {preferences.menu}
-      <header
+      <Text
+        as="header"
+        size="inherit"
+        tone={repository ? "primary" : "inherit"}
         className={repository ? styles.header : styles.branchHeader}
         data-current-checkout={repository?.current || undefined}
       >
@@ -427,44 +424,48 @@ export function GitChangesPanel({
               index={index}
               showReference={!branchControl}
             />
-            {repository.current ? <span className={styles.current}>{t("Current")}</span> : null}
+            {repository.current ? (
+              <Text size="caption" leading="inherit" tone="accent" className={styles.current}>
+                {t("Current")}
+              </Text>
+            ) : null}
           </Button>
         ) : (
           <>
             {branchControl ?? (
-              <span className="shrink-0 text-ui-secondary font-medium text-content">
+              <Text as="span" size="secondary" tone="primary" weight="medium" className="shrink-0">
                 {index?.repository === false || !index
                   ? t("Changes")
                   : `${t("Detached")} · ${(index.head ?? "").slice(0, 7)}`}
-              </span>
+              </Text>
             )}
-            {index?.upstream && detailsOpen ? (
-              <span
-                className="hidden min-w-0 shrink truncate text-ui-caption text-(--ui-text-secondary) @min-[24rem]/changes:block"
-                title={`${t("Upstream")} ${index.upstream}`}
-              >
-                {index.upstream}
-              </span>
-            ) : null}
+            {index?.upstream && detailsOpen ? <UpstreamLabel upstream={index.upstream} /> : null}
           </>
         )}
         {repository?.pointer}
         {busy && !localProgressVisible ? (
-          <span
+          <Text
             role="status"
-            className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)"
+            size="micro"
+            tone="secondary"
+            className="flex min-w-0 items-center gap-1"
           >
             <Spinner size="xs" className="shrink-0" />
-            <span className="min-w-0 truncate">{pending ?? busyLabel(busy)}</span>
-          </span>
+            <Text size="inherit" tone="inherit" truncate className="min-w-0">
+              {pending ?? busyLabel(busy)}
+            </Text>
+          </Text>
         ) : !busy && status ? (
-          <span role="status" className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
+          <Text role="status" size="micro" tone="secondary" truncate className="min-w-0">
             {status}
-          </span>
+          </Text>
         ) : null}
         <div className={repository ? styles.actions : "ms-auto flex min-w-0 items-center gap-1"}>
           {repository && index ? (
-            <span
+            <Text
+              size="caption"
+              leading="inherit"
+              tone="secondary"
               className={styles.summary}
               title={`${t("Changes")}: ${files.length}; ${t("Merge Conflicts")}: ${conflicts.length}`}
             >
@@ -473,9 +474,9 @@ export function GitChangesPanel({
                 {files.length + conflicts.length}
               </span>
               {conflicts.length > 0 ? (
-                <span className={styles.conflicts}>
+                <Text size="inherit" tone="warning" className={styles.conflicts}>
                   {t("Merge Conflicts")}: {conflicts.length}
-                </span>
+                </Text>
               ) : null}
               {!detailsOpen && (index.ahead ?? 0) > 0 ? (
                 <span
@@ -495,7 +496,7 @@ export function GitChangesPanel({
                   ↓{index.behind}
                 </span>
               ) : null}
-            </span>
+            </Text>
           ) : null}
           {repository ? branchControl : null}
           {/* Fixed icon columns keep these actions aligned with the section
@@ -556,7 +557,7 @@ export function GitChangesPanel({
             </span>
           </div>
         </div>
-      </header>
+      </Text>
       {repository && operation && !detailsOpen ? (
         <InlineMessage tone="warning" live="off" className="px-2">
           {operation}
@@ -1313,6 +1314,7 @@ function ChangedFiles({
               label={t("Commit message")}
               hideLabel
               fieldClassName={styles.messageField}
+              textSize="caption"
               ref={messageRef}
               fieldSize="sm"
               minRows={1}
@@ -1410,9 +1412,9 @@ function ChangedFiles({
         {notices}
       </div>
       {prLoading ? (
-        <p role="status" className="px-3 py-1 text-ui-micro text-(--ui-text-secondary)">
+        <Text role="status" as="p" size="micro" tone="secondary" className="px-3 py-1">
           {t("Checking pull request…")}
-        </p>
+        </Text>
       ) : prError ? (
         <GitFeedback title={t("Couldn’t check pull request")} detail={prError} onRetry={reloadPr} />
       ) : null}
@@ -1425,9 +1427,9 @@ function ChangedFiles({
         />
       ) : null}
       {loading && index ? (
-        <p role="status" className="px-3 py-1 text-ui-micro text-(--ui-text-secondary)">
+        <Text role="status" as="p" size="micro" tone="secondary" className="px-3 py-1">
           {t("Refreshing changes…")}
-        </p>
+        </Text>
       ) : null}
       {failure ? (
         <RemoteLoadError cwd={cwd} failure={failure} stale={!!index} onRetry={() => onMutated()} />
@@ -1486,7 +1488,7 @@ function ChangedFiles({
             {t("Loading changes…")}
           </LoadingText>
         ) : files.length === 0 && conflicts.length === 0 ? (
-          <p className="px-3 py-2 text-ui-caption text-(--ui-text-muted)">
+          <Text as="p" size="caption" tone="muted" className="px-3 py-2">
             {index?.repository === false
               ? ""
               : index
@@ -1494,7 +1496,7 @@ function ChangedFiles({
                   ? t("Diverged from {p0}", { p0: index.upstream ?? "upstream" })
                   : t("No uncommitted changes")
                 : ""}
-          </p>
+          </Text>
         ) : (
           <>
             {conflicts.length > 0 ? (
@@ -1650,20 +1652,20 @@ function ChangedFiles({
               </FileSection>
             ) : null}
             {pointers.length > 0 ? (
-              <p className="px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+              <Text as="p" size="caption" tone="secondary" className="px-3 py-1">
                 {t("Submodule pointer changes: {p0}, shown on their submodule rows.", {
                   p0: pointers.length,
                 })}
-              </p>
+              </Text>
             ) : null}
             {deferredFileQuery ? (
-              <p role="status" className="px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+              <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-1">
                 {visibleStaged.length + visibleUnstaged.length} / {staged.length + unstaged.length}{" "}
                 {t("staged and unstaged entries")}
                 <span className="block">
                   {t("All actions affect the entire repository, including hidden entries.")}
                 </span>
-              </p>
+              </Text>
             ) : null}
           </>
         )}
@@ -1678,481 +1680,6 @@ function ChangedFiles({
         </Suspense>
       ) : null}
     </aside>
-  );
-}
-
-type CommitPrimary = "commit" | "sync" | "create-pr" | "view-pr";
-
-/**
- * One contextual split action for the commit area. The primary follows intent: anything to
- * commit leads with Commit, with a pending sync beside it as its own button; otherwise the
- * pending sync, Create PR or View PR leads. Everything else stays in the menu behind its own gates.
- */
-function GitCommitActions({
-  index,
-  pr,
-  busy,
-  pending,
-  hasRemote,
-  hasOpenPr,
-  onDefault,
-  amend,
-  commitIntent,
-  canCommit,
-  blockedReason,
-  canCommitPush,
-  canCommitPushPr,
-  canSync,
-  canPublish,
-  canCreatePr,
-  canViewPr,
-  canOpenMenu,
-  menuOpen,
-  onMenuOpenChange,
-  onCommit,
-  onToggleAmend,
-  onSync,
-  onCreatePr,
-  onViewPr,
-}: {
-  index: GitDiffIndex | null;
-  pr: GitPr | null;
-  busy: string | null;
-  pending: string | null;
-  hasRemote: boolean;
-  hasOpenPr: boolean;
-  onDefault: boolean;
-  amend: boolean;
-  commitIntent: boolean;
-  canCommit: boolean;
-  /** Why commit is off (unresolved conflicts); the operation banner already shows the state. */
-  blockedReason?: string | null;
-  canCommitPush: boolean;
-  canCommitPushPr: boolean;
-  canSync: boolean;
-  canPublish: boolean;
-  canCreatePr: boolean;
-  canViewPr: boolean;
-  canOpenMenu: boolean;
-  menuOpen: boolean;
-  onMenuOpenChange: (open: boolean) => void;
-  onCommit: (push: boolean, createPr?: boolean) => void;
-  onToggleAmend: () => void;
-  onSync: () => void;
-  onCreatePr: () => void;
-  onViewPr: () => void;
-}) {
-  useLocale();
-  const committing = busy === "commit" || busy === "pr";
-  const syncing = busy === "sync";
-  const ahead = index?.ahead ?? 0;
-  const behind = index?.behind ?? 0;
-  const dest = index
-    ? (index.upstream ?? `${index.remote ?? "origin"}/${index.branch ?? "HEAD"}`)
-    : "";
-  const syncTitle = syncing
-    ? "Synchronizing Changes..."
-    : canPublish
-      ? index?.branch
-        ? `Publish Branch "${index.branch}"`
-        : "Publish Branch"
-      : behind > 0 && ahead > 0
-        ? `Pull ${behind} and push ${ahead} commits between ${dest}`
-        : behind > 0
-          ? `Pull ${behind} commit${behind === 1 ? "" : "s"} from ${dest}`
-          : `Push ${ahead} commit${ahead === 1 ? "" : "s"} to ${dest}`;
-  const syncDetail = `${syncTitle}${canPublish || !index?.upstream ? ` · ${dest}` : ""}`;
-  const syncLabel = canPublish
-    ? t("Publish Branch")
-    : t(behind > 0 && ahead > 0 ? "Sync Changes" : behind > 0 ? "Pull" : "Push");
-  const createTitle = index?.defaultBranch
-    ? `Create a pull request into ${index.defaultBranch}`
-    : "Create pull request";
-  const viewTitle = pr?.title ? `View PR #${pr.number}: ${pr.title}` : "View pull request";
-  const viewLabel = pr?.number ? t("View PR #{p0}", { p0: pr.number }) : t("View PR");
-  const showSync = hasRemote && !!index && (canPublish || canSync || syncing);
-  // A permanently disabled Create PR is noise: offer it only when it can run.
-  const showCreatePr = hasRemote && !hasOpenPr && !onDefault && (canCreatePr || busy === "pr");
-  const showViewPr = hasRemote && hasOpenPr;
-  const createDisabled = busy !== "pr" && (!canCreatePr || !!busy);
-  const viewDisabled = !canViewPr || !!busy;
-  const syncDisabled = !!busy && !syncing;
-  const primary: CommitPrimary =
-    committing || commitIntent
-      ? "commit"
-      : showSync
-        ? "sync"
-        : showCreatePr
-          ? "create-pr"
-          : showViewPr
-            ? "view-pr"
-            : "commit";
-  const commitLabel = amend ? t("Amend Commit") : t("Commit");
-
-  // Commit counts read as part of the button label, not as separate chips:
-  // the leading icon names a one-way direction, so only a two-way sync repeats arrows.
-  const twoWay = ahead > 0 && behind > 0;
-  const countLabel = (count: number, incoming: boolean) =>
-    t(
-      incoming
-        ? count === 1
-          ? "{p0} incoming commit"
-          : "{p0} incoming commits"
-        : count === 1
-          ? "{p0} unpushed commit"
-          : "{p0} unpushed commits",
-      { p0: count },
-    );
-  const syncCounts =
-    canPublish || (ahead === 0 && behind === 0) ? null : (
-      <span className="flex shrink-0 items-center gap-1.5 font-normal tabular-nums text-(--ui-text-secondary)">
-        {behind > 0 ? (
-          <span className="flex items-center" aria-label={countLabel(behind, true)}>
-            {twoWay ? <ArrowDown aria-hidden className="icon-xs" strokeWidth={2} /> : null}
-            {behind}
-          </span>
-        ) : null}
-        {ahead > 0 ? (
-          <span className="flex items-center" aria-label={countLabel(ahead, false)}>
-            {twoWay ? <ArrowUp aria-hidden className="icon-xs" strokeWidth={2} /> : null}
-            {ahead}
-          </span>
-        ) : null}
-      </span>
-    );
-  const syncIcon = canPublish ? (
-    <CloudUpload className="icon-sm shrink-0" strokeWidth={1.75} />
-  ) : twoWay || (ahead === 0 && behind === 0) ? (
-    <RefreshCw className="icon-sm shrink-0" strokeWidth={1.75} />
-  ) : behind > 0 ? (
-    <ArrowDown className="icon-sm shrink-0" strokeWidth={1.75} />
-  ) : (
-    <ArrowUp className="icon-sm shrink-0" strokeWidth={1.75} />
-  );
-
-  const lead =
-    primary === "sync"
-      ? {
-          variant: "secondary" as const,
-          label: syncLabel,
-          title: syncDetail,
-          disabled: syncDisabled,
-          loading: syncing,
-          loadingLabel: t("Syncing…"),
-          icon: syncIcon,
-          trailing: syncCounts,
-          onClick: onSync,
-        }
-      : primary === "create-pr"
-        ? {
-            variant: "secondary" as const,
-            label: t("Create PR"),
-            title: createTitle,
-            disabled: createDisabled,
-            loading: busy === "pr",
-            loadingLabel: t("Creating pull request…"),
-            icon: <GitPullRequest className="icon-sm shrink-0" strokeWidth={1.75} />,
-            trailing: null,
-            onClick: onCreatePr,
-          }
-        : primary === "view-pr"
-          ? {
-              variant: "secondary" as const,
-              label: viewLabel,
-              title: viewTitle,
-              disabled: viewDisabled,
-              loading: false,
-              loadingLabel: undefined,
-              icon: <ExternalLink className="icon-sm shrink-0" strokeWidth={1.75} />,
-              trailing: null,
-              onClick: onViewPr,
-            }
-          : {
-              variant: "primary" as const,
-              label: committing ? (pending ?? busyLabel(busy ?? "")) : commitLabel,
-              title: undefined,
-              disabled: !canCommit,
-              loading: committing,
-              loadingLabel: undefined,
-              icon: <Check className="icon-sm" strokeWidth={2} />,
-              trailing: null,
-              onClick: () => onCommit(false),
-            };
-  // Beside a pending commit, sync keeps its own button: commit-only and push-only stay one click.
-  const directSync = primary === "commit" && showSync;
-
-  const actions: SplitButtonAction[] = [];
-  if (primary !== "commit") {
-    actions.push({
-      id: "commit",
-      label: commitLabel,
-      disabled: !canCommit,
-      onSelect: () => onCommit(false),
-    });
-  }
-  actions.push(
-    {
-      id: "push",
-      label: t("Commit & Push"),
-      disabled: !canCommitPush,
-      onSelect: () => onCommit(true),
-    },
-    {
-      id: "push-pr",
-      label: t("Commit, Push & Create PR"),
-      disabled: !canCommitPushPr,
-      onSelect: () => onCommit(true, true),
-    },
-    {
-      id: "amend",
-      label: t("Amend Last Commit"),
-      checked: amend,
-      onSelect: onToggleAmend,
-    },
-  );
-  if (showSync && primary !== "sync" && !directSync) {
-    actions.push({
-      id: "sync",
-      label: syncLabel,
-      description: syncDetail,
-      disabled: syncDisabled,
-      onSelect: onSync,
-    });
-  }
-  if (showCreatePr && primary !== "create-pr") {
-    actions.push({
-      id: "create-pr",
-      label: t("Create PR"),
-      description: createTitle,
-      disabled: createDisabled,
-      onSelect: onCreatePr,
-    });
-  }
-  if (showViewPr && primary !== "view-pr") {
-    actions.push({
-      id: "view-pr",
-      label: viewLabel,
-      description: viewTitle,
-      disabled: viewDisabled,
-      onSelect: onViewPr,
-    });
-  }
-
-  const split = (
-    <SplitButton
-      variant={lead.variant}
-      size="sm"
-      motion="none"
-      fullWidth
-      label={lead.label}
-      title={lead.title}
-      menuLabel={t("Commit options")}
-      menuOpen={menuOpen}
-      onMenuOpenChange={onMenuOpenChange}
-      disabled={lead.disabled}
-      disabledReason={
-        primary === "commit" && !committing ? (blockedReason ?? undefined) : undefined
-      }
-      menuDisabled={!canOpenMenu}
-      loading={lead.loading}
-      loadingLabel={lead.loadingLabel}
-      startIcon={lead.icon}
-      trailing={lead.trailing}
-      onClick={lead.onClick}
-      actions={actions}
-    />
-  );
-  if (!directSync) return split;
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-      <div className="min-w-[8rem] flex-1">{split}</div>
-      <Button
-        variant="secondary"
-        size="sm"
-        className="min-w-0 max-w-full"
-        tooltip={syncDetail}
-        disabled={syncDisabled}
-        loading={syncing}
-        loadingLabel={t("Syncing…")}
-        startIcon={syncIcon}
-        onClick={onSync}
-      >
-        <span className="min-w-0 truncate">{syncLabel}</span>
-        {syncCounts}
-      </Button>
-    </div>
-  );
-}
-
-export function FileSection({
-  title,
-  count,
-  countLabel,
-  open,
-  onToggle,
-  view,
-  onToggleView,
-  headerActions,
-  headerExtra,
-  children,
-}: {
-  title: string;
-  count: number;
-  countLabel?: string;
-  open: boolean;
-  onToggle: () => void;
-  /** Without these there is no list/tree toggle: the section is always a list. */
-  view?: ChangesView;
-  onToggleView?: () => void;
-  headerActions: {
-    title: string;
-    icon?: ReactNode;
-    /** Short text shown instead of an icon. */
-    label?: string;
-    /** Secondary action: lives in the overflow menu instead of the header. */
-    overflow?: boolean;
-    /** Destructive action, set apart in the overflow menu. */
-    danger?: boolean;
-    onClick: () => void;
-  }[];
-  headerExtra?: ReactNode;
-  children: ReactNode;
-}) {
-  useLocale();
-  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
-  const overflow = headerActions.filter((action) => action.overflow);
-  const direct = headerActions.filter((action) => !action.overflow);
-  const toItem = (action: (typeof headerActions)[number]): DropdownMenuItem => ({
-    kind: "item",
-    id: action.title,
-    label: action.title,
-    icon: action.icon,
-    danger: action.danger,
-  });
-  const normal = overflow.filter((action) => !action.danger).map(toItem);
-  const danger = overflow.filter((action) => action.danger).map(toItem);
-  const overflowItems: DropdownMenuItem[] = [
-    ...normal,
-    ...(normal.length && danger.length ? ([{ kind: "sep" }] as DropdownMenuItem[]) : []),
-    ...danger,
-  ];
-  return (
-    <div>
-      {/* In a narrow pane the icon group wraps under the title instead of squeezing the title to
-          nothing and overlapping the count (the title keeps a readable floor). */}
-      <div className={styles.sectionHeader}>
-        <Button
-          size="sm"
-          variant="item"
-          motion="none"
-          type="button"
-          aria-expanded={open}
-          tooltip={title}
-          tooltipWhen="overflow"
-          onClick={onToggle}
-          className="flex min-w-28 flex-1 basis-28 items-center gap-1 text-left"
-        >
-          {open ? (
-            <ChevronDown
-              className="icon-sm shrink-0 text-(--ui-text-secondary)"
-              strokeWidth={1.75}
-            />
-          ) : (
-            <ChevronRight
-              className="icon-sm shrink-0 text-(--ui-text-secondary)"
-              strokeWidth={1.75}
-            />
-          )}
-          <span
-            data-file-section-title
-            className="min-w-0 truncate text-ui-caption font-medium text-(--ui-text-secondary)"
-          >
-            {title}
-          </span>
-          <span className="ml-1 shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
-            {countLabel ?? count}
-          </span>
-        </Button>
-        <div className={styles.actionSlots}>
-          <div className={styles.actionSlot}>{headerExtra}</div>
-          <div className={styles.actionSlot}>
-            {view && onToggleView ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                motion="none"
-                iconOnly
-                label={view === "tree" ? t("View as List") : t("View as Tree")}
-                onClick={onToggleView}
-              >
-                {view === "tree" ? (
-                  <ListBullet className="icon-sm" strokeWidth={1.75} />
-                ) : (
-                  <FolderTree className="icon-sm" strokeWidth={1.75} />
-                )}
-              </Button>
-            ) : null}
-          </div>
-          <div className={styles.actionSlot}>
-            {overflow.length ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                motion="none"
-                iconOnly
-                label={t("More actions")}
-                onClick={(event) => setMoreAnchor(moreAnchor ? null : event.currentTarget)}
-                aria-haspopup="menu"
-                aria-expanded={!!moreAnchor}
-              >
-                <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
-              </Button>
-            ) : null}
-          </div>
-          <div className={styles.actionSlot}>
-            {direct.map((action) =>
-              action.label ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  motion="none"
-                  key={action.title}
-                  type="button"
-                  tooltip={action.title === action.label ? undefined : action.title}
-                  aria-label={action.title}
-                  onClick={action.onClick}
-                  className="shrink-0"
-                >
-                  {action.label}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  motion="none"
-                  iconOnly
-                  key={action.title}
-                  label={action.title}
-                  onClick={action.onClick}
-                >
-                  {action.icon}
-                </Button>
-              ),
-            )}
-          </div>
-        </div>
-      </div>
-      {moreAnchor ? (
-        <DropdownMenu
-          anchor={moreAnchor}
-          label={t("More actions")}
-          items={overflowItems}
-          onPick={(id) => overflow.find((action) => action.title === id)?.onClick()}
-          onClose={() => setMoreAnchor(null)}
-        />
-      ) : null}
-      {open ? <ul>{children}</ul> : null}
-    </div>
   );
 }
 

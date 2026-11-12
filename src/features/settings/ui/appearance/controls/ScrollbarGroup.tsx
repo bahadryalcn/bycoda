@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { Text } from "../../../../../shared/ui/Text";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { IS_MAC } from "../../../../../platform/tauri/platform";
 import { formatNumber, t, useLocale } from "../../../../../shared/i18n";
@@ -89,7 +91,10 @@ export function ScrollbarGroup() {
                   aria-label={t("Custom color")}
                   onClick={() => setOpen(true)}
                 >
-                  <span className="state-custom-dot" style={{ background: customColor }} />
+                  <span
+                    {...surfaceAttributes({ frame: "stroke", edge: "all" }, "state-custom-dot")}
+                    style={{ background: customColor }}
+                  />
                 </Button>
               )}
               {open && (
@@ -157,12 +162,24 @@ export function ScrollbarGroup() {
             />
           </Row>
         </div>
-        <div className="interface-scrollbar-sample">
+        <div
+          {...surfaceAttributes(
+            { frame: "settings", edge: "inline-start" },
+            "interface-scrollbar-sample",
+          )}
+        >
           <Row stacked label={t("Preview")}>
             <div data-scrollbar-preview aria-hidden="true" className="scrollbar-preview">
               {PREVIEW_ROWS.map((row, index) => (
                 <div key={row} className="scrollbar-preview-row">
-                  <span className="scrollbar-preview-gutter">{formatNumber(index + 1)}</span>
+                  <Text
+                    size="inherit"
+                    tone="muted"
+                    leading="inherit"
+                    className="scrollbar-preview-gutter"
+                  >
+                    {formatNumber(index + 1)}
+                  </Text>
                   <span>{row}</span>
                 </div>
               ))}

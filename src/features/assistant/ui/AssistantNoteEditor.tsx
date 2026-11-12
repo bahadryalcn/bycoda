@@ -111,7 +111,9 @@ export function NoteEditor({
           }}
         />
         <LiveText
-          className={styles.editorHint}
+          size="caption"
+          tone="secondary"
+          leading="inherit"
           text={
             draft.intent && !pending
               ? t("Note save is pending. Retry to verify the original note.")

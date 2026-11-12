@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import {
   useCallback,
@@ -300,9 +302,12 @@ export function GitGraphWorkspace({
     busy &&
     !(conflict && (busy === t("Saving conflict resolution…") || busy === t("Resolving conflict…")));
   return (
-    <div
+    <Text
       ref={workspaceRef}
-      className="flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-workspace-panel) text-content"
+      as="div"
+      size="inherit"
+      tone="primary"
+      {...surfaceAttributes({ variant: "workspace-panel" }, "flex min-h-0 min-w-0 flex-1 flex-col")}
     >
       <PaneHeader
         leading={
@@ -384,10 +389,10 @@ export function GitGraphWorkspace({
           </>
         }
       >
-        <GitBranch className="icon-md shrink-0 text-(--ui-tone-accent-fg)" />
-        <span className="max-w-44 truncate text-ui-caption font-medium">
+        <GitBranch className="icon-md shrink-0" tone="accent" />
+        <Text as="span" size="caption" tone="inherit" weight="medium" truncate className="max-w-44">
           {index.data ? (index.data.branch ?? t("Detached HEAD")) : "…"}
-        </span>
+        </Text>
         <Tooltip
           label={
             t("Outgoing commits") +
@@ -396,9 +401,9 @@ export function GitGraphWorkspace({
             `: ${index.data?.behind ?? 0}`
           }
         >
-          <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
+          <Text size="caption" tone="secondary" className="tabular-nums">
             {index.data ? `↑${index.data.ahead ?? 0} ↓${index.data.behind ?? 0}` : null}
-          </span>
+          </Text>
         </Tooltip>
       </PaneHeader>
       {actionAnchor ? (
@@ -500,16 +505,21 @@ export function GitGraphWorkspace({
               {commit ? null : (
                 <span
                   aria-hidden
-                  className="absolute inset-y-1 start-0 w-0.5 rounded-full bg-(--ui-border-accent)"
+                  {...surfaceAttributes(
+                    { radius: "pill" },
+                    "absolute inset-y-1 start-0 w-0.5 bg-(--ui-border-accent)",
+                  )}
                 />
               )}
-              <span className="font-medium">{t("Working tree")}</span>
-              <span className="text-(--ui-text-secondary)">
+              <Text as="span" size="inherit" tone="inherit" weight="medium">
+                {t("Working tree")}
+              </Text>
+              <Text size="inherit" tone="secondary">
                 {index.data?.files.length ?? 0} {t("files")}
                 {index.data?.conflicts?.length
                   ? ` · ${index.data.conflicts.length} ${t("conflicts")}`
                   : ""}
-              </span>
+              </Text>
             </Button>
           </div>
           {graph}
@@ -575,6 +585,6 @@ export function GitGraphWorkspace({
           )}
         </aside>
       </div>
-    </div>
+    </Text>
   );
 }

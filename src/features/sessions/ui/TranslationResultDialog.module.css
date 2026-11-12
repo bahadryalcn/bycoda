@@ -2,8 +2,6 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  color: var(--color-content);
-  font-size: var(--ui-font-body);
 }
 
 .modelRow {
@@ -12,13 +10,6 @@
   align-items: center;
   gap: 8px;
   min-inline-size: 0;
-}
-
-.secondary,
-.status,
-.hint {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 .comparison {
@@ -30,8 +21,6 @@
 .pane {
   min-inline-size: 0;
   overflow: clip;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 
 .paneHeader {
@@ -53,15 +42,10 @@
   overflow: auto;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  line-height: 1.65;
 }
 
 .text {
   user-select: text;
-}
-
-.placeholder {
-  color: var(--ui-text-secondary);
 }
 
 .status {
@@ -88,7 +72,6 @@
 
 .error {
   margin: 0;
-  color: var(--ui-tone-danger-fg);
   overflow-wrap: anywhere;
 }
 
@@ -111,7 +94,6 @@
 .hint {
   flex: 1 1 220px;
   margin: 0;
-  line-height: 1.5;
 }
 
 @media (max-width: 640px) {

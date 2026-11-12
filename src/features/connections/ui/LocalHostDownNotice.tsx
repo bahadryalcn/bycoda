@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -93,12 +94,20 @@ export function LocalHostDownNotice({
   return (
     <Alert tone="warning">
       <div className="min-w-0 flex-1">
-        <p className="font-medium">{t("The host on this computer is not running.")}</p>
-        <p className="ui-secondary-text mbs-0.5 leading-relaxed">
+        <Text as="p" size="inherit" tone="inherit" weight="medium">
+          {t("The host on this computer is not running.")}
+        </Text>
+        <Text
+          as="p"
+          size="inherit"
+          tone="inherit"
+          leading="relaxed"
+          className="ui-secondary-text mbs-0.5"
+        >
           {notice.error
             ? t(notice.error)
             : t("Tasks, sessions and sync on this computer are unavailable until it starts.")}
-        </p>
+        </Text>
         <Button
           className="mbs-2"
           variant="secondary"

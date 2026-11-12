@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -98,11 +99,11 @@ export function CreateWorktreeDialog({
       }
     >
       <form id={formId} className="flex flex-col gap-4" action={submit}>
-        <p className="text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary">
           {t("An independent working copy of ")}
           {prettyCwd(cwd)}
           {t(". Existing uncommitted changes stay in their current working copy.")}
-        </p>
+        </Text>
         <SearchableSelect
           label={t("Branch type")}
           disabled={busy}
@@ -171,10 +172,10 @@ export function CreateWorktreeDialog({
           />
         )}
         {defaultRoot && (
-          <p className="break-all text-ui-micro text-(--ui-text-muted)">
+          <Text as="p" size="micro" tone="muted" className="break-all">
             {t("Created in ")}
             {prettyCwd(defaultRoot)}
-          </p>
+          </Text>
         )}
         {error ? <InlineError>{error}</InlineError> : null}
       </form>

@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { useSyncExternalStore } from "react";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
@@ -90,37 +93,48 @@ export function MachineRow({
   const Icon = local ? Laptop : Server;
   return (
     <div
-      className={`flex flex-wrap items-start gap-x-3 gap-y-2 px-3 py-2.5 ${editing ? "bg-(--ui-surface-selected)" : ""}`}
+      {...surfaceAttributes(
+        { variant: editing ? "selected" : undefined },
+        "flex flex-wrap items-start gap-x-3 gap-y-2 px-3 py-2.5",
+      )}
     >
-      <Icon aria-hidden className="icon-lg mt-0.5 shrink-0 text-(--ui-text-muted)" />
+      <Icon aria-hidden className="icon-lg mt-0.5 shrink-0" tone="muted" />
       <div className="min-w-0 flex-1 basis-48">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2">
           <Tooltip label={machine.name} when={local ? "always" : "overflow"}>
-            <span className="truncate text-ui-secondary font-medium">
+            <Text as="span" size="secondary" weight="medium" truncate>
               {local ? t("This computer") : machine.name}
-            </span>
+            </Text>
           </Tooltip>
           {!local && context ? (
             <OverflowTooltip label={context}>
-              <span className="min-w-0 truncate text-ui-caption text-(--ui-text-muted)">
+              <Text tone="muted" truncate className="min-w-0">
                 {context}
-              </span>
+              </Text>
             </OverflowTooltip>
           ) : null}
           {!local ? (
-            <span className="shrink-0 text-ui-caption text-(--ui-text-muted)">
+            <Text tone="muted" className="shrink-0">
               {machine.ssh ? t("SSH") : t("Host URL")}
-            </span>
+            </Text>
           ) : null}
         </div>
         {connection.detail ? (
-          <div className="text-ui-caption text-(--ui-text-muted)">{connection.detail}</div>
+          <Text as="div" tone="muted">
+            {connection.detail}
+          </Text>
         ) : null}
         <ConnectionSyncLine machineId={machine.id} onSyncNow={onSyncNow} />
         {showDetails ? (
-          <div className="connection-details">
+          <Text
+            as="div"
+            size="caption"
+            tone="muted"
+            leading="inherit"
+            className="connection-details"
+          >
             <MachineRoutesLine machine={machine} />
-            <div className="mt-1 break-all text-ui-caption text-(--ui-text-muted)">
+            <Text as="div" tone="muted" className="mt-1 break-all">
               {local
                 ? t("Syncs projects and groups with the {p0} on this computer", {
                     p0: PRODUCT_IDENTITY.displayName,
@@ -128,27 +142,29 @@ export function MachineRow({
                 : machine.ssh
                   ? t("SSH · {p0}{p1}", { p0: machine.ssh.target, p1: "" })
                   : machine.endpoint}
-            </div>
+            </Text>
             {machine.ssh ? (
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-ui-micro text-(--ui-text-muted)">
+              <Text
+                as="div"
+                size="micro"
+                tone="muted"
+                className="mt-1 flex flex-wrap gap-x-3 gap-y-1"
+              >
                 <span>
                   {t("SSH port")}{" "}
-                  <span className="font-mono text-content">
-                    {machine.ssh.port ?? t("From SSH config")}
-                  </span>
+                  <Code tone="primary">{machine.ssh.port ?? t("From SSH config")}</Code>
                 </span>
                 <span>
-                  {t("Host port")}{" "}
-                  <span className="font-mono text-content">{machine.ssh.remotePort}</span>
+                  {t("Host port")} <Code tone="primary">{machine.ssh.remotePort}</Code>
                 </span>
-              </div>
+              </Text>
             ) : null}
-          </div>
+          </Text>
         ) : null}
         {machine.ssh && needsUpdate ? (
-          <div className="mt-1 text-ui-micro text-(--ui-text-muted)">
+          <Text as="div" size="micro" tone="muted" className="mt-1">
             {t("Updating restarts the host and interrupts active agent turns.")}
-          </div>
+          </Text>
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">

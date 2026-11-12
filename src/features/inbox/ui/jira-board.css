@@ -29,7 +29,6 @@
 .jira-board-hint {
   padding-block: 6px;
   padding-inline: 12px;
-  color: var(--ui-text-secondary);
 }
 .jira-board-hint {
   margin: 0;
@@ -49,7 +48,6 @@
 }
 .jira-board-transition strong {
   flex-basis: 100%;
-  font-weight: 500;
 }
 .jira-board-detail {
   display: flex;
@@ -57,7 +55,6 @@
   flex: 0 1 480px;
   min-inline-size: 260px;
   min-block-size: 0;
-  border-inline-start: 1px solid var(--ui-pane-border);
 }
 .jira-board-detail-close {
   align-self: end;

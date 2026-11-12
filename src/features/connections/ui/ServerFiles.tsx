@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import type { SshHttpProxyOperation } from "../model/sshHttpProxyApproval";
@@ -150,9 +151,9 @@ export function ServerFiles({
       <Modal title={t("SFTP files")} onClose={close} size="lg" fitViewport>
         <div className="flex min-h-0 flex-col gap-3">
           {serverName ? (
-            <p className="truncate text-ui-caption text-(--ui-text-muted)">
+            <Text as="p" tone="muted" truncate>
               {t("Target")}: {serverName}
-            </p>
+            </Text>
           ) : null}
           <form
             className="flex flex-wrap items-center gap-2"
@@ -221,18 +222,18 @@ export function ServerFiles({
                 max={progress?.totalBytes || 1}
                 tone="neutral"
               />
-              <span className="text-ui-caption text-(--ui-text-muted)">
+              <Text tone="muted">
                 {progress
                   ? `${formatNumber(progress.transferredBytes)}${progress.totalBytes != null ? ` / ${formatNumber(progress.totalBytes)}` : ""} ${t("bytes")}`
                   : t("Waiting for transfer data…")}
-              </span>
+              </Text>
             </div>
           ) : null}
           {error ? <Alert tone="danger">{error}</Alert> : null}
           {status ? (
-            <p role="status" className="text-ui-caption text-(--ui-text-muted)">
+            <Text role="status" as="p" tone="muted">
               {status}
-            </p>
+            </Text>
           ) : null}
           {upload ? (
             <div className="flex flex-col gap-2 border-y border-stroke py-3">
@@ -250,7 +251,8 @@ export function ServerFiles({
                 disabled={busy}
                 onChange={(event) => setOverwrite(event.target.checked)}
                 label={t("I allow replacement if this remote filename already exists.")}
-                className="flex items-start gap-2 text-ui-caption"
+                size="caption"
+                className="flex items-start gap-2"
               />
               <div className="flex gap-2">
                 <Button
@@ -306,13 +308,13 @@ export function ServerFiles({
                     <span className="min-w-0 basis-full break-all">
                       {t(item.direction)} · {item.remotePath}
                       {item.publication ? (
-                        <span className="block text-(--ui-text-muted)">
+                        <Text size="inherit" tone="muted" className="block">
                           {t(
                             item.publication === "completed"
                               ? "Transfer completed; recovery cleanup remains. Dismissal removes only recovery metadata."
                               : "Publication outcome unknown. Check the destination before dismissing recovery; a partial file may remain.",
                           )}
-                        </span>
+                        </Text>
                       ) : null}
                     </span>
                     <Button
@@ -351,18 +353,21 @@ export function ServerFiles({
             </div>
           ) : null}
           {review ? (
-            <section
-              className="flex flex-col gap-2 border-b border-stroke pb-3 text-ui-caption"
+            <Text
+              as="section"
+              size="caption"
+              tone="inherit"
+              className="flex flex-col gap-2 border-b border-stroke pb-3"
               aria-label={t("Resume transfer review")}
             >
               <p className="break-all">
                 {review.localPath} ↔ {review.remotePath}
               </p>
-              <p className="text-(--ui-text-muted)">
+              <Text as="p" size="inherit" tone="muted">
                 {t(
                   "Resume verifies the existing content before continuing. Verification reads remote data again and may transfer the full file. Existing destination files are not silently replaced.",
                 )}
-              </p>
+              </Text>
               {review.direction === "upload" ? (
                 <Checkbox
                   checked={resumeOverwrite}
@@ -399,7 +404,7 @@ export function ServerFiles({
                   {t("Close")}
                 </Button>
               </div>
-            </section>
+            </Text>
           ) : null}
           {loaded ? (
             <SearchInput
@@ -414,9 +419,11 @@ export function ServerFiles({
           )}
           <div className="max-h-[55dvh] min-h-0 overflow-auto" aria-label={t("Remote files")}>
             {visibleEntries.map((entry) => (
-              <div
+              <Text
                 key={entry.name}
-                className="flex items-center gap-2 border-b border-stroke py-1.5 text-ui-caption"
+                as="div"
+                tone="inherit"
+                className="flex items-center gap-2 border-b border-stroke py-1.5"
               >
                 {entry.kind === "directory" ? (
                   <Folder className="icon-sm shrink-0" />
@@ -437,16 +444,22 @@ export function ServerFiles({
                     }}
                   >
                     <OverflowTooltip label={entry.name}>
-                      <span className="truncate">{entry.name}</span>
+                      <Text size="inherit" tone="inherit" truncate>
+                        {entry.name}
+                      </Text>
                     </OverflowTooltip>
                   </Button>
                 ) : (
                   <OverflowTooltip label={entry.name}>
-                    <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                    <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                      {entry.name}
+                    </Text>
                   </OverflowTooltip>
                 )}
                 {entry.kind === "symlink" ? (
-                  <span className="text-(--ui-text-muted)">{t("Symlink; not followed")}</span>
+                  <Text size="inherit" tone="muted">
+                    {t("Symlink; not followed")}
+                  </Text>
                 ) : entry.kind === "file" ? (
                   <Button
                     variant="ghost"
@@ -477,7 +490,7 @@ export function ServerFiles({
                     <Download className="icon-sm" />
                   </Button>
                 ) : null}
-              </div>
+              </Text>
             ))}
             {loaded && !entries.length ? (
               <EmptyState size="inline" description={t("Empty directory")} />
@@ -491,11 +504,11 @@ export function ServerFiles({
               />
             ) : null}
           </div>
-          <p className="text-ui-caption text-(--ui-text-muted)">
+          <Text as="p" tone="muted">
             {t(
               "SFTP uses trusted OpenSSH keys or your agent. Downloads require a new local filename. Uploads require replacement consent. Interrupted transfers keep owned partials for explicit content-verified recovery. Symlink entries are not opened automatically.",
             )}
-          </p>
+          </Text>
         </div>
       </Modal>
       {proxy.dialog}

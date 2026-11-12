@@ -1,3 +1,4 @@
+import { Text as UiText } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
@@ -384,10 +385,13 @@ export function FilePreviewSearch({
       className="flex h-full min-h-0 flex-col"
     >
       {open ? (
-        <div
+        <UiText
           role="search"
           aria-label={t("Find in preview")}
-          className="relative z-1 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-workspace-reading-panel) px-2 py-1 text-content"
+          as="div"
+          size="inherit"
+          tone="primary"
+          className="relative z-1 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-workspace-reading-panel) px-2 py-1"
           onKeyDown={onKeyDown}
         >
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">
@@ -408,11 +412,10 @@ export function FilePreviewSearch({
             />
             <LiveText
               text={count}
-              className={`w-[13ch] shrink-0 overflow-hidden pl-2 text-right font-mono text-ui-caption tabular-nums text-ellipsis whitespace-nowrap ${
-                (query && total === 0) || result.invalid
-                  ? "text-(--ui-tone-danger-fg)"
-                  : "text-[var(--ui-text-muted)]"
-              }`}
+              size="caption"
+              tone={(query && total === 0) || result.invalid ? "danger" : "muted"}
+              truncate
+              className="w-[13ch] shrink-0 overflow-hidden pl-2 text-right font-mono tabular-nums"
             />
           </SearchInputGroup>
           <FindToggle
@@ -471,7 +474,7 @@ export function FilePreviewSearch({
           >
             <X className="icon-sm" strokeWidth={1.75} />
           </Button>
-        </div>
+        </UiText>
       ) : null}
       <div ref={contentRef} tabIndex={-1} className="isolate min-h-0 min-w-0 flex-1">
         {children}

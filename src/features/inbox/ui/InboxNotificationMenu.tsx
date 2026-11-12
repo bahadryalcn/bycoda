@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
@@ -115,9 +116,9 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
         className="space-y-1 overflow-y-auto p-3"
       >
         <div className="space-y-1">
-          <p className="px-1 text-ui-caption font-medium text-(--ui-text-secondary)">
+          <Text as="p" size="caption" tone="secondary" weight="medium" className="px-1">
             {t("Mute all projects")}
-          </p>
+          </Text>
         </div>
         <NotificationMuteDatePicker
           projectIds={allIds}
@@ -137,9 +138,13 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
       onClose={onClose}
       header={
         <div className="space-y-1 px-2 py-1.5">
-          <p className="text-ui-caption font-medium text-(--ui-tone-neutral-fg)">{t("Inbox")}</p>
+          <Text as="p" size="caption" tone="neutral" weight="medium">
+            {t("Inbox")}
+          </Text>
           <LiveText
-            className="block text-ui-caption text-(--ui-text-secondary)"
+            size="caption"
+            tone="secondary"
+            className="block"
             text={t(
               allIds.length === 1 ? "{p0} project · {p2} muted" : "{p0} projects · {p2} muted",
               {

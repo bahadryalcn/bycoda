@@ -128,12 +128,12 @@ it("uses the interface typeface for branch names and search", async () => {
     'input[aria-label="Search or create a branch"]',
   )!;
   const branchName = [...picker.querySelectorAll<HTMLElement>('[role="option"] span')].find(
-    (node) => node.textContent === "main" && node.className.includes("font-medium"),
+    (node) => node.textContent === "main" && node.getAttribute("data-weight") === "medium",
   )!;
 
   expect(search.className).not.toContain("font-mono");
   expect(branchName.className).not.toContain("font-mono");
-  expect(branchName.className).toContain("font-medium");
+  expect(branchName.getAttribute("data-weight")).toBe("medium");
 });
 
 it("asks for a branch name before creating from the fixed action", async () => {

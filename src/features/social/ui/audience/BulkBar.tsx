@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Text } from "../../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -20,8 +22,20 @@ export function BulkBar({ count, items, onClear, onPick, disabled }: BulkBarProp
   const button = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return (
-    <div className="audience-bulk" role="group" aria-label={t("Selected people")}>
-      <span className="audience-bulk-count">{t("{p0} selected", { p0: formatNumber(count) })}</span>
+    <div
+      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "audience-bulk")}
+      role="group"
+      aria-label={t("Selected people")}
+    >
+      <Text
+        size="secondary"
+        tone="primary"
+        leading="inherit"
+        weight="medium"
+        className="audience-bulk-count"
+      >
+        {t("{p0} selected", { p0: formatNumber(count) })}
+      </Text>
       <Button variant="ghost" size="sm" disabled={disabled} onClick={onClear}>
         {t("Clear selection")}
       </Button>

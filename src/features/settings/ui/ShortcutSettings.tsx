@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -197,7 +199,11 @@ export function ShortcutEditor({
   }, [onApply, onDisable, onFeedbackChange, recording]);
 
   return (
-    <div className={styles.editor} aria-busy={busy} data-capturing={recording || undefined}>
+    <div
+      {...surfaceAttributes({ radius: "control" }, styles.editor)}
+      aria-busy={busy}
+      data-capturing={recording || undefined}
+    >
       <div
         className={styles.control}
         title={recording ? t("Del disables · Esc cancels") : undefined}
@@ -399,15 +405,21 @@ function KeybindingSettingsRow({
     <Row
       id={keybindingSettingId(row.command)}
       label={
-        <span className={disabled ? styles.disabled : undefined}>
+        <Text size="inherit" tone={disabled ? "disabled" : "inherit"}>
           {t(row.command).replace(/^[^:]+:\s*/, "")}
-          {modified ? <span className={styles.modified}>{t("Modified")}</span> : null}
-        </span>
+          {modified ? (
+            <Text as="span" weight="regular" leading="inherit" className={styles.modified}>
+              {t("Modified")}
+            </Text>
+          ) : null}
+        </Text>
       }
       scope={
         row.when === "Always" ? undefined : (
           <OverflowTooltip label={t("When: {p0}", { p0: t(row.when) })}>
-            <span className={styles.context}>{t("When: {p0}", { p0: t(row.when) })}</span>
+            <Text size="inherit" tone="muted" leading="inherit" truncate className={styles.context}>
+              {t("When: {p0}", { p0: t(row.when) })}
+            </Text>
           </OverflowTooltip>
         )
       }
@@ -615,9 +627,15 @@ export function KeybindingsPage() {
           </p>
         </InfoPopover>
         {query.trim() || filtered ? (
-          <span className={styles.summary} role="status">
+          <Text
+            size="caption"
+            tone="secondary"
+            leading="inherit"
+            className={styles.summary}
+            role="status"
+          >
             {t("Showing {p0} of {p1} bindings", { p0: rows.length, p1: allRows.length })}
-          </span>
+          </Text>
         ) : null}
         {filtersOpen ? (
           <Popover
@@ -629,8 +647,16 @@ export function KeybindingsPage() {
             flow="scroll"
             onDismiss={() => setFiltersOpen(false)}
           >
-            <div className={styles.popover}>
-              <span className="text-ui-secondary font-medium text-content">{t("Category")}</span>
+            <Text
+              as="div"
+              size="caption"
+              tone="secondary"
+              leading="inherit"
+              className={styles.popover}
+            >
+              <Text as="span" size="secondary" weight="medium" tone="primary">
+                {t("Category")}
+              </Text>
               <Select
                 hideLabel
                 label={t("Category")}
@@ -641,7 +667,9 @@ export function KeybindingsPage() {
                   ...categories.map((value) => ({ value, label: t(value) })),
                 ]}
               />
-              <span className="text-ui-secondary font-medium text-content">{t("Status")}</span>
+              <Text as="span" size="secondary" weight="medium" tone="primary">
+                {t("Status")}
+              </Text>
               <Select
                 hideLabel
                 label={t("Status")}
@@ -657,12 +685,18 @@ export function KeybindingsPage() {
               <Button variant="ghost" onClick={resetFilters} disabled={!filtered}>
                 {t("Reset filters")}
               </Button>
-            </div>
+            </Text>
           </Popover>
         ) : null}
       </div>
       {filtered ? (
-        <div className={styles.activeFilters}>
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className={styles.activeFilters}
+        >
           <span>
             {[
               category !== "all" ? `${t("Category")}: ${t(category)}` : null,
@@ -676,7 +710,7 @@ export function KeybindingsPage() {
           <Button variant="ghost" size="sm" onClick={resetFilters}>
             {t("Reset filters")}
           </Button>
-        </div>
+        </Text>
       ) : null}
       <div className={styles.list}>
         {rows.length === 0 ? (
@@ -705,7 +739,15 @@ export function KeybindingsPage() {
                 key={group}
                 title={
                   <span>
-                    {t(group)} <span className={styles.groupCount}>· {entries.length}</span>
+                    {t(group)}{" "}
+                    <Text
+                      size="caption"
+                      tone="muted"
+                      leading="inherit"
+                      className={styles.groupCount}
+                    >
+                      · {entries.length}
+                    </Text>
                   </span>
                 }
               >

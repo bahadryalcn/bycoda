@@ -2,6 +2,7 @@ import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPrefere
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { openFeedbackDialog } from "../../account";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "./settingsControls";
 import {
@@ -348,7 +349,15 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
         label={
           <span className="flex min-w-0 flex-wrap items-baseline gap-2">
             {t("Version")}
-            <span className="general-version">{snapshot.currentVersion}</span>
+            <Text
+              as="span"
+              size="secondary"
+              tone="secondary"
+              leading="inherit"
+              className="general-version"
+            >
+              {snapshot.currentVersion}
+            </Text>
           </span>
         }
         description={snapshot.phase === "idle" && updatesEnabled !== false ? status : undefined}

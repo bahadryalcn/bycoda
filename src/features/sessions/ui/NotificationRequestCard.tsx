@@ -1,3 +1,5 @@
+import { ClampText } from "../../../shared/ui/ClampText";
+import { Text } from "../../../shared/ui/Text";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
@@ -50,14 +52,29 @@ export function NotificationRequestCard({
         tooltip={title}
         tooltipWhen="overflow"
       >
-        <span
-          className={`notification-request-title text-ui-secondary font-medium leading-snug text-(--ui-tone-neutral-fg) ${onDismiss ? "pe-7" : ""}`}
+        <ClampText
+          as="span"
+          lines={2}
+          expandable={false}
+          size="secondary"
+          tone="neutral"
+          weight="medium"
+          leading="snug"
+          className={`notification-request-title ${onDismiss ? "pe-7" : ""}`}
         >
           {title}
-        </span>
-        <span className="notification-request-preview text-ui-caption leading-relaxed text-(--ui-text-secondary)">
+        </ClampText>
+        <ClampText
+          as="span"
+          lines={3}
+          expandable={false}
+          size="caption"
+          tone="secondary"
+          leading="relaxed"
+          className="notification-request-preview"
+        >
           {label}
-        </span>
+        </ClampText>
         <span className="sr-only">{t("Open session")}</span>
       </Button>
       {onDismiss ? (
@@ -76,12 +93,20 @@ export function NotificationRequestCard({
       ) : null}
       {/* One footer row: source, harness and time on the left, kind and the
           decision or the way to answer on the right. */}
-      <div className="notification-request-meta notification-request-footer px-3 pb-2">
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        className="notification-request-meta notification-request-footer px-3 pb-2"
+      >
         <span className="notification-request-source flex min-w-0 items-center gap-2">
           <NotificationProjectLabel cwd={session.cwd} />
           <span className="flex min-w-0 shrink-0 items-center gap-1.5">
             <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
-            <span className="truncate">{HARNESS_TITLE[session.harness]}</span>
+            <Text size="inherit" tone="inherit" truncate>
+              {HARNESS_TITLE[session.harness]}
+            </Text>
           </span>
           {occurredAt != null ? <NotificationTime at={occurredAt} /> : null}
         </span>
@@ -125,16 +150,16 @@ export function NotificationRequestCard({
             </Button>
           )}
         </span>
-      </div>
+      </Text>
       {notice.kind === "approval" && decision.feedback ? (
         decision.danger ? (
           <Alert tone="danger" inline className="px-3 pb-2">
             {decision.feedback}
           </Alert>
         ) : (
-          <div role="status" className="px-3 pb-2 text-ui-caption text-(--ui-text-secondary)">
+          <Text role="status" as="div" size="caption" tone="secondary" className="px-3 pb-2">
             {decision.feedback}
-          </div>
+          </Text>
         )
       ) : null}
     </ActionHost>

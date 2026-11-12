@@ -19,8 +19,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 
 /* Settings row: title and one-line description left, the control right. */
@@ -38,8 +36,6 @@
   justify-content: space-between;
   gap: 0.75rem;
   padding-block: 0.5rem;
-  font-size: var(--ui-font-secondary);
-  color: var(--color-content);
 }
 /* A Checkbox row: the box stays first in the DOM (label order) and sits at the end edge. */
 .task-form-check {
@@ -54,10 +50,6 @@
   min-inline-size: 0;
   gap: 0.125rem;
 }
-.task-form-row-desc {
-  font-size: var(--ui-font-micro);
-  color: var(--ui-text-secondary);
-}
 .task-form-row-control {
   display: flex;
   flex: none;
@@ -70,10 +62,8 @@
   margin-inline-start: 0.5rem;
   min-inline-size: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+
   white-space: nowrap;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-muted);
 }
 
 .task-form-agent {

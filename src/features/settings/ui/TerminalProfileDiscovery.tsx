@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { SettingsFeedback } from "./settingsControls";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -190,35 +191,32 @@ export function TerminalProfileDiscovery({
             aria-label={t("Terminal account profiles")}
             aria-busy={busy}
           >
-            <p className="text-ui-micro leading-relaxed text-(--ui-text-secondary)">
+            <Text as="p" size="micro" tone="secondary" leading="relaxed">
               {t(
                 "Accounts on this machine. The default account belongs to its provider; it does not select the default provider or model.",
               )}
-            </p>
-            <p className="text-ui-micro leading-relaxed text-(--ui-text-secondary)">
+            </Text>
+            <Text as="p" size="micro" tone="secondary" leading="relaxed">
               {t(
                 "Separate sign-ins per provider. New conversations use the default account; each conversation can pick its own account from the composer.",
               )}
-            </p>
-            <p className="text-ui-caption leading-relaxed text-(--ui-text-secondary)">
+            </Text>
+            <Text as="p" size="caption" tone="secondary" leading="relaxed">
               {t(
                 "Uses existing CLI sign-ins. Finds standard and named home profiles; choose a folder for other locations.",
               )}
-            </p>
-            <p className="text-ui-caption leading-relaxed text-(--ui-text-secondary)">
+            </Text>
+            <Text as="p" size="caption" tone="secondary" leading="relaxed">
               {t(
                 "Discovery reads profile folders on this computer. Connecting stores a path, not credentials.",
               )}
-            </p>
+            </Text>
             {disabled ? (
-              <p
-                role="status"
-                className="text-ui-caption leading-relaxed text-(--ui-text-secondary)"
-              >
+              <Text role="status" as="p" size="caption" tone="secondary" leading="relaxed">
                 {t(
                   "Wait for the current account operation to finish, then discover or connect a terminal profile.",
                 )}
-              </p>
+              </Text>
             ) : null}
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -269,7 +267,9 @@ export function TerminalProfileDiscovery({
                   <li key={profile.id} className="mbs-2 flex flex-wrap items-center gap-2">
                     <div className="min-w-0 flex-1">
                       <span>{profile.label}</span>
-                      <p className="break-all text-(--ui-text-secondary)">{profile.path}</p>
+                      <Text as="p" size="inherit" tone="secondary" className="break-all">
+                        {profile.path}
+                      </Text>
                     </div>
                     <Button
                       disabled={(connected && !onConnected) || disabled || busy}

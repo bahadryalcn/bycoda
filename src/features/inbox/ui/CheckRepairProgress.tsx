@@ -1,8 +1,10 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { Surface } from "../../../shared/ui/Surface";
+import { surfaceAttributes, Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState, useSyncExternalStore } from "react";
 import { getCiRepairs, subscribeCiRepairs, type TrackedCiRepair } from "../model/ciRepairTracking";
@@ -336,9 +338,12 @@ function RepairCard({
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <StatusIcon state={lead} />
             <span className="min-w-0 flex-1">
-              <span
+              <Text
+                size="caption"
+                tone="inherit"
+                weight="medium"
                 role="status"
-                className="flex flex-wrap gap-x-3 gap-y-0.5 text-ui-caption font-medium"
+                className="flex flex-wrap gap-x-3 gap-y-0.5"
               >
                 {[...counts].map(([state, count]) => (
                   <Badge key={state} tone={states[state].color} size="xs" appearance="subtle">
@@ -351,13 +356,15 @@ function RepairCard({
                         : `${count} ${states[state].label.toLowerCase()}`}
                   </Badge>
                 ))}
-              </span>
-              <span
+              </Text>
+              <Text
+                size="caption"
+                tone="secondary"
                 title={single ? `${single.check.workflow}: ${single.check.name}` : undefined}
-                className="mt-0.5 block break-words text-ui-caption text-(--ui-text-secondary)"
+                className="mt-0.5 block break-words"
               >
                 {single ? single.check.name : t("CI repair for {p0}", { p0: label })}
-              </span>
+              </Text>
             </span>
           </span>
         }
@@ -387,27 +394,36 @@ function RepairCard({
           </>
         }
       >
-        <div className="space-y-2 border-t border-(--ui-tone-neutral-border) py-2.5 text-ui-micro text-(--ui-text-secondary)">
+        <Text
+          as="div"
+          size="micro"
+          tone="secondary"
+          {...surfaceAttributes({ frame: "neutral", edge: "top" }, "space-y-2 py-2.5")}
+        >
           <p>{t("Included checks")}</p>
           <ul className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
             {group.items.map(({ check }) => (
-              <li
+              <Text
+                as="li"
                 key={JSON.stringify([check.workflow, check.name, check.url])}
+                size="inherit"
+                tone="secondary"
                 title={check.workflow}
-                className="max-w-full break-words rounded bg-(--ui-surface-raised) px-2 py-1 text-(--ui-text-secondary)"
+                {...surfaceAttributes(
+                  { radius: "sm", variant: "raised" },
+                  "max-w-full break-words px-2 py-1",
+                )}
               >
                 {check.name}
-              </li>
+              </Text>
             ))}
           </ul>
           <p>
             {t("Latest PR commit:")}{" "}
-            <span className="font-mono">
-              {view.checks?.headOid.slice(0, 7) || t("Unavailable")}
-            </span>
+            <Code>{view.checks?.headOid.slice(0, 7) || t("Unavailable")}</Code>
             {t(". Results appear in the checks below.")}
           </p>
-        </div>
+        </Text>
       </Disclosure>
     </Surface>
   );

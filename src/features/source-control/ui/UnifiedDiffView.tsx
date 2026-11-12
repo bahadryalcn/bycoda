@@ -1,3 +1,4 @@
+import { DiffStat } from "../../../shared/ui/DiffStat";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
@@ -27,7 +28,6 @@ import {
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
-import { formatInteger } from "../../../shared/lib/numbers";
 import type { ColorScheme, DiffLayout } from "../../settings";
 import { basename } from "../../../platform/tauri/fs";
 import { highlightDiffFile, type SyntaxToken } from "../../files/public/syntaxTokens";
@@ -1450,15 +1450,15 @@ function EmptyBody({ children }: { children: string }) {
 
 function DiffCounts({ additions, deletions }: { additions: number; deletions: number }) {
   useLocale();
-  if (additions <= 0 && deletions <= 0) return null;
   return (
-    <span
-      className="flex shrink-0 items-center gap-1.5 font-sans text-ui-micro font-medium tabular-nums"
+    <DiffStat
+      additions={additions}
+      deletions={deletions}
+      size="micro"
+      weight="medium"
+      className="font-sans"
       title={t("{p0} lines added, {p1} lines removed", { p0: additions, p1: deletions })}
-    >
-      {additions > 0 ? <span className="text-diff-add-fg">+{formatInteger(additions)}</span> : null}
-      {deletions > 0 ? <span className="text-diff-del-fg">-{formatInteger(deletions)}</span> : null}
-    </span>
+    />
   );
 }
 

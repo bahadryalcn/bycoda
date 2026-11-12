@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { type Worktree } from "../model/worktrees";
@@ -41,12 +42,16 @@ export function DeleteWorktreeDialog({
     message: t("This permanently deletes the working copy and everything inside it."),
     cancelLabel: t("Cancel"),
     details: (
-      <p className="flex items-start gap-2 text-ui-caption text-(--ui-text-secondary)">
-        <span className="flex h-(--ui-leading-caption) shrink-0 items-center text-(--ui-text-muted)">
+      <Text as="p" size="caption" tone="secondary" className="flex items-start gap-2">
+        <Text
+          size="inherit"
+          tone="muted"
+          className="flex h-(--ui-leading-caption) shrink-0 items-center"
+        >
           <Folder className="icon-sm" />
-        </span>
+        </Text>
         <span className="min-w-0 flex-1 break-all font-mono">{prettyCwd(tree.path)}</span>
-      </p>
+      </Text>
     ),
     confirmLabel: ({ acknowledged }: ConfirmState) =>
       sessionCount && acknowledged
@@ -84,7 +89,9 @@ export function DeleteWorktreeDialog({
         tone: "neutral",
         content: tree.branch ? (
           <>
-            <span className="font-medium text-content">{tree.branch}</span>
+            <Text size="inherit" tone="primary" weight="medium">
+              {tree.branch}
+            </Text>
             {t(" branch and its commits are kept.")}
           </>
         ) : (

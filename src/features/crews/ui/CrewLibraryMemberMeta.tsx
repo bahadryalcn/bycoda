@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import type { HostModelCatalog } from "../../connections/model/protocol";
 import type { SavedCrewAgent } from "../model/crew";
@@ -53,11 +54,13 @@ export function CrewMemberIdentity({ agent }: { agent: SavedCrewAgent }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <MemberAvatar traits={memberTraits(agent)} size={20} className="shrink-0" />
-      <span className="min-w-0 truncate">{agent.name}</span>
+      <Text size="inherit" tone="inherit" truncate className="min-w-0">
+        {agent.name}
+      </Text>
       {agent.handle ? (
-        <span className="shrink-0 text-ui-caption font-normal text-(--ui-text-secondary)">
+        <Text weight="regular" className="shrink-0">
           @{agent.handle}
-        </span>
+        </Text>
       ) : null}
     </span>
   );
@@ -80,13 +83,13 @@ export function CrewMemberMeta({
   poolName?: string;
 }) {
   return (
-    <span className="flex min-w-0 items-center gap-1.5 text-ui-caption font-normal text-(--ui-text-secondary)">
+    <Text weight="regular" className="flex min-w-0 items-center gap-1.5">
       <span className="flex shrink-0 items-center gap-1">
         <CrewRoleIcon role={agent.role} />
         {roleLabel(agent.role)}
       </span>
       <span aria-hidden="true">·</span>
-      <span className="min-w-0 truncate">
+      <Text size="inherit" tone="inherit" truncate className="min-w-0">
         {[
           poolName && agent.pool
             ? t("Automatic: {p0}", { p0: poolName })
@@ -94,7 +97,7 @@ export function CrewMemberMeta({
           memberScopeLabel(agent, shortScope),
           ...(agent.tools ? [crewToolProfileLabel(agent.tools)] : []),
         ].join(" · ")}
-      </span>
-    </span>
+      </Text>
+    </Text>
   );
 }

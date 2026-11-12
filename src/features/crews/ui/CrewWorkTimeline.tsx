@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { formatNumber, t, useLocale } from "../../../shared/i18n";
@@ -91,13 +92,17 @@ export function CrewWorkTimeline({ run }: { run: CrewRunView }) {
               ) : (
                 <span aria-hidden="true" className="size-5 shrink-0" />
               )}
-              <span className="min-w-0 flex-1 break-words text-ui-secondary [overflow-wrap:anywhere]">
+              <Text
+                size="secondary"
+                tone="inherit"
+                className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
+              >
                 {crewTimelineText(event)}
-              </span>
-              <span className="shrink-0 text-ui-caption text-(--ui-text-muted)">
+              </Text>
+              <Text tone="muted" className="shrink-0">
                 {event.approximate ? "~" : null}
                 <Timestamp value={event.at} />
-              </span>
+              </Text>
             </li>
           );
         })}

@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -52,10 +53,22 @@ export function TodayNotes({
           <ul className={styles.noteList}>
             {group.rows.map((row) => (
               <li key={row.key} className={styles.note} data-timed={row.time ? "" : undefined}>
-                {row.time && <span className={styles.noteTime}>{row.time}</span>}
+                {row.time && (
+                  <Text size="caption" tone="muted" leading="inherit" className={styles.noteTime}>
+                    {row.time}
+                  </Text>
+                )}
                 {row.text && (
                   <Tooltip asChild label={row.text} when="overflow">
-                    <span className={styles.noteText}>{row.text}</span>
+                    <Text
+                      size="secondary"
+                      tone="secondary"
+                      leading="inherit"
+                      truncate
+                      className={styles.noteText}
+                    >
+                      {row.text}
+                    </Text>
                   </Tooltip>
                 )}
               </li>

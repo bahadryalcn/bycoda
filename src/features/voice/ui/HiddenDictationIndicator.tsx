@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
@@ -45,7 +46,9 @@ function HiddenDictation({
         disabled={!run.sessionId}
         onClick={() => run.sessionId && onOpenSession(run.sessionId)}
       >
-        <span className="truncate">{label}</span>
+        <Text size="inherit" tone="inherit" truncate>
+          {label}
+        </Text>
       </Button>
       <Button
         variant="ghost"

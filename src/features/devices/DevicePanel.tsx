@@ -1,3 +1,7 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
+import { OutputBlock } from "../../shared/ui/OutputBlock";
+import { Text } from "../../shared/ui/Text";
+import { ScrollArea } from "../../shared/ui/ScrollArea";
 import { NumberField } from "../../shared/ui/NumberField";
 import { DeviceBar } from "./ui/DeviceBar";
 import { DeviceSetupPanel } from "./ui/DeviceSetupPanel";
@@ -1090,11 +1094,18 @@ function DevicePanelSurface({
                   : t("Device action failed"))
           }
         >
-          <pre>{error}</pre>
+          <OutputBlock size="micro" tone="primary" leading="inherit">
+            {error}
+          </OutputBlock>
         </Disclosure>
       )}
       {!status && !error && (
-        <LoadingText presentation="text" className="device-panel-state">
+        <LoadingText
+          presentation="text"
+          size="caption"
+          leading="inherit"
+          className="device-panel-state"
+        >
           {t("Checking device support…")}
         </LoadingText>
       )}
@@ -1159,9 +1170,28 @@ function DevicePanelSurface({
               {t("The screen could not be refreshed. Refresh the frame; do not repeat the action.")}
             </Alert>
           )}
-          {toolbarReason && <p className="device-panel-reason">{toolbarReason}</p>}
+          {toolbarReason && (
+            <Text
+              as="p"
+              size="caption"
+              tone="secondary"
+              leading="inherit"
+              {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "device-panel-reason")}
+            >
+              {toolbarReason}
+            </Text>
+          )}
           {control && !status.agentInstalled && (
-            <div className="device-panel-setup-control">
+            <Text
+              as="div"
+              size="caption"
+              tone="inherit"
+              leading="inherit"
+              {...surfaceAttributes(
+                { frame: "pane", edge: "block-end" },
+                "device-panel-setup-control",
+              )}
+            >
               <span>{t("Run setup with control enabled to install the control tools.")}</span>
               <Button
                 variant="primary"
@@ -1171,13 +1201,20 @@ function DevicePanelSurface({
               >
                 {t("Set up device control")}
               </Button>
-            </div>
+            </Text>
           )}
           {operation === "press" || operation === "swipe" ? (
             <Progress compact tone="neutral" aria-label={t("Working on the host…")} />
           ) : null}
           {deviceNotice && (
-            <p className="device-panel-notice" role={deviceNotice.error ? "alert" : "status"}>
+            <Text
+              as="p"
+              size="caption"
+              tone="inherit"
+              leading="inherit"
+              {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "device-panel-notice")}
+              role={deviceNotice.error ? "alert" : "status"}
+            >
               {readableDeviceError(deviceNotice.text) ?? deviceNotice.text}
               <Button
                 variant="ghost"
@@ -1187,9 +1224,12 @@ function DevicePanelSurface({
               >
                 <X className="icon-sm" aria-hidden />
               </Button>
-            </p>
+            </Text>
           )}
-          <div className="device-panel-stage" data-rail={device ? true : undefined}>
+          <div
+            {...surfaceAttributes({ variant: "canvas-surface" }, "device-panel-stage")}
+            data-rail={device ? true : undefined}
+          >
             <div className="device-panel-viewport">
               <div
                 className="device-panel-canvas"
@@ -1438,16 +1478,30 @@ function DevicePanelSurface({
                         height={highlightedNode.bounds.height}
                       />
                     </svg>
-                    <span className="device-panel-node-caption">
+                    <Text
+                      truncate
+                      size="caption"
+                      tone="info"
+                      leading="inherit"
+                      {...surfaceAttributes(
+                        { radius: "popup", variant: "raised" },
+                        "device-panel-node-caption",
+                      )}
+                    >
                       {highlightedNode.label || highlightedNode.role}
-                    </span>
+                    </Text>
                   </div>
                 )}
               </div>
             </div>
             {device && (
-              <div
-                className="device-panel-toolbar device-panel-rail"
+              <ScrollArea
+                axis="both"
+                scrollbar="hidden"
+                {...surfaceAttributes(
+                  { frame: "pane", edge: "all", radius: "pill", variant: "floating" },
+                  "device-panel-toolbar device-panel-rail",
+                )}
                 role="toolbar"
                 aria-orientation="vertical"
                 aria-label={t("Device actions")}
@@ -1641,10 +1695,17 @@ function DevicePanelSurface({
                   </Button>
                   {optionsButton("left")}
                 </div>
-              </div>
+              </ScrollArea>
             )}
             {frameStateVisible && (
-              <span className="device-panel-frame-state" title={shownFrame?.capturedAt}>
+              <Text
+                truncate
+                size="micro"
+                tone="primary"
+                leading="inherit"
+                className="device-panel-frame-state"
+                title={shownFrame?.capturedAt}
+              >
                 {annotating
                   ? t("Marking · Frozen frame")
                   : captureFailed || connectionUnavailable || frameStale
@@ -1653,10 +1714,15 @@ function DevicePanelSurface({
                       ? t("Last frame · Refreshing")
                       : t("Paused")}
                 {frameCaptured ? ` · ${frameCaptured}` : ""}
-              </span>
+              </Text>
             )}
             {annotating && draft && (
-              <div className="device-panel-mark-tools">
+              <div
+                {...surfaceAttributes(
+                  { variant: "floating", frame: "pane", edge: "all", radius: "pill" },
+                  "device-panel-mark-tools",
+                )}
+              >
                 <ImageAnnotationToolbar
                   tone="surface"
                   tool={annotationTool}
@@ -1793,15 +1859,27 @@ function DevicePanelSurface({
                 onChange={(event) => setApp(event.target.value)}
               />
               {device?.platform === "ios" ? (
-                <p className="host-tool-muted">
+                <Text
+                  as="p"
+                  size="caption"
+                  tone="inherit"
+                  leading="inherit"
+                  className="host-tool-muted"
+                >
                   {t(
                     "iOS: enter the app name or bundle ID. Open the app before interacting with it.",
                   )}
-                </p>
+                </Text>
               ) : device?.platform === "android" ? (
-                <p className="host-tool-muted">
+                <Text
+                  as="p"
+                  size="caption"
+                  tone="inherit"
+                  leading="inherit"
+                  className="host-tool-muted"
+                >
                   {t("Android: enter Settings or an app package ID.")}
-                </p>
+                </Text>
               ) : null}
               <Button
                 disabled={unavailable("openApp", canControlDevice && !annotating && !!app.trim())}
@@ -1823,9 +1901,15 @@ function DevicePanelSurface({
                 onChange={(event) => setText(event.target.value)}
               />
               {windowsAndroid && !textError ? (
-                <p className="host-tool-muted">
+                <Text
+                  as="p"
+                  size="caption"
+                  tone="inherit"
+                  leading="inherit"
+                  className="host-tool-muted"
+                >
                   {t("Android text input from Windows supports printable ASCII characters only.")}
-                </p>
+                </Text>
               ) : null}
               <Button
                 disabled={unavailable(
@@ -1925,11 +2009,17 @@ function DevicePanelSurface({
                   ))}
                 </div>
               )}
-              <p className="host-tool-muted">
+              <Text
+                as="p"
+                size="caption"
+                tone="inherit"
+                leading="inherit"
+                className="host-tool-muted"
+              >
                 {t(
                   "Android: click the screen to press at that pixel. iOS: use logical point coordinates from the accessibility snapshot.",
                 )}
-              </p>
+              </Text>
             </div>
           )}
           {surface === "inspector" && (
@@ -1986,9 +2076,14 @@ function DevicePanelSurface({
                       >
                         <span className="device-panel-node-label">
                           {value.label || value.role || value.id}
-                          <small>
+                          <Text
+                            size="micro"
+                            tone="secondary"
+                            leading="inherit"
+                            className="device-panel-node-role"
+                          >
                             {value.role} · {value.id}
-                          </small>
+                          </Text>
                         </span>
                       </Button>
                     ))
@@ -1998,7 +2093,13 @@ function DevicePanelSurface({
                 </div>
               )}
               {node && (
-                <div className="device-panel-node-detail">
+                <Text
+                  as="div"
+                  size="caption"
+                  tone="inherit"
+                  leading="inherit"
+                  className="device-panel-node-detail"
+                >
                   <strong>{node.label || node.role}</strong>
                   <span>
                     {node.role} · {node.enabled ? t("Enabled") : t("Disabled")}
@@ -2019,7 +2120,7 @@ function DevicePanelSurface({
                   >
                     {t("Press selected node")}
                   </Button>
-                </div>
+                </Text>
               )}
               <Button
                 variant="ghost"
@@ -2031,7 +2132,14 @@ function DevicePanelSurface({
               </Button>
               {inspection?.raw && (
                 <Disclosure size="sm" summary={t("Raw accessibility output")}>
-                  <pre className="device-panel-output">{inspection.raw}</pre>
+                  <OutputBlock
+                    size="micro"
+                    tone="primary"
+                    leading="inherit"
+                    className="device-panel-output"
+                  >
+                    {inspection.raw}
+                  </OutputBlock>
                 </Disclosure>
               )}
             </div>
@@ -2062,11 +2170,11 @@ function DevicePanelSurface({
               )}
               {draft.transferOperation && (
                 <>
-                  <p>
+                  <Text as="p" size="caption" tone="inherit" leading="inherit">
                     {t(
                       "Attachment result is unknown. Check the original attachment before adding this image again.",
                     )}
-                  </p>
+                  </Text>
                   <Button
                     loading={operation === "addImage"}
                     disabled={unavailable("addImage")}
@@ -2124,7 +2232,16 @@ function DevicePanelSurface({
               </Button>
             </div>
           )}
-          {surface === "output" && <pre className="device-panel-output">{output}</pre>}
+          {surface === "output" && (
+            <OutputBlock
+              size="micro"
+              tone="primary"
+              leading="inherit"
+              className="device-panel-output"
+            >
+              {output}
+            </OutputBlock>
+          )}
           {surface === "setup" && status && (
             <DeviceSetupPanel
               status={status}

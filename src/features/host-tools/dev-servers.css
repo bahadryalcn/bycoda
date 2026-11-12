@@ -71,15 +71,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dev-server-name {
-  font-weight: 500;
-}
 .dev-server-ports {
+  font-size: var(--ui-font-micro);
   color: var(--host-tool-muted);
-  font-size: var(--ui-font-micro);
-}
-.dev-server-meta {
-  font-size: var(--ui-font-micro);
 }
 .dev-server-selection,
 .dev-server-conflict,
@@ -120,9 +114,9 @@
 }
 .dev-server-url,
 .dev-server-command {
+  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  font-size: var(--ui-font-caption);
 }
 .dev-server-details,
 .dev-server-confirm {
@@ -199,16 +193,12 @@
   align-items: center;
   gap: 2px 12px;
   min-inline-size: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .dev-servers-paused {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--color-content);
-  font-weight: 500;
 }
 .dev-server-process {
   padding-block-start: 8px;

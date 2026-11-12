@@ -71,6 +71,8 @@ beforeEach(async () => {
       onOpenAutomations: vi.fn(),
       openSettings: vi.fn(),
       onNew: vi.fn(),
+      onGoToFile: vi.fn(),
+      onOpenCommandPalette: vi.fn(),
       onToggleNotesPanel: vi.fn(),
     } as unknown as WorkspaceActions),
     run: (_name, action) => action(),
@@ -95,6 +97,49 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
+
+it.each(["ctrlKey", "metaKey"] as const)(
+  "consumes repeated picker shortcuts with %s while its Modal owns focus",
+  async (modifier) => {
+    expect(press({ key: "p", code: "KeyP", [modifier]: true }).defaultPrevented).toBe(true);
+    expect(deps.actions.current.onGoToFile).toHaveBeenCalledOnce();
+    deps.filePickerOpenRef.current = true;
+    await act(async () =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(Listener),
+          createElement(Modal, {
+            title: "Go to File",
+            onClose: vi.fn(),
+            children: createElement("input", { "aria-label": "File query", defaultValue: "draft" }),
+          }),
+        ),
+      ),
+    );
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="File query"]')!;
+    input.focus();
+    for (const init of [
+      { key: "p", code: "KeyP", [modifier]: true },
+      { key: "p", code: "KeyP", [modifier]: true, repeat: true },
+      { key: "p", code: "KeyP", [modifier]: true, shiftKey: true },
+    ]) {
+      const event = new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+    expect(deps.actions.current.onGoToFile).toHaveBeenCalledOnce();
+    expect(deps.actions.current.onOpenCommandPalette).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("draft");
+    saveKeybindingOverride("App: Go to File", { shortcut: "Option+KeyQ" });
+    expect(press({ key: "q", code: "KeyQ", altKey: true }).defaultPrevented).toBe(true);
+    expect(press({ key: "p", code: "KeyP", [modifier]: true }).defaultPrevented).toBe(false);
+    saveKeybindingOverride("App: Go to File", { disabled: true });
+    expect(press({ key: "q", code: "KeyQ", altKey: true }).defaultPrevented).toBe(false);
+  },
+);
 
 it("opens a directly assigned settings section and respects a disabled binding", () => {
   saveKeybindingOverride("Settings: Connections", { shortcut: "Option+KeyQ" });

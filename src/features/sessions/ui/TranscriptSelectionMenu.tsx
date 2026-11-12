@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import {
@@ -300,7 +301,9 @@ export function TranscriptSelectionMenu({
         action(
           `translate-${target}`,
           target === "en" ? t("Translate to English") : t("Translate to Chinese"),
-          <span className="text-ui-caption">{target === "en" ? "EN" : "中"}</span>,
+          <Text size="caption" tone="inherit">
+            {target === "en" ? "EN" : "中"}
+          </Text>,
           () => onTranslate(target),
         ),
       );
@@ -329,13 +332,22 @@ export function TranscriptSelectionMenu({
         className={styles.comment}
         data-citation-comment
       >
-        <div className={styles.header}>
+        <Text
+          as="div"
+          size="caption"
+          tone="inherit"
+          weight="medium"
+          leading="inherit"
+          className={styles.header}
+        >
           <span>{t("Add citation")}</span>
           <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={closeComment}>
             <X />
           </Button>
-        </div>
-        <blockquote className={styles.quote}>{selection.text}</blockquote>
+        </Text>
+        <Text as="div" size="caption" tone="secondary" leading="relaxed">
+          <blockquote className={styles.quote}>{selection.text}</blockquote>
+        </Text>
         <TextareaField
           label={t("Comment")}
           placeholder={t("Add an optional comment…")}

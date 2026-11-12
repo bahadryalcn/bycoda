@@ -6,9 +6,6 @@
   block-size: 100%;
   min-block-size: 0;
   min-inline-size: 0;
-  color: var(--color-content);
-  font-size: var(--ui-font-secondary);
-  background: var(--ui-workspace-canvas-chat);
 }
 
 /* Header: identity on the left, quiet status and controls on the right, one row. */
@@ -36,10 +33,6 @@
   block-size: 32px;
   border-radius: var(--radius-pill);
   background: var(--ui-fill-subtle);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  line-height: 1;
   overflow: clip;
   user-select: none;
 }
@@ -50,7 +43,6 @@
 .name {
   min-inline-size: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .mode {
@@ -77,7 +69,6 @@
 .tabRow {
   flex: none;
   padding-inline: 12px;
-  border-block-end: 1px solid var(--ui-pane-border);
   overflow-x: auto;
 }
 
@@ -96,15 +87,11 @@
 }
 .muted {
   margin: 0 16px 8px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
 }
 .empty {
   margin: 0;
   padding: 16px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 /* First run: a short prompt on the canvas. */
@@ -120,8 +107,6 @@
 }
 .setupPrompt p {
   margin: 0;
-  color: var(--ui-text-secondary);
-  line-height: 1.5;
 }
 
 /* Pending operation line below the content. */
@@ -131,9 +116,6 @@
   flex: none;
   gap: 8px;
   padding: 6px 16px;
-  border-block-start: 1px solid var(--ui-pane-border);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 
 /* Undo bar: a thin frame under the content, message left, actions right. */
@@ -145,15 +127,12 @@
   gap: 8px;
   margin: 8px 16px 12px;
   padding: 4px 4px 4px 12px;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
   min-inline-size: 0;
 }
 .undoText {
   flex: 1 1 12rem;
   min-inline-size: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .undoActions {
@@ -169,12 +148,9 @@
   gap: 12px;
   inline-size: min(20rem, calc(100vw - 2rem));
   padding: 12px;
-  font-size: var(--ui-font-caption);
 }
 .popover p {
   margin: 0;
-  color: var(--ui-text-secondary);
-  line-height: 1.5;
 }
 .popover > button {
   justify-self: start;

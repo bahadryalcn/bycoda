@@ -39,9 +39,6 @@
   place-items: center;
   width: 1.125rem;
   height: 1.125rem;
-  border-radius: var(--radius-pill);
-  background: var(--ui-surface);
-  color: var(--ui-text-secondary);
   pointer-events: none;
 }
 .remove {
@@ -57,6 +54,4 @@
 }
 .empty {
   margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
 }

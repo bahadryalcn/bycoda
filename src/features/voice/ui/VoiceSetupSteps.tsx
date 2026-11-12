@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -242,7 +244,9 @@ export function VoiceSetupSteps({
               {t("Check connection")}
             </Button>
             <LiveText
-              className={confirmed ? styles.confirmed : "sr-only"}
+              size="caption"
+              tone="success"
+              className={confirmed ? undefined : "sr-only"}
               text={confirmed ? t("Ready") : ""}
             />
           </div>
@@ -285,7 +289,9 @@ export function VoiceSetupSteps({
               {t("Stop")}
             </Button>
             <LiveText
-              className={confirmed ? styles.confirmed : "sr-only"}
+              size="caption"
+              tone="success"
+              className={confirmed ? undefined : "sr-only"}
               text={confirmed ? t("Ready") : ""}
             />
           </div>
@@ -306,7 +312,9 @@ export function VoiceSetupSteps({
             ]}
             onChange={(microphoneId) => saveVoiceSettings({ ...loadVoiceSettings(), microphoneId })}
           />
-          <p className={styles.hint}>{t("Start the microphone test, then say one sentence.")}</p>
+          <Text as="p" size="inherit" tone="secondary" leading="normal" className={styles.hint}>
+            {t("Start the microphone test, then say one sentence.")}
+          </Text>
           <div className={styles.actions}>
             <Button onClick={() => void testMicrophone()} loading={busy}>
               {t("Test microphone")}
@@ -333,7 +341,11 @@ export function VoiceSetupSteps({
             />
           </div>
           <LiveText
-            className={transcript ? styles.transcript : "sr-only"}
+            {...surfaceAttributes(
+              { variant: transcript ? "plain" : undefined },
+              transcript ? styles.transcript : "sr-only",
+            )}
+            leading="normal"
             text={transcript ?? ""}
           />
         </>

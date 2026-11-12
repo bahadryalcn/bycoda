@@ -1,3 +1,5 @@
+import { DiffStat } from "../../../shared/ui/DiffStat";
+import { Text } from "../../../shared/ui/Text";
 import {
   memo,
   createContext,
@@ -61,6 +63,8 @@ export const ChangeRow = memo(function ChangeRow({
   const name = basename(file.relative);
   const tree = depth !== undefined;
   const dir = tree ? "" : dirname(file.relative);
+  // A collided name with its folder beside it steps down to the caption role.
+  const dimmed = Boolean(collision && dir);
   const canOpen = file.status !== "deleted";
   const {
     menu,
@@ -128,9 +132,9 @@ export const ChangeRow = memo(function ChangeRow({
         selected={selected}
         hoverReveal
         style={tree ? { paddingLeft: 8 + depth * 12 } : undefined}
-        className={`flex h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 leading-none ${
+        className={`flex h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 ${
           tree ? "" : "pl-2"
-        } text-content`}
+        }`}
       >
         <Button
           size="sm"
@@ -154,21 +158,33 @@ export const ChangeRow = memo(function ChangeRow({
           {tree ? <span className="size-4 shrink-0" /> : null}
           <FileTypeIcon name={name} isDir={false} />
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span
-              className={`min-w-0 max-w-full shrink-0 truncate ${collision && dir ? "text-ui-caption text-(--ui-text-secondary)" : "text-ui-secondary font-medium"} ${
-                file.status === "deleted" ? "line-through" : ""
-              }`}
+            <Text
+              size={dimmed ? "caption" : "secondary"}
+              tone={dimmed ? "secondary" : "primary"}
+              weight={dimmed ? undefined : "medium"}
+              truncate
+              className={`max-w-full shrink-0 ${file.status === "deleted" ? "line-through" : ""}`}
             >
               {name}
-            </span>
+            </Text>
             {dir ? (
-              <MiddleTruncate
-                mode="path"
-                title={false}
-                className={`min-w-0 flex-1 text-ui-caption ${collision ? "font-medium text-content" : "text-(--ui-text-secondary)"}`}
+              <Text
+                as="span"
+                size="inherit"
+                tone="inherit"
+                weight={collision ? "medium" : undefined}
+                className="flex min-w-0 flex-1"
               >
-                {dir}
-              </MiddleTruncate>
+                <MiddleTruncate
+                  mode="path"
+                  title={false}
+                  size="caption"
+                  tone={collision ? "primary" : "secondary"}
+                  className="min-w-0 flex-1"
+                >
+                  {dir}
+                </MiddleTruncate>
+              </Text>
             ) : null}
           </span>
         </Button>
@@ -176,33 +192,32 @@ export const ChangeRow = memo(function ChangeRow({
         {/* Counts and status sit at the row end and yield to the actions on hover, keyboard
             focus or an open menu; they are as wide as the action slot so the actions never
             cover the file name. Discard shares the menu's selection scope and confirmation path. */}
-        <span
+        <Text
           data-action-yield=""
-          className={`flex shrink-0 items-center justify-end gap-1.5 text-ui-micro font-medium tabular-nums ${
+          size="micro"
+          tone="primary"
+          weight="medium"
+          className={`flex shrink-0 items-center justify-end gap-1.5 tabular-nums ${
             kind === "unstaged" ? "pointer-fine:w-17" : "pointer-fine:w-11"
           }`}
         >
-          <span
-            className="flex items-center gap-1.5"
+          <DiffStat
+            additions={file.additions}
+            deletions={file.deletions}
             title={t("{p0} lines added, {p1} lines removed", {
               p0: file.additions,
               p1: file.deletions,
             })}
-          >
-            {file.additions > 0 ? (
-              <span className="text-diff-add-fg">+{file.additions}</span>
-            ) : null}
-            {file.deletions > 0 ? (
-              <span className="text-diff-del-fg">-{file.deletions}</span>
-            ) : null}
-          </span>
-          <span
+          />
+          <Text
+            size="inherit"
+            tone={statusTone(file.status)}
             title={statusLabel(file.status)}
-            className={`w-3.5 text-center font-mono ${statusColor(file.status)}`}
+            className="w-3.5 text-center font-mono"
           >
             {statusLetter(file.status)}
-          </span>
-        </span>
+          </Text>
+        </Text>
         <div
           data-action-slot="collapse"
           className="flex shrink-0 items-center gap-1 pointer-fine:pr-2"
@@ -251,9 +266,9 @@ function statusLabel(status: string): string {
 }
 
 // The marker carries the status; plain modifications stay neutral so the list is not an amber wall.
-export function statusColor(status: string): string {
-  if (status === "untracked") return "text-(--ui-tone-info-fg)";
-  if (status === "added") return "text-diff-add-fg";
-  if (status === "deleted") return "text-diff-del-fg";
-  return "text-[var(--ui-text-secondary)]";
+export function statusTone(status: string): "info" | "added" | "removed" | "secondary" {
+  if (status === "untracked") return "info";
+  if (status === "added") return "added";
+  if (status === "deleted") return "removed";
+  return "secondary";
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Text } from "../../../../shared/ui/Text";
 import { FileField } from "../../../../shared/ui/FileField";
 import type { SocialClient } from "../../model/socialClient";
 import { uploadForSocialEditor, type SocialMediaEditor } from "../../model/socialMediaEditor";
@@ -79,8 +80,10 @@ export function ContentMediaField({
       {media.length ? (
         <ul className="content-media-list">
           {media.map((item) => (
-            <li key={item.localId}>
-              <span>{item.name}</span>
+            <Text as="li" size="secondary" tone="inherit" leading="inherit" key={item.localId}>
+              <Text as="span" size="inherit" tone="inherit" leading="inherit" truncate>
+                {item.name}
+              </Text>
               <Button
                 variant="ghost"
                 size="sm"
@@ -89,7 +92,7 @@ export function ContentMediaField({
               >
                 {t("Remove {p0}", { p0: item.name })}
               </Button>
-            </li>
+            </Text>
           ))}
         </ul>
       ) : null}

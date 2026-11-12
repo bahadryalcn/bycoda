@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { ChevronRight } from "../../../shared/ui/icons";
 import { HARNESS_TITLE, type SecondOpinionMeta } from "../model/session";
@@ -16,18 +17,29 @@ export function SecondOpinionCard({ card }: Props) {
 
   return (
     <div className="min-w-0 font-sans">
-      <div className="text-ui-secondary font-medium leading-snug text-(--ui-tone-neutral-fg)">
+      <Text as="div" size="secondary" tone="neutral" weight="medium" leading="snug">
         {card.kind === "handoff" ? t("Handoff") : t("Second opinion")}
-      </div>
-      <div className="mt-1 flex min-w-0 items-center gap-1.5 text-ui-micro leading-4 text-(--ui-text-secondary)">
+      </Text>
+      <Text
+        as="div"
+        size="micro"
+        tone="secondary"
+        className="mt-1 flex min-w-0 items-center gap-1.5"
+      >
         <HarnessIcon harness={card.from} className="size-3 shrink-0" />
-        <span className="truncate">{HARNESS_TITLE[card.from]}</span>
-        <ChevronRight className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+        <Text size="inherit" tone="inherit" truncate>
+          {HARNESS_TITLE[card.from]}
+        </Text>
+        <ChevronRight className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
         <HarnessIcon harness={card.to} className="size-3 shrink-0" />
-        <span className="truncate">{HARNESS_TITLE[card.to]}</span>
-      </div>
+        <Text size="inherit" tone="inherit" truncate>
+          {HARNESS_TITLE[card.to]}
+        </Text>
+      </Text>
       {files ? (
-        <div className="mt-1 text-ui-micro leading-4 text-(--ui-text-secondary)">{files}</div>
+        <Text as="div" size="micro" tone="secondary" className="mt-1">
+          {files}
+        </Text>
       ) : null}
     </div>
   );

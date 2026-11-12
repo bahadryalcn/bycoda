@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
@@ -52,6 +53,8 @@ export function EditorAdvanced({
             checked={repeat.enabled}
             onChange={(event) => setRepeat({ enabled: event.target.checked })}
             label={t("Repeat this post as a paused program")}
+            size="body"
+            leading="inherit"
             className="content-check"
           />
           {repeat.enabled ? (
@@ -103,11 +106,21 @@ export function EditorAdvanced({
                   </>
                 }
                 key={fact.id}
+                size="body"
+                leading="inherit"
                 className="content-check"
               />
             ))
           ) : (
-            <p className="content-platform-note">{t("No brand facts for this project yet.")}</p>
+            <Text
+              as="p"
+              size="caption"
+              tone="muted"
+              leading="inherit"
+              className="content-platform-note"
+            >
+              {t("No brand facts for this project yet.")}
+            </Text>
           )}
         </FieldGroup>
         <FieldGroup

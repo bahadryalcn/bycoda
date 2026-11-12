@@ -1,3 +1,6 @@
+import { DiffStat } from "../../../shared/ui/DiffStat";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Text } from "../../../shared/ui/Text";
 import { Surface } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -15,7 +18,6 @@ import {
 import { invalidateProjectFiles } from "../../files/public/fileIndex";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { basename, notifyGitChanged, subscribeGitChanged } from "../../../platform/tauri/fs";
-import { formatInteger } from "../../../shared/lib/numbers";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { useChangedFileMenu } from "../../files/public/useChangedFileMenu";
 
@@ -157,9 +159,9 @@ function SessionReviewContent({
   if (!enabled || busy || (files.length === 0 && !error && !recording)) return null;
   if (recording) {
     return (
-      <p role="status" className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+      <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-2">
         {t("Loading changes…")}
-      </p>
+      </Text>
     );
   }
 
@@ -230,14 +232,18 @@ function SessionReviewContent({
         {errorNotice}
         <div className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-ui-caption font-medium text-(--ui-text-secondary)">
+            <Text as="div" weight="medium" truncate>
               {t("Changed ")}
               {files.length} {files.length === 1 ? t("file") : t("files")}
-            </div>
-            <div className="flex items-center gap-1.5 font-sans text-ui-micro font-medium tabular-nums -mt-0.5">
-              <span className="text-diff-add-fg">+{formatInteger(totals.additions)}</span>
-              <span className="text-diff-del-fg">-{formatInteger(totals.deletions)}</span>
-            </div>
+            </Text>
+            <DiffStat
+              additions={totals.additions}
+              deletions={totals.deletions}
+              showZero
+              size="micro"
+              weight="medium"
+              className="flex font-sans -mt-0.5"
+            />
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
             <Button
@@ -280,8 +286,10 @@ function SessionReviewContent({
             </span>
           </div>
         </div>
-        <ul
-          className={`scrollbar-none border-t border-(--ui-tone-neutral-border) py-1 ${
+        <ScrollArea
+          as="ul"
+          scrollbar="hidden"
+          className={`border-t border-(--ui-tone-neutral-border) py-1 ${
             expanded ? "max-h-64 overflow-y-auto" : ""
           }`}
         >
@@ -296,7 +304,7 @@ function SessionReviewContent({
               />
             </li>
           ))}
-        </ul>
+        </ScrollArea>
         {files.length > 3 ? (
           <Button
             fullWidth
@@ -365,7 +373,9 @@ function FileRow({
         className="w-full min-w-0 text-left"
       >
         <FileTypeIcon name={name} isDir={false} size="md" />
-        <span className="min-w-0 flex-1 truncate font-mono text-ui-caption">{file.relative}</span>
+        <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1 font-mono">
+          {file.relative}
+        </Text>
         <DiffCounts file={file} />
       </Button>
       {menu}
@@ -377,15 +387,19 @@ function DiffCounts({ file }: { file: CheckpointFile }) {
   const t = useT();
   if (!file.exact) {
     return (
-      <span className="shrink-0 text-ui-micro font-medium text-(--ui-tone-warning-fg)">
+      <Text size="micro" tone="warning" weight="medium" className="shrink-0">
         {t("Mixed changes")}
-      </span>
+      </Text>
     );
   }
   return (
-    <span className="flex shrink-0 gap-2 font-sans text-ui-micro font-medium tabular-nums">
-      <span className="text-diff-add-fg">+{formatInteger(file.additions)}</span>
-      <span className="text-diff-del-fg">-{formatInteger(file.deletions)}</span>
-    </span>
+    <DiffStat
+      additions={file.additions}
+      deletions={file.deletions}
+      showZero
+      size="micro"
+      weight="medium"
+      className="flex shrink-0 font-sans"
+    />
   );
 }

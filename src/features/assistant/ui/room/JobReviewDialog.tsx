@@ -1,4 +1,5 @@
 import { errorText } from "../../../../shared/lib/errors";
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { TextField } from "../../../../shared/ui/TextField";
@@ -50,9 +51,9 @@ export function JobReviewDialog() {
           <div className={styles.footerNote}>
             {error?.key === "jobs.create" && <InlineError>{error.text}</InlineError>}
             {reviewHasAutomation && (
-              <p className={styles.muted}>
+              <Text as="p" leading="inherit" className={styles.muted}>
                 {t("This creates a scheduled automation. It does not run it now.")}
-              </p>
+              </Text>
             )}
           </div>
         ) : undefined

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import type { AssistantJob } from "../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -74,7 +76,9 @@ export function AssistantSessions({
           data-assistant-session-group={job.id}
         >
           <div className={sessionStyles.groupHead}>
-            <span className={sessionStyles.groupTitle}>{job.title}</span>
+            <Text weight="medium" leading="inherit" truncate className={sessionStyles.groupTitle}>
+              {job.title}
+            </Text>
             <Badge size="sm">{assistantJobProjectIds(job).map(projectName).join(" · ")}</Badge>
           </div>
           {ids.map((id) => (
@@ -179,25 +183,50 @@ function ManagedSessionRow({
         ) : (
           <>
             <span className={sessionStyles.titleLine}>
-              <strong>{record?.session.title || id}</strong>
+              <Text as="strong" size="body" tone="inherit" weight="medium" leading="inherit">
+                {record?.session.title || id}
+              </Text>
               {model && (
-                <span className={sessionStyles.model} data-session-model>
+                <Text
+                  size="micro"
+                  leading="inherit"
+                  className={sessionStyles.model}
+                  data-session-model
+                >
                   <HarnessIcon harness={model.harness} size="xs" />
-                  <span className={sessionStyles.modelName}>{model.name}</span>
-                </span>
+                  <Text
+                    size="inherit"
+                    tone="inherit"
+                    leading="inherit"
+                    truncate
+                    className={sessionStyles.modelName}
+                  >
+                    {model.name}
+                  </Text>
+                </Text>
               )}
             </span>
-            {!current && <p className={sessionStyles.caption}>{project}</p>}
+            {!current && (
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className={sessionStyles.caption}
+              >
+                {project}
+              </Text>
+            )}
           </>
         )}
         {current && (
-          <span className={sessionStyles.muted}>
+          <Text size="micro" tone="secondary" className={sessionStyles.muted}>
             {t("Last activity")} <Timestamp value={current.updatedAt} />
-          </span>
+          </Text>
         )}
         {error && (
           <InlineError
-            className={styles.feedback}
+            {...surfaceAttributes({ frame: "pane", edge: "block-end" }, styles.feedback)}
             retry={{ onRetry: () => void refresh(), pending: loading }}
           >
             {t(error)}
@@ -213,14 +242,27 @@ function ManagedSessionRow({
           />
         ) : (
           <>
-            <div className={sessionStyles.meterHead}>
+            <Text
+              as="div"
+              size="caption"
+              tone="secondary"
+              leading="inherit"
+              className={sessionStyles.meterHead}
+            >
               <span>{t("Context usage")}</span>
               {percent !== null && (
-                <span className={sessionStyles.percent} data-tone={tone}>
+                <Text
+                  as="span"
+                  size="inherit"
+                  tone={tone === "danger" || tone === "warning" ? tone : "secondary"}
+                  weight="medium"
+                  leading="inherit"
+                  className={sessionStyles.percent}
+                >
                   {formatNumber(percent / 100, { style: "percent" })}
-                </span>
+                </Text>
               )}
-            </div>
+            </Text>
             <Meter
               label={t("Context usage")}
               value={percent}
@@ -232,13 +274,17 @@ function ManagedSessionRow({
               }
             />
             {percent === null && (
-              <span className={sessionStyles.muted}>
+              <Text size="micro" tone="secondary" className={sessionStyles.muted}>
                 {used === undefined
                   ? t("Context usage unavailable")
                   : t("{p0} tokens · Context window unknown", { p0: formatTokens(used) })}
-              </span>
+              </Text>
             )}
-            {percent !== null && current && <span className={sessionStyles.muted}>{reason}</span>}
+            {percent !== null && current && (
+              <Text size="micro" tone="secondary" className={sessionStyles.muted}>
+                {reason}
+              </Text>
+            )}
           </>
         )}
       </div>

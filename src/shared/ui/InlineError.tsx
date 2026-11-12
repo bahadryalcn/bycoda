@@ -1,4 +1,5 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import { optionalTextAttributes, type TextRoles } from "./Text";
 import { useT } from "../i18n";
 import { Button } from "./Button";
 import { AlertCircle, Check, CircleX, Info } from "./icons";
@@ -7,6 +8,8 @@ export type InlineMessageTone = "danger" | "warning" | "info" | "success" | "neu
 
 export type InlineMessageProps = Omit<ComponentPropsWithoutRef<"div">, "role" | "children"> & {
   tone?: InlineMessageTone;
+  /** Copy typography; unset preserves hierarchy and semantic ink. */
+  text?: TextRoles;
   children: ReactNode;
   /**
    * How a change is announced. `assertive` renders `role="alert"` (default for danger), `polite`
@@ -48,6 +51,7 @@ const GLYPH = {
  */
 export function InlineMessage({
   tone = "info",
+  text,
   live,
   icon,
   retry,
@@ -76,7 +80,7 @@ export function InlineMessage({
         </span>
       ) : null}
       {/* Recovery follows the copy on its line and wraps with it, never detached at the far edge. */}
-      <span className="min-w-0 flex-1 break-words">
+      <span {...optionalTextAttributes(text ?? {}, "min-w-0 flex-1 break-words")}>
         <span className="select-text">{children}</span>
         {action ? <> {action}</> : null}
         {retry ? (

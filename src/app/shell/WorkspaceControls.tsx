@@ -1,4 +1,5 @@
 import { Button } from "../../shared/ui/Button";
+import { Text } from "../../shared/ui/Text";
 import { useT } from "../../shared/i18n";
 import { EyeOff, GitPullRequest, RefreshCw, UsageIcon } from "../../shared/ui/icons";
 import { FullscreenButton } from "./FullscreenButton";
@@ -44,9 +45,12 @@ export function WorkspaceControls({
     },
   ] as const;
   return (
-    <nav
+    <Text
+      as="nav"
+      size="inherit"
+      tone="secondary"
       aria-label={t("Workspace controls")}
-      className="ml-auto flex shrink-0 items-center justify-end gap-1 px-2 text-(--ui-text-secondary)"
+      className="ml-auto flex shrink-0 items-center justify-end gap-1 px-2"
     >
       {actions.map(({ id, label, icon: Icon, onClick }) => (
         <Button
@@ -77,6 +81,6 @@ export function WorkspaceControls({
         <RefreshCw className="icon-sm" />
       </Button>
       <FullscreenButton />
-    </nav>
+    </Text>
   );
 }

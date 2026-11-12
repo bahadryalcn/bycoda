@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { errorText } from "../../../../shared/lib/errors";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
@@ -105,16 +106,20 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
         }
       />
       {!jobDraftVisible && (
-        <p className={styles.notice}>{t("The selected project is no longer visible.")}</p>
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.notice}>
+          {t("The selected project is no longer visible.")}
+        </Text>
       )}
       {!snapshot.capabilities.jobs && (
-        <p className={styles.notice}>{t("Job execution is unavailable on this Host.")}</p>
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.notice}>
+          {t("Job execution is unavailable on this Host.")}
+        </Text>
       )}
       {!jobReview && errorFor("jobs.create")}
       <div className={styles.listHead}>
         {view === "Today" && allJobs.length > 0 && <SectionLabel>{t("Active jobs")}</SectionLabel>}
         {visibleSelectedCount > 0 && (
-          <div className={styles.bulk}>
+          <Text as="div" size="caption" tone="secondary" leading="inherit" className={styles.bulk}>
             <span>{t("{p0} selected", { p0: visibleSelectedCount })}</span>
             <Button size="sm" disabled={Boolean(pending)} onClick={() => bulk("stop")}>
               {t("Stop")}
@@ -127,7 +132,7 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
             >
               {t("Delete")}
             </Button>
-          </div>
+          </Text>
         )}
         {view === "Today" && active.length > TODAY_JOB_LIMIT && (
           <Button variant="link" onClick={() => setView("Jobs")}>
@@ -167,7 +172,7 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           ))}
         </div>
       ) : view === "Jobs" ? (
-        <div className={styles.empty}>
+        <Text as="div" size="inherit" tone="secondary" className={styles.empty}>
           <Heading size="item" level={3}>
             {t(filtered ? "No matching jobs" : "No jobs yet")}
           </Heading>
@@ -186,7 +191,7 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           ) : (
             <p>{t("Give {p0} a job", { p0: identity.name })}</p>
           )}
-        </div>
+        </Text>
       ) : null}
       {errorFor("bulk")}
     </section>

@@ -201,10 +201,6 @@
 .theme-palette-swatches > span {
   flex: 1;
 }
-.theme-palette-name {
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-}
 
 /* Tone: the hue slider takes its rainbow track from --ui-hue-track, set by ToneSliders. */
 .theme-hue-field {
@@ -253,7 +249,6 @@
   inline-size: 0.875rem;
   block-size: 0.875rem;
   border-radius: 50%;
-  border: 1px solid var(--color-stroke);
 }
 @media (width < 40rem) {
   .theme-preview {
@@ -298,11 +293,6 @@
   block-size: 100%;
   object-fit: cover;
 }
-.theme-saved-apply .theme-palette-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 /* Actions sit over the name line's end and appear on hover or keyboard focus only. */
 .theme-saved-actions {
   position: absolute;
@@ -310,8 +300,6 @@
   inset-inline-end: 0.25rem;
   display: flex;
   padding-inline-start: 0.5rem;
-  border-radius: 0.375rem;
-  background: var(--color-background-base);
   opacity: 0;
 }
 .theme-saved-card:hover .theme-saved-actions,
@@ -331,6 +319,5 @@
   justify-content: center;
   block-size: 100%;
   min-block-size: 3.5rem;
-  color: var(--ui-text-muted);
   white-space: nowrap;
 }

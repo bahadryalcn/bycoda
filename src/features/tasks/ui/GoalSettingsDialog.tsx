@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -45,21 +47,26 @@ function GoalSettingsForm({
     setSettings((current) => ({ ...current, [key]: value }));
   const planning = goal.status === "planning";
   return (
-    <form
+    <Text
+      as="form"
+      size="secondary"
+      tone="inherit"
       aria-label={t("Edit goal settings")}
-      className="task-form text-ui-secondary"
+      className="task-form"
       onSubmit={(event) => {
         event.preventDefault();
         if (!saving && valid) onSave(settings).catch(onError);
       }}
     >
       <div className="task-form-body">
-        <p className="break-words font-medium">{goal.title}</p>
-        <p className="task-form-hint">
+        <Text as="p" size="inherit" tone="inherit" weight="medium" className="break-words">
+          {goal.title}
+        </Text>
+        <Text as="p" size="micro" tone="secondary" leading="inherit" className="task-form-hint">
           {t(
             "Applies to existing unfinished tasks. Delivery requires approval of the reviewed source and target.",
           )}
-        </p>
+        </Text>
         <FieldGroup variant="bare" disabled={saving}>
           <div className="goal-form-sections mt-3 min-w-0">
             <GoalSection title={t("How it runs")}>
@@ -121,7 +128,7 @@ function GoalSettingsForm({
           </Alert>
         ) : null}
       </div>
-      <div className="task-form-footer">
+      <div {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, "task-form-footer")}>
         <Button variant="ghost" disabled={saving} onClick={onCancel}>
           {t("Cancel")}
         </Button>
@@ -129,7 +136,7 @@ function GoalSettingsForm({
           {t("Save")}
         </Button>
       </div>
-    </form>
+    </Text>
   );
 }
 

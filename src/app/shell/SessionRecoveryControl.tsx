@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { Badge } from "../../shared/ui/Badge";
 import { Button } from "../../shared/ui/Button";
 import { InlineError } from "../../shared/ui/InlineError";
@@ -89,12 +90,15 @@ export function SessionRecoveryControl({
         <span data-rail-section-mark aria-hidden="true">
           <RotateCcw className="icon-sm shrink-0" />
         </span>
-        <span
+        <Text
           data-rail-section-text
-          className="recovery-rail-label min-w-0 flex-1 truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden"
+          size="inherit"
+          tone="inherit"
+          truncate
+          className="recovery-rail-label min-w-0 flex-1 @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden"
         >
           {label}
-        </span>
+        </Text>
         {count > 0 ? (
           <>
             <Badge

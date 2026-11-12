@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { TimePicker } from "../../../../shared/ui/TimePicker";
 import { useEffect, useState } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
@@ -8,6 +10,7 @@ import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Select } from "../../../../shared/ui/Select";
 import { Switch } from "../../../../shared/ui/Switch";
+import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { ConfirmAutonomy } from "../common/ConfirmAutonomy";
 import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
@@ -134,12 +137,17 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
 
   if (!policy || !draft) {
     return (
-      <section className="social-card" aria-label={t("Autonomy")}>
+      <section
+        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+        aria-label={t("Autonomy")}
+      >
         <Heading size="item">{t("Autonomy")}</Heading>
         {loadError ? (
           <InlineMessage tone="danger">{loadError}</InlineMessage>
         ) : (
-          <p className="social-muted">{t("Loading…")}</p>
+          <Text as="p" tone="muted" leading="snug" className="social-muted">
+            {t("Loading…")}
+          </Text>
         )}
       </section>
     );
@@ -214,14 +222,19 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
   };
 
   return (
-    <section className="social-card" aria-label={t("Autonomy")}>
+    <section
+      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      aria-label={t("Autonomy")}
+    >
       <Heading size="item">{t("Autonomy")}</Heading>
-      <p className="social-card-description">
+      <Text as="p" tone="muted" leading="snug" className="social-card-description">
         {t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}
-      </p>
+      </Text>
       {AUTONOMY_ACTIONS.map((action) => (
         <div key={action} className="social-autonomy-row">
-          <span>{autonomyLabel(action)}</span>
+          <Text as="span" size="secondary" leading="inherit">
+            {autonomyLabel(action)}
+          </Text>
           <Select
             hideLabel
             label={autonomyLabel(action)}
@@ -248,7 +261,9 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
           />
         </div>
       ))}
-      <p className="social-muted">{t("Leave a daily limit blank to use the default.")}</p>
+      <Text as="p" tone="muted" leading="snug" className="social-muted">
+        {t("Leave a daily limit blank to use the default.")}
+      </Text>
       <Switch
         label={t("Act only during working hours")}
         checked={draft.hours.enabled}
@@ -265,23 +280,17 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
               setDraft({ ...draft, hours: { ...draft.hours, timeZone: event.currentTarget.value } })
             }
           />
-          <TextField
+          <TimePicker
             label={t("Start")}
-            type="time"
             value={draft.hours.start}
             disabled={disabled || is("autonomy")}
-            onChange={(event) =>
-              setDraft({ ...draft, hours: { ...draft.hours, start: event.currentTarget.value } })
-            }
+            onChange={(value) => setDraft({ ...draft, hours: { ...draft.hours, start: value } })}
           />
-          <TextField
+          <TimePicker
             label={t("End")}
-            type="time"
             value={draft.hours.end}
             disabled={disabled || is("autonomy")}
-            onChange={(event) =>
-              setDraft({ ...draft, hours: { ...draft.hours, end: event.currentTarget.value } })
-            }
+            onChange={(value) => setDraft({ ...draft, hours: { ...draft.hours, end: value } })}
           />
           <FieldGroup legend={t("Days")} layout="row">
             {weekdayLabels(getLocale()).map(({ day, label }) => (
@@ -301,6 +310,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
                 }
                 label={label}
                 key={day}
+                size="secondary"
                 className="social-check"
               />
             ))}

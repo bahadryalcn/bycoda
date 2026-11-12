@@ -12,8 +12,6 @@
 .resource-sample-status {
   flex: 1;
   min-inline-size: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .resource-empty {
@@ -49,7 +47,6 @@
   grid-template-columns: auto minmax(0, 1fr);
   gap: 4px 8px;
   color: var(--host-tool-muted);
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .resource-chart-cpu {
@@ -102,18 +99,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px 16px;
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .resource-memory-legend,
 .resource-history-caption {
   color: var(--host-tool-muted);
-  font-size: var(--ui-font-micro);
 }
 .resource-memory-legend strong {
   margin-inline-start: 6px;
-  color: var(--color-content);
-  font-weight: 500;
 }
 
 /* Measurement scope stays visible: these numbers are the host Node process. */
@@ -123,6 +116,4 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { radioKeyTarget } from "../../../shared/lib/radioKeyTarget";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
@@ -87,7 +89,10 @@ function LiveBackgroundTileContent({
     <>
       <span
         ref={ref}
-        className="relative block aspect-square w-full overflow-hidden rounded-md bg-background-base"
+        {...surfaceAttributes(
+          { radius: "row" },
+          "relative block aspect-square w-full overflow-hidden bg-background-base",
+        )}
       >
         {visible && scene !== "none" ? (
           <LiveBackgroundCanvas
@@ -99,7 +104,9 @@ function LiveBackgroundTileContent({
           />
         ) : null}
       </span>
-      <span className="truncate px-0.5 text-ui-micro leading-4">{label}</span>
+      <Text size="micro" tone="inherit" truncate className="px-0.5">
+        {label}
+      </Text>
     </>
   );
 }

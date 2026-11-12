@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
@@ -141,7 +143,15 @@ export function TranslationResultDialog({
       size="lg"
       onClose={onClose}
       footer={
-        <ModalActions start={hintText ? <p className={styles.hint}>{hintText}</p> : undefined}>
+        <ModalActions
+          start={
+            hintText ? (
+              <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.hint}>
+                {hintText}
+              </Text>
+            ) : undefined
+          }
+        >
           <Button variant="ghost" onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -202,11 +212,17 @@ export function TranslationResultDialog({
         </ModalActions>
       }
     >
-      <div className={`bycoda-arc ${styles.content}`}>
+      <Text
+        as="div"
+        size="body"
+        tone="primary"
+        leading="inherit"
+        className={`bycoda-arc ${styles.content}`}
+      >
         <div className={styles.modelRow}>
-          <span className={styles.secondary}>
+          <Text size="caption" tone="secondary" leading="inherit">
             {reprompt ? t("Reprompt model") : t("Translation model")}
-          </span>
+          </Text>
           <ModelPicker
             harness={translator.harness}
             model={translator.model ?? ""}
@@ -241,18 +257,28 @@ export function TranslationResultDialog({
           />
         </div>
         <div className={styles.comparison}>
-          <section className={styles.pane} aria-labelledby={`${id}-original`}>
+          <section
+            {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.pane)}
+            aria-labelledby={`${id}-original`}
+          >
             <header className={styles.paneHeader}>
               <Heading size="item" id={`${id}-original`}>
                 {t("Original text")}
               </Heading>
             </header>
-            <div className={styles.text} tabIndex={0}>
+            <Text
+              as="div"
+              size="inherit"
+              tone="inherit"
+              leading="relaxed"
+              className={styles.text}
+              tabIndex={0}
+            >
               {text}
-            </div>
+            </Text>
           </section>
           <section
-            className={styles.pane}
+            {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.pane)}
             aria-labelledby={`${id}-translation`}
             aria-busy={pending}
           >
@@ -260,7 +286,13 @@ export function TranslationResultDialog({
               <Heading size="item" id={`${id}-translation`}>
                 {reprompt ? t("Rewritten prompt") : t("Translation")}
               </Heading>
-              <span className={styles.status} role="status">
+              <Text
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className={styles.status}
+                role="status"
+              >
                 {pending ? <Spinner size="xs" /> : null}
                 {pending
                   ? reprompt
@@ -274,17 +306,23 @@ export function TranslationResultDialog({
                     {elapsed}s
                   </span>
                 ) : null}
-              </span>
+              </Text>
             </header>
             <div className={styles.result}>
               {pending && !result ? (
-                <div className={styles.placeholder}>
+                <Text
+                  as="div"
+                  size="inherit"
+                  tone="secondary"
+                  leading="relaxed"
+                  className={styles.placeholder}
+                >
                   <div aria-hidden="true" className={styles.skeleton}>
                     <span />
                     <span />
                     <span />
                   </div>
-                </div>
+                </Text>
               ) : error ? (
                 <Alert tone="danger">
                   {error === "authentication"
@@ -312,11 +350,25 @@ export function TranslationResultDialog({
                           : t("Could not translate. Try again.")}
                 </Alert>
               ) : result ? (
-                <div tabIndex={0} className={styles.text}>
+                <Text
+                  as="div"
+                  size="inherit"
+                  tone="inherit"
+                  leading="relaxed"
+                  tabIndex={0}
+                  className={styles.text}
+                >
                   {result}
-                </div>
+                </Text>
               ) : (
-                <p role="status" className={styles.placeholder}>
+                <Text
+                  as="p"
+                  role="status"
+                  size="inherit"
+                  tone="secondary"
+                  leading="relaxed"
+                  className={styles.placeholder}
+                >
                   {!runnable
                     ? reprompt
                       ? t("This provider does not support reprompt requests. Choose another model.")
@@ -330,7 +382,7 @@ export function TranslationResultDialog({
                       : reprompt
                         ? t("Reprompt")
                         : t("Translate selected text")}
-                </p>
+                </Text>
               )}
             </div>
           </section>
@@ -353,7 +405,7 @@ export function TranslationResultDialog({
                 )}
           </Alert>
         ) : null}
-      </div>
+      </Text>
     </Modal>
   );
 }

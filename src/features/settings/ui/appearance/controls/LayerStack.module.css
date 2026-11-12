@@ -9,8 +9,6 @@
 .layer {
   position: relative;
   border: 1px solid var(--ui-settings-group-border);
-  border-radius: 0.75rem;
-  background: var(--ui-surface);
   overflow: hidden;
 }
 
@@ -63,26 +61,14 @@
   text-align: left;
 }
 
-.name {
-  color: var(--color-content);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .description {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .strength {
-  color: var(--ui-text-secondary);
   font-variant-numeric: tabular-nums;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 11rem;
 }
@@ -97,15 +83,12 @@
 }
 
 .layer[data-disabled] .name {
-  color: var(--ui-text-secondary);
   opacity: 0.6;
 }
 
 .chevron {
   width: 1rem;
   height: 1rem;
-  color: var(--ui-text-secondary);
-  transition: transform 0.15s ease;
 }
 
 .chevron[data-open] {
@@ -131,15 +114,6 @@
 
 .content :global(.settings-group > .settings-group-heading) {
   padding-block-end: 4px;
-}
-
-.content
-  :global(
-    .settings-group[data-settings-variant] > .settings-group-heading .settings-section-title
-  ) {
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  color: var(--ui-text-secondary);
 }
 
 .content :global(.settings-group-heading .settings-description) {

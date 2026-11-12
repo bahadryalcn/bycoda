@@ -2,7 +2,6 @@
   display: grid;
   gap: 12px;
   min-inline-size: 0;
-  font-size: var(--ui-font-secondary);
 }
 .header,
 .actions,
@@ -50,19 +49,12 @@
   gap: 12px;
   min-inline-size: 0;
 }
-.stack {
-  font-size: var(--ui-font-secondary);
-}
 /* Token grants share the connection list language: one bounded, unfilled frame. */
 .list {
   display: grid;
   max-block-size: 320px;
-  background: var(--ui-card-surface);
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
 }
 .row {
   padding: 10px 16px;
@@ -87,16 +79,9 @@
   overflow-wrap: anywhere;
 }
 .metadata {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .help {
   padding: 12px;
-  color: var(--color-content);
-  font-size: var(--ui-font-caption);
-}
-.help strong {
-  font-weight: 500;
 }
 .help pre {
   white-space: pre-wrap;

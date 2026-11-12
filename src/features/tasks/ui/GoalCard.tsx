@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -68,17 +70,26 @@ export function GoalCard({
       className="goal-card"
     >
       <div className="goal-card-head">
-        <span aria-hidden className="goal-card-well">
-          <Sparkles className="icon-sm" />
+        <span
+          aria-hidden
+          {...surfaceAttributes({ radius: "control", variant: "fill-subtle" }, "goal-card-well")}
+        >
+          <Sparkles className="icon-sm" tone="secondary" />
         </span>
         <div className="goal-card-main">
           <div className="goal-card-title-row">
-            <Heading size="item" title={goal.prompt} className="goal-card-title">
+            <Heading size="item" title={goal.prompt} className="goal-card-title" truncate>
               {goal.title}
             </Heading>
             <GoalStatusBadge status={goal.status} />
           </div>
-          <div className="goal-card-meta">
+          <Text
+            as="div"
+            size="caption"
+            tone="secondary"
+            leading="inherit"
+            className="goal-card-meta"
+          >
             {progress.total > 0 ? (
               <span className="goal-card-progress">
                 <Meter
@@ -110,14 +121,20 @@ export function GoalCard({
                 }))}
               />
             </span>
-            <span className="goal-card-machine">
+            <Text
+              size="inherit"
+              tone="inherit"
+              leading="inherit"
+              truncate
+              className="goal-card-machine"
+            >
               {t(" · on")} {goal.machineName}
               {goal.stale ? t(" (offline, last known)") : ""}
-            </span>
-          </div>
+            </Text>
+          </Text>
         </div>
         <div className="goal-card-actions">
-          {pending ? <Spinner size="xs" className="mx-1.5 text-(--ui-text-secondary)" /> : null}
+          {pending ? <Spinner size="xs" tone="secondary" className="mx-1.5" /> : null}
           {!finished ? (
             <InlineAction
               reveal="always"
@@ -191,8 +208,18 @@ export function GoalCard({
           ) : null}
         </div>
       </div>
-      {goal.status === "blocked" && reason ? <p className="goal-card-reason">{reason}</p> : null}
-      <div className="goal-card-body">
+      {goal.status === "blocked" && reason ? (
+        <Text as="p" size="caption" tone="danger" leading="inherit" className="goal-card-reason">
+          {reason}
+        </Text>
+      ) : null}
+      <Text
+        as="div"
+        size="caption"
+        tone="inherit"
+        leading="inherit"
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "goal-card-body")}
+      >
         <GoalFinalReview
           goal={goal}
           busy={busy}
@@ -208,7 +235,7 @@ export function GoalCard({
           onReplan={onReplan}
           onError={onError}
         />
-      </div>
+      </Text>
     </ActionHost>
   );
 }

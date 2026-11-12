@@ -1,3 +1,6 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
@@ -182,11 +185,11 @@ export function RecommendedSkills({
       onClose={onClose}
     >
       <div className={styles.catalog}>
-        <p className={styles.intro}>
+        <Text as="p" size="secondary" leading="relaxed" className={styles.intro}>
           {t(
             "Ranked by general usefulness. Download directly from the author's repository; bycoda does not redistribute skill files.",
           )}
-        </p>
+        </Text>
         <div className={styles.controls}>
           <Select
             label={t("Computer")}
@@ -209,7 +212,9 @@ export function RecommendedSkills({
             onValueChange={(value) => setScope(value as "user" | "project")}
           />
           <div className={styles.provider}>
-            <span className={styles.label}>{t("Provider")}</span>
+            <Text size="secondary" tone="primary" weight="medium" leading="inherit">
+              {t("Provider")}
+            </Text>
             <SearchableSelect
               hideLabel
               label={t("Provider")}
@@ -224,12 +229,14 @@ export function RecommendedSkills({
           </div>
         </div>
         <div className={styles.notes}>
-          <p className={styles.note}>
+          <Text as="p" size="secondary" leading="relaxed" className={styles.note}>
             {t(
               "Existing skills are never replaced. Provider permissions and disabled-skill settings still apply. Extra tools or accounts may be required by the author.",
             )}
-          </p>
-          <p className={styles.note}>{t(SKILLS_CLI_REQUIREMENTS)}</p>
+          </Text>
+          <Text as="p" size="secondary" leading="relaxed" className={styles.note}>
+            {t(SKILLS_CLI_REQUIREMENTS)}
+          </Text>
         </div>
         {missingMachine ? (
           <Alert tone="danger" inline>
@@ -274,55 +281,71 @@ export function RecommendedSkills({
             const present = installedOn(skill, here) || result?.status === "installed";
             const other = elsewhere(skill);
             return (
-              <li key={skill.id} className={styles.row} data-installed={present || undefined}>
+              <li
+                key={skill.id}
+                {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.row)}
+                data-installed={present || undefined}
+              >
                 <div className={styles.content}>
                   <div className={styles.title}>
                     <Heading size="item" level={3}>
                       {skill.name}
                     </Heading>
-                    <span className={styles.meta}>
+                    <Text size="caption" tone="secondary" leading="inherit">
                       {[t(skill.category), other ? t("On {p0}", { p0: other }) : ""]
                         .filter(Boolean)
                         .join(" · ")}
-                    </span>
+                    </Text>
                   </div>
-                  <p>{t(skill.description)}</p>
+                  <Text as="p" size="secondary" leading="normal">
+                    {t(skill.description)}
+                  </Text>
                   <Disclosure
                     size="sm"
                     className={styles.recipe}
                     summary={t("Installation command")}
                   >
-                    <p>
-                      {t(
-                        "Runs the public installer, then applies your selected scope and provider.",
-                      )}
-                    </p>
-                    <code>{officialSkillInstallCommand(skill)}</code>
-                    <div>
-                      <Button
-                        variant="ghost"
-                        onClick={() => {
-                          void copyText(officialSkillInstallCommand(skill)).catch(
-                            (error: unknown) =>
+                    <Text as="div" size="secondary" tone="secondary" leading="inherit">
+                      <p>
+                        {t(
+                          "Runs the public installer, then applies your selected scope and provider.",
+                        )}
+                      </p>
+                      <Code {...surfaceAttributes({ variant: "plain", radius: "control" })}>
+                        {officialSkillInstallCommand(skill)}
+                      </Code>
+                      <div>
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            void copyText(officialSkillInstallCommand(skill)).catch(
+                              (error: unknown) =>
+                                setLinkError(
+                                  error instanceof Error ? error.message : String(error),
+                                ),
+                            );
+                          }}
+                        >
+                          {t("Copy")}
+                        </Button>
+                        <Button
+                          variant="link"
+                          onClick={() => {
+                            void openExternal(SKILLS_CLI_REFERENCE).catch((error: unknown) =>
                               setLinkError(error instanceof Error ? error.message : String(error)),
-                          );
-                        }}
-                      >
-                        {t("Copy")}
-                      </Button>
-                      <Button
-                        variant="link"
-                        onClick={() => {
-                          void openExternal(SKILLS_CLI_REFERENCE).catch((error: unknown) =>
-                            setLinkError(error instanceof Error ? error.message : String(error)),
-                          );
-                        }}
-                      >
-                        {t("Installer reference")}
-                      </Button>
-                    </div>
+                            );
+                          }}
+                        >
+                          {t("Installer reference")}
+                        </Button>
+                      </div>
+                    </Text>
                   </Disclosure>
-                  {skill.note ? <p>{t(skill.note)}</p> : null}
+                  {skill.note ? (
+                    <Text as="p" size="secondary" leading="normal">
+                      {t(skill.note)}
+                    </Text>
+                  ) : null}
                   <Button
                     variant="link"
                     onClick={() => {
@@ -336,7 +359,16 @@ export function RecommendedSkills({
                   {result?.status === "installed" ? (
                     <Alert inline tone="success">
                       {t("Installed")}
-                      {result.path ? <span className={styles.path}>{result.path}</span> : null}
+                      {result.path ? (
+                        <Text
+                          size="caption"
+                          tone="inherit"
+                          leading="inherit"
+                          className={styles.path}
+                        >
+                          {result.path}
+                        </Text>
+                      ) : null}
                     </Alert>
                   ) : null}
                   {result?.error ? (
@@ -401,11 +433,11 @@ export function RecommendedSkills({
           })}
         </ol>
         {!shown.length ? (
-          <p className={styles.note}>
+          <Text as="p" size="secondary" leading="relaxed" className={styles.note}>
             {view === "available" && matching.length
               ? t("Every matching skill is already installed on the selected computer.")
               : t("No matching skills.")}
-          </p>
+          </Text>
         ) : null}
       </div>
     </Modal>

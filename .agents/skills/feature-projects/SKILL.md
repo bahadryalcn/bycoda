@@ -1,20 +1,15 @@
 ---
 name: feature-projects
-description: "Change the project rail, groups, project actions and workspace navigation while keeping project identity, execution cwd, drafts and lifecycle permission gates distinct."
+description: "Use when changing project rail, groups and project actions. Not for conversation lists; see feature-sessions-sidebar."
 ---
 
 # Project navigation changes
-
-## When and scope
 
 Use for project rail/pickers, groups, add/rename/remove/archive, remote project navigation and project backgrounds. Conversation list behavior, execution-workspace policy and saved Appearance settings have separate owners.
 
 ## Source starts
 
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
-
-- `src/app/shell/ProjectRail.tsx`, `Sidebar.tsx`, `useProjectMenu.tsx`: rail, compact flyouts and shell composition.
+- `src/app/shell/ProjectRail.tsx`, `src/app/shell/Sidebar.tsx`, `src/app/shell/useProjectMenu.tsx`: rail, compact flyouts and shell composition.
 - `src/features/projects/`: project models, pickers, search, naming and removal dialogs.
 - `src/features/projects/model/contribute*.ts`, `ui/ContributePrompt.tsx`: the contribute invitation (local use counters) and the clone-and-open flow; it opens the clone through the `OPEN_PROJECT_PATH_EVENT` handled in `useProjectOpen`.
 - `src/features/connections/`: remote ownership and machine selection.
@@ -43,7 +38,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 For shell identity/search changes, run `pnpm exec vitest run src/app/shell/SidebarRename.test.ts src/features/projects/ui/ProjectSearch.test.ts` plus affected project action/model tests.
 Inspect compact/wide rail, keyboard context actions, full-path identity, hidden/locked projects and removal recovery using disposable data. Validate shared operation contracts at their Host/Native boundary when changed.
 
-## Read when needed
+## References
 
 - [Owner decisions](references/decisions.md) for group pinning and move toggles.
 

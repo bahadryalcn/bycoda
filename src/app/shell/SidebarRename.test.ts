@@ -63,7 +63,7 @@ function listRow(id: string) {
 /** A group header by its name; the name rides in the shared tooltip, not a native title. */
 function folderButton(name: string, scope: ParentNode = container): HTMLButtonElement {
   return [...scope.querySelectorAll<HTMLButtonElement>("[data-folder-row]")].find(
-    (button) => button.querySelector(".truncate")?.textContent === name,
+    (button) => button.querySelector("[data-truncate]")?.textContent === name,
   )!;
 }
 

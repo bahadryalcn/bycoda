@@ -1,3 +1,4 @@
+import { optionalTextAttributes, type TextRoles } from "./Text";
 import { useLocale, useT, type LanguageDomain } from "../i18n";
 import { useT as useGitT } from "../i18n/git";
 import { useT as useTechnicalT } from "../i18n/technical";
@@ -137,6 +138,8 @@ type Props = {
    * the default is `none` unless `padding="md"` is passed.
    */
   padding?: "md" | "none";
+  /** Body typography (size, tone, weight, leading); unset preserves the existing body. */
+  bodyText?: TextRoles;
   children: ReactNode;
 };
 
@@ -172,6 +175,7 @@ export function ModalPanel({
   footerAlign = "end",
   scroll = "auto",
   padding,
+  bodyText,
   children,
 }: Props) {
   // One bound translator per language domain; all three hooks run every render, the prop picks one.
@@ -320,7 +324,10 @@ export function ModalPanel({
                     const next = event.currentTarget.scrollTop > 0;
                     if (next !== scrolled) setScrolled(next);
                   }}
-                  className={`min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-hidden" : "overflow-y-auto"} ${(padding ?? (scroll === "none" ? "none" : "md")) === "md" ? "px-4 pt-2 pb-4" : ""} ${minimalHeader || sheet || bottom ? "" : `border-t ${scrolled ? "border-(--ui-tone-neutral-border)" : "border-transparent"}`}`}
+                  {...optionalTextAttributes(
+                    bodyText ?? {},
+                    `min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-hidden" : "overflow-y-auto"} ${(padding ?? (scroll === "none" ? "none" : "md")) === "md" ? "px-4 pt-2 pb-4" : ""} ${minimalHeader || sheet || bottom ? "" : `border-t ${scrolled ? "border-(--ui-tone-neutral-border)" : "border-transparent"}`}`,
+                  )}
                 >
                   {children}
                 </div>

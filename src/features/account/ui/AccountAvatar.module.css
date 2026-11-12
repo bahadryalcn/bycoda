@@ -7,21 +7,15 @@
   block-size: 1.5rem;
   border-radius: 50%;
   background: var(--ui-fill-subtle);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-  line-height: 1;
 }
 
 .root[data-size="lg"] {
   inline-size: 3.5rem;
   block-size: 3.5rem;
-  font-size: var(--ui-font-title);
 }
 
 .root[data-signed-in="true"] {
   background: var(--ui-tone-accent-solid);
-  color: var(--ui-tone-accent-on-solid);
 }
 
 .face {
@@ -47,5 +41,4 @@
   place-items: center;
   padding: 0.125rem;
   border-radius: 50%;
-  background: var(--ui-surface-panel);
 }

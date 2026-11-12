@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -96,20 +98,26 @@ export function OnboardingWorkspace() {
         <Heading size="page" level={3}>
           {t("A workspace that fits you")}
         </Heading>
-        <p>{t("Choose the tools you want close by. You can change these in Settings anytime.")}</p>
+        <Text as="p" size="inherit" tone="muted" leading="normal">
+          {t("Choose the tools you want close by. You can change these in Settings anytime.")}
+        </Text>
       </div>
       <div className="onboarding-scroll">
         <div className="onboarding-feature-grid">
           <div className="onboarding-feature" data-fixed="">
-            <CodeBlock aria-hidden className="icon-lg" />
+            <CodeBlock aria-hidden tone="muted" className="icon-lg" />
             <div>
-              <strong>{t("Coding essentials")}</strong>
-              <small>{t("AI chat, files, terminal and Git")}</small>
+              <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
+                {t("Coding essentials")}
+              </Text>
+              <Text as="small" size="micro" tone="muted" leading="snug">
+                {t("AI chat, files, terminal and Git")}
+              </Text>
             </div>
-            <span className="onboarding-included">
+            <Text size="micro" tone="muted" leading="inherit" className="onboarding-included">
               <Check aria-hidden className="icon-sm" />
               {t("Included")}
-            </span>
+            </Text>
           </div>
           {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description, icon: Icon }) => (
             <Checkbox
@@ -119,10 +127,20 @@ export function OnboardingWorkspace() {
               onChange={(event) => workspaceFeatureSettings[id].save(event.target.checked)}
               label={
                 <>
-                  <Icon aria-hidden className="icon-lg" />
+                  <Icon aria-hidden tone="muted" className="icon-lg" />
                   <div>
-                    <strong>{t(label)}</strong>
-                    <small>{t(description)}</small>
+                    <Text
+                      as="strong"
+                      size="inherit"
+                      tone="inherit"
+                      weight="medium"
+                      leading="inherit"
+                    >
+                      {t(label)}
+                    </Text>
+                    <Text as="small" size="micro" tone="muted" leading="snug">
+                      {t(description)}
+                    </Text>
                   </div>
                 </>
               }
@@ -204,7 +222,9 @@ export function OnboardingAppearance() {
         <Heading size="page" level={3}>
           {t("Make yourself at home")}
         </Heading>
-        <p>{t("Choose your appearance and the crew that keeps you company.")}</p>
+        <Text as="p" size="inherit" tone="muted" leading="normal">
+          {t("Choose your appearance and the crew that keeps you company.")}
+        </Text>
       </div>
       <div className="onboarding-scroll">
         <Section title={t("Appearance")}>
@@ -225,7 +245,15 @@ export function OnboardingAppearance() {
                     pure={CANVAS_BACKGROUND_DEFAULT === "pure"}
                   />
                   <span className="onboarding-choice-text">
-                    <strong>{label}</strong>
+                    <Text
+                      as="strong"
+                      size="secondary"
+                      tone="inherit"
+                      weight="medium"
+                      leading="inherit"
+                    >
+                      {label}
+                    </Text>
                   </span>
                 </>
               ),
@@ -253,10 +281,13 @@ export function OnboardingAppearance() {
                 <>
                   {value === "none" ? (
                     <span
-                      className="onboarding-crew-preview onboarding-crew-none"
+                      {...surfaceAttributes(
+                        { variant: "transparent" },
+                        "onboarding-crew-preview onboarding-crew-none",
+                      )}
                       aria-hidden="true"
                     >
-                      <CircleDashed className="icon-lg" />
+                      <CircleDashed tone="muted" className="icon-lg" />
                     </span>
                   ) : (
                     <Suspense fallback={<span className="onboarding-crew-preview" />}>
@@ -264,8 +295,18 @@ export function OnboardingAppearance() {
                     </Suspense>
                   )}
                   <span className="onboarding-choice-text">
-                    <strong>{title}</strong>
-                    <small>{caption}</small>
+                    <Text
+                      as="strong"
+                      size="secondary"
+                      tone="inherit"
+                      weight="medium"
+                      leading="inherit"
+                    >
+                      {title}
+                    </Text>
+                    <Text as="small" size="micro" tone="muted" leading="normal">
+                      {caption}
+                    </Text>
                   </span>
                 </>
               ),

@@ -1,3 +1,4 @@
+import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
 import { useAnimatedReorder } from "../../../../../shared/hooks/useAnimatedReorder";
 import { moveItem } from "../../../../../shared/lib/reorder";
@@ -74,11 +75,11 @@ export function ModelPoolEditor({
   const fallback = uncoveredRoles(rows);
   return (
     <div className={styles.editor}>
-      <p className={styles.intro}>
+      <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.intro}>
         {t(
           "The assistant uses these models in order and skips a model whose remaining limit is below its threshold. Running work never switches model; new work moves to the next model.",
         )}
-      </p>
+      </Text>
       {state.pool.derived && !state.dirty && (
         <InlineMessage tone="info">
           {t("Showing your current models. Save to keep this list.")}

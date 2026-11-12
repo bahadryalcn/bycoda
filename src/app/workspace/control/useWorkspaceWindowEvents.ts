@@ -12,7 +12,7 @@ import {
 } from "../../../features/sessions/model/quoteDraft";
 import type { Session } from "../../../features/sessions/model/session";
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
-import { ADD_NOTE_TO_CHAT_EVENT, type NoteComposerCard } from "../../../features/notes";
+import { ADD_NOTE_TO_CHAT_EVENT, type NoteChatRequest } from "../../../features/notes";
 import {
   OPEN_WORKTREE_MANAGEMENT,
   type WorktreeManagementRequest,
@@ -73,10 +73,10 @@ export function useAddToChatListener({
 }
 
 /** Window `ADD_NOTE_TO_CHAT_EVENT` listener: forwards note cards to the new-session action. */
-export function useAddNoteToChatListener(onAddNoteToChat: (card: NoteComposerCard) => void): void {
+export function useAddNoteToChatListener(onAddNoteToChat: (card: NoteChatRequest) => void): void {
   useEffect(() => {
     const onAdd = (event: Event) => {
-      const card = (event as CustomEvent<NoteComposerCard>).detail;
+      const card = (event as CustomEvent<NoteChatRequest>).detail;
       if (!card?.id) return;
       onAddNoteToChat(card);
     };

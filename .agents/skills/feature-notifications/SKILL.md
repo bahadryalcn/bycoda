@@ -1,17 +1,13 @@
 ---
 name: feature-notifications
-description: "Change bycoda notification preferences, project mute or approval/request-center presentation. Preserve delivery/permission truth, privacy and exact approval intent across views."
+description: "Use when changing notification settings, project mute and approval presentation. Not for account feeds; see feature-account."
 ---
 
 # Notifications development
 
-All code paths below are repository-relative; linked skill resources are relative to this directory.
-
-## When to use
-
 Use for notification settings, project exceptions/mute, pending request sheet/history/popups and daily-summary delivery. Session approval execution, task summary data and native/mobile permissions retain their owning services.
 
-## Start here
+## Source starts
 
 - `src/features/settings/ui/NotificationsSettings.tsx`, `src/features/notifications/ui/ProjectNotificationSettings.tsx` and `src/features/sessions/ui/ApprovalToasts.tsx` own the main surfaces.
 - `src/features/notifications/model/` and `hooks/` own preferences, delivery, history, permission and summary lifecycle.
@@ -35,7 +31,7 @@ Use for notification settings, project exceptions/mute, pending request sheet/hi
 - Daily summary retains valid minute precision, local-day/lead/no-overlap/retry semantics and partial-machine truth. Cached/sent identity and durable outcome must agree.
 - History merge/clear and popup focus/timeout/occurrence handling retain their shared lifecycle. Phone notification permission does not enable computer alerts.
 
-## Workflow and checks
+## Workflow
 
 Background notification leadership follows native `is_workspace_window` eligibility.
 Auxiliary composer, voice-overlay and desktop-control windows must never take leadership.
@@ -44,7 +40,11 @@ Auxiliary composer, voice-overlay and desktop-control windows must never take le
 2. For approval changes follow the current decision-control owner, not presentation metadata; for summary data follow [tasks/goals](../feature-tasks-goals/SKILL.md).
 3. Choose focused suites from the map; exercise unavailable reads, sibling writes, pending/uncertain remount, relock/privacy, history clear and schedule retry. Actual platform delivery and phone permissions need isolated native/device checks.
 
-## Read when needed
+## Focused checks
+
+Select the affected model, UI and native suites from the surface map.
+
+## References
 
 - [Approval presentation decisions](references/decisions.md) for the owner-approved in-app-only flow.
 

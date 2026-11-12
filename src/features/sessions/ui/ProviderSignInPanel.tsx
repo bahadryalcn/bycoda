@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -35,19 +37,26 @@ export function ProviderSignInPanel({
 
   return (
     <div className="flex min-h-68 flex-col items-center justify-center px-5 py-6" role="status">
-      <span className="grid size-16 place-items-center rounded-2xl bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg) ring-1 ring-inset ring-(--color-stroke) shadow-sm">
+      <Text
+        size="inherit"
+        tone="neutral"
+        {...surfaceAttributes(
+          { variant: "raised" },
+          "grid size-16 place-items-center rounded-2xl  ring-1 ring-inset ring-(--color-stroke) shadow-sm",
+        )}
+      >
         <HarnessIcon harness={harness} className="size-9" />
-      </span>
+      </Text>
       <Heading size="page" level={2} className="mt-3.5">
         {complete
           ? t("Signed in to {p0}", { p0: title })
           : (idleTitle ?? t("Authentication required"))}
       </Heading>
-      <p className="mt-1 max-w-56 text-ui-micro leading-4 text-(--ui-text-secondary)">
+      <Text as="p" size="micro" tone="secondary" className="mt-1 max-w-56">
         {complete
           ? (completeDescription ?? t("You can retry your last message now."))
           : t("Sign in to continue using {p0}.", { p0: title })}
-      </p>
+      </Text>
       <Button
         reserveLabels={[t("Waiting for browser…")]}
         variant="primary"
@@ -66,12 +75,9 @@ export function ProviderSignInPanel({
             : t("Sign in to {p0}", { p0: title })}
       </Button>
       {state === "error" && error ? (
-        <p
-          className="mt-2.5 max-w-60 text-ui-caption leading-4 text-(--ui-tone-danger-fg)"
-          role="status"
-        >
+        <Text as="p" size="caption" tone="danger" className="mt-2.5 max-w-60" role="status">
           {error}
-        </p>
+        </Text>
       ) : null}
     </div>
   );

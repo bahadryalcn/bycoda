@@ -43,21 +43,13 @@
   /* Status chips may crowd the line; the title always keeps a readable start. */
   min-inline-size: min(12ch, 40%);
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
 }
 
 .caption {
   display: block;
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ui-text-muted);
   font-family: var(--font-mono);
-  font-size: var(--ui-font-caption);
 }
 
 .row .actions {

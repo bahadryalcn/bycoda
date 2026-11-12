@@ -20,8 +20,6 @@
   padding: 4px 8px;
   min-block-size: 2.5rem;
   min-inline-size: 0;
-  border-block-end: 1px solid var(--ui-pane-border);
-  background: var(--ui-workspace-panel);
 }
 .device-panel-choice {
   flex: 0 1 18rem;
@@ -35,7 +33,6 @@
 .device-panel-bar-text {
   flex: 1;
   margin: 0;
-  font-size: var(--ui-font-caption);
 }
 .device-panel-bar-actions {
   display: flex;
@@ -46,10 +43,6 @@
 /* Platform glyph: muted while the device is off, success tone while it runs. */
 .device-platform-icon {
   flex: none;
-  color: var(--ui-text-secondary);
-}
-.device-platform-icon[data-active] {
-  color: var(--ui-tone-success-fg);
 }
 .device-panel-stage {
   position: relative;
@@ -57,7 +50,6 @@
   min-block-size: 0;
   min-inline-size: 0;
   overflow: hidden;
-  background: var(--ui-workspace-canvas-surface);
 }
 .device-panel-viewport {
   inline-size: 100%;
@@ -129,10 +121,6 @@
   max-block-size: calc(100% - 20px);
   padding: 6px 4px;
   overflow-y: auto;
-  scrollbar-width: none;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--radius-pill);
-  background: var(--ui-surface-floating);
   box-shadow: var(--ui-elevation-floating);
 }
 .device-panel-group {
@@ -143,8 +131,8 @@
 }
 .device-panel-rail > .device-panel-group + *,
 .device-panel-rail > * + .device-panel-group {
-  margin-block-start: 3px;
-  padding-block-start: 5px;
+  margin-block-start: 4px;
+  padding-block-start: 4px;
   border-block-start: 1px solid var(--ui-pane-border);
 }
 .device-panel-frame-state {
@@ -153,16 +141,11 @@
   inset-inline-start: 50%;
   transform: translateX(-50%);
   max-inline-size: calc(100% - 96px);
-  padding: 3px 10px;
+  padding: 4px 10px;
   border: 1px solid var(--ui-pane-border);
   border-radius: var(--radius-pill);
   background: var(--ui-surface-floating);
   box-shadow: var(--ui-elevation-floating);
-  color: var(--color-content);
-  font-size: var(--ui-font-micro);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   pointer-events: none;
 }
 .device-panel-mark-tools {
@@ -172,13 +155,10 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 1px;
+  gap: 0;
   max-inline-size: calc(100% - 96px);
   overflow-x: auto;
   padding: 4px;
-  background: var(--ui-surface-floating);
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--radius-pill);
   box-shadow: var(--ui-elevation-floating);
 }
 .device-panel-mark-tools > [data-media-toolbar] {
@@ -196,7 +176,6 @@
   overflow-y: auto;
 }
 .device-panel-popover .host-tool-muted {
-  font-size: var(--ui-font-caption);
   margin-block: 8px 0;
 }
 /* Options popover: icon-led action rows, then one zoom row under a hairline. */
@@ -207,11 +186,10 @@
   gap: 8px;
 }
 .device-panel-menu-actions {
-  gap: 1px;
+  gap: 0;
 }
 .device-panel-command > p {
   margin: 0;
-  font-size: var(--ui-font-caption);
 }
 .device-panel-zoom {
   display: flex;
@@ -219,13 +197,10 @@
   gap: 2px;
   margin-block-start: 8px;
   padding-block-start: 8px;
-  border-block-start: 1px solid var(--ui-pane-border);
 }
 .device-panel-zoom-label {
   flex: 1;
   padding-inline-start: 8px;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .device-panel-zoom-value {
   min-inline-size: 3.5rem;
@@ -246,29 +221,22 @@
 .device-panel-setup-summary {
   flex: 1;
   min-inline-size: 0;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
-  color: var(--color-content);
 }
 .device-panel-popover .device-panel-setup-summary > .host-tool-muted {
   display: block;
   margin: 0;
-  font-weight: 400;
 }
 .device-panel-setup-platforms {
   display: grid;
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 .device-panel-setup-platforms > li {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   padding: 8px 10px;
-  font-size: var(--ui-font-caption);
 }
 .device-panel-setup-platforms > li + li {
   border-block-start: 1px solid var(--ui-pane-border);
@@ -276,21 +244,15 @@
 .device-panel-setup-platform {
   flex: none;
   min-inline-size: 4rem;
-  font-weight: 500;
-  color: var(--color-content);
 }
 .device-panel-setup-fact {
   flex: 1;
   min-inline-size: 0;
-  color: var(--ui-text-secondary);
+
   overflow-wrap: anywhere;
 }
 .device-panel-setup-mark {
   flex: none;
-  color: var(--ui-tone-warning-fg);
-}
-[data-available="true"] > .device-panel-setup-mark {
-  color: var(--ui-tone-success-fg);
 }
 /* Empty, connect and waiting states: centered, icon-led, one clear action row. */
 .device-panel-state {
@@ -299,7 +261,6 @@
   display: grid;
   justify-items: start;
   gap: 12px;
-  font-size: var(--ui-font-caption);
   overflow-y: auto;
 }
 .device-panel-state.device-panel-connect {
@@ -315,19 +276,14 @@
 }
 .device-panel-connect .host-tool-muted {
   max-inline-size: 42ch;
-  color: var(--ui-text-secondary);
 }
 .device-panel-state-icon {
   inline-size: 28px;
   block-size: 28px;
   margin-block-end: 4px;
-  color: var(--ui-text-secondary);
   opacity: 0.7;
 }
 .device-panel-state-title {
-  font-size: var(--ui-font-body);
-  font-weight: 500;
-  color: var(--color-content);
 }
 .device-panel-state-actions,
 .device-panel-waiting-actions {
@@ -344,8 +300,7 @@
   inline-size: 100%;
   max-inline-size: 30rem;
   padding: 16px;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
+
   text-align: center;
 }
 .device-panel-waiting-text {
@@ -355,8 +310,6 @@
 .device-panel-device-list {
   display: grid;
   inline-size: 100%;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
   overflow: hidden;
 }
 .device-panel-waiting > .device-panel-device-row {
@@ -381,9 +334,6 @@
   flex: none;
   inline-size: 32px;
   block-size: 32px;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-control);
-  color: var(--ui-text-secondary);
 }
 .device-panel-device-text {
   display: flex;
@@ -393,28 +343,18 @@
 }
 .device-panel-device-name,
 .device-panel-device-facts {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .device-panel-device-name {
-  font-size: var(--ui-font-body);
-  font-weight: 500;
-  color: var(--color-content);
 }
 .device-panel-device-facts {
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 /* Feedback strips under the header: tinted, padded, never flush with the pane edge. */
 .device-panel-error {
   flex: none;
   max-block-size: 120px;
   overflow-y: auto;
-  font-size: var(--ui-font-caption);
   border-block-end: 1px solid var(--ui-tone-danger-border);
   background: var(--ui-tone-danger-subtle);
-  color: var(--ui-tone-danger-fg);
   padding: 8px 12px;
 }
 .device-panel-error pre,
@@ -424,16 +364,12 @@
   margin: 8px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-micro);
-  color: var(--color-content);
 }
 .device-panel-setup-control {
   flex: none;
   padding: 8px 12px;
   display: grid;
   gap: 8px;
-  font-size: var(--ui-font-caption);
-  border-block-end: 1px solid var(--ui-pane-border);
 }
 .device-panel-notice {
   flex: none;
@@ -443,8 +379,6 @@
   gap: 8px;
   margin: 0;
   padding: 2px 4px 2px 12px;
-  font-size: var(--ui-font-caption);
-  border-block-end: 1px solid var(--ui-pane-border);
 }
 @media (pointer: coarse) {
   .device-panel-mark-tools {
@@ -459,9 +393,6 @@
   flex: none;
   margin: 0;
   padding: 6px 12px;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
-  border-block-end: 1px solid var(--ui-pane-border);
 }
 .device-panel-coordinate-pair {
   display: grid;
@@ -486,15 +417,12 @@
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
-.device-panel-node-label small {
+.device-panel-node-label .device-panel-node-role {
   display: block;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-micro);
 }
 .device-panel-node-detail {
   display: grid;
   gap: 6px;
-  font-size: var(--ui-font-caption);
 }
 .device-panel-node-layer {
   position: absolute;
@@ -520,12 +448,5 @@
   inset-inline-start: 50%;
   transform: translateX(-50%);
   max-inline-size: calc(100% - 16px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 3px 8px;
-  border-radius: var(--ui-radius-popup);
-  background: var(--ui-surface-raised);
-  color: var(--ui-tone-info-fg);
-  font-size: var(--ui-font-caption);
+  padding: 4px 8px;
 }

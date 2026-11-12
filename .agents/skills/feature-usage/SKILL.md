@@ -1,17 +1,13 @@
 ---
 name: feature-usage
-description: "Change bycoda Usage analytics, provider quotas or local budget gates. Preserve measurement provenance, missing-data truth, scope/overlap semantics and pre-dispatch recovery."
+description: "Use when changing Usage charts, provider quotas and local budgets. Not for task budgets; see feature-tasks-goals."
 ---
 
 # Usage and budgets development
 
-All code paths below are repository-relative; linked skill resources are relative to this directory.
-
-## When to use
-
 Use for Usage Overview/Projects/Time analysis, charts/tables/CSV, Limits/account quota/history and local budget management/gating. Host task/goal budgets, remote work and mobile reports have separate authority.
 
-## Start here
+## Source starts
 
 - `src/features/usage/ui/UsageOverview.tsx`, `UsagePage.tsx`, `UsageQuotaHistory.tsx` and `UsageBudgets.tsx` own the main surfaces.
 - `src/features/usage/model/usageAnalytics.ts`, `usageBudgets.ts`, `usageBudgetReadings.ts`, `usageBudgetStore.ts` own measurements/rules.
@@ -28,13 +24,17 @@ Use for Usage Overview/Projects/Time analysis, charts/tables/CSV, Limits/account
 - Preserve rule/storage normalization, custom values, unavailable-data protection, retained per-rule drafts, local retry, current-lock filtering and confirmed removal.
 - Charts/tables retain exact values, accessible non-color alternatives, grouping/selection/drilldown, bounded detail and formula-safe CSV; compactness must not drop fields or hide truncation.
 
-## Workflow and checks
+## Workflow
 
 1. Identify the actual data source and scope first; trace filter/measurement/cache and rule matching separately before altering presentation or a gate.
 2. Read [budget user guide](../../../docs/guides/usage-budgets.md) for user concepts and update it only when changed behavior is implemented; verify navigation/current scopes from code.
 3. Choose focused analytics/quota/budget/submit suites from the map. Exercise unknown/stale/partial/private, overlap, failed storage, single/multi-period charts, timezone boundaries and rejected-turn recovery with fake reports.
 
-## Read when needed
+## References
 
 - Read [surfaces](references/surfaces.md) for source and test maps.
 - Read [decision provenance](references/decisions.md) only when changing common summary/local-budget scope; it specifies intent, not a real rule or new remote authority.
+
+## Focused checks
+
+Use the focused test owners in [the surface map](references/surfaces.md).

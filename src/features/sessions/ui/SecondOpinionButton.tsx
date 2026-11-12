@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import type { ExpandingButtonGroupTriggerProps } from "../../../shared/ui/ExpandingButtonGroup";
 import { useT } from "../../../shared/i18n";
@@ -224,9 +225,15 @@ export function SecondOpinionButton({
       kind: "content",
       id: "description",
       node: (
-        <p className="px-1.5 py-1 text-ui-micro leading-3 text-(--ui-text-secondary) text-balance">
+        <Text
+          as="p"
+          size="micro"
+          tone="secondary"
+          leading="none"
+          className="px-1.5 py-1 text-balance"
+        >
           {description}
-        </p>
+        </Text>
       ),
     },
     { kind: "sep" },
@@ -236,9 +243,9 @@ export function SecondOpinionButton({
             kind: "content" as const,
             id: "empty",
             node: (
-              <div className="px-1.5 py-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
+              <Text as="div" size="caption" tone="secondary" className="px-1.5 py-1">
                 {disabledTitle}
-              </div>
+              </Text>
             ),
           },
         ]

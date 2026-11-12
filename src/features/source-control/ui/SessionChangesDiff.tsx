@@ -11,6 +11,7 @@ import {
 
 import { forEachConcurrent } from "../../../shared/lib/concurrent";
 import { runDiffWorker } from "../model/diffWorker";
+import { reuseLoadedDiff } from "../model/workingTreeReload";
 import { buildUnifiedFileAsync, type UnifiedFileDiff } from "../model/unifiedDiff";
 import { UnifiedDiffView, type UnifiedDiffFileModel } from "./UnifiedDiffView";
 
@@ -23,8 +24,17 @@ type Props = {
 type LoadedDiff = {
   binary: boolean;
   tooLarge: boolean;
+  original: string;
+  current: string;
   unified: UnifiedFileDiff | null;
   error?: string;
+};
+
+type CachedModel = {
+  file: CheckpointFile;
+  loaded: LoadedDiff | undefined;
+  model: UnifiedDiffFileModel;
+  locale: ReturnType<typeof useLocale>;
 };
 
 const DIFF_LOAD_CONCURRENCY = 4;
@@ -32,7 +42,7 @@ const REFRESH_DEBOUNCE_MS = 500;
 
 /** Read-only review of the exact before/after snapshots owned by one session. */
 export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
-  useLocale();
+  const locale = useLocale();
   const [files, setFiles] = useState<CheckpointFile[] | null>(null);
   const [diffs, setDiffs] = useState<Map<string, LoadedDiff>>(new Map());
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +60,7 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
 
     let disposed = false;
     let generation = 0;
+    const loadedByPath = new Map<string, LoadedDiff>();
     // A new session or target starts from the loading surface; a refresh keeps
     // the previous diffs on screen until the new ones arrive.
     setFiles(null);
@@ -63,6 +74,9 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
           setFiles(status.files);
           setError(null);
           const known = new Set(status.files.map((file) => file.relative));
+          for (const path of loadedByPath.keys()) {
+            if (!known.has(path)) loadedByPath.delete(path);
+          }
           setDiffs((existing) =>
             [...existing.keys()].every((id) => known.has(id))
               ? existing
@@ -79,28 +93,43 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
               let loaded: LoadedDiff;
               try {
                 const diff = await sessionCheckpointFileDiff(sessionId, cwd, file.relative);
-                loaded = {
+                if (disposed || current !== generation) return;
+                const candidate: LoadedDiff = {
                   binary: diff.binary,
                   tooLarge: diff.tooLarge,
-                  unified:
-                    !diff.binary && !diff.tooLarge
-                      ? await runDiffWorker(
-                          (remote) => remote.build(diff.original, diff.current),
-                          () => buildUnifiedFileAsync(diff.original, diff.current),
-                          { size: diff.original.length + diff.current.length },
-                        )
-                      : null,
+                  original: diff.original,
+                  current: diff.current,
+                  unified: null,
                 };
+                const reused = reuseLoadedDiff(loadedByPath.get(file.relative), candidate);
+                loaded =
+                  reused !== candidate
+                    ? reused
+                    : {
+                        ...candidate,
+                        unified:
+                          !diff.binary && !diff.tooLarge
+                            ? await runDiffWorker(
+                                (remote) => remote.build(diff.original, diff.current),
+                                () => buildUnifiedFileAsync(diff.original, diff.current),
+                                { size: diff.original.length + diff.current.length },
+                              )
+                            : null,
+                      };
               } catch (caught: unknown) {
                 loaded = {
                   binary: false,
                   tooLarge: false,
+                  original: "",
+                  current: "",
                   unified: null,
                   error: caught instanceof Error ? caught.message : String(caught),
                 };
               }
               if (disposed || current !== generation) return;
+              loadedByPath.set(file.relative, loaded);
               setDiffs((existing) => {
+                if (existing.get(file.relative) === loaded) return existing;
                 const next = new Map(existing);
                 next.set(file.relative, loaded);
                 return next;
@@ -133,12 +162,26 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
     };
   }, [cwd, sessionId, retry]);
 
+  const modelCache = useRef(new Map<string, CachedModel>());
   const models = useMemo<UnifiedDiffFileModel[]>(() => {
     if (!files) return [];
-    return files.map((file) => {
+    const next = new Map<string, CachedModel>();
+    const built = files.map((file) => {
       const loaded = diffs.get(file.relative);
+      const cached = modelCache.current.get(file.relative);
+      if (
+        cached &&
+        cached.locale === locale &&
+        cached.loaded === loaded &&
+        cached.file.path === file.path &&
+        cached.file.additions === file.additions &&
+        cached.file.deletions === file.deletions
+      ) {
+        next.set(file.relative, cached);
+        return cached.model;
+      }
       const unified = loaded?.unified ?? null;
-      return {
+      const model: UnifiedDiffFileModel = {
         id: file.relative,
         path: file.path,
         label: file.relative,
@@ -159,8 +202,12 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
         deletions: unified?.deletions ?? file.deletions,
         blocks: unified?.blocks ?? [],
       };
+      next.set(file.relative, { file, loaded, model, locale });
+      return model;
     });
-  }, [diffs, files]);
+    modelCache.current = next;
+    return built;
+  }, [diffs, files, locale]);
 
   const totals = useMemo(
     () =>

@@ -2,6 +2,7 @@ import { memo, useEffect, useId, useRef, useState } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
+import { Text } from "../../../shared/ui/Text";
 import { AiIdea } from "../../../shared/ui/icons";
 import "./ComposerTips.css";
 
@@ -81,7 +82,14 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
   }, [active, open, focusWithin, hidden]);
 
   return (
-    <aside data-composer-tips className="composer-tips" aria-label={t("Chat tips")}>
+    <Text
+      as="aside"
+      tone="muted"
+      leading="normal"
+      data-composer-tips
+      className="composer-tips"
+      aria-label={t("Chat tips")}
+    >
       <Button
         ref={anchor}
         variant="ghost"
@@ -93,6 +101,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
         aria-describedby={open ? tipId : undefined}
         aria-expanded={open}
         className="composer-tips-icon"
+        textTone="muted"
         onFocus={() => setFocusWithin(true)}
         onBlur={() => setFocusWithin(false)}
         onClick={() => {
@@ -113,15 +122,17 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
           width={320}
           restoreFocus={false}
           onDismiss={() => setOpen(false)}
-          className="composer-tips-copy p-3"
+          className="p-3"
         >
-          <TipText
-            key={`${locale}-${index}`}
-            text={t(COMPOSER_TIPS[index])}
-            animate={active && !hidden}
-          />
+          <Text as="div" tone="secondary" leading="relaxed" className="composer-tips-copy">
+            <TipText
+              key={`${locale}-${index}`}
+              text={t(COMPOSER_TIPS[index])}
+              animate={active && !hidden}
+            />
+          </Text>
         </Popover>
       ) : null}
-    </aside>
+    </Text>
   );
 });

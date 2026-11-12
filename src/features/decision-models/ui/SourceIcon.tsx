@@ -1,30 +1,48 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
-import { Bot, File, Globe, Laptop, Server } from "../../../shared/ui/icons";
+import { Bot, File, Globe, Laptop, Server, KeyRound } from "../../../shared/ui/icons";
 import type { DecisionSourceKind, DiscoveryCandidate } from "../model/decisionTypes";
-
 /** A 32px well holding a kind glyph; decorative, the name always sits beside it. */
 function SourceIconWell({ children }: { children: ReactNode }) {
   return (
-    <span
+    <Text
+      size="inherit"
+      tone="secondary"
       aria-hidden="true"
-      className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--ui-fill-subtle) text-(--ui-text-secondary)"
+      {...surfaceAttributes(
+        { radius: "card" },
+        "inline-flex size-8 shrink-0 items-center justify-center bg-(--ui-fill-subtle)",
+      )}
     >
       {children}
-    </span>
+    </Text>
   );
 }
-
 /** Local: this computer. API: a hosted service. Gateway: an endpoint. LLM: a model behind a prompt. */
-export function SourceKindIcon({ kind }: { kind: DecisionSourceKind }) {
+export function SourceKindIcon({
+  kind,
+  modelPath,
+}: {
+  kind: DecisionSourceKind;
+  modelPath?: string;
+}) {
   const Icon =
-    kind === "local" ? Laptop : kind === "api" ? Globe : kind === "gateway" ? Server : Bot;
+    kind === "local"
+      ? modelPath
+        ? File
+        : Server
+      : kind === "api"
+        ? KeyRound
+        : kind === "gateway"
+          ? Globe
+          : Bot;
   return (
     <SourceIconWell>
       <Icon className="icon-md" />
     </SourceIconWell>
   );
 }
-
 export function CandidateKindIcon({ kind }: { kind: DiscoveryCandidate["kind"] }) {
   const Icon =
     kind === "local_service"
@@ -32,7 +50,7 @@ export function CandidateKindIcon({ kind }: { kind: DiscoveryCandidate["kind"] }
       : kind === "model_file"
         ? File
         : kind === "api_key"
-          ? Globe
+          ? KeyRound
           : Laptop;
   return (
     <SourceIconWell>

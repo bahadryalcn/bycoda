@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useMemo, type ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -37,13 +38,15 @@ export function CrewWorkTeam({
   const usage = useMemo(() => crewRunUsage(run), [run]);
   return (
     <div className="mt-4 flex min-w-0 flex-col gap-1">
-      <div className="flex items-baseline gap-2 text-ui-caption text-(--ui-text-secondary)">
-        <span className="font-medium">{t("Team")}</span>
+      <Text as="div" className="flex items-baseline gap-2">
+        <Text size="inherit" tone="inherit" weight="medium">
+          {t("Team")}
+        </Text>
         <span className="tabular-nums">{agents.length}</span>
         {crewSavedTeamChanged(run, savedCrew) ? (
           <span>{t("The saved crew has changed since.")}</span>
         ) : null}
-      </div>
+      </Text>
       <div role="group" aria-label={t("Team")} className="flex flex-wrap gap-0.5">
         {agents.map((agent) => {
           const spent = usage.perMember[agent.id];

@@ -389,15 +389,22 @@ describe("settings pages", () => {
   it("refreshes the mounted daily summary time when another window saves it", async () => {
     await render("notifications");
     const control = () =>
-      container.querySelector<HTMLInputElement>('input[aria-label="Daily summary time"]');
-    expect(control()?.value).toBe("09:00");
+      [...container.querySelectorAll(".settings-row")]
+        .find((row) =>
+          row.querySelector(".settings-row-label")?.textContent?.includes("Delivery time"),
+        )
+        ?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]');
+    const mountedControl = control();
+    expect(mountedControl).toBeInstanceOf(HTMLButtonElement);
+    expect(mountedControl?.textContent).toBe("9:00 AM");
     await act(async () => {
       localStorage.setItem("bycoda.notifications.dailySummary.time", "10:00");
       window.dispatchEvent(
         new StorageEvent("storage", { key: "bycoda.notifications.dailySummary.time" }),
       );
     });
-    expect(control()?.value).toBe("10:00");
+    expect(control()).toBe(mountedControl);
+    expect(control()?.textContent).toBe("10:00 AM");
   });
   it("restores appearance without resetting conversation display or explorer settings", async () => {
     localStorage.setItem(

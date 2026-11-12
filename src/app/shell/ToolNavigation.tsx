@@ -30,6 +30,7 @@ import { ErrorDetails, fitsOneLine } from "../../shared/ui/ErrorDetails";
 import { Tab, TabList, Tabs } from "../../shared/ui/Tabs";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { useSshRunbookQueue } from "../../features/connections/model/sshRunbookQueue";
+import { Text } from "../../shared/ui/Text";
 import "./toolNavigation.css";
 import { preloadToolSurface } from "../workspace/surfaces/lazySurfaces";
 import { useAssistantIdentity } from "../../features/assistant/model/assistantClient";
@@ -187,7 +188,10 @@ export function ToolNavigation() {
     setOpening(null);
   };
   return (
-    <div
+    <Text
+      as="div"
+      tone="inherit"
+      leading="inherit"
       className="tool-navigation"
       data-tool-picker={tools.length > 1 || undefined}
       data-tauri-drag-region="deep"
@@ -298,6 +302,6 @@ export function ToolNavigation() {
           </Button>
         </Alert>
       ) : null}
-    </div>
+    </Text>
   );
 }

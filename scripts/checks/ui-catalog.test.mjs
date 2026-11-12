@@ -65,6 +65,23 @@ test("validation flags missing, deprecated and duplicate metadata", () => {
   assert.equal(validateUiCatalog(bare).length, 4);
 });
 
+test("typed native picker replacements coexist with generic input ownership", () => {
+  const base = readUiCatalogSource("src/shared/ui/A.tsx", source)[0];
+  const entries = [
+    "input",
+    "input[type=date]",
+    "input[type=time]",
+    "input[type=datetime-local]",
+  ].map((token, index) => ({ ...base, name: `Picker${index}`, replaces: [token] }));
+  assert.deepEqual(validateUiCatalog(entries), []);
+  assert.match(renderUiCatalog(entries), /`input\[type=time\]`/);
+  assert.ok(
+    validateUiCatalog([{ ...base, replaces: ["input[type=text]"] }]).some((problem) =>
+      problem.problem.includes("invalid @replaces"),
+    ),
+  );
+});
+
 test("render escapes pipes, lists parts and deprecated components", () => {
   const entries = readUiCatalogSource("src/shared/ui/A.tsx", source);
   entries[0].avoid = "a | b";

@@ -17,15 +17,18 @@ export function AccountColorPopover({
   account,
   anchor,
   onDismiss,
+  onPick,
 }: {
   account: ProviderAccount;
   anchor: PopoverAnchor;
   onDismiss: () => void;
+  onPick?: (color: ProviderAccountColor | undefined) => void;
 }) {
   useLocale();
   const current = providerAccountColor(account);
   const pick = (color: ProviderAccountColor | undefined) => {
-    setProviderAccountColor(account.provider, account.id, color);
+    if (onPick) onPick(color);
+    else setProviderAccountColor(account.provider, account.id, color);
     onDismiss();
   };
   return (
@@ -66,9 +69,12 @@ export function AccountColorPopover({
 export function AccountColorPicker({
   account,
   disabled,
+  onPick,
 }: {
   account: ProviderAccount;
   disabled?: boolean;
+  /** Draft editor callback; omit to persist immediately from account rows. */
+  onPick?: (color: ProviderAccountColor | undefined) => void;
 }) {
   useLocale();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -92,7 +98,12 @@ export function AccountColorPicker({
         <span>{t("Color")}</span>
       </Button>
       {open ? (
-        <AccountColorPopover account={account} anchor={trigger} onDismiss={() => setOpen(false)} />
+        <AccountColorPopover
+          onPick={onPick}
+          account={account}
+          anchor={trigger}
+          onDismiss={() => setOpen(false)}
+        />
       ) : null}
     </>
   );

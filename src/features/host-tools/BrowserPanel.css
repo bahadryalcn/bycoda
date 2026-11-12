@@ -76,24 +76,10 @@
   background: var(--ui-tone-danger-solid);
 }
 
-.host-browser-control-status {
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--ui-font-micro);
-  color: var(--ui-text-secondary);
-}
-
 /* Labelled control state at the row end: eye = view only, dot = you control it. */
 .host-browser-view-actions > .host-browser-control-toggle {
   flex: none;
   margin-inline-start: auto;
-  color: var(--ui-text-secondary);
-}
-
-.host-browser-panel .host-browser-control-toggle[data-controlling="true"] svg {
-  color: var(--ui-tone-success-fg);
 }
 
 .host-browser-highlight-label {
@@ -102,13 +88,9 @@
   inset-inline-start: 0;
   max-inline-size: 240px;
   inline-size: max-content;
-  line-height: 1.4;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   background: var(--ui-surface-raised);
-  color: var(--color-content);
-  font-size: var(--ui-font-micro);
   padding: 2px 4px;
 }
 
@@ -183,7 +165,7 @@
   max-block-size: none;
   border: 0;
   border-radius: 0;
-  padding: 3px;
+  padding: 4px;
   overflow: auto;
 }
 
@@ -209,7 +191,6 @@
   flex: 1;
   min-block-size: 0;
   overflow-y: auto;
-  background: var(--ui-workspace-canvas-surface);
 }
 
 .host-browser-start-body {
@@ -227,15 +208,12 @@
 .host-browser-start-icon {
   inline-size: 32px;
   block-size: 32px;
-  color: var(--ui-text-secondary);
   opacity: 0.7;
 }
 
 .host-browser-start-text {
   margin: 0;
   max-inline-size: 42ch;
-  font-size: var(--ui-font-body);
-  color: var(--ui-text-secondary);
 }
 
 .host-browser-recents {
@@ -247,9 +225,6 @@
 .host-browser-recents-title {
   margin: 0 0 6px;
   padding-inline: 4px;
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-  color: var(--ui-text-secondary);
 }
 
 .host-browser-recents ul {
@@ -257,8 +232,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
+
   overflow: hidden;
 }
 
@@ -280,7 +254,6 @@
 
 .host-browser-recent-url {
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -294,9 +267,7 @@
   align-items: center;
   gap: 4px;
   padding-inline-start: 8px;
-  background: var(--ui-surface-raised);
-  border-radius: var(--ui-radius-popup);
-  font-size: var(--ui-font-micro);
+
   white-space: nowrap;
 }
 
@@ -314,7 +285,6 @@
 
 .host-browser-selection-popover .host-browser-target {
   margin: 0;
-  font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
 }
 
@@ -323,22 +293,6 @@
   flex: none;
   padding: 6px 10px;
   margin: 0;
-  font-size: var(--ui-font-caption);
-}
-
-.host-browser-controls .host-browser-error {
-  max-block-size: 140px;
-  overflow: auto;
-  color: var(--ui-tone-danger-fg);
-  font-size: var(--ui-font-caption);
-}
-
-.host-browser-error pre {
-  margin-block: 6px 0;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  color: var(--color-content);
-  font: inherit;
 }
 
 .host-browser-setup {
@@ -346,25 +300,6 @@
   flex: none;
   padding: 6px 10px;
   margin: 0;
-  font-size: var(--ui-font-caption);
-}
-
-.host-browser-error {
-  display: flex;
-  align-items: start;
-  gap: 8px;
-  color: var(--ui-tone-danger-fg);
-}
-
-.host-browser-error pre {
-  margin-block: 6px 0;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  color: var(--color-content);
-  font: inherit;
-}
-
-.host-browser-setup {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -372,15 +307,8 @@
   gap: 8px;
 }
 
-.host-browser-setup strong {
-  font-weight: 500;
-}
-
 .host-browser-location {
   margin: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }

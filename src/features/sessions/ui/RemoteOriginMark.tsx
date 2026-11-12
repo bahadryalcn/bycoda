@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
 import { useT } from "../../../shared/i18n";
 import { MonitorSmartphone } from "../../../shared/ui/icons";
@@ -35,16 +36,18 @@ export function RemoteOriginMark({
   const label = t(STARTED);
   return (
     <Tooltip label={label} details={running ? [t(RUNNING)] : undefined} asChild>
-      <span
+      <Text
         role="img"
         aria-label={running ? `${label}. ${t(RUNNING)}` : label}
         data-no-drag
-        className="inline-flex shrink-0 items-center gap-1 text-ui-caption text-(--ui-text-muted)"
+        size="caption"
+        tone="muted"
+        className="inline-flex shrink-0 items-center gap-1"
       >
         <MonitorSmartphone aria-hidden className="icon-sm" strokeWidth={1.75} />
         {labelled ? <span aria-hidden>{t("Remote connection")}</span> : null}
         {running ? <WorkingIndicator size="xs" /> : null}
-      </span>
+      </Text>
     </Tooltip>
   );
 }

@@ -4,6 +4,7 @@ import {
   memo,
   useLayoutEffect,
   useRef,
+  useState,
   useSyncExternalStore,
   type ReactElement,
 } from "react";
@@ -176,11 +177,15 @@ export type TranscriptPoolEntry = {
 export class TranscriptPool {
   private entries = new Map<string, TranscriptPoolEntry>();
   private listeners = new Set<() => void>();
-  private snapshot: TranscriptPoolEntry[] = [];
+  private snapshot: TranscriptPoolEntry[] | undefined = [];
+  private outletSnapshot: string[] = [];
+  private outletListeners = new Set<() => void>();
+  private entryStores = new Map<string, Set<() => void>>();
   private recent: string[] = [];
   private protectedIds = new Set<string>();
   private knownIds: Set<string> | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private nextExpiry = Infinity;
   private states = new Map<string, TranscriptCheckpoint>();
 
   constructor(
@@ -195,11 +200,35 @@ export class TranscriptPool {
     this.schedule();
     return () => {
       this.listeners.delete(listener);
-      if (!this.listeners.size) clearTimeout(this.timer);
+      if (!this.listeners.size && !this.outletListeners.size) clearTimeout(this.timer);
     };
   };
 
-  getSnapshot = () => this.snapshot;
+  getSnapshot = () => this.snapshot || (this.snapshot = [...this.entries.values()]);
+  getOutletSnapshot = () => this.outletSnapshot;
+  subscribeOutlet = (listener: () => void) => {
+    this.outletListeners.add(listener);
+    this.schedule();
+    return () => {
+      this.outletListeners.delete(listener);
+      if (!this.listeners.size && !this.outletListeners.size) clearTimeout(this.timer);
+    };
+  };
+  getEntryStore(id: string) {
+    return {
+      read: () => this.entries.get(id),
+      subscribe: (listener: () => void) => {
+        let listeners = this.entryStores.get(id);
+        if (!listeners) this.entryStores.set(id, (listeners = new Set()));
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+          if (!listeners.size && this.entryStores.get(id) === listeners)
+            this.entryStores.delete(id);
+        };
+      },
+    };
+  }
 
   /** Host-running mirrors may be busy even when their last transcript is idle. */
   setProtectedIds(ids: Iterable<string>, knownIds?: Iterable<string>) {
@@ -270,7 +299,6 @@ export class TranscriptPool {
 
   private schedule() {
     clearTimeout(this.timer);
-    if (!this.listeners.size) return;
     let next = Infinity;
     for (const entry of this.entries.values()) {
       if (
@@ -281,7 +309,9 @@ export class TranscriptPool {
       )
         next = Math.min(next, entry.hiddenAt + this.ttlMs);
     }
-    if (next !== Infinity) this.timer = setTimeout(this.expire, Math.max(0, next - Date.now()));
+    this.nextExpiry = next;
+    if ((this.listeners.size || this.outletListeners.size) && next !== Infinity)
+      this.timer = setTimeout(this.expire, Math.max(0, next - Date.now()));
   }
 
   show(
@@ -347,9 +377,12 @@ export class TranscriptPool {
     // Re-inserting keeps the map in least-recently-shown order.
     this.entries.delete(id);
     this.entries.set(id, next);
-    this.trim();
-    this.emit();
-    this.expire();
+    // A visible pane cannot affect parked budgets or hidden expiry deadlines.
+    const sameVisibleOwner = previous?.host === host && visible && wasVisible;
+    if (!sameVisibleOwner) this.trim();
+    if (sameVisibleOwner) this.emitEntry(id);
+    else this.emit();
+    if (!sameVisibleOwner || Date.now() >= this.nextExpiry) this.expire();
   }
 
   park(id: string, host: HTMLElement) {
@@ -390,6 +423,16 @@ export class TranscriptPool {
 
   private emit() {
     this.snapshot = [...this.entries.values()];
+    this.outletSnapshot = this.snapshot.map((entry) => entry.id);
+    for (const listener of this.outletListeners) listener();
+    for (const listeners of this.entryStores.values()) for (const listener of listeners) listener();
+    for (const listener of this.listeners) listener();
+  }
+
+  private emitEntry(id: string) {
+    // Most frames update one portal. Materialize the public LRU snapshot only on demand.
+    this.snapshot = undefined;
+    for (const listener of this.entryStores.get(id) || []) listener();
     for (const listener of this.listeners) listener();
   }
 }
@@ -421,12 +464,21 @@ export const TranscriptPoolOutlet = memo(function TranscriptPoolOutlet({
 }: {
   pool: TranscriptPool;
 }) {
-  const entries = useSyncExternalStore(pool.subscribe, pool.getSnapshot, pool.getSnapshot);
-  return entries.map((entry) => <PooledEntry key={entry.id} entry={entry} />);
+  const ids = useSyncExternalStore(
+    pool.subscribeOutlet,
+    pool.getOutletSnapshot,
+    pool.getOutletSnapshot,
+  );
+  return ids.map((id) => <PooledEntry key={id} pool={pool} id={id} />);
 });
 
-const PooledEntry = memo(function PooledEntry({ entry }: { entry: TranscriptPoolEntry }) {
-  if (!entry.mounted) return null;
+const PooledEntry = memo(function PooledEntry({ pool, id }: { pool: TranscriptPool; id: string }) {
+  // State preserves subscription identity even without the React Compiler.
+  const [store, setStore] = useState(() => ({ pool, id, ...pool.getEntryStore(id) }));
+  if (store.pool !== pool || store.id !== id) setStore({ pool, id, ...pool.getEntryStore(id) });
+  const { subscribe, read } = store;
+  const entry = useSyncExternalStore(subscribe, read, read);
+  if (!entry?.mounted) return null;
   // React events bubble through the portal's owner, not the pane. Forward the
   // one the pane listens for so clicking the transcript still focuses it.
   // Pane-hosted portal: the transcript DOM moves between pane slots, not an overlay.

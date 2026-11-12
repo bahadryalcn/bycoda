@@ -1,3 +1,5 @@
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -88,7 +90,8 @@ export function SubagentMarks({
         <ProjectMascot
           project={name}
           active={active}
-          className={`size-3.5 shrink-0 ${failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+          tone={failed ? "danger" : "secondary"}
+          className="size-3.5 shrink-0"
         />
       )}
       {provider ? <HarnessIcon harness={provider} size="sm" /> : null}
@@ -149,11 +152,11 @@ export function SubagentStateLine({
   const summary = lifecycle === "stopped" ? "" : subagentStatusLine(block, steps);
   const identity = [run?.agentType, model].filter(Boolean).join(" · ");
   const visibleSummary = summary && !failed ? summary : undefined;
-  const Container = inline ? "span" : "div";
   return (
-    <Container
+    <Text
+      as={inline ? "span" : "div"}
       data-subagent-state
-      className={`flex min-w-0 items-center gap-x-2 whitespace-nowrap text-ui-caption text-(--ui-text-secondary) ${className}`}
+      className={`flex min-w-0 items-center gap-x-2 whitespace-nowrap ${className}`}
     >
       <Badge
         size="xs"
@@ -173,15 +176,15 @@ export function SubagentStateLine({
       </Badge>
       <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
       {identity || visibleSummary ? (
-        <span className="min-w-0 flex-1 truncate">
+        <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
           {identity}
           {identity && visibleSummary ? " · " : ""}
           {visibleSummary ? (
             <SubagentStatusSummary parts={subagentStatusParts(block, steps)} />
           ) : null}
-        </span>
+        </Text>
       ) : null}
-    </Container>
+    </Text>
   );
 }
 
@@ -210,9 +213,9 @@ export function SubagentReport({
     >
       <SectionLabel as={heading}>{failed ? t("Failure") : t("Report")}</SectionLabel>
       {failed ? (
-        <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
+        <OutputBlock tone="danger" density="comfortable" className="min-w-0 break-words">
           {report}
-        </pre>
+        </OutputBlock>
       ) : (
         <AgentMarkdown text={report} cwd={cwd} onOpenFile={onOpenFile} />
       )}

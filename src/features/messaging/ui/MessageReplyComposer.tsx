@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
@@ -107,9 +108,9 @@ export function MessageReplyComposer({
       <div className="flex min-w-0 items-center justify-end gap-2">
         {hint ? (
           <OverflowTooltip label={hint}>
-            <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
+            <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1">
               {hint}
-            </span>
+            </Text>
           </OverflowTooltip>
         ) : null}
         <Button

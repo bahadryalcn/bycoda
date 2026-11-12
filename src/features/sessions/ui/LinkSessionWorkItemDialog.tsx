@@ -1,5 +1,6 @@
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { useId, useState, type FormEvent } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -57,7 +58,7 @@ export function LinkSessionWorkItemDialog({
         </ModalActions>
       }
     >
-      <form id={formId} onSubmit={submit} className="flex flex-col gap-4 text-ui-caption">
+      <Text as="form" id={formId} onSubmit={submit} tone="inherit" className="flex flex-col gap-4">
         <TextField
           label={t("Issue or pull request URL")}
           autoFocus
@@ -76,7 +77,7 @@ export function LinkSessionWorkItemDialog({
             if (error) setError("");
           }}
         />
-      </form>
+      </Text>
     </Modal>
   );
 }

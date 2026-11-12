@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Popover } from "../../../shared/ui/Popover";
 import { TextField } from "../../../shared/ui/TextField";
@@ -201,9 +203,9 @@ function ProjectSearchContent({
           <Button variant="ghost" iconOnly label={t("Back to files")} onClick={onClose}>
             <ChevronLeft className="icon-md" strokeWidth={1.75} />
           </Button>
-          <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
+          <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1">
             {t("Search in files")}
-          </span>
+          </Text>
         </div>
       ) : null}
       <div className="flex shrink-0 items-center gap-1 border-b border-stroke p-2">
@@ -216,7 +218,7 @@ function ProjectSearchContent({
           placeholder={t("Search")}
           aria-label={t("Search")}
           spellCheck={false}
-          className="text-ui-caption"
+          textSize="caption"
           containerClassName="min-w-0 flex-1"
         />
         <Button
@@ -299,7 +301,12 @@ function ProjectSearchContent({
           </Button>
         </Popover>
       ) : null}
-      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-ui-micro text-(--ui-text-secondary)">
+      <Text
+        as="div"
+        size="micro"
+        tone="secondary"
+        className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5"
+      >
         {loading ? (
           <LoadingText delay={false}>{t("Searching…")}</LoadingText>
         ) : error ? (
@@ -323,7 +330,7 @@ function ProjectSearchContent({
         ) : (
           <span>{t("Type to search across the project")}</span>
         )}
-      </div>
+      </Text>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         {groups.map((group) => (
@@ -331,13 +338,13 @@ function ProjectSearchContent({
             {/* One line per file: name, then its folder (full path on hover when it is cut). */}
             <div className="flex min-w-0 items-center gap-1.5 px-2 py-1">
               <FileTypeIcon name={group.name} isDir={false} size="md" />
-              <span className="min-w-0 max-w-[60%] shrink-0 truncate text-ui-caption text-content">
+              <Text truncate size="caption" tone="primary" className="min-w-0 max-w-[60%] shrink-0">
                 {group.name}
-              </span>
+              </Text>
               <OverflowTooltip label={group.relative}>
-                <span className="min-w-0 flex-1 truncate text-ui-micro text-(--ui-text-muted)">
+                <Text truncate size="micro" tone="muted" className="min-w-0 flex-1">
                   {group.directory}
-                </span>
+                </Text>
               </OverflowTooltip>
               <Badge variant="count" size="xs" tone="accent" max={Infinity}>
                 {group.matches.length}
@@ -355,22 +362,31 @@ function ProjectSearchContent({
                     className="flex w-full items-start gap-2 text-left"
                   >
                     <Tooltip label={t("Line {p0}", { p0: match.line })} asChild>
-                      <span
+                      <Text
                         role="img"
                         aria-label={t("Line {p0}", { p0: match.line })}
-                        className="w-7 shrink-0 pt-px text-right font-mono text-ui-micro text-(--ui-text-muted) tabular-nums"
+                        size="micro"
+                        tone="muted"
+                        className="w-7 shrink-0 pt-0 text-right font-mono tabular-nums"
                       >
                         {match.line}
-                      </span>
+                      </Text>
                     </Tooltip>
-                    <span className="min-w-0 flex-1 truncate font-mono text-ui-micro leading-5 text-content">
+                    <Text
+                      as="span"
+                      size="micro"
+                      tone="primary"
+                      leading="relaxed"
+                      truncate
+                      className="min-w-0 flex-1 font-mono"
+                    >
                       <MatchPreview
                         preview={match.preview.trimEnd()}
                         query={query.trim()}
                         caseSensitive={caseSensitive}
                         regex={regex}
                       />
-                    </span>
+                    </Text>
                   </Button>
                 </li>
               ))}
@@ -441,9 +457,14 @@ function MatchPreview({
   return (
     <>
       {preview.slice(0, start)}
-      <mark className="rounded-sm bg-[var(--ui-tone-accent-subtle)] text-content">
+      <Text
+        as="mark"
+        size="inherit"
+        tone="primary"
+        {...surfaceAttributes({ radius: "sm" }, "bg-[var(--ui-tone-accent-subtle)]")}
+      >
         {preview.slice(start, end)}
-      </mark>
+      </Text>
       {preview.slice(end)}
     </>
   );

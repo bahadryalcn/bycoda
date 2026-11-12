@@ -1,3 +1,10 @@
+import {
+  providerAccounts,
+  subscribeProviderAccounts,
+} from "../../providers/public/providerAccounts";
+import { mergeProviderCliChecks } from "../model/providerCliChecks";
+import type { HarnessVersionCheck } from "../model/providerCliChecks";
+import { Text } from "../../../shared/ui/Text";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import {
@@ -54,7 +61,7 @@ import {
   providerMetaLine,
   type ProviderListEntry,
 } from "../../providers/ui/ProviderList";
-import { ProviderDetailHeader, ProviderStatusGroup } from "../../providers/ui/ProviderStatusGroup";
+import { ProviderDetailHeader } from "../../providers/ui/ProviderStatusGroup";
 import { providerAuthState } from "../../providers/ui/providerStatus";
 import {
   checkInstalledHarnessVersions,
@@ -73,7 +80,9 @@ import { GenericAcpSettings } from "../../providers/ui/GenericAcpSettings";
 import type { RecentProject } from "../../projects/public/recents";
 import { loadClaudeHooks, saveClaudeHooks, subscribeClaudeHooks } from "../model/settings";
 import { EMPTY_DRAFT, draftSize, type DefaultsDraft } from "../model/providerDefaultsDraft";
-import { saveDefaultsDraft } from "../model/providerDefaultsSave";
+import { saveDefaultsTargets } from "../model/providerDefaultsSave";
+import { selectedTargetValues } from "../model/providerDefaultsDraft";
+import { prepareDefaultsDraft } from "../model/providerDefaultsSupport";
 import { providersTabForSetting, type ProvidersTab } from "../model/providerSettingsTabs";
 import { ProviderAccountsSettings } from "./ProviderAccountsSettings";
 import { ProviderDecisionModels } from "./ProviderDecisionModels";
@@ -84,6 +93,7 @@ import {
   type DefaultsSaveState,
 } from "./ProviderDefaultsSaveBar";
 import { ProviderModelsGroup } from "./ProviderModelsGroup";
+import { ProviderCliTab } from "./ProviderCliTab";
 import { ProviderRuntimeGroup } from "./ProviderRuntimeGroup";
 import { hasProjectOverrides } from "./providerDefaultsScope";
 
@@ -125,6 +135,9 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   );
   const rateLimits = useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
   const now = useMinuteNow();
+  useSyncExternalStore(subscribeProviderAccounts, () =>
+    JSON.stringify(PROVIDER_ACCOUNT_PROVIDERS.map((provider) => providerAccounts(provider))),
+  );
   const [claudeHooks, setClaudeHooks] = useStoredPreferenceState(
     loadClaudeHooks,
     subscribeClaudeHooks,
@@ -155,6 +168,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   const target = targets.has(parsedTarget) ? parsedTarget : ({ kind: "global" } as const);
   const pending = draftSize(draft);
   const [accountBusy, setAccountBusy] = useState(false);
+  const [standaloneSignIn, setStandaloneSignIn] = useState<HarnessId | null>(null);
   // When this window last finished a version check; the snapshot itself carries no time.
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   // The list's picker switches save at once; storage can refuse the write.
@@ -166,6 +180,9 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     getHarnessUpdateSnapshot,
     getHarnessUpdateSnapshot,
   );
+  const [rowChecks, setRowChecks] = useState<
+    { source: HarnessVersionCheck[] | null; check: HarnessVersionCheck }[]
+  >([]);
   const revealedSetting = useContext(RevealedSetting);
   const handledReveal = useRef<string | null>(null);
 
@@ -205,13 +222,42 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   };
 
   const saveDraft = () => {
-    const outcome = saveDefaultsDraft(draft, target);
-    if (outcome.state === "unsaved") {
-      setSaveState({ state: "error", message: outcome.message });
+    const selected = selectedTargetValues(targetChoice).map(targets.parse).filter(targets.has);
+    const destinations =
+      saveState.state === "error" && saveState.failed
+        ? saveState.failed.map(targets.parse).filter(targets.has)
+        : selected;
+    const prepared = activeProvider
+      ? prepareDefaultsDraft(
+          draft,
+          activeProvider,
+          orderedHarnesses.filter(
+            (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
+          ),
+        )
+      : { draft };
+    const outcome = saveDefaultsTargets(
+      prepared.draft,
+      destinations.length ? destinations : [{ kind: "global" }],
+    );
+    if (outcome.failed.length) {
+      setSaveState({
+        state: "error",
+        failed: outcome.failed.map(({ target }) =>
+          target.kind === "global"
+            ? "global"
+            : target.kind === "project"
+              ? `project:${target.path}`
+              : `group:${target.id}`,
+        ),
+        message: outcome.failed
+          .map(({ target, message }) => `${targets.label(target)}: ${message}`)
+          .join("; "),
+      });
       return;
     }
     setDraft(EMPTY_DRAFT);
-    setSaveState({ state: "saved", target: targets.label(target) });
+    setSaveState({ state: "saved", target: outcome.saved.map(targets.label).join(", ") });
   };
 
   const project = target.kind === "project" ? target.path : null;
@@ -298,6 +344,25 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     const accountKey = supportsProviderAccounts(harness)
       ? `${harness}:${defaultProviderAccountId(harness)}`
       : null;
+    const accounts = supportsProviderAccounts(harness) ? providerAccounts(harness) : [];
+    const states = accounts.map((account) =>
+      providerAuthState(rateLimits[`${harness}:${account.id}`], now),
+    );
+    const signedOut = states.filter((state) => state?.tone === "signedOut").length;
+    const auth = accountKey ? providerAuthState(rateLimits[accountKey], now) : null;
+    const accountSummary =
+      accounts.length > 1
+        ? [
+            t("{p0} accounts", { p0: accounts.length }),
+            signedOut ? t("{p0} signed out", { p0: signedOut }) : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : accounts.length === 1
+          ? [accounts[0].label === "Default account" ? "" : accounts[0].label, auth?.label]
+              .filter(Boolean)
+              .join(" · ")
+          : undefined;
     return {
       harness,
       available: isHarnessAvailable(harness),
@@ -306,13 +371,17 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
       pickerLocked: false,
       version: check && check.status !== "unknown" ? check.installed : undefined,
       updateAvailable: check?.status === "behind",
-      auth: accountKey ? providerAuthState(rateLimits[accountKey], now) : null,
+      auth: signedOut
+        ? { tone: "signedOut", label: t("{p0} signed out", { p0: signedOut }) }
+        : (auth ?? states.find((state) => state !== null) ?? null),
+      accountSummary,
     };
   };
   const entries = orderedHarnesses.map(entryFor);
 
   // Update summary for the whole page; each provider's own state lives in its Status group.
-  const { checks, checking, runs, error: checkError } = updateSnapshot;
+  const { checks: sharedChecks, checking, runs, error: checkError } = updateSnapshot;
+  const checks = mergeProviderCliChecks(sharedChecks, rowChecks);
   const pendingUpdates = pendingHarnessUpdates(checks ?? []).filter(
     (update) => runs[update.harness]?.status !== "updating",
   );
@@ -332,14 +401,18 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
       ? t("Not checked yet")
       : checks.length === 0
         ? t("None of the CLIs with a release feed are installed.")
-        : attention > 0
-          ? attention === 1
-            ? t("1 CLI needs attention")
-            : t("{p0} CLIs need attention", { p0: attention })
-          : t("All CLIs are up to date");
+        : pendingUpdates.length > 0 && pendingUpdates.length <= 3
+          ? t("Update available: {p0}", {
+              p0: pendingUpdates.map((update) => HARNESS_TITLE[update.harness]).join(", "),
+            })
+          : attention > 0
+            ? attention === 1
+              ? t("1 CLI needs attention")
+              : t("{p0} CLIs need attention", { p0: attention })
+            : t("All CLIs are up to date");
 
   const setupProvider = (harness: HarnessId) => {
-    setTab("providers");
+    setTab("cli");
     setSelectedProvider(harness);
     // The Runtime section holds the CLI path and setup for this provider.
     requestAnimationFrame(() =>
@@ -350,7 +423,8 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   };
 
   const tabs: { id: ProvidersTab; label: string }[] = [
-    { id: "providers", label: t("Overview") },
+    { id: "providers", label: t("Accounts") },
+    { id: "cli", label: t("CLI") },
     { id: "defaults", label: t("Defaults") },
     { id: "models", label: t("Models") },
     { id: "decision", label: t("Decision models") },
@@ -377,18 +451,24 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
           ))}
         </TabList>
         <TabPanel className="provider-tab-panel" tabIndex={-1}>
-          {tab === "providers" ? (
+          {tab === "cli" ? (
             <Group
               id="harness-updates"
               layout="full"
-              title={t("CLI updates")}
+              title={t("CLI")}
               description={updatesSummary}
               action={
                 <div className="provider-updates-actions">
                   {checkedAt != null && !checking ? (
-                    <span className="provider-status-checked">
+                    <Text
+                      as="span"
+                      size="caption"
+                      tone="muted"
+                      leading="inherit"
+                      className="provider-status-checked"
+                    >
                       {t("Checked")} <RelativeSessionTime at={checkedAt} />
-                    </span>
+                    </Text>
                   ) : null}
                   <Button
                     size="sm"
@@ -406,11 +486,15 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                     onClick={() => {
                       for (const update of pendingUpdates) void runHarnessUpdate(update);
                     }}
+                    variant={pendingUpdates.length ? "primary" : "secondary"}
+                    tone={pendingUpdates.length ? "accent" : "neutral"}
                     disabled={pendingUpdates.length === 0}
                     tooltip={pendingUpdates.length === 0 ? t("Nothing to update") : undefined}
                     startIcon={<ArrowDownCircle className="icon-sm text-accent" aria-hidden />}
                   >
-                    {t("Update all")}
+                    {pendingUpdates.length
+                      ? t("Update all ({p0})", { p0: pendingUpdates.length })
+                      : t("Update all")}
                   </Button>
                 </div>
               }
@@ -444,7 +528,19 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
           <div className="provider-cli-section" hidden={tab !== "decision"}>
             <ProviderDecisionModels />
           </div>
-          <div className="provider-cli-container" hidden={tab === "decision"}>
+          <div className="provider-cli-section" hidden={tab !== "cli"}>
+            <ProviderCliTab
+              checkedAt={checkedAt}
+              onCheck={runCheck}
+              onRowCheck={(check) =>
+                setRowChecks((rows) => [
+                  ...rows.filter((row) => row.check.harness !== check.harness),
+                  { source: sharedChecks, check },
+                ])
+              }
+            />
+          </div>
+          <div className="provider-cli-container" hidden={tab === "decision" || tab === "cli"}>
             <div className="provider-cli-workspace">
               <div className="provider-cli-select">
                 <SearchableSelect
@@ -485,25 +581,20 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                     <>
                       <ProviderDetailHeader
                         harness={activeProvider}
+                        signInCompleted={standaloneSignIn === activeProvider}
                         available={isHarnessAvailable(activeProvider)}
-                      />
-                      <ProviderStatusGroup
-                        harness={activeProvider}
-                        available={isHarnessAvailable(activeProvider)}
-                        checkedAt={checkedAt}
-                        onCheck={runCheck}
-                        onSetup={() => setupProvider(activeProvider)}
                       />
                     </>
                   ) : null}
                   {accountBusy ? (
-                    <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
+                    <Text role="status" as="p" size="caption" tone="secondary">
                       {t("Finish or cancel the account operation before switching providers.")}
-                    </p>
+                    </Text>
                   ) : null}
                   <ProviderAccountsSettings
                     harness={activeProvider ?? undefined}
                     onBusyChange={setAccountBusy}
+                    onStandaloneSignIn={setStandaloneSignIn}
                   />
                   {orderedHarnesses.map((harness) => (
                     <div
@@ -538,6 +629,13 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
           </div>
           {tab === "defaults" ? (
             <ProviderDefaultsSaveBar
+              selection={targetChoice}
+              draft={draft}
+              activeProvider={activeProvider ?? undefined}
+              providers={orderedHarnesses.filter(
+                (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
+              )}
+              onDraftChange={setDraft}
               target={target}
               options={targets.options}
               onTargetChange={(value) => {

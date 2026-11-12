@@ -1,3 +1,5 @@
+import { Code } from "../../../shared/ui/Code";
+import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
@@ -45,8 +47,8 @@ function SshHelp({ editing }: { editing: boolean }) {
       </p>
       <p>
         {t("A hostname works too, such as a Mac's Bonjour name (")}
-        <code>{"user@MacBook-Pro.local"}</code>
-        {t(") or an alias from")} <code>{"~/.ssh/config"}</code>
+        <Code>{"user@MacBook-Pro.local"}</Code>
+        {t(") or an alias from")} <Code>{"~/.ssh/config"}</Code>
         {t(". Then the address does not need editing when the IP changes.")}
       </p>
       <p>
@@ -81,7 +83,7 @@ function SshHelp({ editing }: { editing: boolean }) {
             {t(
               "On Linux, setup installs a systemd user service and turns on lingering for your account (",
             )}
-            <code>{"loginctl enable-linger"}</code>
+            <Code>{"loginctl enable-linger"}</Code>
             {t(
               "), so the host and your other user services keep running after you log out. The host keeps running until you stop it on that machine; removing it here only disconnects this desktop.",
             )}
@@ -173,11 +175,7 @@ function SshFields({
           fieldClassName="min-w-0 flex-1"
         />
       ) : null}
-      <Disclosure
-        size="sm"
-        className="text-ui-caption text-(--ui-text-muted)"
-        summary={t("Advanced")}
-      >
+      <Disclosure size="sm" textSize="caption" tone="muted" summary={t("Advanced")}>
         <div className="max-w-40">
           <NumberField
             disabled={busy}
@@ -264,13 +262,13 @@ export function MachineForm({
             />
           </div>
         ) : null}
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted">
           {editing
             ? t("Saving reconnects this machine with the updated address.")
             : ssh
               ? t("Installs bycoda Host over SSH so you can run agents on this machine.")
               : t("Enter the host URL and a device token issued by that host.")}
-        </p>
+        </Text>
         {ssh ? (
           <SshFields
             draft={draft}

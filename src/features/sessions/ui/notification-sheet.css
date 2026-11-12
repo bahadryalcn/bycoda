@@ -12,7 +12,6 @@
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   padding: 4px 8px 16px;
 }
 .notification-sheet-items {
@@ -37,17 +36,11 @@
   gap: 4px;
 }
 .notification-request-preview {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
   overflow: clip;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 .notification-request-title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
   overflow: clip;
   overflow-wrap: anywhere;
 }
@@ -55,13 +48,6 @@
   display: inline-flex;
   min-inline-size: 0;
   text-align: start;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
-.notification-project-name {
-  overflow: clip;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .notification-request-meta {
   display: flex;
@@ -69,8 +55,6 @@
   flex-wrap: wrap;
   gap: 4px 8px;
   min-inline-size: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .notification-request-meta .notification-project {
   /* A readable minimum: the row wraps before the source name collapses. */
@@ -152,16 +136,10 @@
 .notification-new-dot {
   flex: none;
 }
-.notification-history-preview,
+.notification-history-preview[data-lines][data-size],
 .notification-history-label {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-.notification-history-preview {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: clip;
 }
 .notification-history-meta {
   display: flex;

@@ -109,7 +109,7 @@ it("shows project changes inside its menu", async () => {
       .querySelector<HTMLButtonElement>('[data-project-path="/work/personal"] button')!
       .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 40 })),
   );
-  expect(document.querySelector("[data-project-menu-git]")?.textContent).toBe("3 files · +12 -4");
+  expect(document.querySelector("[data-project-menu-git]")?.textContent).toBe("3 files · +12−4");
   vi.mocked(useProjectDiffStats).mockReturnValue(null);
 });
 
@@ -131,7 +131,7 @@ for (const linked of [false, true]) {
     );
     await renderRail();
     await act(async () => button("Team group options").click());
-    expect(document.querySelector("[data-group-menu-git]")?.textContent).toBe("2 files · +7 -3");
+    expect(document.querySelector("[data-group-menu-git]")?.textContent).toBe("2 files · +7−3");
   });
 }
 

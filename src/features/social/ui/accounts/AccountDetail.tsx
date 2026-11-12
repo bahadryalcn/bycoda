@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
@@ -102,7 +103,15 @@ export function AccountDetail({
       />
       <div className="social-detail-status">
         <PlatformMark platform={account.platform} size="lg" />
-        <span className="social-detail-name">{account.name}</span>
+        <Text
+          size="body"
+          tone="inherit"
+          leading="inherit"
+          weight="medium"
+          className="social-detail-name"
+        >
+          {account.name}
+        </Text>
         <Badge tone={HEALTH_TONE[health.status]} size="sm">
           {health.text}
         </Badge>

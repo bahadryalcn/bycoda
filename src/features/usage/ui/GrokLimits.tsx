@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
@@ -37,35 +38,41 @@ export function GrokLimits({ refresh }: { refresh: number }) {
           Grok
         </Heading>
         {limits.updatedAt > 0 ? (
-          <span className="usage-account-observed">
+          <Text size="caption" tone="muted" leading="inherit" className="usage-account-observed">
             <span className="sr-only">{t("Last observed")}: </span>
             <Timestamp value={limits.updatedAt} format="relative" />
-          </span>
+          </Text>
         ) : null}
       </div>
       <div className="usage-quota-list">
         {windows.map(({ kind, window }) => (
           <div className="usage-quota" key={kind}>
-            <div className="usage-quota-heading">
+            <Text
+              as="div"
+              size="caption"
+              tone="inherit"
+              leading="inherit"
+              className="usage-quota-heading"
+            >
               <Heading size="item" level={4}>
                 {kind === "weekly"
                   ? t("Weekly")
                   : kind === "monthly"
                     ? t("Monthly")
                     : formatWindowLabel(window.windowMinutes)}
-                <span className="usage-quota-reset">
+                <Text size="inherit" tone="muted" weight="regular" className="usage-quota-reset">
                   {window.resetsAt == null
                     ? t("Reset time unavailable")
                     : formatResetCountdown(window.resetsAt - now)}
-                </span>
+                </Text>
               </Heading>
-              <p>
-                <strong>
+              <Text as="p" size="inherit" tone="secondary">
+                <Text as="strong" size="body" tone="primary" weight="medium" leading="inherit">
                   {Math.round(showRemaining ? 100 - window.usedPercent : window.usedPercent)}%
-                </strong>
+                </Text>
                 <span>{showRemaining ? t("left") : t("used")}</span>
-              </p>
-            </div>
+              </Text>
+            </Text>
             <UsageMeter
               label={`Grok ${kind}`}
               segments={[{ id: "used", label: t("used"), value: window.usedPercent }]}

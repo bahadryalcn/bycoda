@@ -1,3 +1,5 @@
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface } from "../../../shared/ui/Surface";
 import { useMemo, useSyncExternalStore } from "react";
@@ -181,9 +183,9 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
               {index === 0 ? (
                 <div className="flex items-center gap-2">
                   {feedback.failed ? (
-                    <span role="status" className="text-ui-caption text-(--ui-tone-danger-fg)">
+                    <Text role="status" size="caption" tone="danger">
                       {t("Copy failed")}
-                    </span>
+                    </Text>
                   ) : null}
                   <FloatingButtonGroup
                     label={t("Output actions")}
@@ -203,49 +205,54 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
             {json ? (
               <JsonViewer data={json.data} label={t(section.title)} maxHeight={320} pageSize={50} />
             ) : (
-              <pre
+              <OutputBlock
                 tabIndex={0}
-                className={`max-h-80 min-w-0 select-text overflow-auto overscroll-contain ${wrap ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre"} px-3 py-1 font-mono text-ui-caption leading-5 ${section.error ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)`}
+                size="caption"
+                density="comfortable"
+                tone={section.error ? "danger" : "secondary"}
+                wrap={wrap}
+                className="max-h-80 overflow-auto overscroll-contain px-3 py-1 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)"
               >
                 {section.diff ? (
                   section.text.split("\n").map((line, lineIndex) => (
-                    <span
+                    <Text
                       key={lineIndex}
-                      className={
+                      size="inherit"
+                      tone={
                         line.startsWith("+")
-                          ? "text-diff-add-fg"
+                          ? "added"
                           : line.startsWith("-")
-                            ? "text-diff-del-fg"
-                            : undefined
+                            ? "removed"
+                            : "inherit"
                       }
                     >
                       {line}
                       {"\n"}
-                    </span>
+                    </Text>
                   ))
                 ) : section.text ? (
                   <AnsiText text={section.text} />
                 ) : (
                   t(section.truncated ? "Output left out to keep this run small." : "Empty file")
                 )}
-              </pre>
+              </OutputBlock>
             )}
             {section.truncated || section.legacy ? (
-              <p className="px-3 pt-1 text-ui-caption text-(--ui-text-secondary)">
+              <Text as="p" size="caption" tone="secondary" className="px-3 pt-1">
                 {t(
                   section.legacy
                     ? "Only a shortened preview was saved for this older tool call."
                     : "Content shortened to keep this conversation responsive.",
                 )}
-              </p>
+              </Text>
             ) : null}
           </section>
         );
       })}
       {!sections.length && block.tool?.outputTruncated ? (
-        <p className="px-3 pt-2 text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary" className="px-3 pt-2">
           {t("Output left out to keep this run small.")}
-        </p>
+        </Text>
       ) : null}
     </Surface>
   );

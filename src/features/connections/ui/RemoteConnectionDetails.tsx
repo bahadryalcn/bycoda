@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
@@ -37,8 +38,8 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
     return () => clearInterval(timer);
   }, [ticking]);
   return (
-    <div className="flex min-w-0 flex-col gap-2 text-ui-caption">
-      <p role="status" className="text-(--ui-text-muted)">
+    <Text as="div" tone="inherit" className="flex min-w-0 flex-col gap-2">
+      <Text role="status" as="p" size="inherit" tone="muted">
         {t(phases[lifecycle.phase])}
         {lifecycle.phase === "checking" && lifecycle.startedAt != null && now != null ? (
           <span className="tabular-nums">
@@ -58,7 +59,7 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
             })}
           </span>
         ) : null}
-      </p>
+      </Text>
       <DescriptionList size="sm">
         {(
           Object.entries(lifecycle.features) as [
@@ -105,11 +106,11 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
                   ? ` · ${t(connectionIndicator({ status: event.reason }, false).label)}`
                   : ""}
               </span>
-              <Timestamp value={event.at} className="text-(--ui-text-muted)" />
+              <Timestamp value={event.at} tone="muted" />
             </li>
           ))}
         </ol>
       </Disclosure>
-    </div>
+    </Text>
   );
 }

@@ -1,5 +1,6 @@
+import { Text } from "../../../../shared/ui/Text";
 import { Button } from "../../../../shared/ui/Button";
-import { Surface } from "../../../../shared/ui/Surface";
+import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import type { Capability, SocialAccount } from "../../model/social";
@@ -52,9 +53,20 @@ export function AccountRow({
           <PlatformMark platform={account.platform} size="lg" />
           <span className="social-account-row-text">
             <OverflowTooltip label={account.name}>
-              <span className="social-account-row-name">{account.name}</span>
+              <Text
+                size="body"
+                tone="inherit"
+                leading="inherit"
+                weight="medium"
+                truncate
+                className="social-account-row-name"
+              >
+                {account.name}
+              </Text>
             </OverflowTooltip>
-            <span className="social-account-row-mode">{accountModeText(account)}</span>
+            <Text size="caption" tone="muted" leading="inherit" className="social-account-row-mode">
+              {accountModeText(account)}
+            </Text>
             <span className="social-account-row-status">
               <Badge tone={HEALTH_TONE[health.status]} size="sm">
                 {health.text}
@@ -62,7 +74,20 @@ export function AccountRow({
             </span>
           </span>
         </span>
-        {summary ? <span className="social-account-row-caps">{summary}</span> : null}
+        {summary ? (
+          <Text
+            size="caption"
+            tone="muted"
+            leading="inherit"
+            truncate
+            {...surfaceAttributes(
+              { frame: "settings", edge: "block-start" },
+              "social-account-row-caps",
+            )}
+          >
+            {summary}
+          </Text>
+        ) : null}
       </Button>
     </Surface>
   );

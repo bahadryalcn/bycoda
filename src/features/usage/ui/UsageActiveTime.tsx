@@ -22,7 +22,9 @@ export function UsageActiveTime() {
     <Surface variant="outline" padding="sm" className="usage-active-time">
       <div className="usage-active-heading">
         <SectionLabel>{t("Active time")}</SectionLabel>
-        <span className="usage-active-source">{activitySourceNote(overview)}</span>
+        <Text size="caption" tone="muted" leading="inherit" className="usage-active-source">
+          {activitySourceNote(overview)}
+        </Text>
         <InfoPopover label={t("Active time source")}>
           <ActivitySources overview={overview} />
         </InfoPopover>

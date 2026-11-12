@@ -1,3 +1,7 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Code } from "../../../shared/ui/Code";
+import { DiffStat } from "../../../shared/ui/DiffStat";
+import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { ChevronLeft, ChevronRight, X } from "../../../shared/ui/icons";
@@ -90,9 +94,9 @@ export function GitGraphCommitInspector({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="shrink-0 border-b border-(--ui-pane-border) p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <code className="select-all text-ui-caption text-(--ui-tone-accent-fg)">
+          <Code size="caption" tone="accent" className="select-all">
             {commit.shortSha}
-          </code>
+          </Code>
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
@@ -121,16 +125,15 @@ export function GitGraphCommitInspector({
         <Heading size="item" className="break-words">
           {commit.subject}
         </Heading>
-        <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
+        <Text as="p" size="caption" tone="secondary" className="mt-1">
           {commit.author} · {new Date(commit.timestamp * 1000).toLocaleString()}
-        </p>
-        <p className="flex gap-2 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+        </Text>
+        <Text as="p" size="caption" tone="secondary" className="flex gap-2 tabular-nums">
           <span>
             {files.data?.length ?? "…"} {t("files")}
           </span>
-          <span className="text-diff-add-fg">+{totals.additions}</span>
-          <span className="text-diff-del-fg">−{totals.deletions}</span>
-        </p>
+          <DiffStat additions={totals.additions} deletions={totals.deletions} showZero />
+        </Text>
       </header>
       <Disclosure
         size="sm"
@@ -164,9 +167,10 @@ export function GitGraphCommitInspector({
               className="flex w-full items-center justify-start gap-2"
             >
               <FileTypeIcon name={file.relative} isDir={false} size="sm" />
-              <span className="min-w-0 flex-1 truncate">{file.relative}</span>
-              <span className="text-diff-add-fg">+{file.additions}</span>
-              <span className="text-diff-del-fg">−{file.deletions}</span>
+              <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                {file.relative}
+              </Text>
+              <DiffStat additions={file.additions} deletions={file.deletions} showZero />
             </Button>
           ))}
           {files.data && visibleFiles.length === 0 ? (
@@ -186,7 +190,15 @@ export function GitGraphCommitInspector({
           onRetry={files.refresh}
         />
       ) : null}
-      <div className="flex min-h-9 shrink-0 items-center justify-between border-b border-(--ui-pane-border) px-3 text-ui-caption text-(--ui-text-secondary)">
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
+        {...surfaceAttributes(
+          { frame: "pane", edge: "bottom" },
+          "flex min-h-9 shrink-0 items-center justify-between border-(--ui-pane-border) px-3",
+        )}
+      >
         <span>
           {mode === "blame"
             ? deleted
@@ -205,15 +217,25 @@ export function GitGraphCommitInspector({
             onValueChange={(value) => onMode(value as "changes" | "blame")}
           />
         ) : null}
-      </div>
+      </Text>
       {relative ? (
-        <div className="flex min-w-0 shrink-0 items-center gap-1 border-b border-(--ui-pane-border) px-2 py-1 text-ui-caption">
+        <Text
+          as="div"
+          size="caption"
+          tone="inherit"
+          {...surfaceAttributes(
+            { frame: "pane", edge: "bottom" },
+            "flex min-w-0 shrink-0 items-center gap-1 border-(--ui-pane-border) px-2 py-1",
+          )}
+        >
           <OverflowTooltip label={relative}>
-            <span className="min-w-0 flex-1 truncate">{relative}</span>
+            <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+              {relative}
+            </Text>
           </OverflowTooltip>
-          <span className="tabular-nums text-(--ui-text-secondary)">
+          <Text size="inherit" tone="secondary" className="tabular-nums">
             {selectedIndex < 0 ? "–" : selectedIndex + 1}/{visibleFiles.length}
-          </span>
+          </Text>
           <Button
             variant="ghost"
             size="sm"
@@ -236,7 +258,7 @@ export function GitGraphCommitInspector({
           >
             <ChevronRight className="icon-sm" />
           </Button>
-        </div>
+        </Text>
       ) : null}
       {diff.error ? (
         <GitFeedback title={t("Couldn’t load diff")} detail={diff.error} onRetry={diff.refresh} />

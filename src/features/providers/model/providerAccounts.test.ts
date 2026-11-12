@@ -8,6 +8,7 @@ import {
   providerAccounts,
   removeProviderAccount,
   renameProviderAccount,
+  editProviderAccount,
   saveProviderAccount,
   saveTerminalProviderAccount,
   defaultProviderAccountId,
@@ -423,4 +424,32 @@ it("list-based variants answer exactly like the store-reading functions", () => 
       sessionProviderAccountId("claude", session),
     );
   }
+});
+
+it("edits name color and kind without changing profile identity or default", () => {
+  const original = providerAccounts("codex")[0];
+  expect(original.kind).toBeUndefined();
+  expect(
+    editProviderAccount("codex", original.id, { label: "Office", color: "teal", kind: "work" }),
+  ).toBe(true);
+  expect(providerAccounts("codex")[0]).toEqual({
+    ...original,
+    label: "Office",
+    color: "teal",
+    kind: "work",
+  });
+  renameProviderAccount("codex", original.id, "Renamed");
+  setProviderAccountColor("codex", original.id, "orange");
+  expect(providerAccounts("codex")[0].kind).toBe("work");
+  expect(sessionProviderAccountId("codex", { providerAccountId: original.id })).toBe(original.id);
+  expect(editProviderAccount("codex", original.id, { label: "Personal" })).toBe(true);
+  expect(providerAccounts("codex")[0].kind).toBeUndefined();
+});
+it("leaves migration-free metadata absent and rejects invalid edits", () => {
+  const original = providerAccounts("claude");
+  expect(original[0].kind).toBeUndefined();
+  expect(localStorage.getItem("bycoda.providerAccounts.v2")).toBeNull();
+  expect(editProviderAccount("claude", original[0].id, { label: " " })).toBe(false);
+  expect(editProviderAccount("claude", "missing", { label: "Work", kind: "work" })).toBe(false);
+  expect(providerAccounts("claude")).toEqual(original);
 });

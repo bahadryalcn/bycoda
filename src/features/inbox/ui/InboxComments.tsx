@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { InboxReviewBadge } from "./InboxReviewBadge";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -6,7 +7,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { Surface } from "../../../shared/ui/Surface";
+import { surfaceAttributes, Surface } from "../../../shared/ui/Surface";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { providerLabel } from "../../../shared/lib/providerLabel";
@@ -159,8 +160,8 @@ export function InboxComments({
   const moreOn = providerLabel(provider);
 
   return (
-    <section className="flex flex-col gap-3 border-t border-(--ui-tone-neutral-border) pt-5">
-      <div className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
+    <section {...surfaceAttributes({ frame: "neutral", edge: "top" }, "flex flex-col gap-3 pt-5")}>
+      <Text as="div" size="caption" tone="secondary" className="flex items-center gap-2">
         {thread.commits ? (
           <>
             <SectionLabel as="h2">{t("Activity")}</SectionLabel>
@@ -178,8 +179,8 @@ export function InboxComments({
             {moreOn}
           </span>
         ) : null}
-        {loading ? <Spinner size="xs" className="text-(--ui-text-secondary)" /> : null}
-      </div>
+        {loading ? <Spinner size="xs" tone="secondary" /> : null}
+      </Text>
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {thread.commits ? (
         <ol className="flex flex-col">
@@ -320,11 +321,11 @@ export function InboxCommentForm({
       className="flex flex-col gap-2 border-t border-(--ui-tone-neutral-border) pt-5"
     >
       {replyTo ? (
-        <div className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
-          <span className="min-w-0 truncate">
+        <Text as="div" size="caption" tone="secondary" className="flex items-center gap-2">
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
             {t("Replying to ")}
             {replyTo.author || t("comment")}
-          </span>
+          </Text>
           <Button
             iconOnly
             label={t("Cancel reply")}
@@ -336,7 +337,7 @@ export function InboxCommentForm({
           >
             <X className="icon-xs" strokeWidth={1.75} />
           </Button>
-        </div>
+        </Text>
       ) : null}
       <div className="space-y-1">
         <TextareaField
@@ -358,9 +359,9 @@ export function InboxCommentForm({
         />
         <div className="flex items-center justify-end gap-2">
           {target ? (
-            <span className="min-w-0 truncate text-ui-caption text-(--ui-text-secondary)">
+            <Text size="caption" tone="secondary" truncate className="min-w-0">
               {t("Posts publicly to {p0}", { p0: target })}
-            </span>
+            </Text>
           ) : null}
           <Button
             variant="primary"
@@ -423,8 +424,9 @@ function InboxComment({
 
   const inner = (
     <>
-      <header
-        className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary) ${
+      <Text
+        as="header"
+        className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${
           nested ? "" : timeline ? "min-h-9 px-3 py-1.5" : "px-3 py-2"
         } ${!nested && (hasBody || hasReplies) ? "border-b border-(--ui-tone-neutral-border)" : ""}`}
       >
@@ -483,7 +485,7 @@ function InboxComment({
             </Button>
           </span>
         ) : null}
-      </header>
+      </Text>
       {hasBody ? (
         <SurfaceSelection
           cwd={cwd}
@@ -510,7 +512,7 @@ function InboxComment({
         </SurfaceSelection>
       ) : null}
       {hasReplies ? (
-        <div className="border-t border-(--ui-tone-neutral-border) px-3">
+        <div {...surfaceAttributes({ frame: "neutral", edge: "top" }, "px-3")}>
           {comment.replies.map((reply, index) => (
             <div
               key={reply.id}
@@ -702,8 +704,10 @@ function InboxCommitRun({
 function TimelineEventLine({ name, action, time }: { name: string; action: string; time: string }) {
   useLocale();
   return (
-    <p className="flex h-5 min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
-      <span className="min-w-0 truncate font-medium text-(--ui-tone-neutral-fg)">{name}</span>
+    <Text as="p" size="caption" tone="secondary" className="flex h-5 min-w-0 items-center gap-1.5">
+      <Text size="inherit" tone="neutral" weight="medium" truncate className="min-w-0">
+        {name}
+      </Text>
       <span className="shrink-0">{action}</span>
       {time ? (
         <>
@@ -711,7 +715,7 @@ function TimelineEventLine({ name, action, time }: { name: string; action: strin
           <span className="shrink-0">{time}</span>
         </>
       ) : null}
-    </p>
+    </Text>
   );
 }
 
@@ -735,12 +739,22 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
           onClick={() => openUrlSafely(commit.url)}
           className="w-full min-w-0 text-left"
         >
-          <span className="min-w-0 flex-1 truncate text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg) group-disabled:text-(--ui-text-secondary)">
+          <Text
+            as="span"
+            size="inherit"
+            tone="secondary"
+            truncate
+            className={
+              commit.url
+                ? "min-w-0 flex-1 group-hover:text-(--ui-tone-neutral-fg)!"
+                : "min-w-0 flex-1"
+            }
+          >
             {commit.messageHeadline}
-          </span>
-          <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-secondary) group-hover:text-(--ui-text-secondary)">
+          </Text>
+          <Text as="span" size="micro" tone="secondary" className="shrink-0 font-mono">
             {commit.oid.slice(0, 7)}
-          </span>
+          </Text>
         </Button>
       </div>
     </li>
@@ -765,12 +779,18 @@ function InboxCommentPerson({
 }) {
   useLocale();
   if (!avatar) {
-    return <span className="min-w-0 truncate font-medium text-(--ui-tone-neutral-fg)">{name}</span>;
+    return (
+      <Text size="inherit" tone="neutral" weight="medium" truncate className="min-w-0">
+        {name}
+      </Text>
+    );
   }
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <InboxAvatar name={name} avatarUrl={avatarUrl} />
-      <span className="min-w-0 truncate font-medium text-(--ui-tone-neutral-fg)">{name}</span>
+      <Text size="inherit" tone="neutral" weight="medium" truncate className="min-w-0">
+        {name}
+      </Text>
     </span>
   );
 }

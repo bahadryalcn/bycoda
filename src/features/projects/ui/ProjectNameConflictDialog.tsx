@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState } from "react";
@@ -73,9 +74,9 @@ export function ProjectNameConflictDialog({
         className="flex flex-col gap-3 px-4 pt-2 pb-4"
       >
         <Tooltip label={path} when={prettyCwd(path) === path ? "overflow" : "always"}>
-          <p className="truncate text-ui-micro leading-tight text-(--ui-text-muted)">
+          <Text truncate as="p" size="micro" tone="muted" leading="tight">
             {prettyCwd(path)}
-          </p>
+          </Text>
         </Tooltip>
         <TextField
           label={t("Project name")}

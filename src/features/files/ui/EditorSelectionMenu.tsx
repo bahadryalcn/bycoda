@@ -59,7 +59,8 @@ export function EditorSelectionMenu({
           requestAddToChat(formatEditorSelectionReference(selection), "plain");
           onDismiss();
         }}
-        className="flex items-center gap-1.5 whitespace-nowrap leading-none"
+        className="flex items-center gap-1.5 whitespace-nowrap"
+        leading="none"
       >
         <MessageSquarePlus aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
         {t("Add to chat")}

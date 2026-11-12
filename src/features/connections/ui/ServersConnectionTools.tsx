@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { SshSettings } from "./SshSettings";
 import { Heading } from "../../../shared/ui/Heading";
 export { ConfigImportChoices } from "./SshConfigImportChoices";
@@ -92,10 +93,10 @@ export function ServersConnectionTools({
   return (
     <div className="server-connection-tools mbs-4 flex min-w-0 flex-col gap-4">
       {endpoint?.httpProxy ? (
-        <p className="w-full break-all text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted" className="w-full break-all">
           {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
           {sshEndpointPreview(endpoint.httpProxy)}
-        </p>
+        </Text>
       ) : null}
       <div className="sticky inset-bs-0 z-1 flex flex-wrap gap-2 bg-(--ui-workspace-reading-base) pbe-2">
         {(server.kind === "ssh" || server.machine?.ssh) && openTerminal ? (
@@ -122,15 +123,15 @@ export function ServersConnectionTools({
           {canAssignKey ? (
             <section aria-label={t("Credentials")} className="flex min-w-0 flex-col gap-3">
               <div className="flex min-w-0 items-start justify-between gap-3">
-                <div className="flex min-w-0 flex-col gap-1 text-ui-caption">
+                <Text as="div" tone="inherit" className="flex min-w-0 flex-col gap-1">
                   <Heading size="item">{t("Credentials")}</Heading>
-                  <p className="break-all text-(--ui-text-muted)">
+                  <Text as="p" size="inherit" tone="muted" className="break-all">
                     {t("SSH user")}: {sshUser || t("Default")}
-                  </p>
-                  <p className="break-all text-(--ui-text-muted)">
+                  </Text>
+                  <Text as="p" size="inherit" tone="muted" className="break-all">
                     {t("SSH key")}: {selectedIdentity || t("SSH agent and default keys")}
-                  </p>
-                </div>
+                  </Text>
+                </Text>
                 <Button
                   variant="secondary"
                   aria-expanded={editingIdentity}
@@ -144,9 +145,9 @@ export function ServersConnectionTools({
                 </Button>
               </div>
               {jumpChain.length ? (
-                <p className="break-all text-ui-caption text-(--ui-text-muted)">
+                <Text as="p" tone="muted" className="break-all">
                   {t("Jump chain")}: {jumpChain.join(" → ")}
-                </p>
+                </Text>
               ) : null}
               {currentServer.metadata.sshInheritance ? (
                 <Button variant="link" onClick={() => setGroupSettings(true)}>
@@ -189,9 +190,9 @@ export function ServersConnectionTools({
             </section>
           ) : null}
           {!canAssignKey ? (
-            <p className="text-ui-caption text-(--ui-text-muted)">
+            <Text as="p" tone="muted">
               {t("This machine uses bycoda Host. Use Reconnect to restore its connection.")}
-            </p>
+            </Text>
           ) : null}
         </TabPanel>
         {canAssignKey ? (

@@ -65,6 +65,16 @@ async function runApprovalDecision({
   }
 }
 
+// The observation must reach the call, so compiled caches track late owner registration.
+function captureObservedApprovalRequest(
+  session: Session,
+  requestId: number,
+  expectedBlock: Block | undefined,
+  _sourceObservation: unknown,
+) {
+  return captureApprovalRequest(session, requestId, expectedBlock);
+}
+
 export function useApprovalDecisionControl(
   session: Session,
   requestId: number,
@@ -88,7 +98,7 @@ export function useApprovalDecisionControl(
     remoteSource.read,
   );
   const expected = useMemo(
-    () => captureApprovalRequest(session, requestId, expectedBlock),
+    () => captureObservedApprovalRequest(session, requestId, expectedBlock, sourceObservation),
     [session, requestId, expectedBlock, sourceObservation],
   );
   const occurrence =

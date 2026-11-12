@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -216,12 +217,13 @@ export function SessionDirsPicker({
         className="max-w-40"
       >
         <Folder
-          className={`icon-sm shrink-0 ${overridden ? "text-(--ui-tone-accent-fg)" : ""}`}
+          className="icon-sm shrink-0"
+          tone={overridden ? "accent" : undefined}
           strokeWidth={1.75}
         />
-        <span data-session-dirs-label className="min-w-0 truncate text-ui-micro">
+        <Text data-session-dirs-label size="micro" tone="inherit" truncate className="min-w-0">
           {label}
-        </span>
+        </Text>
       </Button>
       {open ? (
         <Popover
@@ -238,9 +240,9 @@ export function SessionDirsPicker({
           className="flex min-h-0 flex-col p-1.5"
         >
           <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-0.5">
-            <p className="text-ui-caption font-medium text-(--ui-text-secondary)">
+            <Text as="p" weight="medium">
               {mode === "project" ? t("Change project") : t("Folders for this session")}
-            </p>
+            </Text>
             {onProjectChange ? (
               <Button
                 variant="ghost"
@@ -270,12 +272,12 @@ export function SessionDirsPicker({
               const working = pathKey(path) === pathKey(workingDirectory);
               const details = (
                 <span className="flex min-w-0 flex-1 flex-col" title={path}>
-                  <span className="truncate text-ui-secondary text-(--ui-tone-neutral-fg)">
+                  <Text size="secondary" tone="neutral" truncate>
                     {basename(path) || prettyCwd(path)}
-                  </span>
-                  <span className="truncate text-ui-micro text-(--ui-text-secondary)">
+                  </Text>
+                  <Text size="micro" truncate>
                     {prettyCwd(path)}
-                  </span>
+                  </Text>
                 </span>
               );
               return mode === "project" ? (
@@ -291,9 +293,9 @@ export function SessionDirsPicker({
                   <Folder className="icon-sm shrink-0" />
                   {details}
                   {pathKey(path) === pathKey(project) ? (
-                    <span className="text-ui-caption text-(--ui-text-secondary)">
+                    <Text size="caption" tone="secondary">
                       {t("Current")}
-                    </span>
+                    </Text>
                   ) : null}
                 </Button>
               ) : (
@@ -306,9 +308,9 @@ export function SessionDirsPicker({
                       <>
                         {details}
                         {working ? (
-                          <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                          <Text size="caption" tone="secondary" className="shrink-0">
                             {t("Working folder")}
-                          </span>
+                          </Text>
                         ) : null}
                       </>
                     }
@@ -318,9 +320,9 @@ export function SessionDirsPicker({
               );
             })}
             {matching.length === 0 ? (
-              <p className="px-2 py-2 text-ui-caption text-(--ui-text-secondary)">
+              <Text as="p" size="caption" tone="secondary" className="px-2 py-2">
                 {t("No matching folders")}
-              </p>
+              </Text>
             ) : null}
           </div>
           <Button
@@ -336,13 +338,13 @@ export function SessionDirsPicker({
           </Button>
           {error ? <Alert tone="danger">{error}</Alert> : null}
           <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5">
-            <p className="min-w-0 flex-1 text-ui-micro leading-4 text-(--ui-text-secondary)">
+            <Text as="p" size="micro" tone="secondary" className="min-w-0 flex-1">
               {mode === "project"
                 ? t("Existing conversations open a new session in the chosen project.")
                 : overridden
                   ? t("Extra folders apply to this session from the next message.")
                   : t("Working folder included. Extra folders follow the project setting.")}
-            </p>
+            </Text>
             {overridden && mode === "folders" ? (
               <Button
                 variant="ghost"

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { Button } from "../../shared/ui/Button";
 import { Popover, type PopoverDismissReason } from "../../shared/ui/Popover";
+import { Text } from "../../shared/ui/Text";
 import { Wrench } from "../../shared/ui/icons";
 import { lazySurface } from "../../shared/ui/lazySurface";
 import { useDockedTools } from "./toolPaneState";
@@ -54,14 +55,16 @@ export function ConversationToolsButton({ tools }: { tools: ConversationTools })
           ignore="select, option, [data-dialog-popover]"
           role="dialog"
           aria-label={t("Conversation tools")}
-          className={`flex flex-col text-content ${expanded ? "h-[calc(100dvh-70px)]" : "h-[min(680px,80dvh)]"}`}
+          className={`flex flex-col ${expanded ? "h-[calc(100dvh-70px)]" : "h-[min(680px,80dvh)]"}`}
         >
-          <SessionHostTools
-            key={`${tools.cwd}:${tools.sessionId}`}
-            {...tools}
-            onExpand={() => setExpanded((value) => !value)}
-            onPresented={() => setOpen(false)}
-          />
+          <Text as="div" size="inherit" tone="primary" className="flex min-h-0 flex-1 flex-col">
+            <SessionHostTools
+              key={`${tools.cwd}:${tools.sessionId}`}
+              {...tools}
+              onExpand={() => setExpanded((value) => !value)}
+              onPresented={() => setOpen(false)}
+            />
+          </Text>
         </Popover>
       ) : null}
     </>

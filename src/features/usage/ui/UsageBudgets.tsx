@@ -302,10 +302,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
               </Alert>
             )}
             {pending && known ? (
-              <LoadingText
-                presentation="text"
-                className="text-ui-caption text-(--ui-text-secondary)"
-              >
+              <LoadingText presentation="text" size="caption" tone="secondary">
                 {t("Refreshing usage… Previous results remain visible.")}
               </LoadingText>
             ) : null}

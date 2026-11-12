@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -30,7 +31,7 @@ import { RefreshCw } from "../../../shared/ui/icons";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
-import { DateTimeField } from "../../../shared/ui/DateTimePicker";
+import { TimePicker } from "../../../shared/ui/TimePicker";
 import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
 import "./NotificationsSettings.css";
 
@@ -51,8 +52,7 @@ function DailySummaryTime({
   const [draft, setDraft] = useState({ source: saved, text: saved });
   if (draft.source !== saved) setDraft({ source: saved, text: saved });
   return (
-    <DateTimeField
-      mode="time"
+    <TimePicker
       label={t("Daily summary time")}
       hideLabel
       description=""
@@ -191,15 +191,17 @@ export function NotificationAlerts() {
               : t("Status unavailable");
   const permissionStatus = (
     <div className="notification-permission-message" role={permissionError ? "alert" : "status"}>
-      <div
-        className={notificationPermission === "denied" ? "text-(--ui-tone-warning-fg)" : undefined}
+      <Text
+        as="div"
+        size="inherit"
+        tone={notificationPermission === "denied" ? "warning" : "inherit"}
       >
         {!permissionError && !permissionPending && notificationPermission === "denied" ? (
           <NotificationsBlocked />
         ) : (
           permissionText
         )}
-      </div>
+      </Text>
       <Button
         variant="ghost"
         iconOnly

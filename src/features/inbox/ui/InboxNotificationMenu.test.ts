@@ -329,6 +329,20 @@ it("resumes muted projects without changing category choices or unmuted projects
   expect(button("Resume muted projects").disabled).toBe(true);
 });
 
+const pickTime = (hour: number, minute: number) => {
+  for (const [label, index] of [
+    ["Hour", hour],
+    ["Minute", minute],
+  ] as const)
+    act(() =>
+      document
+        .querySelectorAll<HTMLButtonElement>(
+          `[role="listbox"][aria-label="${label}"] [role="option"]`,
+        )
+        [index].click(),
+    );
+};
+
 it("opens custom timing from the duration submenu for all projects", async () => {
   const now = vi.spyOn(Date, "now").mockReturnValue(new Date(2030, 0, 15, 9).getTime());
   await openInboxMenu();
@@ -341,12 +355,7 @@ it("opens custom timing from the duration submenu for all projects", async () =>
   const day = document.querySelector<HTMLButtonElement>('button[data-date="2030-01-16"]');
   expect(day).not.toBeNull();
   act(() => day!.click());
-  const input = document.querySelector<HTMLInputElement>('input[placeholder="HH:mm"]');
-  expect(input).not.toBeNull();
-  act(() => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "12:00");
-    input!.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  pickTime(12, 0);
   act(() => button("Mute until then").click());
   expect(loadNotificationPreferences()).toEqual({
     "local:/repos/work": {

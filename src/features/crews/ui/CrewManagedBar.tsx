@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
@@ -32,12 +33,14 @@ export function CrewManagedBar({
       padding="none"
       className={`flex min-w-0 items-center gap-2 px-3 py-2 ${className ?? ""}`}
     >
-      <CrewRoleIcon role={managed.role} className="icon-sm shrink-0 text-(--ui-text-secondary)" />
+      <CrewRoleIcon role={managed.role} className="icon-sm shrink-0" tone="secondary" />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-ui-secondary font-medium">{managed.crewName}</span>
-        <span className="truncate text-ui-caption text-(--ui-text-secondary)">
+        <Text size="secondary" tone="inherit" weight="medium" truncate>
+          {managed.crewName}
+        </Text>
+        <Text truncate>
           {role} · {t("Managed from Crews")}
-        </span>
+        </Text>
       </span>
       <Button
         variant="primary"

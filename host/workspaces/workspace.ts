@@ -290,7 +290,13 @@ function hostFilePaths(root: string): Promise<string[]> {
 }
 
 /** Every file in the worktree, honoring .gitignore when it is a repository. */
-async function scanHostFilePaths(root: string): Promise<string[]> {
+async function scanHostFilePaths(
+  root: string,
+  repositories = new Set<string>(),
+): Promise<string[]> {
+  const actualRoot = await realpath(root);
+  if (repositories.has(actualRoot)) return [];
+  repositories.add(actualRoot);
   let paths: string[];
   let repository = false;
   try {
@@ -310,6 +316,30 @@ async function scanHostFilePaths(root: string): Promise<string[]> {
     // in file-opening results; both Git lists use the same relative coordinates.
     const deletedPaths = new Set(deleted.split("\0"));
     paths = listed.split("\0").filter((path) => path.length > 0 && !deletedPaths.has(path));
+    const staged = await git(root, ["ls-files", "-z", "--stage"], 8 * 1024 * 1024);
+    const submodules = new Set(
+      staged
+        .split("\0")
+        .filter((entry) => entry.startsWith("160000 "))
+        .map((entry) => entry.slice(entry.indexOf("\t") + 1)),
+    );
+    const expanded: string[] = [];
+    for (const path of paths) {
+      if (!path.endsWith("/") && !submodules.has(path)) {
+        expanded.push(path);
+        continue;
+      }
+      const child = path.replace(/\/+$/, "");
+      const childPath = workspacePath(root, child);
+      // Gitlinks and untracked nested repositories are directory records. Never
+      // follow a symlink out of the owning project's authorized filesystem root.
+      const info = await lstat(childPath).catch(() => undefined);
+      if (!info?.isDirectory() || info.isSymbolicLink()) continue;
+      const verified = await existingPath(root, child);
+      const nested = await scanHostFilePaths(verified, repositories);
+      expanded.push(...nested.map((file) => `${child}/${file}`));
+    }
+    paths = expanded;
   } else {
     paths = [];
     const pending = [""];
@@ -321,8 +351,18 @@ async function scanHostFilePaths(root: string): Promise<string[]> {
       for (const entry of entries) {
         if (entry.name === ".git" || entry.name === "node_modules") continue;
         const path = dir ? `${dir}/${entry.name}` : entry.name;
-        if (entry.isDirectory()) pending.push(path);
-        else if (entry.isFile()) paths.push(path);
+        if (entry.isDirectory()) {
+          const nestedRoot = resolve(root, path);
+          if (
+            await lstat(resolve(nestedRoot, ".git")).then(
+              () => true,
+              () => false,
+            )
+          ) {
+            const nested = await scanHostFilePaths(nestedRoot, repositories);
+            paths.push(...nested.map((file) => `${path}/${file}`));
+          } else pending.push(path);
+        } else if (entry.isFile()) paths.push(path);
       }
     }
   }

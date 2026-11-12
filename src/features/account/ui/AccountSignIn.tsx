@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -49,9 +50,9 @@ export function AccountSignIn({
       <section className={styles.section} aria-labelledby="account-signin">
         <SectionLabel labelId="account-signin">{t("Finish signing in")}</SectionLabel>
         <LoadingText delay={false}>{t("Waiting for your browser…")}</LoadingText>
-        <p className={styles.lead}>
+        <Text as="p" size="body" tone="secondary" className={styles.lead}>
           {t("Complete the sign-in in the browser window that opened, then return to bycoda.")}
-        </p>
+        </Text>
         <div className={styles.actions}>
           <Button variant="secondary" onClick={onCancel}>
             {t("Cancel")}
@@ -63,17 +64,17 @@ export function AccountSignIn({
   return (
     <section className={styles.section} aria-labelledby="account-signin">
       <SectionLabel labelId="account-signin">{t("bycoda account")}</SectionLabel>
-      <p className={styles.lead}>
+      <Text as="p" size="body" tone="secondary" className={styles.lead}>
         {t("An account is optional. Without one, bycoda works fully on this computer.")}
-      </p>
-      <ul className={styles.benefits}>
+      </Text>
+      <Text as="ul" size="body" tone="secondary" className={styles.benefits}>
         <li>{t("See your devices and active time everywhere")}</li>
         <li>{t("Choose which notifications reach you")}</li>
         <li>{t("Sign out lost devices remotely")}</li>
-      </ul>
-      <p className={styles.lead}>
+      </Text>
+      <Text as="p" size="body" tone="secondary" className={styles.lead}>
         {t("Your sessions, projects and settings stay on this computer either way.")}
-      </p>
+      </Text>
       {state.notice ? (
         <InlineMessage tone={state.notice === "declined" ? "neutral" : "warning"}>
           {noticeText(state.notice, state.message)}

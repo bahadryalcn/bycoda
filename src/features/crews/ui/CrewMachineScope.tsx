@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { t } from "../../../shared/i18n";
@@ -196,9 +197,9 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
                 error={createError || undefined}
                 onChange={(event) => setNewName(event.target.value)}
               />
-              <p className="min-w-0 break-words text-ui-caption text-(--ui-text-secondary)">
+              <Text as="p" className="min-w-0 break-words">
                 {t("Created in {p0}", { p0: parent })}
-              </p>
+              </Text>
             </form>
           </Modal>
         ) : null}

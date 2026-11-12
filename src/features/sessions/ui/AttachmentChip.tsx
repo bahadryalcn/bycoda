@@ -1,6 +1,9 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
 import { Link, X } from "../../../shared/ui/icons";
@@ -66,17 +69,21 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
       <span className={styles.fileIcon}>
         <AttachmentIdentity attachment={attachment} />
       </span>
-      <span className={styles.name}>{loading ? t("Loading…") : attachment.name}</span>
-      <span className={styles.metadata}>
+      <Text as="span" tone="inherit" weight="medium" truncate className={styles.name}>
+        {loading ? t("Loading…") : attachment.name}
+      </Text>
+      <Text size="caption" tone="secondary" truncate className={styles.metadata}>
         {attachment.missing ? (
-          <span className="text-(--ui-tone-warning-fg)">{t("missing")}</span>
+          <Text size="inherit" tone="warning">
+            {t("missing")}
+          </Text>
         ) : (
           <>
             {typeText}
             {size ? ` · ${size}` : ""}
           </>
         )}
-      </span>
+      </Text>
     </span>
   );
 
@@ -86,7 +93,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
         ref={thumbnailBox}
         data-attachment-chip={image ? "image" : "file"}
         data-attachment-kind={presentation.kind}
-        className={`group ${styles.card} ${image ? styles.image : styles.file}`}
+        {...surfaceAttributes(
+          { radius: "card" },
+          `group ${styles.card} ${image ? styles.image : styles.file}`,
+        )}
       >
         {image ? (
           <span className="relative flex size-full shrink-0">
@@ -127,7 +137,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
             {token && onInsertToken ? (
               <Button
                 motion="none"
-                className={`absolute bottom-1 left-1 ${styles.action}`}
+                {...motionAttributes(
+                  { transition: "opacity" },
+                  `absolute bottom-1 left-1 ${styles.action}`,
+                )}
                 size="sm"
                 iconOnly
                 label={t("Insert {p0} into the message", { p0: token })}
@@ -183,7 +196,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
             {token && onInsertToken ? (
               <Button
                 motion="none"
-                className={`absolute bottom-1 left-1 ${styles.action}`}
+                {...motionAttributes(
+                  { transition: "opacity" },
+                  `absolute bottom-1 left-1 ${styles.action}`,
+                )}
                 size="sm"
                 iconOnly
                 label={t("Insert {p0} into the message", { p0: token })}
@@ -205,7 +221,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
         {onRemove ? (
           <Button
             motion="none"
-            className={`absolute right-1 top-1 ${styles.action}`}
+            {...motionAttributes(
+              { transition: "opacity" },
+              `absolute right-1 top-1 ${styles.action}`,
+            )}
             size="sm"
             iconOnly
             label={t("Remove {p0}", { p0: attachment.name })}

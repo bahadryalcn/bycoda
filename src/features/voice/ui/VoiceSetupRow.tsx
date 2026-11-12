@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { Button } from "../../../shared/ui/Button";
@@ -56,7 +57,9 @@ export function VoiceSetupRow({
         </Badge>
         {detail ? (
           <InfoPopover label={t("Technical details")}>
-            <p className={styles.detail}>{detail}</p>
+            <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.detail}>
+              {detail}
+            </Text>
           </InfoPopover>
         ) : null}
         {!installing ? (
@@ -180,7 +183,9 @@ export function VoiceSetupRow({
                 </Row>
               </div>
             ))}
-            <p className={styles.hint}>{t("Leave a location empty to find it automatically.")}</p>
+            <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.hint}>
+              {t("Leave a location empty to find it automatically.")}
+            </Text>
             {visibleError ? (
               <SettingsFeedback state="error">{visibleError.message}</SettingsFeedback>
             ) : null}

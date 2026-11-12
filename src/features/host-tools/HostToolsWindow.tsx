@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
+import { Text } from "../../shared/ui/Text";
 import {
   readWorkspaceTransfer,
   restoreWorkspaceTransfer,
@@ -471,10 +473,20 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
     }
   };
   return (
-    <div className="host-tools-window body-glass tools-hub font-sans text-content">
-      <header className="tools-hub-header">
+    <Text
+      as="div"
+      size="inherit"
+      tone="primary"
+      {...surfaceAttributes(
+        { variant: "canvas-surface" },
+        "host-tools-window body-glass tools-hub font-sans",
+      )}
+    >
+      <header {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "tools-hub-header")}>
         <Wrench className="icon-sm" aria-hidden />
-        <span className="tools-hub-title">{t("Conversation tools")}</span>
+        <Text size="caption" tone="secondary" leading="inherit" className="tools-hub-title">
+          {t("Conversation tools")}
+        </Text>
         <div className="tools-hub-identity">
           <SearchableSelect
             hideLabel
@@ -572,11 +584,17 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           );
         })}
         {!currentPane ? (
-          <div className="tools-hub-empty">
+          <Text
+            size="caption"
+            tone="secondary"
+            leading="inherit"
+            as="div"
+            className="tools-hub-empty"
+          >
             {current ? (
-              <strong>
+              <Text size="inherit" tone="primary" weight="medium" leading="inherit" as="strong">
                 {toolsProjectName(current)} · {current.title}
-              </strong>
+              </Text>
             ) : null}
             <span>
               {t(
@@ -585,9 +603,9 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
                   : "No tools in this conversation",
               )}
             </span>
-          </div>
+          </Text>
         ) : null}
       </div>
-    </div>
+    </Text>
   );
 }

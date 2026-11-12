@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
@@ -162,9 +163,15 @@ export function SequenceStepEditor({
           />
         </div>
         {isEmail && selectedEmail && !selectedEmail.unsubscribeUrl ? (
-          <p className="audience-warning">
+          <Text
+            as="p"
+            size="secondary"
+            tone="warning"
+            leading="inherit"
+            className="audience-warning"
+          >
             {t("Email steps need an unsubscribe link. Add one to this email account first.")}
-          </p>
+          </Text>
         ) : null}
         <div>
           <Button variant="ghost" size="sm" disabled={disabled} onClick={onRemove}>

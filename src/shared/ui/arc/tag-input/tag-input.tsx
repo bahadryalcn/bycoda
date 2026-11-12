@@ -25,6 +25,8 @@ import {
 
 export interface TagInputProps {
   label: string;
+  /** Compact toolbar geometry; form remains the default for existing consumers. */
+  fieldVariant?: "form" | "compact";
   value?: string[];
   defaultValue?: string[];
   onValueChange?: (value: string[]) => unknown;
@@ -65,6 +67,7 @@ const defaultFormatTag = (tag: string) => tag;
 
 function TagInputControl({
   label,
+  fieldVariant = "form",
   value,
   defaultValue = [],
   onValueChange,
@@ -538,6 +541,7 @@ function TagInputControl({
   return (
     <div
       className={[styles.field, className].filter(Boolean).join(" ")}
+      data-variant={fieldVariant}
       role="group"
       aria-label={label}
     >

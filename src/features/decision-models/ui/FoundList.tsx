@@ -1,18 +1,20 @@
+import { connectedCandidate } from "../model/presentation";
+import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Progress } from "../../../shared/ui/Progress";
 import { InlineMessage } from "../../../shared/ui/InlineError";
-import type { DiscoveryCandidate } from "../model/decisionTypes";
+import type { DecisionSource, DiscoveryCandidate } from "../model/decisionTypes";
 import { candidateKindLabel } from "../model/decisionView";
 import { ErrorNotice } from "./ErrorNotice";
 import { CandidateKindIcon } from "./SourceIcon";
-
 /**
  * What the automatic scan found on this computer. Nothing is connected until the user presses Add.
  * The rescan action lives in the group header (DecisionModelsSettings); this renders the frame body.
  */
 export function FoundList({
+  sources = [],
   found,
   scanning,
   scanError,
@@ -21,6 +23,7 @@ export function FoundList({
   onScan,
   onAdd,
 }: {
+  sources?: DecisionSource[];
   found: DiscoveryCandidate[] | null;
   scanning: boolean;
   scanError: unknown;
@@ -29,7 +32,11 @@ export function FoundList({
   onScan: () => void;
   onAdd: (candidate: DiscoveryCandidate) => void;
 }) {
-  const items = found ?? [];
+  const items = [...(found ?? [])].sort(
+    (a, b) =>
+      Number(Boolean(connectedCandidate(a, sources))) -
+      Number(Boolean(connectedCandidate(b, sources))),
+  );
   const empty =
     found !== null && items.length === 0 && !scanning && scanError === null && !incomplete;
   return (
@@ -61,20 +68,31 @@ export function FoundList({
               <div className="flex min-w-0 items-center gap-3">
                 <CandidateKindIcon kind={candidate.kind} />
                 <div className="flex min-w-0 flex-col">
-                  <span className="text-ui-body truncate font-medium">{candidate.label}</span>
-                  <span className="text-ui-caption truncate text-(--ui-text-secondary)">
-                    {candidateKindLabel(candidate.kind)}
-                  </span>
+                  <Text size="body" tone="inherit" weight="medium" truncate>
+                    {candidate.label}
+                  </Text>
+                  <Text size="caption" tone="secondary" truncate>
+                    {connectedCandidate(candidate, sources)
+                      ? t("Already connected")
+                      : candidateKindLabel(candidate.kind)}
+                    {candidate.detail ? ` · ${candidate.detail}` : ""}
+                  </Text>
                 </div>
               </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={busy}
-                onClick={() => onAdd(candidate)}
-              >
-                {t("Add")}
-              </Button>
+              {connectedCandidate(candidate, sources) ? (
+                <Text size="caption" tone="secondary">
+                  {t("Connected")}
+                </Text>
+              ) : (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => onAdd(candidate)}
+                >
+                  {t("Add")}
+                </Button>
+              )}
             </li>
           ))}
         </ul>

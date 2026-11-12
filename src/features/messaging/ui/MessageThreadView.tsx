@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { formatAttachmentSize } from "../../../shared/i18n/format";
@@ -20,7 +21,7 @@ import styles from "./messages.module.css";
 
 function MessageBody({ body, onOpenLink }: { body: string; onOpenLink: (url: string) => void }) {
   return (
-    <div className={styles.bubble} dir="auto">
+    <Text as="div" size="body" tone="neutral" className={styles.bubble} dir="auto">
       {splitMessageText(body).map((part, index) =>
         part.kind === "link" ? (
           <Button
@@ -38,7 +39,7 @@ function MessageBody({ body, onOpenLink }: { body: string; onOpenLink: (url: str
           <span key={index}>{part.text}</span>
         ),
       )}
-    </div>
+    </Text>
   );
 }
 
@@ -54,27 +55,38 @@ function MessageItem({
     : message.author || message.authorAddress || t("Unknown");
   return (
     <li className={styles.message} data-outbound={message.outbound ? "true" : undefined}>
-      <span className={styles.meta}>
-        <span className="min-w-0 truncate font-medium" title={message.authorAddress || undefined}>
+      <Text size="micro" tone="secondary" leading="inherit" className={styles.meta}>
+        <Text
+          size="inherit"
+          tone="inherit"
+          truncate
+          weight="medium"
+          className="min-w-0"
+          title={message.authorAddress || undefined}
+        >
           {author}
-        </span>
+        </Text>
         {Number.isFinite(message.at) && message.at > 0 ? (
           <Timestamp value={message.at} className="shrink-0" />
         ) : null}
-      </span>
+      </Text>
       {message.body ? <MessageBody body={message.body} onOpenLink={onOpenLink} /> : null}
       {message.attachments.length > 0 ? (
         <ul className={styles.attachments} aria-label={t("Attachments")}>
           {message.attachments.map((attachment, index) => {
             const size = attachment.size ? formatAttachmentSize(attachment.size) : null;
             return (
-              <li
+              <Text
+                as="li"
+                size="micro"
+                tone="secondary"
+                truncate
                 key={`${attachment.name}:${index}`}
-                className="max-w-full truncate rounded-(--ui-radius-control) border border-(--ui-tone-neutral-border) px-1.5 text-ui-micro text-(--ui-text-secondary)"
+                className="max-w-full rounded-(--ui-radius-control) border border-(--ui-tone-neutral-border) px-1.5"
                 title={attachment.name}
               >
                 {size ? t("{p0} ({p1})", { p0: attachment.name, p1: size }) : attachment.name}
-              </li>
+              </Text>
             );
           })}
         </ul>
@@ -123,20 +135,25 @@ export function MessageThreadView({
       <header className="flex shrink-0 items-start gap-2 border-b border-(--ui-tone-neutral-border) px-4 py-2">
         <MessagingProviderMark
           provider={thread.provider}
-          className="mt-0.5 block icon-sm shrink-0 text-(--ui-text-secondary)"
+          tone="secondary"
+          className="mt-0.5 block icon-sm shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <Heading size="section" level={2} className="truncate" title={thread.title} dir="auto">
+          <Heading size="section" level={2} truncate title={thread.title} dir="auto">
             {thread.title || t("(No subject)")}
           </Heading>
-          <p
-            className="truncate text-ui-micro text-(--ui-text-secondary)"
+          <Text
+            as="p"
+            size="micro"
+            tone="secondary"
+            truncate
+
             title={thread.participants.join(", ")}
           >
             {thread.participants.length > 0
               ? t("{p0} · {p1}", { p0: thread.participants.join(", "), p1: accountLine })
               : accountLine}
-          </p>
+          </Text>
         </div>
         <Button
           iconOnly

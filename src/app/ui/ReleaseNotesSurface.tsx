@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { t, useLocale } from "../../shared/i18n";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
 import { releaseNotesMarkdown, type ReleaseNotesTabSource } from "../model/releaseNotes";
@@ -17,9 +18,9 @@ export function ReleaseNotesSurface({ source }: { source: ReleaseNotesTabSource 
             <AgentMarkdown text={markdown} streaming={false} />
           </SurfaceSelection>
         ) : (
-          <p className="text-ui-secondary text-(--ui-text-secondary)">
+          <Text as="p" size="secondary" tone="secondary">
             {t("Release notes for this version are not available in this build.")}
-          </p>
+          </Text>
         )}
       </article>
     </div>

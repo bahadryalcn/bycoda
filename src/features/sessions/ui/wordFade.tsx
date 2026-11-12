@@ -1,6 +1,7 @@
 import type { Element, ElementContent, Root } from "hast";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { usePresentationVisible } from "./presentationVisibility";
+import { isWordFadeSpace as isSpace, WordFadeSegments } from "./wordFadeSegments";
 
 /*
  * Streaming prose, paced. Tokens land in uneven bursts; read straight off the
@@ -92,10 +93,6 @@ export function revealEnd(text: string, at: number, streaming: boolean): number 
   let end = text.length;
   while (end > 0 && !isSpace(text.charCodeAt(end - 1))) end--;
   return end;
-}
-
-function isSpace(code: number): boolean {
-  return code === 32 || code === 10 || code === 9 || code === 13;
 }
 
 /**
@@ -380,17 +377,6 @@ function countTokens(text: string, from: number): number {
   return count;
 }
 
-function countWords(parent: Root | Element): number {
-  let count = 0;
-  for (const child of parent.children) {
-    if (child.type === "text") count += countTokens(child.value, 0);
-    else if (child.type === "element" && !UNFADED_TAGS.has(child.tagName)) {
-      count += countWords(child);
-    }
-  }
-  return count;
-}
-
 /**
  * Wraps the words that are still fading in a span that fades in as it is
  * added to the page; with no `freshWords` that is every word. A word already
@@ -403,42 +389,60 @@ function countWords(parent: Root | Element): number {
  * what stops a block's spans growing with its length.
  */
 export function rehypeWordFade(options?: WordFadeOptions) {
+  const segments: WordFadeSegments[] = [];
   return (tree: Root) => {
-    const total = countWords(tree);
+    let index = 0;
+    const prepared = new WeakMap<object, WordFadeSegments>();
+    const prepare = (parent: Root | Element): number => {
+      let count = 0;
+      for (const child of parent.children) {
+        if (child.type === "text") {
+          const segment = segments[index] || (segments[index] = new WordFadeSegments());
+          segment.update(child.value);
+          prepared.set(child, segment);
+          count += segment.count;
+          index++;
+        } else if (child.type === "element" && !UNFADED_TAGS.has(child.tagName))
+          count += prepare(child);
+      }
+      return count;
+    };
+    const total = prepare(tree);
+    segments.length = index;
     const firstFresh = options?.freshWords
       ? total - Math.min(options.freshWords(), MAX_FADING_WORDS)
       : -1;
     let seen = 0;
 
-    const wrap = (value: string): ElementContent[] => {
+    const wrap = (segment: WordFadeSegments): ElementContent[] => {
+      const { text: value, words } = segment;
       const out: ElementContent[] = [];
-      let plain = "";
-      for (const part of value.split(/(\s+)/)) {
-        if (!part) continue;
-        if (isSpace(part.charCodeAt(0)) || seen++ < firstFresh) {
-          plain += part;
-          continue;
-        }
-        if (plain) out.push({ type: "text", value: plain });
-        plain = "";
+      let end = 0;
+      const before = seen;
+      seen += words.length;
+      for (let i = Math.max(0, firstFresh - before); i < words.length; i++) {
+        const word = words[i];
+        if (word.start > end) out.push({ type: "text", value: value.slice(end, word.start) });
+        const ordinal = before + i + 1;
         out.push({
           type: "element",
-          tagName: `fade-w${seen}`,
+          tagName: `fade-w${ordinal}`,
           properties: {
             dataWordFade: "",
-            ...(options?.wordStyle ? { style: options.wordStyle(total - seen) } : {}),
+            ...(options?.wordStyle ? { style: options.wordStyle(total - ordinal) } : {}),
           },
-          children: [{ type: "text", value: part }],
+          children: [{ type: "text", value: value.slice(word.start, word.end) }],
         });
+        end = word.end;
       }
-      if (plain) out.push({ type: "text", value: plain });
+      if (end < value.length) out.push({ type: "text", value: value.slice(end) });
       return out;
     };
 
     const walk = (parent: Root | Element) => {
       const children: Array<Root["children"][number]> = [];
       for (const child of parent.children) {
-        if (child.type === "text") children.push(...wrap(child.value));
+        if (child.type === "text") children.push(...wrap(prepared.get(child)!));
         else {
           if (child.type === "element" && !UNFADED_TAGS.has(child.tagName)) {
             walk(child);

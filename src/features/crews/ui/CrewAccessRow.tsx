@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
@@ -24,9 +25,9 @@ export function CrewAccessRow({
       className="grid min-w-0 grid-cols-1 items-center gap-x-6 gap-y-1.5 @min-[44rem]/crew-editor:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]"
     >
       <div className="flex min-w-0 items-center justify-between gap-1">
-        <span className="whitespace-nowrap text-ui-body font-medium">
+        <Text size="body" tone="inherit" weight="medium" className="whitespace-nowrap">
           {t("Access for every member")}
-        </span>
+        </Text>
         {accessSupported ? (
           <AccessPicker
             value={policy.runtimeMode ?? "supervised"}
@@ -34,7 +35,7 @@ export function CrewAccessRow({
           />
         ) : null}
       </div>
-      <div className="flex min-w-0 items-center justify-between gap-2 text-ui-caption text-(--ui-text-secondary)">
+      <Text as="div" className="flex min-w-0 items-center justify-between gap-2">
         <span className="min-w-0">{t("Coordinator answers permission requests")}</span>
         <Switch
           aria-label={t("Coordinator answers permission requests")}
@@ -53,8 +54,8 @@ export function CrewAccessRow({
             )}
           </p>
         </InfoPopover>
-      </div>
-      <div className="flex min-w-0 items-center justify-between gap-2 text-ui-caption text-(--ui-text-secondary)">
+      </Text>
+      <Text as="div" className="flex min-w-0 items-center justify-between gap-2">
         <span className="min-w-0">{t("Allow provider sub-agents")}</span>
         <Switch
           aria-label={t("Allow provider sub-agents")}
@@ -68,7 +69,7 @@ export function CrewAccessRow({
             )}
           </p>
         </InfoPopover>
-      </div>
+      </Text>
     </section>
   );
 }

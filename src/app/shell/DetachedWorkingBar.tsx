@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
+import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
@@ -91,7 +93,10 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
     }`,
     icon: (
       <span
-        className={`size-1.5 rounded-full ${agent.issue === "failed" ? "bg-danger" : agent.issue === "retrying" ? "bg-warning" : agent.done ? "bg-(--ui-text-muted)" : agent.needsApproval ? "bg-warning" : agent.waiting ? "bg-(--ui-text-secondary)" : "bg-active"}`}
+        {...surfaceAttributes(
+          { radius: "pill" },
+          `size-1.5 ${agent.issue === "failed" ? "bg-danger" : agent.issue === "retrying" ? "bg-warning" : agent.done ? "bg-(--ui-text-muted)" : agent.needsApproval ? "bg-warning" : agent.waiting ? "bg-(--ui-text-secondary)" : "bg-active"}`,
+        )}
       />
     ),
   }));
@@ -111,7 +116,9 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
       }}
       className={`flex h-8 min-w-0 shrink-0 select-none items-center gap-2 border-b border-(--ui-pane-border) [padding-inline-start:0.75rem] ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
     >
-      <span className="text-ui-micro text-(--ui-text-secondary)">{t("Working")}</span>
+      <Text size="micro" tone="secondary">
+        {t("Working")}
+      </Text>
       <Button
         variant="ghost"
         motion="none"
@@ -134,8 +141,10 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         <span
           className={`size-1.5 shrink-0 rounded-full ${agents.some((agent) => agent.needsApproval) ? "bg-warning" : agents.some((agent) => !agent.done) ? "bg-active" : "bg-(--ui-text-muted)"}`}
         />
-        <span className="truncate">{summary}</span>
-        <ChevronDown className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
+        <Text size="inherit" tone="inherit" truncate>
+          {summary}
+        </Text>
+        <ChevronDown className="icon-xs shrink-0" tone="secondary" aria-hidden="true" />
       </Button>
       <div className="min-w-4 flex-1 self-stretch" aria-hidden="true" />
       {!IS_MAC ? <WindowControls /> : null}

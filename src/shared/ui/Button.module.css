@@ -697,6 +697,20 @@
   border-start-end-radius: var(--ui-control-radius);
   border-end-end-radius: var(--ui-control-radius);
 }
+/* `selection="plate"`: no dividers. Every segment is its own stacking context, and the
+   selected one is transparent, so the gliding ButtonGroupSelection is the only selected fill. */
+:global([data-button-group="joined"][data-selection="plate"]) > .control + .control::before {
+  display: none;
+}
+:global([data-button-group="joined"][data-selection="plate"])
+  > .control[data-button-tone][data-button-hierarchy] {
+  isolation: isolate;
+  border-radius: var(--ui-control-radius);
+}
+:global([data-button-group="joined"][data-selection="plate"])
+  > .control[data-button-tone][data-button-hierarchy][data-button-selected] {
+  background: transparent;
+}
 /* The ring is inset and raised, so neighbours and the outer boundary never clip it. */
 :global([data-button-group="joined"]) > .control:focus-visible {
   z-index: 1;

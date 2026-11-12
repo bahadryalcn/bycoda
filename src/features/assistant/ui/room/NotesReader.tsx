@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import type { AssistantNote } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -28,7 +29,14 @@ export function NotesReader({
           <Heading size="section" level={3}>
             {note.title}
           </Heading>
-          <Timestamp className={styles.readerMeta} value={note.updatedAt} prefix={t("Updated")} />
+          <Timestamp
+            className={styles.readerMeta}
+            size="caption"
+            tone="muted"
+            leading="inherit"
+            value={note.updatedAt}
+            prefix={t("Updated")}
+          />
         </div>
         <div className={styles.readerActions}>
           <Button variant="secondary" onClick={onEdit}>
@@ -41,23 +49,39 @@ export function NotesReader({
       </header>
       {daily ? (
         <>
-          <ol className={styles.timeline}>
+          <Text
+            as="ol"
+            size="secondary"
+            tone="inherit"
+            leading="normal"
+            className={styles.timeline}
+          >
             {lines.map((line, index) => (
               <li key={index} className={styles.entry}>
-                <span className={styles.entryTime}>{line.time ?? ""}</span>
+                <Text size="caption" tone="muted" leading="inherit" className={styles.entryTime}>
+                  {line.time ?? ""}
+                </Text>
                 <span>{line.text}</span>
               </li>
             ))}
-          </ol>
+          </Text>
           {lines.some((line) => line.time) && (
-            <p className={styles.readerMeta}>{t("Times are in UTC.")}</p>
+            <Text as="p" tone="muted" leading="inherit" className={styles.readerMeta}>
+              {t("Times are in UTC.")}
+            </Text>
           )}
         </>
       ) : (
         lines.length > 0 && (
-          <div className={styles.markdown}>
+          <Text
+            as="div"
+            size="secondary"
+            tone="primary"
+            leading="relaxed"
+            className={styles.markdown}
+          >
             <AgentMarkdown text={stripAssistantEventMarkers(note.body)} hardBreaks />
-          </div>
+          </Text>
         )
       )}
     </article>

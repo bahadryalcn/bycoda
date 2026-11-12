@@ -25,6 +25,7 @@ import {
 import { Folder } from "../../icons";
 import { observeResize } from "../../../lib/observeResize";
 import { motionTokens } from "../lib/motion-tokens";
+import { optionalTextAttributes, type TextRoles } from "../../Text";
 import styles from "./empty-state.module.css";
 
 /**
@@ -39,6 +40,8 @@ export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLElement>, "titl
   context?: EmptyStateContext;
   title?: string;
   description: ReactNode;
+  /** Description typography; unset preserves context-specific defaults. */
+  descriptionText?: TextRoles;
   action?: ReactNode;
   icon?: ReactNode;
   className?: string;
@@ -149,6 +152,7 @@ function HeightFrame({
 export function EmptyState({
   title,
   description,
+  descriptionText,
   action,
   icon,
   className,
@@ -202,7 +206,7 @@ export function EmptyState({
             </AnimatePresence>
           </h3>
         ) : null}
-        <p>
+        <p {...optionalTextAttributes(descriptionText ?? {})}>
           <AnimatePresence mode="popLayout" initial={false}>
             <Swap
               key={typeof description === "string" ? description : "content"}

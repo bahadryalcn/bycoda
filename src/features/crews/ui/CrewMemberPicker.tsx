@@ -1,5 +1,6 @@
+import { Text } from "../../../shared/ui/Text";
 import { useMemo, useState } from "react";
-import { Surface } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -99,9 +100,7 @@ export function CrewMemberPicker({
         onValueChange={(value) => onModeChange(value === "new" ? "new" : "library")}
       />
       {role ? (
-        <p className="text-ui-caption text-(--ui-text-secondary)">
-          {t("Added members join as {p0}.", { p0: roleLabel(role) })}
-        </p>
+        <Text as="p">{t("Added members join as {p0}.", { p0: roleLabel(role) })}</Text>
       ) : null}
       {mode === "library" ? (
         data.agents.length === 0 ? (
@@ -147,17 +146,20 @@ export function CrewMemberPicker({
               <div
                 role="group"
                 aria-label={t("Selected members")}
-                className="flex min-w-0 flex-col gap-1.5 rounded-(--ui-radius-card) bg-transparent p-2"
+                {...surfaceAttributes(
+                  { variant: "transparent" },
+                  "flex min-w-0 flex-col gap-1.5 rounded-(--ui-radius-card) p-2",
+                )}
               >
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2">
-                  <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
+                  <Text role="status">
                     {hiddenCount > 0
                       ? t("{p0} selected, {p1} hidden by filter", {
                           p0: picked.length,
                           p1: hiddenCount,
                         })
                       : t("{p0} selected", { p0: picked.length })}
-                  </span>
+                  </Text>
                   <span className="flex items-center gap-1">
                     {hiddenCount > 0 ? (
                       <Button variant="ghost" size="sm" onClick={clearFilters}>
@@ -180,7 +182,9 @@ export function CrewMemberPicker({
                         onClick={() => toggle(agent, false)}
                         className="max-w-48"
                       >
-                        <span className="truncate">{agent.name}</span>
+                        <Text size="inherit" tone="inherit" truncate>
+                          {agent.name}
+                        </Text>
                       </Button>
                     </li>
                   ))}
@@ -189,15 +193,13 @@ export function CrewMemberPicker({
             ) : null}
             {matches.length === 0 ? (
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 py-2">
-                <p className="text-ui-caption text-(--ui-text-secondary)">
-                  {t("No matching members.")}
-                </p>
+                <Text as="p">{t("No matching members.")}</Text>
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
                   {t("Clear filters")}
                 </Button>
               </div>
             ) : (
-              <ul aria-label={t("Member library")} className="flex flex-col gap-px">
+              <ul aria-label={t("Member library")} className="flex flex-col gap-0">
                 {matches.map((agent) => {
                   const checked = selected.includes(agent.id);
                   return (
@@ -208,9 +210,9 @@ export function CrewMemberPicker({
                         label={
                           <>
                             <span className="min-w-0 flex-1">
-                              <span className="block text-ui-body font-medium">
+                              <Text size="body" tone="inherit" weight="medium" className="block">
                                 <CrewMemberIdentity agent={agent} />
-                              </span>
+                              </Text>
                               <CrewMemberMeta
                                 agent={agent}
                                 catalog={data.catalog}
@@ -264,7 +266,8 @@ export function CrewMemberPicker({
               checked={saveToLibrary}
               onChange={(event) => onSaveToLibraryChange(event.target.checked)}
               label={t("Also save to member library")}
-              className="flex items-center gap-2 text-ui-body"
+              size="body"
+              className="flex items-center gap-2"
             />
             {saveToLibrary ? (
               <SegmentedControl

@@ -1,9 +1,11 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import type { FormEvent, ReactNode } from "react";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { DateTimeField } from "../../../shared/ui/DateTimePicker";
+import { TimePicker } from "../../../shared/ui/TimePicker";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -118,16 +120,23 @@ export function StewardForm({
       aria-label={draft.id ? t("Edit steward") : t("New steward")}
       aria-busy={saving}
       onSubmit={onSubmit}
-      className="task-ops-form"
+      {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, "task-ops-form")}
     >
       <FieldGroup variant="bare" disabled={saving} inert={saving}>
-        <div className="task-ops-fields">
+        <div {...surfaceAttributes({ frame: "none" }, "task-ops-fields")}>
           <Section title={t("Project")}>
             <SettingFrame>
               <SettingRow title={t("Project")}>
                 {draft.id ? (
                   // A steward stays with the project it was created for.
-                  <span className="task-ops-caption">{projectDisplayName(draft.cwd)}</span>
+                  <Text
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    className="task-ops-caption"
+                  >
+                    {projectDisplayName(draft.cwd)}
+                  </Text>
                 ) : (
                   <SearchableProjectPicker
                     cwd={draft.cwd}
@@ -138,7 +147,14 @@ export function StewardForm({
               </SettingRow>
               <SettingRow title={t("Runs on ").trim()}>
                 {machine ? (
-                  <span className="task-ops-caption">{machine}</span>
+                  <Text
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    className="task-ops-caption"
+                  >
+                    {machine}
+                  </Text>
                 ) : (
                   <InlineMessage tone="warning" live="assertive">
                     {TASK_MACHINE_ERROR}
@@ -198,10 +214,8 @@ export function StewardForm({
                 {draft.scheduleKind === "hourly" ? (
                   number(t("Minute"), draft.minute, 59, "minute", 0)
                 ) : (
-                  <DateTimeField
-                    mode="time"
+                  <TimePicker
                     hideLabel
-                    // The HH:mm placeholder is the hint.
                     description=""
                     label={t("Time")}
                     value={draft.time}
@@ -249,7 +263,8 @@ export function StewardForm({
                 {number(t("Pause at open suggestions"), draft.maxOpen, MAX_OPEN_LIMIT, "maxOpen")}
               </SettingRow>
               <Checkbox
-                className="task-ops-setting cursor-pointer justify-start text-ui-body"
+                className="task-ops-setting cursor-pointer justify-start"
+                size="body"
                 label={t("Start suggestions automatically")}
                 checked={draft.autoStart}
                 onChange={(event) => update("autoStart", event.target.checked)}
@@ -262,10 +277,17 @@ export function StewardForm({
               </div>
             </SettingFrame>
             {draft.autoStart ? (
-              <span role="status" className="task-ops-caption" data-tone="warning">
+              <Text
+                size="caption"
+                tone="warning"
+                leading="inherit"
+                role="status"
+                className="task-ops-caption"
+                data-tone="warning"
+              >
                 {t("Suggestions will run without you reviewing the idea first.")}
                 {t(" Each still waits for your review before it is merged.")}
-              </span>
+              </Text>
             ) : null}
           </Section>
         </div>
@@ -275,7 +297,7 @@ export function StewardForm({
           {error}
         </Alert>
       ) : null}
-      <div className="task-ops-footer">
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-ops-footer")}>
         <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
           {t("Cancel")}
         </Button>

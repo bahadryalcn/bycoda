@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Surface } from "../../../shared/ui/Surface";
@@ -20,21 +21,21 @@ export function RunningView({ progress }: { progress: ImportProgress }) {
   const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   return (
     <div className="flex flex-col gap-3 py-6" role="status">
-      <p className="text-ui-secondary font-medium">
+      <Text as="p" size="secondary" tone="inherit" weight="medium">
         {t("Importing ")}
         {progress.done.toLocaleString(locale)}
         {t(" of")} {progress.total.toLocaleString(locale)}…
-      </p>
+      </Text>
       <Progress compact value={percent} max={100} />
-      <p className="truncate text-ui-caption text-(--ui-text-secondary)">
+      <Text as="p" size="caption" tone="secondary" truncate>
         {progress.current ?? " "}
-      </p>
-      <p className="text-ui-micro text-(--ui-text-secondary)">
+      </Text>
+      <Text as="p" size="micro" tone="secondary">
         {progress.imported.toLocaleString(locale)}
         {t(" imported")}
         {progress.skipped > 0 ? t(" · {p0} skipped", { p0: progress.skipped }) : ""}
         {progress.failed.length > 0 ? t(" · {p0} failed", { p0: progress.failed.length }) : ""}
-      </p>
+      </Text>
     </div>
   );
 }
@@ -44,10 +45,10 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
   const { formatNumber } = useFormat();
   return (
     <div className="flex flex-col gap-3 py-4">
-      <p className="text-ui-body font-medium">
+      <Text as="p" size="body" tone="inherit" weight="medium">
         {summary.cancelled ? t("Import cancelled") : t("Import finished")}
-      </p>
-      <ul className="flex flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
+      </Text>
+      <Text as="ul" className="flex flex-col gap-1">
         <li>
           {plural(formatNumber, summary.imported, "conversation")}
           {t(" imported.")}
@@ -84,24 +85,26 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
             {t(" were large, so only their most recent part was imported.")}
           </li>
         ) : null}
-      </ul>
+      </Text>
       {summary.failed.length > 0 ? (
         <Surface
           variant="card"
           padding="sm"
           className="border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle)"
         >
-          <p className="text-(--ui-tone-danger-fg)">
+          <Text as="p" size="inherit" tone="danger">
             {plural(formatNumber, summary.failed.length, "conversation")}
             {t(" could not be imported")}
-          </p>
+          </Text>
           <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto">
             {summary.failed.map((failure) => (
-              <li key={candidateKey(failure.candidate)} className="text-(--ui-text-secondary)">
-                <span className="text-(--ui-tone-neutral-fg)">{failure.candidate.firstPrompt}</span>
+              <Text key={candidateKey(failure.candidate)} as="li" size="inherit" tone="secondary">
+                <Text size="inherit" tone="neutral">
+                  {failure.candidate.firstPrompt}
+                </Text>
                 {" — "}
                 {failure.error}
-              </li>
+              </Text>
             ))}
           </ul>
         </Surface>

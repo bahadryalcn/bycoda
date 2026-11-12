@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
 import { formatBytes } from "../../../../shared/i18n/format";
 import { Button } from "../../../../shared/ui/Button";
@@ -72,9 +73,9 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
         value={draftRecovery.selectedText ?? ""}
       />
       {draftRecovery.selectedSavedAt != null && (
-        <p className={styles.note}>
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.note}>
           {formatDate(draftRecovery.selectedSavedAt, { dateStyle: "medium", timeStyle: "short" })}
-        </p>
+        </Text>
       )}
       {draftRecovery.next && (
         <CollectionFooter

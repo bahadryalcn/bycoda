@@ -1,3 +1,4 @@
+import { Text } from "../../shared/ui/Text";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { InlineError } from "../../shared/ui/InlineError";
@@ -80,15 +81,15 @@ import { useTabGroupLogos } from "../../features/projects/hooks/useTabGroupLogos
 import { useProjectGroupMembers } from "../../features/projects/hooks/useProjectGroupMembers";
 import {
   loadProjectRailWidth,
+  PROJECT_RAIL_COMPACT_WIDTH,
   PROJECT_RAIL_WIDTH_DEFAULT,
   PROJECT_RAIL_WIDTH_MAX,
-  PROJECT_RAIL_WIDTH_MIN,
   saveProjectRailWidth,
 } from "../../features/settings/model/appearance";
 import { basename } from "../../platform/tauri/fs";
 import { IS_MAC } from "../../platform/tauri/platform";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
-import { formatInteger } from "../../shared/lib/numbers";
+import { DiffStat } from "../../shared/ui/DiffStat";
 import { pathKey, projectKey, projectName } from "../../shared/lib/paths";
 import {
   collectRailProjects,
@@ -144,7 +145,7 @@ import {
   useRemoteOpenTargets,
 } from "../../features/sync/model/syncRemoteProjects";
 import { LastSessionsSection, type RecentSessionsSource } from "./LastSessionsSection";
-import { DevModeIndicator, TabVisitNav } from "./TitleBar";
+import { TabVisitNav } from "./TitleBar";
 import {
   openAssistantRoom,
   useAssistantRoomLabel,
@@ -203,11 +204,15 @@ import {
 import { commitProjectRailOrder, useProjectRailData } from "./useProjectRailData";
 import { useRetainedWhileClosing } from "./useRetainedWhileClosing";
 
-/** The macOS window buttons take the top 78px, plus room for the panel toggle. */
-const PROJECT_RAIL_MAC_MIN = 112;
 /** Dismissal key for the Projects section shown open for the active project. */
 const PROJECTS_REVEAL_ID = "section:projects";
-const railMin = IS_MAC ? PROJECT_RAIL_MAC_MIN : PROJECT_RAIL_WIDTH_MIN;
+/**
+ * The wide rail is never dragged into a crushed layout: its minimum is the width where it
+ * goes icon-only (this also clears the macOS window buttons and panel toggle). A pointer drag
+ * released this far below it hands over to the compact rail instead.
+ */
+const railMin = PROJECT_RAIL_COMPACT_WIDTH;
+const RAIL_COLLAPSE_MARGIN = 40;
 
 // The rail goes icon-only below PROJECT_RAIL_COMPACT_WIDTH (140px). That is a
 // container query on `@container/rail`, so it follows a drag with no re-render.
@@ -250,6 +255,8 @@ type Props = {
   onOpenServers?: () => void;
   serversActive?: boolean;
   onTogglePanel?: () => void;
+  /** Called when a drag ends far below the minimum width; omit to only clamp at the minimum. */
+  onCollapse?: () => void;
   onSelectProject: (path: string) => void;
   onOpenProject: () => void | Promise<void>;
   /** Lets the user pick this machine's folder for a project only another machine has. */
@@ -318,6 +325,7 @@ export function ProjectRail({
   onOpenServers,
   serversActive = false,
   onTogglePanel,
+  onCollapse,
   onSelectProject,
   onOpenProject,
   onOpenSyncedProject,
@@ -365,6 +373,8 @@ export function ProjectRail({
     defaultWidth: PROJECT_RAIL_WIDTH_DEFAULT,
     initial: initialRailWidth,
     onCommit: commitRailWidth,
+    collapseBelow: railMin - RAIL_COLLAPSE_MARGIN,
+    onCollapse,
   });
   // Destructured: the compiler treats a direct `.setPaneRef` read as a ref access during render.
   const { setPaneRef: attachRailPane } = resize;
@@ -1245,7 +1255,6 @@ export function ProjectRail({
                     onDismissUpdate={onDismissUpdate}
                   />
                 </div>
-                <DevModeIndicator />
               </>
             ) : null}
           </>
@@ -1373,9 +1382,15 @@ function ProjectSection({
         onToggleCollapsed={onToggleCollapsed}
       />
       {items.length === 0 && emptyLabel && !drag.folded && !collapsed ? (
-        <p className="px-4 pb-1 text-ui-caption leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
+        <Text
+          as="p"
+          size="caption"
+          tone="secondary"
+          leading="tight"
+          className="px-4 pb-1 @max-[140px]/rail:hidden"
+        >
           {emptyLabel}
-        </p>
+        </Text>
       ) : null}
       <div
         hidden={drag.folded || collapsed}
@@ -1577,7 +1592,17 @@ function RemoteProjectSuggestion({
         ) : (
           <LinkIcon className="icon-md shrink-0" strokeWidth={1.75} />
         )}
-        <span className={nameClassName}>{project.name}</span>
+        <Text
+          as="span"
+          truncate
+          size="secondary"
+          tone="inherit"
+          weight="medium"
+          leading="tight"
+          className={nameClassName}
+        >
+          {project.name}
+        </Text>
       </Button>
     </>
   );
@@ -1776,9 +1801,10 @@ function ProjectGroupSection({
       <ActionHost
         selected={workspaceSelected}
         hoverReveal
+        tone="primary"
         data-group-row
         data-group-overview-open={overviewOpen || undefined}
-        className={`project-reorder-item group relative flex h-(--ui-control-height-compact) items-stretch rounded-md px-2 text-content @max-[140px]/rail:px-0 ${RAIL_DRAG_HANDLE}`}
+        className={`project-reorder-item group relative flex h-(--ui-control-height-compact) items-stretch rounded-md px-2 @max-[140px]/rail:px-0 ${RAIL_DRAG_HANDLE}`}
         ground={railBackgroundColor(headerBackground)}
         aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
         onPointerDown={(event) => {
@@ -1869,23 +1895,45 @@ function ProjectGroupSection({
               onClick={() => onSelect(workspaceRoot)}
               size="sm"
               // With its 1px border, this starts the name where a plain group's `ps-1` label does.
-              className="min-w-8 flex-1 justify-start ps-0.75 text-left"
+              className="min-w-8 flex-1 justify-start ps-1 text-left"
             >
-              <span className={nameClassName}>{group.name}</span>
+              <Text
+                as="span"
+                truncate
+                size="secondary"
+                tone="inherit"
+                weight="medium"
+                leading="tight"
+                className={nameClassName}
+              >
+                {group.name}
+              </Text>
             </Button>
           ) : (
-            <span className={`${nameClassName} ps-1`}>{group.name}</span>
+            <Text
+              as="span"
+              truncate
+              size="secondary"
+              tone="inherit"
+              weight="medium"
+              leading="tight"
+              className={`${nameClassName} ps-1`}
+            >
+              {group.name}
+            </Text>
           )}
           {group.workspaceFile && !locked ? (
             <Tooltip label={t("Workspace")}>
-              <span
+              <Text
                 role="img"
                 aria-label={t("Workspace")}
                 data-group-workspace-mark
-                className="grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[200px]/rail:hidden"
+                size="inherit"
+                tone="secondary"
+                className="grid size-4 shrink-0 place-items-center @max-[200px]/rail:hidden"
               >
                 <FolderTree className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
-              </span>
+              </Text>
             </Tooltip>
           ) : null}
           {group.workspaceFile && !locked && linkStatus ? (
@@ -1893,13 +1941,15 @@ function ProjectGroupSection({
               label={t("{p0}\nThe group was left as it is.", { p0: linkStatus.message })}
               wide
             >
-              <span
+              <Text
                 role="img"
                 aria-label={t("Linked workspace file problem: {p0}", { p0: linkStatus.message })}
-                className="grid size-4 shrink-0 place-items-center text-warning @max-[140px]/rail:hidden"
+                size="inherit"
+                tone="warning"
+                className="grid size-4 shrink-0 place-items-center @max-[140px]/rail:hidden"
               >
                 <AlertCircle className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
-              </span>
+              </Text>
             </Tooltip>
           ) : null}
         </div>
@@ -1923,13 +1973,15 @@ function ProjectGroupSection({
           <div data-action-slot="collapse" className="flex items-center gap-0.5">
             {group.workspaceFile && !locked && !linkStatus ? (
               <Tooltip label={t("Linked to {p0}", { p0: group.workspaceFile })} wide>
-                <span
+                <Text
                   role="img"
                   aria-label={t("Linked to {p0}", { p0: group.workspaceFile })}
-                  className="grid size-5 shrink-0 place-items-center text-(--ui-text-secondary)"
+                  size="inherit"
+                  tone="secondary"
+                  className="grid size-5 shrink-0 place-items-center"
                 >
                   <File className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
-                </span>
+                </Text>
               </Tooltip>
             ) : null}
             {localPaths.length > 0 || (workspaceRoot && !locked) ? (
@@ -2036,7 +2088,7 @@ function ProjectGroupSection({
             <div
               data-project-group-items
               // Members sit indented under the header, on a guide line below its chevron.
-              className="relative flex flex-col gap-px p-1 ps-5 before:absolute before:inset-y-1 before:start-5 before:w-px before:bg-(--ui-pane-border) @max-[140px]/rail:ps-1 @max-[140px]/rail:before:hidden"
+              className="relative flex flex-col gap-0 p-1 ps-5 before:absolute before:inset-y-1 before:start-5 before:w-px before:bg-(--ui-pane-border) @max-[140px]/rail:ps-1 @max-[140px]/rail:before:hidden"
               style={{ backgroundColor: railBackgroundColor(bodyBackground) }}
             >
               {members.map(({ kind, id }) => {
@@ -2072,8 +2124,7 @@ function ProjectGroupSection({
   );
 }
 
-const nameClassName =
-  "min-w-0 flex-1 truncate text-ui-secondary font-medium leading-tight @max-[140px]/rail:hidden";
+const nameClassName = "min-w-0 flex-1 @max-[140px]/rail:hidden";
 
 function ProjectCard({
   item,
@@ -2174,9 +2225,7 @@ function ProjectCard({
   ]
     .filter(Boolean)
     .join(", ");
-  const labelClassName = context
-    ? "min-w-0 max-w-[75%] truncate text-ui-secondary font-medium leading-tight @max-[140px]/rail:hidden"
-    : nameClassName;
+  const labelClassName = context ? "min-w-0 max-w-[75%] @max-[140px]/rail:hidden" : nameClassName;
   // The wide "+a -d" needs room: the compact indicator replaces it once the row itself is narrower than
   // this bucket (see projectRailRow.css). Fixed items sharing the row make the detail need more.
   const detailBucket = change
@@ -2191,12 +2240,13 @@ function ProjectCard({
       ref={(el) => sortable.setItemRef(item.path, el)}
       selected={selected || multiSelected}
       hoverReveal
+      tone="primary"
       data-project-path={item.path}
       ground={railBackgroundColor(headerBackground)}
       data-project-working={busy || undefined}
       data-multi-selected={multiSelected || undefined}
       data-project-row=""
-      className="reorder-item project-reorder-item group relative flex h-(--ui-control-height-compact) cursor-default touch-none items-stretch rounded-md px-2 text-content @max-[140px]/rail:px-0"
+      className="reorder-item project-reorder-item group relative flex h-(--ui-control-height-compact) cursor-default touch-none items-stretch rounded-md px-2 @max-[140px]/rail:px-0"
       onPointerDown={(event) => {
         if (multi?.active || event.ctrlKey || event.metaKey || event.shiftKey) return;
         if (event.button !== 0) return;
@@ -2320,18 +2370,36 @@ function ProjectCard({
             <TerminalSpinner />
           </span>
         ) : null}
-        <span className={labelClassName}>{name}</span>
+        <Text
+          as="span"
+          truncate
+          size="secondary"
+          tone="inherit"
+          weight="medium"
+          leading="tight"
+          className={labelClassName}
+        >
+          {name}
+        </Text>
         {context ? (
-          <span className="project-card-context min-w-0 flex-1 truncate text-ui-caption leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
+          <Text
+            size="caption"
+            tone="secondary"
+            leading="tight"
+            truncate
+            className="project-card-context min-w-0 flex-1 @max-[140px]/rail:hidden"
+          >
             {context}
-          </span>
+          </Text>
         ) : null}
         <span className="ms-auto flex min-w-0 shrink-0 items-center gap-1 @max-[140px]/rail:hidden">
           {remote && !showReconnect ? (
-            <span
+            <Text
               role="img"
               aria-label={connection}
-              className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[140px]/rail:hidden"
+              size="inherit"
+              tone="secondary"
+              className="relative grid size-4 shrink-0 place-items-center @max-[140px]/rail:hidden"
             >
               <Internet className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
               <StatusDot
@@ -2346,16 +2414,18 @@ function ProjectCard({
                 }
                 className="absolute right-0 bottom-0"
               />
-            </span>
+            </Text>
           ) : null}
           {muteStatus ? (
-            <span
+            <Text
               role="img"
               aria-label={muteStatus}
-              className="grid size-4 shrink-0 place-items-center text-warning @max-[140px]/rail:hidden"
+              size="inherit"
+              tone="warning"
+              className="grid size-4 shrink-0 place-items-center @max-[140px]/rail:hidden"
             >
               <BellOff className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
-            </span>
+            </Text>
           ) : null}
           {change ? (
             <span
@@ -2472,7 +2542,7 @@ function CompactLiveAgents({
   return (
     <section
       aria-label={t("{p0} agents", { p0: heading })}
-      className="hidden shrink-0 flex-col items-center gap-px px-2 pb-1 @max-[140px]/rail:flex"
+      className="hidden shrink-0 flex-col items-center gap-0 px-2 pb-1 @max-[140px]/rail:flex"
     >
       <Tooltip label={heading} details={[String(headlineCount)]} side="right">
         <div
@@ -2481,7 +2551,7 @@ function CompactLiveAgents({
           className="my-1 grid size-3 shrink-0 place-items-center"
         >
           {summary.headline === "attention" ? (
-            <CircleAlert className="icon-xs text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
+            <CircleAlert className="icon-xs" tone="warning" strokeWidth={1.75} />
           ) : (
             <StatusDot
               label={heading}
@@ -2491,7 +2561,7 @@ function CompactLiveAgents({
           )}
         </div>
       </Tooltip>
-      <div className="flex max-h-[30vh] w-full flex-col gap-px overflow-y-auto overscroll-none">
+      <div className="flex max-h-[30vh] w-full flex-col gap-0 overflow-y-auto overscroll-none">
         {agents.map((agent) => {
           const seed = projectName(agent.cwd);
           const key = projectKey(agent.cwd);
@@ -2566,23 +2636,22 @@ function ProjectGitChangeMark({ change }: { change: ProjectGitChange }) {
   return (
     <>
       {change.hasLines ? (
-        <span
+        <DiffStat
           data-git-detail=""
           aria-hidden="true"
-          className="items-center gap-1 whitespace-nowrap font-sans text-ui-micro font-medium tabular-nums"
-        >
-          {change.additions > 0 ? (
-            <span className="text-diff-add-fg">+{formatInteger(change.additions)}</span>
-          ) : null}
-          {change.deletions > 0 ? (
-            <span className="text-diff-del-fg">-{formatInteger(change.deletions)}</span>
-          ) : null}
-        </span>
+          additions={change.additions}
+          deletions={change.deletions}
+          size="micro"
+          weight="medium"
+          className="font-sans"
+        />
       ) : null}
-      <span
+      <Text
         data-git-compact=""
         aria-hidden="true"
-        className="items-center gap-0.5 text-(--ui-text-secondary)"
+        size="inherit"
+        tone="secondary"
+        className="items-center gap-0.5"
       >
         <FileDiff className="icon-xs shrink-0" strokeWidth={1.75} />
         {change.files > 0 ? (
@@ -2590,7 +2659,7 @@ function ProjectGitChangeMark({ change }: { change: ProjectGitChange }) {
             {projectGitCountLabel(change.files)}
           </Badge>
         ) : null}
-      </span>
+      </Text>
     </>
   );
 }

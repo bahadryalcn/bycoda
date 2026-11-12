@@ -32,7 +32,7 @@ it("installs the bundled guide where every provider can discover but not delete 
   expect(skill).toMatchObject({ scope: "user", source: "bycoda" });
   expect(skill?.description).toContain("bycoda");
   expect(() => deleteHostSkill(skill?.path, null, home)).toThrow(/cannot be deleted/);
-  for (const query of ["other sessions", "dev server", "crew"])
+  for (const query of ["bycoda-conversation", "bycoda-social", "bycoda-runtime-logs"])
     expect((await searchHarnessSkills(home, { query }, home)).skills[0]?.name).toBe("bycoda");
 });
 

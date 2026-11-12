@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { memo } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { formatRelativeTime } from "../../../shared/i18n/format";
@@ -57,33 +59,44 @@ const MessageThreadRow = memo(function MessageThreadRow({
         <span className="flex min-w-0 items-center gap-1.5">
           <MessagingProviderMark
             provider={thread.provider}
-            className="block icon-sm shrink-0 text-(--ui-text-secondary)"
+            tone="secondary"
+            className="block icon-sm shrink-0"
           />
-          <span
+          <Text
             dir="auto"
-            className={`min-w-0 flex-1 truncate text-ui-secondary leading-snug text-(--ui-tone-neutral-fg) ${unread ? "font-medium" : "font-normal"}`}
+            size="secondary"
+            tone="neutral"
+            leading="snug"
+            weight={unread ? "medium" : "regular"}
+            truncate
+            className="min-w-0 flex-1"
           >
             {title}
-          </span>
+          </Text>
           {time ? (
-            <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
+            <Text size="micro" tone="secondary" className="shrink-0 tabular-nums">
               {time}
-            </span>
+            </Text>
           ) : null}
           {unread ? <StatusDot tone="accent" label={t("Unread")} /> : null}
         </span>
         {preview ? (
-          <span
+          <ClampText
+            as="span"
+            lines={2}
+            expandable={false}
+            size="micro"
+            tone="secondary"
             dir="auto"
-            className="min-w-0 line-clamp-2 wrap-anywhere text-ui-micro text-(--ui-text-secondary)"
+            className="min-w-0 wrap-anywhere"
           >
             {preview}
-          </span>
+          </ClampText>
         ) : null}
         {source ? (
-          <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
+          <Text size="micro" tone="secondary" truncate className="min-w-0">
             {source}
-          </span>
+          </Text>
         ) : null}
       </Button>
     </ActionHost>

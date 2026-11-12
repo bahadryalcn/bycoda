@@ -22,8 +22,6 @@
 }
 .brandText {
   margin: 2px 0 0;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .kinds {
   display: grid;
@@ -46,20 +44,12 @@
   gap: 8px;
   flex-wrap: wrap;
 }
-.ratingLabel {
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
-}
 .stars {
   display: flex;
   gap: 2px;
 }
 .star.star {
   padding: 4px;
-  color: var(--ui-text-secondary);
-}
-.starOn.starOn {
-  color: var(--ui-tone-warning-fg);
 }
 .starOn svg {
   fill: currentColor;
@@ -69,6 +59,4 @@
   align-items: center;
   gap: 6px;
   margin: 0;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }

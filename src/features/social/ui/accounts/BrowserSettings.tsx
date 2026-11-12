@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Select } from "../../../../shared/ui/Select";
-import { Surface } from "../../../../shared/ui/Surface";
+import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
 import { Switch } from "../../../../shared/ui/Switch";
 import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import { StatusText } from "../common/StatusText";
@@ -68,12 +69,17 @@ export function BrowserSettings({
 
   if (!saved || !draft) {
     return (
-      <section className="social-card" aria-label={t("Browser")}>
+      <section
+        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+        aria-label={t("Browser")}
+      >
         <Heading size="item">{t("Browser")}</Heading>
         {loadError ? (
           <InlineMessage tone="danger">{loadError}</InlineMessage>
         ) : (
-          <p className="social-muted">{t("Loading…")}</p>
+          <Text as="p" tone="muted" leading="snug" className="social-muted">
+            {t("Loading…")}
+          </Text>
         )}
       </section>
     );
@@ -99,14 +105,17 @@ export function BrowserSettings({
       .catch(() => undefined);
 
   return (
-    <section className="social-card" aria-label={t("Browser")}>
+    <section
+      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      aria-label={t("Browser")}
+    >
       <Heading size="item">{t("Browser")}</Heading>
       {needsHuman ? (
         <p className="social-field-row">
           <StatusText status="needs_human" />
-          <span className="social-muted">
+          <Text as="span" tone="muted" leading="snug" className="social-muted">
             {t("Open the live view to finish the step that needs you.")}
-          </span>
+          </Text>
         </p>
       ) : null}
       <div className="social-field-row">
@@ -140,9 +149,9 @@ export function BrowserSettings({
           setDraft({ ...draft, desktopControl: { ...draft.desktopControl, allowed } })
         }
       />
-      <p className="social-card-description">
+      <Text as="p" tone="muted" leading="snug" className="social-card-description">
         {t("Desktop control runs only when you're away and on another computer.")}
-      </p>
+      </Text>
       {draft.desktopControl.allowed ? (
         <Select
           hideLabel

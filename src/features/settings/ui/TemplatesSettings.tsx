@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { TextField } from "../../../shared/ui/TextField";
@@ -240,7 +242,12 @@ export function TemplatesSettings() {
             </SettingsFeedback>
           ) : null}
           {!empty ? (
-            <div className="template-manager">
+            <div
+              {...surfaceAttributes(
+                { frame: "card", edge: "all", radius: "card" },
+                "template-manager",
+              )}
+            >
               <div className="template-manager-nav">
                 <SearchInput
                   appearance="field"
@@ -251,6 +258,9 @@ export function TemplatesSettings() {
                 />
                 <LiveText
                   className="template-manager-count"
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
                   text={
                     query.trim()
                       ? t("{p0} of {p1} templates", {
@@ -279,14 +289,19 @@ export function TemplatesSettings() {
                       onClick={() => setSelectedId(row.id)}
                     >
                       <span className="template-manager-item">
-                        <span className="template-manager-item-name">
+                        <Text as="span" size="inherit" tone="inherit" truncate>
                           {row.name || t("New template")}
-                        </span>
+                        </Text>
                         {row.trigger ? (
-                          <span className="template-manager-item-trigger">
+                          <Text
+                            size="caption"
+                            tone="secondary"
+                            leading="inherit"
+                            className="template-manager-item-trigger"
+                          >
                             {TRIGGER_PREFIX}
                             {normalizeTrigger(row.trigger)}
-                          </span>
+                          </Text>
                         ) : null}
                       </span>
                     </Button>

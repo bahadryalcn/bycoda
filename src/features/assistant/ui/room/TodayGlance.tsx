@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import type {
   AssistantActivity,
@@ -24,8 +25,19 @@ const CHART_HEIGHT = 120;
 function Tile({ value, caption, onOpen }: { value: number; caption: string; onOpen?: () => void }) {
   const body = (
     <>
-      <span className={styles.tileValue}>{value}</span>
-      <span className={styles.tileCaption}>{caption}</span>
+      <Text
+        as="span"
+        size="heading"
+        tone="inherit"
+        weight="medium"
+        leading="tight"
+        className={styles.tileValue}
+      >
+        {value}
+      </Text>
+      <Text size="caption" tone="muted" leading="inherit" className={styles.tileCaption}>
+        {caption}
+      </Text>
     </>
   );
   return (
@@ -55,7 +67,9 @@ function ChartBlock({
       <Heading size="item" level={3} className={styles.chartTitle}>
         {title}
       </Heading>
-      <p className={styles.muted}>{caption}</p>
+      <Text as="p" size="caption" tone="muted" leading="inherit" className={styles.muted}>
+        {caption}
+      </Text>
       <div className={styles.chartBody}>{children}</div>
     </div>
   );
@@ -126,7 +140,9 @@ export function TodayGlance({
               }))}
             />
           ) : (
-            <p className={styles.muted}>{t("No updates in the last 7 days")}</p>
+            <Text as="p" size="caption" tone="muted" leading="inherit" className={styles.muted}>
+              {t("No updates in the last 7 days")}
+            </Text>
           )}
         </ChartBlock>
         <ChartBlock title={t("Jobs by status")} caption={t("Jobs you can see")}>
@@ -142,7 +158,9 @@ export function TodayGlance({
               }))}
             />
           ) : (
-            <p className={styles.muted}>{t("No jobs yet")}</p>
+            <Text as="p" size="caption" tone="muted" leading="inherit" className={styles.muted}>
+              {t("No jobs yet")}
+            </Text>
           )}
         </ChartBlock>
       </div>

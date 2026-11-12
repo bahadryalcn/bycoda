@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -49,22 +50,30 @@ export function EditorConflictBar({
   ) : null;
   if (count === 0 && !canMarkResolved) return null;
   return (
-    <header
-      className="flex min-h-(--ui-control-height-compact) shrink-0 items-center justify-between gap-2 px-2 text-ui-caption"
+    <Text
+      as="header"
+      tone="inherit"
+      className="flex min-h-(--ui-control-height-compact) shrink-0 items-center justify-between gap-2 px-2"
       role="toolbar"
       aria-label={t("Merge conflicts")}
     >
       {count > 0 ? (
         <>
-          <span className="font-medium tabular-nums text-(--ui-tone-warning-fg)" role="status">
+          <Text
+            size="inherit"
+            tone="warning"
+            weight="medium"
+            className="tabular-nums"
+            role="status"
+          >
             {count === 1 ? t("1 conflict") : t("{p0} conflicts", { p0: count })}
-          </span>
+          </Text>
           <div className="flex items-center gap-1">
             {fileNote ? (
               <OverflowTooltip label={fileNote}>
-                <span className="mr-1 truncate text-[var(--ui-text-secondary)]" role="status">
+                <Text truncate size="inherit" tone="secondary" className="mr-1" role="status">
                   {fileNote}
-                </span>
+                </Text>
               </OverflowTooltip>
             ) : null}
             {nextFile}
@@ -101,20 +110,22 @@ export function EditorConflictBar({
       ) : (
         <>
           <OverflowTooltip label={error}>
-            <span className="min-w-0 truncate text-[var(--ui-text-secondary)]" role="status">
+            <Text size="inherit" tone="secondary" truncate className="min-w-0" role="status">
               {error ? (
-                <span className="text-(--ui-tone-danger-fg)">{error}</span>
+                <Text size="inherit" tone="danger">
+                  {error}
+                </Text>
               ) : (
                 t("All conflicts resolved")
               )}
-            </span>
+            </Text>
           </OverflowTooltip>
           <div className="flex shrink-0 items-center gap-1">
             {fileNote ? (
               <OverflowTooltip label={fileNote}>
-                <span className="truncate text-[var(--ui-text-secondary)]" role="status">
+                <Text truncate size="inherit" tone="secondary" role="status">
                   {fileNote}
-                </span>
+                </Text>
               </OverflowTooltip>
             ) : null}
             {nextFile}
@@ -134,6 +145,6 @@ export function EditorConflictBar({
           </div>
         </>
       )}
-    </header>
+    </Text>
   );
 }

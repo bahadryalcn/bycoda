@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useRef } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -114,9 +115,9 @@ export function SshJumpChainEditor({
         {t("Add jump host")}
       </Button>
       {value.length > 1 ? (
-        <p className="text-ui-caption text-(--ui-text-muted)">
+        <Text as="p" tone="muted">
           {t("Connections follow this order. Each hop requires its own trusted host key.")}
-        </p>
+        </Text>
       ) : null}
     </div>
   );

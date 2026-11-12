@@ -206,7 +206,7 @@ describe("linked work item update notice", () => {
     expect(notice?.classList.contains("bg-background-base/95")).toBe(false);
     expect(document.body.textContent).toContain("1 new comment");
     expect(notice?.querySelector('button[aria-label="Dismiss notice"]')).not.toBeNull();
-    expect(button("Open PR").classList.contains("truncate")).toBe(true);
+    expect(button("Open PR").hasAttribute("data-truncate")).toBe(true);
     act(() => button("Open PR").click());
     expect(onAcknowledge).toHaveBeenCalledTimes(1);
     expect(onOpenDiscussion).toHaveBeenCalledTimes(1);
@@ -271,7 +271,7 @@ describe("linked work item update notice", () => {
     });
 
     expect(document.body.textContent).toContain("Pull request merged");
-    expect(button("Archive session").querySelector("span.truncate")).not.toBeNull();
+    expect(button("Archive session").querySelector("span[data-truncate]")).not.toBeNull();
     await act(async () => button("Delete…").click());
     expect(onDeleteSession).toHaveBeenCalledTimes(1);
     expect(onAcknowledge).not.toHaveBeenCalled();

@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useState } from "react";
+import { Text } from "../../../../shared/ui/Text";
 import type { AssistantActivity } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { InlineError } from "../../../../shared/ui/InlineError";
@@ -44,14 +45,24 @@ export function JobDetailActivity({ jobId, request }: { jobId: string; request: 
     };
   }, [jobId, key]);
 
-  if (state.status === "loading") return <p className={styles.muted}>{t("Loading...")}</p>;
+  if (state.status === "loading")
+    return (
+      <Text as="p" leading="inherit" className={styles.muted}>
+        {t("Loading...")}
+      </Text>
+    );
   if (state.status === "error")
     return (
       <InlineError retry={{ onRetry: () => setAttempt((value) => value + 1) }}>
         {t(state.message)}
       </InlineError>
     );
-  if (!state.items.length) return <p className={styles.muted}>{t("No activity yet")}</p>;
+  if (!state.items.length)
+    return (
+      <Text as="p" leading="inherit" className={styles.muted}>
+        {t("No activity yet")}
+      </Text>
+    );
   return (
     <Timeline
       label={t("Activity")}

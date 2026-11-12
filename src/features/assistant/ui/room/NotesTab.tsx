@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type {
   AssistantNote,
@@ -120,18 +122,32 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                     <Heading size="item" level={3}>
                       {t("Daily summary")}
                     </Heading>
-                    <p className={styles.summaryMeta}>
+                    <Text
+                      as="p"
+                      size="caption"
+                      tone="muted"
+                      leading="inherit"
+                      className={styles.summaryMeta}
+                    >
                       {t("Saved daily summary · {p0}", {
                         p0: formatDate(dailySummary.snapshot.briefing.createdAt, {
                           dateStyle: "medium",
                           timeStyle: "short",
                         }),
                       })}
-                    </p>
-                    <p>{dailySummary.snapshot.briefing.text}</p>
-                    <p className={styles.summaryMeta}>
+                    </Text>
+                    <Text as="p" size="secondary" tone="inherit" leading="normal">
+                      {dailySummary.snapshot.briefing.text}
+                    </Text>
+                    <Text
+                      as="p"
+                      size="caption"
+                      tone="muted"
+                      leading="inherit"
+                      className={styles.summaryMeta}
+                    >
                       {t("Today's summary is reused after it is generated.")}
-                    </p>
+                    </Text>
                   </>
                 ) : (
                   <p>{t("Nothing new to report.")}</p>
@@ -139,12 +155,26 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
               </Surface>
             )}
           {!snapshot.capabilities.notes && (
-            <p className={styles.unavailable}>{t("Global notes are unavailable on this Host.")}</p>
+            <Text
+              as="p"
+              size="secondary"
+              tone="secondary"
+              leading="inherit"
+              className={styles.unavailable}
+            >
+              {t("Global notes are unavailable on this Host.")}
+            </Text>
           )}
           {visible.length > 0 && (
             <div className={styles.layout}>
               <div className={styles.listPane}>
-                <div className={styles.listHead}>
+                <Text
+                  as="div"
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  {...surfaceAttributes({ frame: "pane", edge: "block-end" }, styles.listHead)}
+                >
                   <Checkbox
                     label={
                       checkedNotes.length
@@ -174,7 +204,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                       </Button>
                     </>
                   )}
-                </div>
+                </Text>
                 <NotesList
                   notes={visible}
                   selectedId={selected?.id}

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import "./SettingsCollection.css";
@@ -39,9 +40,15 @@ export function CollectionToolbar({
       </div>
       {children ? <div className="settings-collection-tools">{children}</div> : null}
       {count ? (
-        <span role="status" className="settings-collection-count">
+        <Text
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          role="status"
+          className="settings-collection-count"
+        >
           {count}
-        </span>
+        </Text>
       ) : null}
     </div>
   );

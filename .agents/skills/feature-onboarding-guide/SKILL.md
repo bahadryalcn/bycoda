@@ -1,22 +1,17 @@
 ---
 name: feature-onboarding-guide
-description: "Change Quick setup, the Guide hub, guided tours and release highlights; add discoverable feature targets while preserving resumable progress and safe navigation."
+description: "Use when changing Quick setup, Guide, tours and highlights. Not for Settings navigation; see feature-settings."
 ---
 
 # Onboarding, Guide and highlights
-
-## When and scope
 
 Use for onboarding, Guide, Show me spotlights, welcome/resume tours and What is new markers. Tours teach existing controls; they do not grant permission or configure a project implicitly.
 
 ## Source starts
 
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
-
 - `src/features/onboarding/ui/OnboardingHost.tsx`: ownership of setup, Guide, offer, spotlight and tour surfaces.
 - `src/features/onboarding/model/`: guide actions/targets, tour state/steps and feature-highlight registry.
-- `src/features/onboarding/ui/GuidedTour.tsx`, `tourRunner.ts`, `UsageGuideDialog.tsx`: shared tour runner and card behavior.
+- `src/features/onboarding/ui/GuidedTour.tsx`, `src/features/onboarding/ui/tourRunner.ts`, `src/features/onboarding/ui/UsageGuideDialog.tsx`: shared tour runner and card behavior.
 - `src/app/workspace/control/useGuideActions.ts`, `src/app/shell/WhatsNewDialog.tsx`, `src/features/settings/ui/GeneralSettings.tsx`: entry points.
 
 ## Preserve
@@ -39,7 +34,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 Run `pnpm exec vitest run src/features/onboarding src/app/shell/WhatsNewDialog.test.ts`; use `node scripts/i18n/check-locales.mjs` for string changes and the applicable normal TypeScript check for code changes.
 Use `tests/browser/onboarding/onboarding.spec.ts` for real targets, focus and missing-project paths. Check offer suppression, Later, pause/resume, repeated completed tours, highlight baseline/seen state and reduced motion.
 
-## Read when needed
+## References
 
 - [Onboarding guide](../../../docs/guides/onboarding.md) for user-facing entry points and behavior.
 - [Surface map](references/surfaces.md) when changing tour state, targets or app entry points.

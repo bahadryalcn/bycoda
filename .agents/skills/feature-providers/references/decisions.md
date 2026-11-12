@@ -18,6 +18,8 @@ Owner: "let us not do the routing ourselves; whatever is most effective and cost
 
 Runtime guidance and agents tool descriptions list the selected subagent and advisor models, how to call them and their safety limits, but never steer the main model toward a model, a tool (native subagents or agents.*) or delegation itself. The main model decides whether delegating helps and picks the selected model that fits the task, usefulness first and cost second. The selection still bounds which models and accounts may run.
 
+Update 2026-11-12, owner: "I wanted it to do this without my saying so, that is the whole point ... it has to work the same way for everyone" (translated). Runtime guidance now tells the main model to delegate independent parts without being asked and to keep small, sequential or single-file work. It still never steers toward one selected model or tool. The preference lives in the product guidance, not in an owner's global rule files.
+
 ## Native subagents stay inside the selection
 
 Date: 2026-11-08
@@ -43,3 +45,15 @@ Date: 2026-11-10
 Owner: "we should support every model that comes after this too; we can't cut a release for that, I think our structure has a problem" (translated)
 
 The live CLI catalog is the source of truth for what a picker offers, and catalog probes run under the provider account new sessions use (a signed-out ambient profile lists only generic aliases). A version-gated fallback list is provisional: it never counts as a live catalog and never replaces one. Model-specific behaviour must generalize past its table: the Claude advisor table holds anchors only, and a release newer than every anchor of its family ranks just above that family's newest older anchor. Hand-maintained model tables are limited to legacy quirks and offline fallbacks.
+
+## Delegation continuations, effort and waits
+
+Date: 2026-11-12
+
+Owner: "OK, let's add these, and let us allow up to 16" (translated).
+
+`agents.reply` continues the same finished child session with its context and recorded
+model/account. Subagents use their model's default effort unless explicitly requested;
+advisors continue matching the parent's effort. This replaces effort inheritance for
+subagents. `agents.wait` accepts several runs and uses the existing provider-dependent
+long-wait deadline. Up to 16 subagents may run at once; the advisor limit stays one.

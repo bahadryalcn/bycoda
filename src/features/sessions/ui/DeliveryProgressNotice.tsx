@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { DeliveryReviewChoice, type DeliveryReviewOutcome } from "./DeliveryReviewChoice";
 import { useT } from "../../../shared/i18n";
@@ -53,12 +54,12 @@ export function DeliveryProgressIndicator({ sessionId = "" }: { sessionId?: stri
   const pending = deliveryIsPending(progress.stage);
   const label = t(labels[progress.stage]);
   return (
-    <span
+    <Text
+      size="inherit"
+      tone={pending ? "muted" : "success"}
       data-delivery-accepted={pending ? undefined : ""}
       data-delivery-pending={pending ? "" : undefined}
-      className={
-        pending ? "text-(--ui-text-muted)" : "delivery-accepted text-(--ui-tone-success-fg)"
-      }
+      className={pending ? undefined : "delivery-accepted"}
       title={label}
     >
       {pending ? (
@@ -70,7 +71,7 @@ export function DeliveryProgressIndicator({ sessionId = "" }: { sessionId?: stri
         <Check className="icon-sm" aria-hidden="true" />
       )}
       <LiveText className="sr-only" text={label} />
-    </span>
+    </Text>
   );
 }
 
@@ -192,24 +193,25 @@ export function DeliveryProgressNotice({
     finish();
   };
   return (
-    <div
-      className={`${embedded ? "px-1" : "px-4"} py-1 text-ui-caption text-(--ui-text-secondary)`}
-      data-delivery-progress={stage}
-    >
+    <Text as="div" className={`${embedded ? "px-1" : "px-4"} py-1`} data-delivery-progress={stage}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <LiveText
-          className="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere]"
+          className="min-w-0 flex-1 [overflow-wrap:anywhere]"
+          lines={2}
           text={t(summary)}
           mode={stage === "rejected" ? "assertive" : "polite"}
         />
       </div>
       {expandedDetail ? (
-        <p
-          className="mt-1 max-h-32 min-w-0 overflow-y-auto whitespace-pre-wrap text-(--ui-text-muted) [overflow-wrap:anywhere]"
+        <Text
+          as="p"
+          size="inherit"
+          tone="muted"
+          className="mt-1 max-h-32 min-w-0 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere]"
           data-delivery-details=""
         >
           {t(progress!.detail!)}
-        </p>
+        </Text>
       ) : null}
       {unknownRow && !clientState.queue.claim ? (
         <DeliveryReviewChoice
@@ -221,6 +223,6 @@ export function DeliveryProgressNotice({
         />
       ) : null}
       {resolveError ? <InlineError className="mt-1">{resolveError}</InlineError> : null}
-    </div>
+    </Text>
   );
 }

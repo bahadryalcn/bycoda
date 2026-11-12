@@ -1,18 +1,13 @@
 ---
 name: feature-inbox-jira
-description: "Change Jira Inbox lists, Kanban/backlog/sprints, issue opening, paging and moves while preserving board scope, drafts and transition permissions."
+description: "Use when changing Jira Inbox boards, sprints and issue moves. Not for credentials; see feature-inbox-settings."
 ---
 
 # Jira Inbox and board changes
 
-## When and scope
-
 Use for Jira work collection and board/detail interaction. Saved account/project/board configuration belongs to Inbox settings. Shared Inbox chrome also affects GitHub.
 
 ## Source starts
-
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
 
 - `src/features/inbox/ui/JiraBoardView.tsx`, `InboxView.tsx`, `InboxDetail.tsx`: board, collection and issue detail.
 - `src/features/inbox/model/jira.ts`, `jiraBoard.ts`, `jiraBoardProtocol.ts`: reads, identities and board operations.
@@ -38,7 +33,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 Run `pnpm exec vitest run src/features/inbox/ui/JiraBoardView.test.ts src/features/inbox/model/jiraBoard.test.ts src/features/inbox/model/jiraBoardProtocol.test.ts` plus changed Inbox/settings/native consumers.
 Use `tests/browser/inbox/jira-board.spec.ts` for real-pointer coverage; ensure detail opening is wired rather than a no-op callback. Cover below-threshold click, actual drag, touch pan, keyboard Move, narrow back and partial move failure.
 
-## Read when needed
+## References
 
 - [Jira integration](../../../docs/integrations/jira.md) for configured behavior and permissions.
 - [Inbox settings](../feature-inbox-settings/SKILL.md) for connection/scope changes; [GitHub](../feature-inbox-github/SKILL.md) for shared shell changes.

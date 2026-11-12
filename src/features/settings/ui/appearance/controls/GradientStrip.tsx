@@ -1,8 +1,10 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { ColorPickerPopover } from "../../../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../../../shared/ui/Popover";
+import { Text } from "../../../../../shared/ui/Text";
 import { SegmentedControl } from "../../../../../shared/ui/SegmentedControl";
 import { workspaceBackgroundImage } from "../../../../../shared/theme/workspaceBackground";
 import {
@@ -91,7 +93,10 @@ export function GradientStrip({
   const angleLocked = value.style !== "linear";
   return (
     <div className={styles.editor}>
-      <div className={styles.gradient} style={{ backgroundImage: workspaceBackgroundImage(value) }}>
+      <div
+        {...surfaceAttributes({ radius: "card", frame: "pane", edge: "all" }, styles.gradient)}
+        style={{ backgroundImage: workspaceBackgroundImage(value) }}
+      >
         {value.colors.map((color, index) => (
           <ColorStop
             key={index}
@@ -107,7 +112,9 @@ export function GradientStrip({
       </div>
       <div className={styles.controlRow}>
         <div className={styles.typeGroup}>
-          <span className={styles.label}>{t("Type")}</span>
+          <Text as="span" tone="muted" leading="inherit" className={styles.label}>
+            {t("Type")}
+          </Text>
           <SegmentedControl
             label={t("Gradient type")}
             value={value.style}
@@ -120,7 +127,9 @@ export function GradientStrip({
           />
         </div>
         <div className={styles.angleGroup}>
-          <span className={styles.label}>{t("Angle")}</span>
+          <Text as="span" tone="muted" leading="inherit" className={styles.label}>
+            {t("Angle")}
+          </Text>
           <div className={styles.dialOnly}>
             <AngleDial
               value={value.angle}
@@ -140,7 +149,9 @@ export function GradientStrip({
         </div>
       </div>
       <div className={styles.presetRow}>
-        <span className={styles.label}>{t("Presets")}</span>
+        <Text as="span" tone="muted" leading="inherit" className={styles.label}>
+          {t("Presets")}
+        </Text>
         <div className={styles.presets} aria-label={t("Background preset")}>
           {WORKSPACE_BACKGROUND_PRESETS.map((preset) => (
             <Button

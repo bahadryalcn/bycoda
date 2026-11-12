@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useMemo, useSyncExternalStore, type CSSProperties } from "react";
 import { t } from "../../../shared/i18n";
 import type { CrewTheme } from "../../settings";
@@ -99,12 +101,14 @@ export function CrewTablePortrait({
           ))}
         </svg>
         {hidden > 0 ? (
-          <span
-            className="absolute rounded-sm bg-(--ui-surface-panel) px-1 text-ui-caption font-medium text-(--ui-text-muted)"
+          <Text
+            tone="muted"
+            weight="medium"
+            {...surfaceAttributes({ radius: "sm" }, "absolute bg-(--ui-surface-panel) px-1")}
             style={SIGN_STYLE}
           >
             {`+${hidden}`}
-          </span>
+          </Text>
         ) : null}
       </div>
     </div>

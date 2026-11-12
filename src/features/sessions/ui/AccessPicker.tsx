@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { ChevronDown } from "../../../shared/ui/icons";
@@ -54,12 +55,16 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
         }}
       >
         <Icon
-          className={`icon-sm shrink-0 ${value === "full-access" ? "text-(--ui-tone-warning-fg)" : ""}`}
+          className="icon-sm shrink-0"
+          tone={value === "full-access" ? "warning" : undefined}
           strokeWidth={1.75}
         />
-        <span className="min-w-0 truncate">{RUNTIME_MODE_LABEL[value]}</span>
+        <Text size="inherit" tone="inherit" truncate className="min-w-0">
+          {RUNTIME_MODE_LABEL[value]}
+        </Text>
         <ChevronDown
-          className={`icon-xs shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""}`}
+          className={`icon-xs shrink-0 ${open ? "rotate-180" : ""}`}
+          tone="secondary"
           strokeWidth={1.75}
         />
       </Button>
@@ -73,9 +78,14 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
         onDismiss={(reason) => dismiss(reason === "escape")}
         footer={
           busy ? (
-            <p className="border-bs border-(--ui-tone-neutral-border) px-3 py-2 text-ui-micro font-normal leading-4 text-(--ui-text-secondary)">
+            <Text
+              as="p"
+              size="micro"
+              weight="regular"
+              className="border-bs border-(--ui-tone-neutral-border) px-3 py-2"
+            >
               {t("Access changes apply to the next turn. Stop and resend to apply them now.")}
-            </p>
+            </Text>
           ) : null
         }
       >

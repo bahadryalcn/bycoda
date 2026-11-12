@@ -149,3 +149,25 @@
     color: GrayText;
   }
 }
+
+/* Dense scales use one equal column per step and retain icon tooltips on narrow fields. */
+.root[data-compact] {
+  container: compact-segments / inline-size;
+  width: 100%;
+}
+.root[data-compact] .track {
+  width: 100%;
+}
+.root[data-compact] .button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: var(--space-1);
+}
+.root[data-compact] .label {
+  gap: var(--space-1);
+}
+@container compact-segments (max-width: 21rem) {
+  .root[data-compact] .copy {
+    display: none;
+  }
+}

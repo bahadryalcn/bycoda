@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
@@ -302,7 +303,8 @@ function ScopedTaskWorkflowControls({
                 />
               </div>
               <Checkbox
-                className="items-center gap-1 text-ui-caption"
+                className="items-center gap-1"
+                size="caption"
                 label={t("Required")}
                 checked={requirement.required !== false}
                 disabled={blocked}
@@ -369,10 +371,12 @@ function ScopedTaskWorkflowControls({
           ) : null}
         </div>
         {preflight ? (
-          <ul className="space-y-1 text-ui-micro">
+          <Text as="ul" size="micro" tone="inherit" className="space-y-1">
             {preflight.items.map((item) => (
               <li key={item.key} className="min-w-0 break-words">
-                <span className="font-medium">{t(item.label)}</span>
+                <Text weight="medium" size="inherit" tone="inherit">
+                  {t(item.label)}
+                </Text>
                 {": "}
                 {item.state === "ready"
                   ? t("Ready")
@@ -383,12 +387,12 @@ function ScopedTaskWorkflowControls({
                 {item.detail ? ` · ${item.detail}` : ""}
               </li>
             ))}
-          </ul>
+          </Text>
         ) : null}
         {message ? (
-          <p role="status" className="text-ui-micro text-(--ui-text-secondary)">
+          <Text as="p" size="micro" tone="secondary" role="status">
             {message}
-          </p>
+          </Text>
         ) : null}
         {error ? <InlineError>{error}</InlineError> : null}
       </div>

@@ -14,9 +14,7 @@ import {
   parsePorts,
 } from "../model/scanSettings";
 import { ErrorNotice } from "./ErrorNotice";
-
 type FieldErrors = { ports?: string; folders?: string };
-
 /** Extra ports and folders for the scan, saved through the discovery settings RPC. */
 export function ScanSettings({
   client,
@@ -37,14 +35,12 @@ export function ScanSettings({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
   const alive = useRef(true);
-
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
   }, []);
-
   useEffect(() => {
     void client.discovery.settings.get({}).then(
       (result) => {
@@ -64,9 +60,7 @@ export function ScanSettings({
     );
     return () => setLoadError(null);
   }, [client, attempt]);
-
   const dirty = ports !== saved.ports || folders !== saved.folders;
-
   const save = () => {
     if (!dirty) {
       setSaveError(null);
@@ -90,7 +84,6 @@ export function ScanSettings({
     }
     setFieldErrors(nextErrors);
     if (!portResult.ok || !folderResult.ok) return;
-
     setSaving(true);
     setSaveError(null);
     void client.discovery.settings
@@ -115,7 +108,6 @@ export function ScanSettings({
         },
       );
   };
-
   return (
     <>
       {loadError !== null ? (
@@ -123,7 +115,11 @@ export function ScanSettings({
           <ErrorNotice error={loadError} onRetry={() => setAttempt((value) => value + 1)} />
         </div>
       ) : null}
-      <Row label={t("Extra ports")} description={t("Local ports to check, separated by commas.")}>
+      <Row
+        stacked
+        label={t("Extra ports")}
+        description={t("Local ports to check, separated by commas.")}
+      >
         <TextField
           label={t("Extra ports")}
           hideLabel

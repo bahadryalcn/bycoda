@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
@@ -156,7 +157,11 @@ export function ReplyBox({ client, thread }: { client: SocialClient; thread: Soc
           </>
         }
       />
-      {prerequisite ? <p className="inbox-note">{prerequisite}</p> : null}
+      {prerequisite ? (
+        <Text as="p" size="caption" tone="muted" leading="inherit" className="inbox-note">
+          {prerequisite}
+        </Text>
+      ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
       {queued ? <InlineMessage tone="success">{t("Reply queued.")}</InlineMessage> : null}
       {confirmation.dialog}

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useRef, useState } from "react";
@@ -33,7 +34,7 @@ export function SshCertificateInspection({
   const revision = current.current.revision;
   const metadata = result?.revision === revision ? result.metadata : undefined;
   return (
-    <div className="flex flex-col gap-2 text-ui-caption">
+    <Text as="div" tone="inherit" className="flex flex-col gap-2">
       <div>
         <Button
           size="sm"
@@ -67,9 +68,9 @@ export function SshCertificateInspection({
       ) : null}
       {metadata ? (
         <Disclosure summary={t("Certificate details")}>
-          <p className="mbe-2 text-(--ui-text-muted)">
+          <Text as="p" size="inherit" tone="muted" className="mbe-2">
             {t("Inspection does not establish trust or enroll this certificate.")}
-          </p>
+          </Text>
           <DescriptionList size="sm">
             <DescriptionItem term={t("Certificate type")}>
               {metadata.certificateType}
@@ -88,6 +89,6 @@ export function SshCertificateInspection({
           </DescriptionList>
         </Disclosure>
       ) : null}
-    </div>
+    </Text>
   );
 }

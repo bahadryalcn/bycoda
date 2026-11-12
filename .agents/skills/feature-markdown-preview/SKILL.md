@@ -1,18 +1,13 @@
 ---
 name: feature-markdown-preview
-description: "Change Markdown Preview/Source composition, hidden editor visibility and scroll ownership while preserving exact source, editor state and specialized consumers."
+description: "Use when changing Markdown Preview/Source modes and scrolling. Not for Notes editing; see feature-notes."
 ---
 
 # Markdown preview and scroll changes
 
-## When and scope
-
 Use for file Markdown presentation and shared scroll/overview behavior. Notes owns its editable document and pane lifecycle; Git owns diff review controls. Editor retention/durability is a separate runtime contract.
 
 ## Source starts
-
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
 
 - `src/features/sessions/ui/MarkdownDocumentPreview.tsx`, `MarkdownModeToggle.tsx`: document presentation and mode visibility.
 - `src/features/files/ui/FileEditor.tsx`, `CodeMirrorEditor.tsx` and adjacent Markdown panes: mounted editor and save lifecycle.
@@ -38,9 +33,9 @@ directory. Follow current imports and callers; this map is not a completeness cl
 ## Focused checks
 
 Run `pnpm exec vitest run src/features/sessions/ui/MarkdownModeToggle.test.ts src/features/sessions/ui/MarkdownDocumentPreview.test.ts` and the changed file-editor/Notes/Skills consumers.
-Inspect long Markdown, code/tables, changed-source rulers, hidden-pane hit targets, native scrollbar/zoom and focus after Find. Use project tier screenshots for actual visual changes.
+Inspect long Markdown, code/tables, changed-source rulers, hidden-pane hit targets, native scrollbar/zoom and focus after Find.
 
-## Read when needed
+## References
 
 - [File presentation](../../../docs/guides/explorer-and-file-content.md) and [draft recovery](../../../docs/guides/editor-draft-recovery.md) for user-visible behavior.
 - [Notes](../feature-notes/SKILL.md) for editable document scope; [Source control](../feature-source-control/SKILL.md) for diff toolbar and preferences.

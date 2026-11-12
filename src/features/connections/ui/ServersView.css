@@ -2,7 +2,6 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  border-radius: var(--ui-control-radius);
 }
 .server-selection {
   display: flex;
@@ -66,7 +65,7 @@
   .server-list-row .server-identity {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 3px 8px;
+    gap: 4px 8px;
   }
   .server-selection {
     flex-basis: 32px;

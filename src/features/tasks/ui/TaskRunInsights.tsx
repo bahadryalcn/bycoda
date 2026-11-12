@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
@@ -33,11 +35,11 @@ export function TaskRunInsights({ task, onSaveEvaluation }: Props) {
   return (
     <>
       {!completeHistory ? (
-        <p className="text-ui-micro text-(--ui-tone-warning-fg)">
+        <Text as="p" size="micro" tone="warning">
           {t(
             "Earlier runs are missing from the usage history. Recorded readings are lower bounds.",
           )}
-        </p>
+        </Text>
       ) : null}
       <Disclosure className="min-w-0" variant="row" size="sm" summary={t("Run quality and usage")}>
         <DescriptionList columns="auto" size="sm">
@@ -55,11 +57,11 @@ export function TaskRunInsights({ task, onSaveEvaluation }: Props) {
             value={number(usage?.reportedCostUsd ?? null, 4)}
           />
         </DescriptionList>
-        <p className="text-ui-micro text-(--ui-text-secondary)">
+        <Text as="p" size="micro" tone="secondary">
           {t(
             "Includes recorded workers, reviewers and retries. Missing provider readings remain unknown; no billing estimate is inferred.",
           )}
-        </p>
+        </Text>
         {task.status === "done" || task.status === "review" ? (
           <EvaluationEditor
             key={`${task.id}:${task.runId ?? task.sessionId ?? "manual"}:${task.completedAt ?? task.startedAt ?? "unfinished"}`}
@@ -118,7 +120,8 @@ function EvaluationEditor({ task, onSaveEvaluation }: Props) {
       }}
     >
       <Checkbox
-        className="items-start gap-2 text-ui-caption"
+        className="items-start gap-2"
+        size="caption"
         label={t("I accept this result for quality comparison")}
         checked={accepted}
         disabled={busy}
@@ -150,16 +153,16 @@ function EvaluationEditor({ task, onSaveEvaluation }: Props) {
           />
         </div>
       </div>
-      <p className="text-ui-micro text-(--ui-text-secondary)">
+      <Text as="p" size="micro" tone="secondary">
         {t(
           "Saving an evaluation does not complete, approve or publish the task. Comparisons include only completed results you accepted.",
         )}
-      </p>
+      </Text>
       {error ? <InlineError>{error}</InlineError> : null}
       {message ? (
-        <p role="status" className="text-ui-caption">
+        <Text as="p" size="caption" tone="inherit" role="status">
           {message}
-        </p>
+        </Text>
       ) : null}
       <Button type="submit" loading={busy}>
         {t("Save evaluation")}
@@ -173,39 +176,42 @@ export function TaskMetricsComparison({ tasks }: { tasks: HostTask[] }) {
   const groups = taskMetricsComparisons(tasks);
   return (
     <section className="min-w-0 space-y-3" aria-label={t("Accepted work comparisons")}>
-      <p className="text-ui-caption text-(--ui-text-secondary)">
+      <Text as="p" size="caption" tone="secondary">
         {t(
           "Compare similar objectives and acceptance criteria. These are recorded outcomes, not a controlled model benchmark.",
         )}
-      </p>
+      </Text>
       {!groups.length ? (
-        <p className="text-ui-caption">
+        <Text as="p" size="caption" tone="inherit">
           {t("Accept a completed result and record your review to compare runs.")}
-        </p>
+        </Text>
       ) : (
         <ul className="space-y-3">
           {groups.map((group) => (
             <li
               key={group.key}
-              className="min-w-0 space-y-2 border-b border-(--ui-tone-neutral-border) pb-3"
+              {...surfaceAttributes(
+                { frame: "neutral", edge: "bottom" },
+                "min-w-0 space-y-2 border-(--ui-tone-neutral-border) pb-3",
+              )}
             >
-              <p className="break-words text-ui-caption font-medium">
+              <Text as="p" size="caption" tone="inherit" weight="medium" className="break-words">
                 {group.harness} · {group.model}
-              </p>
+              </Text>
               {group.workflowId ? (
-                <p className="break-words text-ui-micro text-(--ui-text-secondary)">
+                <Text as="p" size="micro" tone="secondary" className="break-words">
                   {t("Workflow {p0}, version {p1}", {
                     p0: group.workflowId,
                     p1: String(group.workflowVersion ?? t("Unknown")),
                   })}
-                </p>
+                </Text>
               ) : null}
               {Object.keys(group.modelSettings).length ? (
-                <p className="break-words text-ui-micro text-(--ui-text-secondary)">
+                <Text as="p" size="micro" tone="secondary" className="break-words">
                   {Object.entries(group.modelSettings)
                     .map(([key, value]) => `${key}: ${value}`)
                     .join(" · ")}
-                </p>
+                </Text>
               ) : null}
               <DescriptionList columns={2} size="sm">
                 <DescriptionItem term={t("Accepted results")}>
@@ -228,18 +234,18 @@ export function TaskMetricsComparison({ tasks }: { tasks: HostTask[] }) {
                 </DescriptionItem>
               </DescriptionList>
               {group.unknownTimeSamples || group.unknownTokenSamples || group.unknownCostSamples ? (
-                <p className="text-ui-micro text-(--ui-tone-warning-fg)">
+                <Text as="p" size="micro" tone="warning">
                   {t(
                     "Some usage readings are missing. Partial readings are not shown as complete totals.",
                   )}
-                </p>
+                </Text>
               ) : null}
               {group.criteriaVariants > 1 || group.objectiveVariants > 1 ? (
-                <p className="text-ui-micro text-(--ui-text-secondary)">
+                <Text as="p" size="micro" tone="secondary">
                   {t(
                     "This group contains different objectives or criteria. Review task comparability before drawing conclusions.",
                   )}
-                </p>
+                </Text>
               ) : null}
             </li>
           ))}

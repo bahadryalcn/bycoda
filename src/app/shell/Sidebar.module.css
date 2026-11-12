@@ -24,14 +24,17 @@
    their titles on the group name's line (header inset + mark + gap, less the row's own
    inset), so the hierarchy reads from alignment alone. */
 .folderChildren {
-  padding-block: 1px var(--space-1);
+  padding-block: 0 var(--space-1);
   padding-inline-start: 1.375rem;
 }
 
-/* Reserve the location's own width before allocating spare space to inline search. */
+/* Let the location use spare space and shrink only when the toolbar needs it. */
 .workspaceHeader > [data-pane-header-heading] {
-  flex-shrink: 0;
-  max-inline-size: 35%;
+  flex-shrink: 1;
+}
+
+.workspaceHeader > [data-pane-header-body] {
+  min-inline-size: fit-content;
 }
 
 /* Keep the location readable and every action reachable in narrow workspace panes. */
@@ -50,7 +53,6 @@
   }
 
   .workspaceHeader > [data-pane-header-heading] {
-    max-inline-size: none;
     grid-column: 2 / -1;
     grid-row: 1;
   }

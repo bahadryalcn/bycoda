@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -170,11 +171,11 @@ export function ProjectActionDialog({
         <div className="space-y-3 px-5 pb-4 pt-1">
           {!editing ? (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-ui-caption text-(--ui-text-muted)">
+              <Text size="caption" tone="muted" className="mr-1">
                 {suggestions.length
                   ? t("Scripts from {p0}", { p0: suggestions[0].source })
                   : t("Examples")}
-              </span>
+              </Text>
               {chips.map((preset) => (
                 <Button
                   type="button"
@@ -244,7 +245,8 @@ export function ProjectActionDialog({
             label={t("Command")}
             rows={2}
             monospace
-            className="resize-y leading-relaxed"
+            className="resize-y"
+            leading="relaxed"
             placeholder={t("e.g. pnpm dev, npm run dev, or bun test")}
             value={draft.command}
             onChange={(event) => setDraft({ ...draft, command: event.target.value })}
@@ -307,9 +309,9 @@ export function ProjectActionDialog({
           </div>
           {error ? <Alert tone="danger">{error}</Alert> : null}
           {missing ? (
-            <p className="text-ui-caption text-(--ui-text-muted)">
+            <Text as="p" size="caption" tone="muted">
               <LiveText text={missing} />
-            </p>
+            </Text>
           ) : null}
         </div>
       </form>

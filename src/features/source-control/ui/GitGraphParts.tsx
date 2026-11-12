@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useMemo } from "react";
@@ -70,10 +72,15 @@ export function GraphAvatar({
 }) {
   useLocale();
   return (
-    <span
+    <Text
+      as="span"
+      size="inherit"
+      tone="inherit"
+      weight="medium"
+      leading="none"
       aria-hidden
       title={name || t("Unknown author")}
-      className={`grid shrink-0 place-items-center rounded-full font-medium leading-none select-none ${className}`}
+      className={`grid shrink-0 place-items-center rounded-full select-none ${className}`}
       style={{
         width: size,
         height: size,
@@ -83,7 +90,7 @@ export function GraphAvatar({
       }}
     >
       {authorInitials(name)}
-    </span>
+    </Text>
   );
 }
 
@@ -108,13 +115,21 @@ function TagGlyph() {
 export function RefPill({ refInfo }: { refInfo: GraphRefChip }) {
   useLocale();
   return (
-    <span
+    <Text
+      as="span"
+      tone={refInfo.color ? "inherit" : "secondary"}
+      weight={refInfo.current ? "medium" : undefined}
+      leading="none"
       title={refTitle(refInfo)}
-      className={`flex h-4 min-w-0 shrink items-center gap-0.5 px-1.5 text-ui-caption leading-none ${
-        refInfo.kind === "tag" ? "rounded-(--ui-radius-control)" : "rounded-full"
-      } ${refInfo.color ? "" : "bg-(--ui-surface-muted) text-(--ui-text-secondary)"} ${
-        refInfo.current ? "font-medium ring-1 ring-(color:--ui-pane-border)" : ""
-      }`}
+      {...surfaceAttributes(
+        {
+          radius: refInfo.kind === "tag" ? undefined : "pill",
+          variant: refInfo.color ? undefined : "inset",
+        },
+        `flex h-4 min-w-0 shrink items-center gap-0.5 px-1.5 ${
+          refInfo.kind === "tag" ? "rounded-(--ui-radius-control)" : ""
+        }  ${refInfo.current ? "ring-1 ring-(color:--ui-pane-border)" : ""}`,
+      )}
       style={{
         maxWidth: PILL_MAX_PX,
         ...(refInfo.color
@@ -132,8 +147,10 @@ export function RefPill({ refInfo }: { refInfo: GraphRefChip }) {
       ) : (
         <GitBranch className="icon-xs shrink-0" strokeWidth={2} />
       )}
-      <span className="min-w-0 truncate">{refInfo.name}</span>
-    </span>
+      <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0">
+        {refInfo.name}
+      </Text>
+    </Text>
   );
 }
 
@@ -167,12 +184,18 @@ export function RefPills({
         <RefPill key={`${ref.kind}:${ref.name}`} refInfo={ref} />
       ))}
       {hidden.length > 0 ? (
-        <span
+        <Text
           title={hidden.map(refTitle).join("\n")}
-          className="flex h-4 shrink-0 items-center rounded-full bg-(--ui-surface-muted) px-1.5 text-ui-caption leading-none text-(--ui-text-secondary)"
+          size="caption"
+          tone="secondary"
+          leading="none"
+          {...surfaceAttributes(
+            { radius: "pill", variant: "inset" },
+            "flex h-4 shrink-0 items-center px-1.5",
+          )}
         >
           +{hidden.length}
-        </span>
+        </Text>
       ) : null}
     </span>
   );

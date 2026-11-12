@@ -83,7 +83,10 @@ export function BackgroundPreview({
             src={src}
             alt=""
             style={{
-              opacity: appearance.chatBackgroundEmptyOpacity,
+              opacity:
+                appearance.preferences?.chatBackgroundLayer === false
+                  ? 1
+                  : appearance.chatBackgroundEmptyOpacity,
               filter: `blur(${appearance.chatBackgroundBlur}px)`,
             }}
           />

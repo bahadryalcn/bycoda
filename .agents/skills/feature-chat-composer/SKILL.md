@@ -1,15 +1,13 @@
 ---
 name: feature-chat-composer
-description: "Change or debug message composition, send, queue, steer, stop, drafts, attachments, quick composer and provider handoff inputs."
+description: Use when changing message drafts, send, queue, steer and attachments. Not for chat preferences; see feature-chat-settings.
 ---
 
 # Chat composer
 
 Own input preparation and its UI state. Provider/account policy belongs to feature-providers; process and delivery authority to feature-host-runtime; current/worktree policy to feature-managed-workspaces. Dictation inserts unsent text through the composer boundary; voice owns recognition.
 
-## Source entry points
-
-Code paths below are repository-root relative.
+## Source starts
 
 - `src/features/sessions/ui/Composer.tsx`
 - `src/app/workspace/sessions/submit/`
@@ -22,7 +20,7 @@ Code paths below are repository-root relative.
 1. Trace the changed action through normal, edited-send, queued and quick-composer producers. Search labels, shortcut commands, attachment producers and callers before choosing scope.
 2. Follow the existing submit dispatcher, queue owner and session-owned draft store. For shortcut-only failures compare persisted keybinding, focus and suggestion-popover handling with the adjacent working action.
 3. Change the initiating control and its pending/error/retry behavior together with the existing Host operation when needed. Use one accepted request identity across uncertain retries.
-4. Exercise the affected send/queue/steer/stop paths, remount/account/model transitions, IME and attachment lifetime. Update the user guide when behavior changes.
+4. Exercise the affected send/queue/steer/stop paths, remount/account/model transitions, IME and attachment lifetime.
 
 ## Preserve
 
@@ -43,10 +41,13 @@ Code paths below are repository-root relative.
 - Citation snapshots persist with the draft outside the textarea, which holds only `[quoteN]` tokens (`citationTokens.ts`). Preserve them through remount, send rejection and retained input; removing one drops only its token and renumbers. Providers get the expanded input plus literal snapshots tagged with `ref`, so quotes never trigger file or skill expansion.
 - Citation previews: six words/80 graphemes; data intact.
 
-## Verification and references
+## Focused checks
 
 - Choose focused Composer keys/IME/draftOwnership/queueHeld, composerDraftStore and QuickComposer command suites from the surface map; add submit/queue/attachment tests only for the changed behavior.
 - Use the project UI matrix for changed surfaces. Send/lease/stop changes also need isolated Host/native execution; a layout fixture cannot establish real-provider delivery.
+
+## References
+
 - [Surface map](references/surfaces.md) and [decision provenance](references/decisions.md) for affected owners; re-search callers before broad changes.
 - [Handoff and attachment behavior](../../../docs/guides/chat-artifacts-and-connected-files.md)
 - [Workspace authority](../../../docs/reference/managed-workspaces.md)

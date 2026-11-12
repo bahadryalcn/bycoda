@@ -1,3 +1,4 @@
+import { Text } from "../../../../shared/ui/Text";
 import { useMemo } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
@@ -27,7 +28,16 @@ export type PeopleTableProps = {
 
 /** Date-only "Updated" caption (year only when it is not the current one); the full time is the title. */
 function UpdatedDate({ value }: { value: number }) {
-  return <Timestamp className="audience-caption audience-nowrap" value={value} format="date" />;
+  return (
+    <Timestamp
+      size="caption"
+      tone="muted"
+      leading="inherit"
+      className="audience-nowrap"
+      value={value}
+      format="date"
+    />
+  );
 }
 
 type PersonRow = { id: string; name: string; person: SocialPerson };
@@ -40,13 +50,21 @@ function PersonCell({ person, onOpen }: { person: SocialPerson; onOpen: (id: str
       <SocialAvatar name={person.name} size="sm" />
       <div className="audience-person-text">
         <OverflowTooltip label={person.name}>
-          <Button variant="link" size="sm" onClick={() => onOpen(person.id)}>
+          <Button variant="link" size="sm" truncate onClick={() => onOpen(person.id)}>
             {person.name}
           </Button>
         </OverflowTooltip>
         {caption ? (
           <OverflowTooltip label={caption}>
-            <span className="audience-caption audience-ellipsis">{caption}</span>
+            <Text
+              size="caption"
+              tone="muted"
+              leading="inherit"
+              truncate
+              className="audience-ellipsis"
+            >
+              {caption}
+            </Text>
           </OverflowTooltip>
         ) : null}
       </div>
@@ -59,7 +77,9 @@ function AccountsCell({ person }: { person: SocialPerson }) {
   return platforms.length ? (
     <PlatformMarks platforms={platforms} size="xs" />
   ) : (
-    <span className="audience-caption">{t("No account")}</span>
+    <Text as="span" tone="muted" leading="inherit">
+      {t("No account")}
+    </Text>
   );
 }
 

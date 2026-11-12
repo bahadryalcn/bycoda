@@ -1,4 +1,7 @@
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
+import { Check } from "../../../shared/ui/icons";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 
 /** One save/recovery vocabulary for the library editor and the session note panel. */
 export type NoteSaveState =
@@ -22,18 +25,52 @@ const LABELS: Record<NoteSaveState, string> = {
   saved: "Saved",
 };
 
-export function NoteSaveStatus({ state, className }: { state: NoteSaveState; className?: string }) {
+/** Recovery and errors take precedence over a pending or clean draft. */
+export function noteSaveState(state: {
+  deleting: boolean;
+  saveError: string | null;
+  titleError: string | undefined;
+  recovering: boolean;
+  saving: boolean;
+  dirty: boolean;
+}): NoteSaveState {
+  if (state.deleting) return "deleting";
+  if (state.saveError) return "failed";
+  if (state.titleError) return "attention";
+  if (state.recovering) return "recovering";
+  if (state.saving) return "saving";
+  return state.dirty ? "unsaved" : "saved";
+}
+
+export function NoteSaveStatus({
+  state,
+  className,
+  compact = false,
+}: {
+  state: NoteSaveState;
+  className?: string;
+  compact?: boolean;
+}) {
   useLocale();
   const attention = state === "failed" || state === "attention" || state === "conflict";
   return (
-    <span
+    <Text
+      size="caption"
+      tone={attention ? "danger" : "secondary"}
       role="status"
       data-note-save-state={state}
-      className={`note-save-status text-ui-caption ${
-        attention ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"
-      } ${className ?? ""}`}
+      className={`note-save-status ${className ?? ""}`}
     >
-      {t(LABELS[state])}
-    </span>
+      {compact && state === "saved" ? (
+        <Tooltip label={t("Saved")}>
+          <span>
+            <Check className="icon-sm" />
+            <span className="sr-only">{t("Saved")}</span>
+          </span>
+        </Tooltip>
+      ) : (
+        t(LABELS[state])
+      )}
+    </Text>
   );
 }

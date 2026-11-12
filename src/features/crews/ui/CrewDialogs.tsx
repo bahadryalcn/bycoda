@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
@@ -210,9 +211,9 @@ export function StartCrewDialog({
         {crew ? <CrewRosterSummary crew={crew} /> : null}
         {crew && data?.accessSupported ? (
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-ui-caption font-medium text-content">
+            <Text tone="primary" weight="medium">
               {t("Access for every member")}
-            </span>
+            </Text>
             <Surface variant="outline" padding="none" className="min-w-0">
               <AccessPicker
                 value={access}
@@ -238,13 +239,13 @@ export function StartCrewDialog({
           <Alert tone="danger">
             <p className="break-words [overflow-wrap:anywhere]">{error}</p>
             {startedRun?.coordinatorSessionId ? (
-              <p className="mt-1 text-ui-caption">
+              <Text as="p" tone="inherit" className="mt-1">
                 {t("The work was started. Retry opens its conversation.")}
-              </p>
+              </Text>
             ) : sameRequestRetry ? (
-              <p className="mt-1 text-ui-caption">
+              <Text as="p" tone="inherit" className="mt-1">
                 {t("Retry sends the same request, so the work is not started twice.")}
-              </p>
+              </Text>
             ) : null}
           </Alert>
         ) : null}
@@ -374,9 +375,9 @@ export function CrewDeleteDialog({
         {activeWork > 0 ? (
           <Alert tone="warning">{t("Stop this crew's running work before deleting it.")}</Alert>
         ) : (
-          <p className="text-ui-body">
+          <Text as="p" size="body" tone="inherit">
             {t("The crew definition is removed. Library members are kept.")}
-          </p>
+          </Text>
         )}
       </div>
     </Modal>

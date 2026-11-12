@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
@@ -190,125 +191,127 @@ export function TaskWorkspacePicker({
   };
 
   return (
-    <FieldGroup
-      legend={t("Working branch and worktree")}
-      hideLegend={headingHidden}
-      aria-busy={busy || fetching}
-      data-embedded={headingHidden || undefined}
-      className="task-workspace-fields"
-    >
-      {supported === false ? (
-        <p>{t("Update the selected host to choose a branch or worktree.")}</p>
-      ) : null}
-      {error ? (
-        <Alert tone="danger">
-          {error}
-          <Button
-            variant="ghost"
-            type="button"
-            loading={fetching}
-            disabled={disabled || busy}
-            onClick={() => setRevision((count) => count + 1)}
-          >
-            {t("Retry")}
-          </Button>
-        </Alert>
-      ) : null}
-      {inventory ? (
-        <>
-          <SearchableSelect
-            disabled={disabled || busy || fetching}
-            label={t("Base branch")}
-            value={value?.baseBranch ?? ""}
-            options={[
-              { value: "", label: t("Current project branch") },
-              ...inventory.branches.map((branch) => ({ value: branch, label: branch })),
-            ]}
-            onChange={(branch) =>
-              onChange({
-                ...value,
-                baseBranch: branch || undefined,
-                checkoutCwd: branch
-                  ? inventory.trees.find((tree) => tree.branch === branch)?.path
-                  : undefined,
-              })
-            }
-          />
-          <SearchableSelect
-            disabled={disabled || busy || fetching}
-            label={t("Worktree")}
-            value={value?.checkoutCwd ?? ""}
-            options={[
-              { value: "", label: t("Project checkout") },
-              ...inventory.trees.map((tree) => ({
-                value: tree.path,
-                label: `${tree.branch ?? t("Detached")} · ${tree.path}`,
-              })),
-            ]}
-            onChange={(path) =>
-              onChange({
-                ...value,
-                checkoutCwd: path || undefined,
-                baseBranch: path
-                  ? (inventory.trees.find((tree) => tree.path === path)?.branch ?? undefined)
-                  : undefined,
-              })
-            }
-          />
-          {value?.baseBranch &&
-          !inventory.trees.some((tree) => tree.branch === value.baseBranch) ? (
+    <Text as="div" size="caption" tone="inherit" leading="inherit" className="contents">
+      <FieldGroup
+        legend={t("Working branch and worktree")}
+        hideLegend={headingHidden}
+        aria-busy={busy || fetching}
+        data-embedded={headingHidden || undefined}
+        className="task-workspace-fields"
+      >
+        {supported === false ? (
+          <p>{t("Update the selected host to choose a branch or worktree.")}</p>
+        ) : null}
+        {error ? (
+          <Alert tone="danger">
+            {error}
             <Button
-              variant="secondary"
+              variant="ghost"
               type="button"
-              loading={creation === "existing"}
-              disabled={disabled || busy || fetching}
-              onClick={() => void create(true)}
+              loading={fetching}
+              disabled={disabled || busy}
+              onClick={() => setRevision((count) => count + 1)}
             >
-              {t("Create worktree for this branch")}
+              {t("Retry")}
             </Button>
-          ) : null}
-          <TextField
-            label={t("New integration branch")}
-            value={newName}
-            disabled={disabled || busy || fetching}
-            onChange={(event) => changeNewName(event.target.value)}
-            placeholder="goal/settings"
-            spellCheck={false}
-          />
-          <Button
-            variant="ghost"
-            type="button"
-            disabled={disabled || busy || fetching || !newName.trim()}
-            loading={creation === "new"}
-            onClick={() => void create(false)}
-          >
-            {t("Create a separate worktree")}
-          </Button>
-          {isolate === undefined ? null : (
-            <p>
-              {t(
-                isolate
-                  ? "Tasks start from committed changes. A separate integration worktree keeps the queue independent of edits in your project checkout."
-                  : "Direct tasks preserve existing uncommitted changes and write to the selected checkout.",
-              )}
-            </p>
-          )}
-          {branchName ? (
-            <TextField
-              label={t("Task branch name (optional)")}
-              value={value?.branchName ?? ""}
+          </Alert>
+        ) : null}
+        {inventory ? (
+          <>
+            <SearchableSelect
               disabled={disabled || busy || fetching}
-              onChange={(event) =>
-                onChange({ ...value, branchName: event.target.value || undefined })
+              label={t("Base branch")}
+              value={value?.baseBranch ?? ""}
+              options={[
+                { value: "", label: t("Current project branch") },
+                ...inventory.branches.map((branch) => ({ value: branch, label: branch })),
+              ]}
+              onChange={(branch) =>
+                onChange({
+                  ...value,
+                  baseBranch: branch || undefined,
+                  checkoutCwd: branch
+                    ? inventory.trees.find((tree) => tree.branch === branch)?.path
+                    : undefined,
+                })
               }
-              placeholder="mc/…"
+            />
+            <SearchableSelect
+              disabled={disabled || busy || fetching}
+              label={t("Worktree")}
+              value={value?.checkoutCwd ?? ""}
+              options={[
+                { value: "", label: t("Project checkout") },
+                ...inventory.trees.map((tree) => ({
+                  value: tree.path,
+                  label: `${tree.branch ?? t("Detached")} · ${tree.path}`,
+                })),
+              ]}
+              onChange={(path) =>
+                onChange({
+                  ...value,
+                  checkoutCwd: path || undefined,
+                  baseBranch: path
+                    ? (inventory.trees.find((tree) => tree.path === path)?.branch ?? undefined)
+                    : undefined,
+                })
+              }
+            />
+            {value?.baseBranch &&
+            !inventory.trees.some((tree) => tree.branch === value.baseBranch) ? (
+              <Button
+                variant="secondary"
+                type="button"
+                loading={creation === "existing"}
+                disabled={disabled || busy || fetching}
+                onClick={() => void create(true)}
+              >
+                {t("Create worktree for this branch")}
+              </Button>
+            ) : null}
+            <TextField
+              label={t("New integration branch")}
+              value={newName}
+              disabled={disabled || busy || fetching}
+              onChange={(event) => changeNewName(event.target.value)}
+              placeholder="goal/settings"
               spellCheck={false}
             />
-          ) : null}
-        </>
-      ) : supported && !error ? (
-        <LoadingText />
-      ) : null}
-    </FieldGroup>
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={disabled || busy || fetching || !newName.trim()}
+              loading={creation === "new"}
+              onClick={() => void create(false)}
+            >
+              {t("Create a separate worktree")}
+            </Button>
+            {isolate === undefined ? null : (
+              <p>
+                {t(
+                  isolate
+                    ? "Tasks start from committed changes. A separate integration worktree keeps the queue independent of edits in your project checkout."
+                    : "Direct tasks preserve existing uncommitted changes and write to the selected checkout.",
+                )}
+              </p>
+            )}
+            {branchName ? (
+              <TextField
+                label={t("Task branch name (optional)")}
+                value={value?.branchName ?? ""}
+                disabled={disabled || busy || fetching}
+                onChange={(event) =>
+                  onChange({ ...value, branchName: event.target.value || undefined })
+                }
+                placeholder="mc/…"
+                spellCheck={false}
+              />
+            ) : null}
+          </>
+        ) : supported && !error ? (
+          <LoadingText />
+        ) : null}
+      </FieldGroup>
+    </Text>
   );
 }

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
+import { ScrollArea } from "../../../../shared/ui/ScrollArea";
+import { Text } from "../../../../shared/ui/Text";
 import { t, useLocale } from "../../../../shared/i18n";
 import { Alert } from "../../../../shared/ui/Alert";
 import { Button } from "../../../../shared/ui/Button";
@@ -174,12 +176,28 @@ export function CrewsModelPools({ data }: { data: ProjectCrews }) {
           <EmptyState size="inline" kind="empty" description={t("No model pools yet.")} />
         ) : (
           <div className="settings-collection">
-            <div className="settings-collection-list max-h-none! overflow-visible!" role="list">
+            <ScrollArea
+              gutter="stable"
+              className="settings-collection-list max-h-none! overflow-visible!"
+              role="list"
+            >
               {pools.map((pool) => (
                 <div key={pool.id} role="listitem" className="settings-collection-row">
                   <div className="settings-collection-main">
-                    <div className="settings-collection-title min-w-0">{pool.name}</div>
-                    <div className="settings-collection-meta">{poolMeta(pool, data)}</div>
+                    <Text
+                      as="div"
+                      size="secondary"
+                      tone="primary"
+                      weight="medium"
+                      leading="normal"
+                      truncate
+                      className="settings-collection-title min-w-0"
+                    >
+                      {pool.name}
+                    </Text>
+                    <Text as="div" leading="normal" className="settings-collection-meta">
+                      {poolMeta(pool, data)}
+                    </Text>
                   </div>
                   <div className="settings-collection-actions shrink-0">
                     <Button
@@ -201,7 +219,7 @@ export function CrewsModelPools({ data }: { data: ProjectCrews }) {
                   </div>
                 </div>
               ))}
-            </div>
+            </ScrollArea>
           </div>
         )}
       </Group>

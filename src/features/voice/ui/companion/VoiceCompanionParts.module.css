@@ -19,21 +19,7 @@
   flex: 1 1 0;
   min-inline-size: 0;
 }
-.statusLine,
-.status .caption {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.statusLine {
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  line-height: 1.4;
-}
 .caption {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.4;
   overflow-wrap: break-word;
 }
 .scope {
@@ -55,7 +41,6 @@
   border-radius: var(--radius-pill);
   outline: 2px solid transparent;
   outline-offset: 2px;
-  transition: outline-color var(--motion-duration-standard) var(--motion-ease-standard);
 }
 .avatar:is([data-state="listening"], [data-state="thinking"]) {
   outline-color: var(--ui-tone-neutral-border);
@@ -80,10 +65,6 @@
   overflow: hidden;
   border-radius: var(--radius-pill);
   background: var(--ui-fill-subtle);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  line-height: 1;
 }
 .avatarMark:empty::before {
   content: attr(data-initial);
@@ -93,11 +74,6 @@
   inset-inline-end: 0;
   inset-block-end: 0;
   box-shadow: 0 0 0 2px var(--ui-surface-floating);
-}
-@media (prefers-reduced-motion: reduce) {
-  .avatar {
-    transition: none;
-  }
 }
 
 .chat {
@@ -123,8 +99,6 @@
   max-inline-size: 85%;
   padding: 6px 10px;
   border-radius: var(--ui-radius-popup);
-  font-size: var(--ui-font-secondary);
-  line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -165,9 +139,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 8px;
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: var(--radius-panel);
-  background: var(--ui-surface-floating);
   box-shadow: var(--ui-elevation-floating);
   animation: voice-side-in var(--motion-duration-standard) var(--motion-ease-standard);
   --voice-side-from: -12px 0;
@@ -197,12 +168,59 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 8px 10px;
-  border-block-start: 1px solid var(--ui-tone-neutral-border);
 }
 
 /* Resize grip in the header: drag outward and up; the icon points the way it resizes. */
 .resize {
   cursor: nesw-resize;
+  touch-action: none;
+}
+.resizeEdge {
+  position: absolute;
+  z-index: var(--layer-pane-sheet);
+  touch-action: none;
+  user-select: none;
+}
+.resizeEdge[data-resize-direction="n"],
+.resizeEdge[data-resize-direction="s"] {
+  left: 12px;
+  right: 12px;
+  height: 6px;
+  cursor: ns-resize;
+}
+.resizeEdge[data-resize-direction="e"],
+.resizeEdge[data-resize-direction="w"] {
+  top: 12px;
+  bottom: 12px;
+  width: 6px;
+  cursor: ew-resize;
+}
+.resizeEdge[data-resize-direction="ne"],
+.resizeEdge[data-resize-direction="nw"],
+.resizeEdge[data-resize-direction="se"],
+.resizeEdge[data-resize-direction="sw"] {
+  width: 12px;
+  height: 12px;
+}
+.resizeEdge[data-resize-direction="ne"],
+.resizeEdge[data-resize-direction="sw"] {
+  cursor: nesw-resize;
+}
+.resizeEdge[data-resize-direction="nw"],
+.resizeEdge[data-resize-direction="se"] {
+  cursor: nwse-resize;
+}
+.resizeEdge[data-resize-direction*="n"] {
+  top: 0;
+}
+.resizeEdge[data-resize-direction*="s"] {
+  bottom: 0;
+}
+.resizeEdge[data-resize-direction*="e"] {
+  right: 0;
+}
+.resizeEdge[data-resize-direction*="w"] {
+  left: 0;
 }
 .resize[data-side="left"] {
   cursor: nwse-resize;

@@ -111,7 +111,7 @@ describe("providers scope inheritance", () => {
       await pick("Codex default permissions", "Full access");
       // Nothing is written until Save; the bar counts what is pending.
       expect(providerSessionDefaults("codex").effort).toBeUndefined();
-      expect(container.querySelector(".provider-save-bar")?.textContent).toContain(
+      expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
         "2 unsaved changes",
       );
       await clickButton("Save");
@@ -121,7 +121,7 @@ describe("providers scope inheritance", () => {
         extras: productExtras,
       });
       const savedButton = container.querySelector<HTMLButtonElement>(
-        '.provider-save-bar button[aria-label="Saved"]',
+        '.provider-defaults-save-bar button[aria-label="Saved"]',
       )!;
       expect(savedButton.textContent).toBe("Saved");
       expect(savedButton.getAttribute("aria-disabled")).toBe("true");
@@ -150,9 +150,18 @@ describe("providers scope inheritance", () => {
   async function pick(label: string, optionLabel: string) {
     const trigger = container.querySelector<HTMLButtonElement>(`[aria-label^="${label}"]`)!;
     expect(trigger).toBeTruthy();
+    const radio =
+      trigger.querySelector<HTMLButtonElement>(`[role="radio"][aria-label="${optionLabel}"]`) ??
+      [...trigger.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((node) =>
+        node.textContent?.endsWith(optionLabel),
+      );
+    if (radio) {
+      await act(async () => radio.click());
+      return;
+    }
     await act(async () => trigger.click());
     const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
-      (node) => node.textContent?.trim() === optionLabel,
+      (node) => node.textContent?.trim().endsWith(optionLabel),
     )!;
     expect(option).toBeTruthy();
     await act(async () => option.click());
@@ -174,15 +183,25 @@ describe("providers scope inheritance", () => {
     await act(async () => button.click());
   }
   async function selectScope(label: string) {
-    const trigger = container.querySelector<HTMLButtonElement>(
-      '[aria-label^="Apply defaults to"]',
-    )!;
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Save in"]')!;
     await act(async () => trigger.click());
-    const option = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
-      (node) => node.querySelector(".truncate")?.textContent?.trim() === label,
+    const option = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    ).find((node) =>
+      [...node.closest("label")!.querySelectorAll("span")].some(
+        (span) => span.textContent?.trim() === label,
+      ),
     );
     expect(option).toBeTruthy();
     await act(async () => option!.click());
+    const global = document.querySelector<HTMLInputElement>(
+      '.provider-targets-list input[type="checkbox"]',
+    );
+    if (global?.checked) await act(async () => global.click());
+    const done = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.textContent === "Done",
+    );
+    await act(async () => done!.click());
   }
 
   it("keeps pending defaults across tabs until Save or Discard", async () => {
@@ -196,14 +215,16 @@ describe("providers scope inheritance", () => {
     await act(async () => tab("Models").click());
     expect(tab("Defaults").querySelector('[aria-label="Unsaved changes"]')).not.toBeNull();
     await act(async () => tab("Defaults").click());
-    expect(container.querySelector(".provider-save-bar")?.textContent).toContain(
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
       "1 unsaved change",
     );
     await clickButton("Discard");
     expect(container.querySelector(".provider-save-bar-status")).toBeNull();
-    expect(container.querySelector('.provider-save-bar button[aria-label="Saved"]')).toBeNull();
     expect(
-      [...container.querySelectorAll<HTMLButtonElement>(".provider-save-bar button")].find(
+      container.querySelector('.provider-defaults-save-bar button[aria-label="Saved"]'),
+    ).toBeNull();
+    expect(
+      [...container.querySelectorAll<HTMLButtonElement>(".provider-defaults-save-bar button")].find(
         (button) => button.textContent === "Save",
       )?.disabled,
     ).toBe(true);
@@ -238,4 +259,23 @@ describe("providers scope inheritance", () => {
       "Hidden globally",
     );
   });
+});
+
+it("separates Accounts from CLI and keeps setup rows mounted across tabs", async () => {
+  await render();
+  const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  expect(tabs.map((node) => node.textContent?.trim())).toEqual([
+    "Accounts",
+    "CLI",
+    "Defaults",
+    "Models",
+    "Decision models",
+  ]);
+  const row = container.querySelector('[data-setting-id="cli-path-codex"]')!;
+  expect(row.closest<HTMLElement>("[hidden]")).not.toBeNull();
+  await act(async () => tabs.find((node) => node.textContent === "CLI")!.click());
+  expect(row.closest("[hidden]")).toBeNull();
+  expect(container.querySelector(".provider-cli-container")?.hasAttribute("hidden")).toBe(true);
+  await act(async () => tabs.find((node) => node.textContent === "Accounts")!.click());
+  expect(container.querySelector('[data-setting-id="cli-path-codex"]')).toBe(row);
 });

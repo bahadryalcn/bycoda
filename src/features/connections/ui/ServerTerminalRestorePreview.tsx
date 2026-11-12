@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -34,12 +35,12 @@ export function ServerTerminalRestorePreview({
   const selectedTabs = restore.tabs.filter((tab) => selected.has(tab.tabId));
   if (!restore.tabs.length) return null;
   return (
-    <div className="flex flex-col gap-2 text-ui-caption">
-      <p className="text-(--ui-text-secondary)">
+    <Text as="div" tone="inherit" className="flex flex-col gap-2">
+      <Text as="p" size="inherit">
         {t(
           "Restored tabs reconnect only when you choose Connect. This opens a new shell; previous commands are not replayed.",
         )}
-      </p>
+      </Text>
       {error ? <InlineError>{error}</InlineError> : null}
       <div className="flex flex-wrap items-center gap-2">
         <Checkbox
@@ -51,11 +52,11 @@ export function ServerTerminalRestorePreview({
             setSelected(new Set(event.target.checked ? restore.tabs.map((tab) => tab.tabId) : []))
           }
         />
-        <span className="text-(--ui-text-muted)">
+        <Text size="inherit" tone="muted">
           {selectedTabs.length
             ? t("{p0} selected", { p0: selectedTabs.length })
             : t("Select saved SSH tabs")}
-        </span>
+        </Text>
         {selectedTabs.length ? (
           <Button
             variant="ghost"
@@ -96,15 +97,15 @@ export function ServerTerminalRestorePreview({
                 }}
               />
               <div className="min-w-0 flex-1 basis-32 break-all">
-                <p className="font-medium">
+                <Text as="p" size="inherit" tone="inherit" weight="medium">
                   {server?.name ?? tab.serverId}
                   {restore.tabs.filter((item) => item.serverId === tab.serverId).length > 1
                     ? ` · ${t("Tab {p0}", { p0: restore.tabs.slice(0, index + 1).filter((item) => item.serverId === tab.serverId).length })}`
                     : ""}
-                </p>
-                <p className="text-(--ui-text-muted)">
+                </Text>
+                <Text as="p" size="inherit" tone="muted">
                   {target ?? t(inventoryReady ? "Unavailable" : "Loading…")}
-                </p>
+                </Text>
               </div>
               {!server && inventoryReady ? <Badge size="sm">{t("Unavailable")}</Badge> : null}
               {server && target ? (
@@ -161,11 +162,11 @@ export function ServerTerminalRestorePreview({
             </div>
           }
         >
-          <p className="text-ui-body">
+          <Text as="p" size="body" tone="inherit">
             {t("Only saved tab references are removed. Servers and open terminals are kept.")}
-          </p>
+          </Text>
         </Modal>
       ) : null}
-    </div>
+    </Text>
   );
 }

@@ -4,10 +4,6 @@
 }
 .icons[data-compact] {
   flex-direction: column;
-  background: transparent;
-}
-.icons[data-compact]::after {
-  display: none;
 }
 .star {
   position: relative;

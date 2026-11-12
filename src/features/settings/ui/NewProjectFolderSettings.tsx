@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { t, useLocale } from "../../../shared/i18n";
@@ -62,9 +63,9 @@ export function NewProjectFolderGroup() {
         }
         feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
       >
-        <span className="min-w-0 truncate text-ui-caption text-(--ui-text-secondary)">
+        <Text size="caption" tone="secondary" truncate>
           {chosen ?? automatic}
-        </span>
+        </Text>
         <Button
           className="shrink-0"
           onClick={() =>

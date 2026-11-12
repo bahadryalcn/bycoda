@@ -1,18 +1,15 @@
 ---
 name: feature-workbench-design
-description: "Change workbench shell composition, pane/task/action clarity, rail and navigation without duplicating feature contracts or losing drafts, operation state and permission ownership."
+description: "Use when changing shell panes, rail and cross-feature navigation. Not for shared controls; see feature-shared-ui."
 ---
 
 # Workbench design changes
 
-## When and scope
-
-Use for product shell composition and cross-feature navigation clarity. Each domain skill owns its workflows; shared UI owns reusable controls and theme owns semantic roles. This is a routing guide, not a product-wide audit or delivery tracker.
+Own shell composition and cross-feature navigation clarity. Each domain skill owns its workflows; shared UI owns reusable controls and theme owns semantic roles. This is a routing guide, not a product-wide audit or delivery tracker.
 
 ## Source starts
 
-Full paths are repository-root relative; adjacent abbreviated names share the preceding
-directory. Follow current imports and callers; this map is not a completeness claim.
+Full paths are repository-root relative; adjacent abbreviated names share the preceding directory. Follow current imports and callers; this map is not a completeness claim.
 
 - `src/app/shell/`: title/menu/project rail/sidebar/window chrome.
 - `src/app/workspace/layout/`, `surfaces/`, `actions/`: panes, mounting, navigation and action wiring.
@@ -27,12 +24,9 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - Transcript parking budgets include retained tool details, previews, delegated output and inline data. Estimate without serializing large strings; active/approval ownership and durable conversation history stay independent from parked presentation eviction.
 - Keep independent pane/editable-region boundaries readable at rest; use compact tools, spacious reading and less decorative containment without erasing ownership.
 - Title/content/consequence lead metadata. Ordinary completed operations may summarize with detail available; active, failed, approval and recovery states stay discoverable.
-- Preserve navigation identity, mounted drafts, selections, widths/density, shortcuts/context menus, drag/drop and native window behavior.
-- Keep Settings outside the rail's scrolling content so its action stays visible in short windows, in both expanded and compact rails.
+- Preserve navigation identity, mounted drafts, selections, widths/density, shortcuts/context menus, drag/drop and native window behavior. Keep Settings outside the rail's scrolling content so its action stays visible in short windows, in both expanded and compact rails.
 - Use one clear activity state signal; optional figures do not replace operational state. Failed reads are unknown, not empty/idle/success.
-- Last Sessions is a collection view, separate from actual project and execution
-  checkout. Keep it open on session selection; Explorer/Changes follow the selected
-  session checkout. Project navigation exits the collection without losing drafts.
+- Last Sessions is a collection view, separate from actual project and execution checkout. Keep it open on session selection; Explorer/Changes follow the selected session checkout. Project navigation exits the collection without losing drafts.
 - Composition changes grant no Host, filesystem, Git, send or credential authority. Keep operation feedback with its initiating control or affected item.
 - Native workspace actions use `emit_to` and the scoped helpers in `src/platform/tauri/listenWindow.ts`. Unknown window identity must not widen a subscription to all windows. Preserve explicit shared-state broadcasts, registration readiness for event replies, and cleanup during pending registration.
 - Reload and unload act on the captured native page owner, never the global provider pool or remote Host turns. Keep reload confirmation for local running chats and dirty files, and retain the one-shot unload guard.
@@ -47,10 +41,9 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Focused checks
 
-Run focused tests for changed shell/workspace owners, such as `pnpm exec vitest run src/app/shell/SidebarRename.test.ts src/app/shell/SidebarPagination.test.ts`; add affected feature tests rather than a product-wide blanket suite.
-Inspect compact/wide rails, split/unsplit panes, native menu/window controls, long multilingual titles, keyboard/context actions and retained draft return. Follow project tier visual checks; source maps and handoffs are not runtime acceptance.
+Run focused tests for changed shell/workspace owners, such as `pnpm exec vitest run src/app/shell/SidebarRename.test.ts src/app/shell/SidebarPagination.test.ts`; add affected feature tests rather than a product-wide blanket suite. Inspect compact/wide rails, split/unsplit panes, native menu/window controls, long multilingual titles, keyboard/context actions and retained draft return. Follow project tier visual checks; source maps and handoffs are not runtime acceptance.
 
-## Read when needed
+## References
 
 - [Design language](../../../docs/reference/DESIGN.md) for product hierarchy and [Workbench guide](../../../docs/guides/workbench.md) for user behavior.
 - [Shared UI](../feature-shared-ui/SKILL.md) and [Theme](../feature-theme-foundation/SKILL.md) for reusable presentation.

@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
@@ -14,6 +16,14 @@ const STATUS: Record<VoiceToolActivityEntry["state"], string> = {
   returned: "Done",
   failed: "Failed",
   uncertain: "Result unknown. Check before retrying.",
+};
+
+const STATUS_TONE: Record<VoiceToolActivityEntry["state"], TextTone> = {
+  running: "secondary",
+  "waiting-owner": "secondary",
+  returned: "secondary",
+  failed: "danger",
+  uncertain: "warning",
 };
 
 /** "workspace.sessions.list" and "app_tools_list" read as "sessions list" and "tools list". */
@@ -56,9 +66,16 @@ export function VoiceToolActivityPanel({
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
       >
         <Wrench className="icon-sm" />
-        <span className={styles.count} aria-hidden="true">
+        <Text
+          as="span"
+          size="micro"
+          leading="tight"
+          tone="inherit"
+          {...surfaceAttributes({ radius: "pill" }, styles.count)}
+          aria-hidden="true"
+        >
           {entries.length > 99 ? "99+" : entries.length}
-        </span>
+        </Text>
       </Button>
       {anchor && (
         <Popover
@@ -81,11 +98,20 @@ export function VoiceToolActivityPanel({
                   key={entry.id}
                   title={[entry.name, entry.target, entry.requestId].filter(Boolean).join(" · ")}
                 >
-                  <span className={styles.name}>{voiceActionLabel(entry.name)}</span>
-                  <span className={styles.status}>{t(STATUS[entry.state])}</span>
-                  <span className={styles.time}>
+                  <Text size="inherit" tone="inherit" truncate className={styles.name}>
+                    {voiceActionLabel(entry.name)}
+                  </Text>
+                  <Text
+                    as="span"
+                    size="inherit"
+                    tone={STATUS_TONE[entry.state]}
+                    className={styles.status}
+                  >
+                    {t(STATUS[entry.state])}
+                  </Text>
+                  <Text size="inherit" tone="muted" className={styles.time}>
                     {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}
-                  </span>
+                  </Text>
                   {live && (
                     <Button size="sm" variant="ghost" onClick={() => onStopWaiting(entry.id)}>
                       {t("Stop waiting")}

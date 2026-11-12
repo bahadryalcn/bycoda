@@ -16,8 +16,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   appearanceRuleOfDeclaration,
   appearanceRules,
+  classTokenAt,
   controlSizeClass,
   end,
+  isBespokePart,
   isBespokeSurface,
   scanAppearanceTsx,
   sizedControls,
@@ -67,7 +69,7 @@ export const rules = {
   "target-blank":
     'target="_blank" (the desktop webview does not route it; use openExternal() from src/platform/tauri/openExternal.ts)',
   "native-date-input":
-    'type="date|time|datetime-local" input (use DateTimePicker / DateTimeRangePicker from src/shared/ui)',
+    'type="date|time|datetime-local" on inputs or field components (use TimePicker, DatePicker, DateTimePicker, DateRangePicker or DateTimeRangePicker from src/shared/ui)',
   "alert-role-prop": "role= passed to <Alert> (Alert sets alert/status from its tone)",
   "raw-aria-live":
     "aria-live= on a DOM element in feature code (use InlineMessage live=, LoadingText, Toast or Alert)",
@@ -544,7 +546,8 @@ export function scanFile(file, text, definitions) {
       }
       if (appearance && !isTokenBlock(selectors)) {
         const rule = appearanceRuleOfDeclaration(declaration);
-        if (rule) add(rule, valueOffset);
+        if (rule && !isBespokePart(file, rule, { selectors, text: `${property}:${value}` }))
+          add(rule, valueOffset);
       }
     }
     return findings;
@@ -657,7 +660,17 @@ export function scanFile(file, text, definitions) {
       add("raw-native-control", tag.start);
     if (tag.name === "a" && /\shref=/.test(attributes)) add("raw-anchor", tag.start);
     if (/\starget=\{?["']_blank["']/.test(attributes)) add("target-blank", tag.start);
-    if (tag.name === "input" && /\stype=["'](?:date|time|datetime-local)["']/.test(attributes))
+    if (
+      (tag.name === "input" || /^[A-Z]/.test(tag.name)) &&
+      /\stype\s*=\s*["'](?:date|time|datetime-local)["']/.test(
+        topLevel(
+          tag.span.replace(
+            /(\stype\s*=\s*)\{\s*(["'])(date|time|datetime-local)\2\s*\}/g,
+            '$1"$3"',
+          ),
+        ),
+      )
+    )
       add("native-date-input", tag.start);
     if (tag.name === "Alert" && /\srole=/.test(attributes)) add("alert-role-prop", tag.start);
     if (/^[a-z]/.test(tag.name) && /\saria-live=/.test(attributes)) add("raw-aria-live", tag.start);
@@ -681,7 +694,10 @@ export function scanFile(file, text, definitions) {
     add("untranslated-jsx-text", match.index + 1);
   }
   for (const match of source.matchAll(inlineStyleLayout)) add("inline-style-layout", match.index);
-  if (appearance) scanAppearanceTsx(source, add);
+  if (appearance)
+    scanAppearanceTsx(source, (rule, offset) => {
+      if (!isBespokePart(file, rule, { text: classTokenAt(source, offset) })) add(rule, offset);
+    });
   return findings;
 }
 

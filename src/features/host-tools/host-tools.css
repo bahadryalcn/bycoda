@@ -75,19 +75,11 @@
   flex: 1;
   display: block;
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   padding-inline: 8px;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
 }
 .host-tools-nav-label {
   display: block;
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .host-tools-topbar .host-tools-placement-trigger {
   flex: none;
@@ -143,8 +135,6 @@
   gap: 8px;
   min-inline-size: 0;
   max-inline-size: 60%;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 @container (max-width: 52rem) {
   .host-tools-contextbar .host-tools-context {
@@ -221,7 +211,6 @@
   display: grid;
   gap: 5px;
   color: var(--host-tool-muted);
-  font-size: var(--ui-font-caption);
   min-inline-size: 0;
 }
 .host-tool-check {
@@ -237,7 +226,6 @@
   padding: 6px 8px;
   border-radius: var(--ui-control-radius);
   background: var(--ui-surface-selected);
-  font-size: var(--ui-font-caption);
 }
 .host-tool-status::before {
   content: "";
@@ -299,7 +287,6 @@
   cursor: default;
 }
 .host-tool-location {
-  font-size: var(--ui-font-caption);
   color: var(--host-tool-muted);
   overflow-wrap: anywhere;
 }
@@ -480,10 +467,4 @@
 .host-tools-host-name,
 .host-tools-context-name {
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--color-content);
-}
-.host-tools-host-role {
-  color: var(--ui-text-secondary);
 }

@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -280,9 +281,9 @@ export function GitlabSettings() {
           <InboxAccountChecking />
         ) : connected && !editing ? (
           <div className="inbox-account-fields" data-state="summary">
-            <span className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)">
+            <Text size="caption" tone="muted" className="max-w-56 break-all">
               {savedUrl}
-            </span>
+            </Text>
             <Button
               stableWidth
               disabled={busy || checking}
@@ -473,9 +474,9 @@ export function AzureDevOpsSettings() {
           <InboxAccountChecking />
         ) : connected && !editing ? (
           <div className="inbox-account-fields" data-state="summary">
-            <span className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)">
+            <Text size="caption" tone="muted" className="max-w-56 break-all">
               {savedUrl}
-            </span>
+            </Text>
             <Button
               stableWidth
               disabled={busy || checking}
@@ -710,9 +711,9 @@ export function LinearSettings() {
           <InboxAccountChecking />
         ) : connected && !editing ? (
           <div className="inbox-account-fields" data-state="summary">
-            <span className="text-ui-caption text-(--ui-text-secondary)">
+            <Text size="caption" tone="secondary">
               {t("API key saved on this computer")}
-            </span>
+            </Text>
             <Button stableWidth disabled={busy || checking} onClick={() => setEditing(true)}>
               {t("Edit")}
             </Button>

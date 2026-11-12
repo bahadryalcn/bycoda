@@ -1,6 +1,10 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useState, type FocusEvent, type MouseEvent, type ReactNode } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { ClampText } from "../../../shared/ui/ClampText";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Switch } from "../../../shared/ui/Switch";
@@ -24,6 +28,9 @@ import type { AgentModel, ModelSetting } from "../model/models";
 import { HARNESS_TITLE } from "../model/session";
 import { DelegationField, DelegationOptionIcon } from "./DelegationSettings";
 import { ModelSettingPicker } from "./ModelSettingPicker";
+
+// The effort bars ease their height and fill together.
+const effortBarMotion = motionAttributes({ transition: "all", duration: "standard" });
 
 type PanelTab = "settings" | "agents";
 
@@ -57,18 +64,18 @@ export function ModelSettingHelp({
       className="flex shrink-0 items-start gap-2 border-t border-(--ui-frosted-divider) px-3 py-1.5 ui-caption-text"
     >
       <CircleHelp className="icon-xs mt-0.5 shrink-0" aria-hidden />
-      <p className="line-clamp-3 h-[3lh] min-w-0 flex-1 leading-4">
+      <ClampText as="p" lines={3} expandable={false} className="min-w-0 flex-1">
         {setting && help ? (
           <>
-            <span className="font-medium text-(--ui-tone-neutral-fg)">
+            <Text size="inherit" tone="neutral" weight="medium">
               {t(settingLabel(setting))}
-            </span>{" "}
+            </Text>{" "}
             {t(help)}
           </>
         ) : (
           t("Point at a setting to read what it does.")
         )}
-      </p>
+      </ClampText>
       {trailing ? <span className="ml-auto flex shrink-0">{trailing}</span> : null}
     </div>
   );
@@ -214,12 +221,23 @@ function SettingRow({
   ) : null;
   const row =
     "flex min-h-8 flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-md px-1.5";
-  const name = <span className="min-w-0 truncate text-ui-caption font-medium">{label}</span>;
+  const name = (
+    <Text as="span" size="caption" tone="inherit" weight="medium" truncate className="min-w-0">
+      {label}
+    </Text>
+  );
   const heading = (trailing: ReactNode) => (
     <div className="flex items-baseline justify-between px-1.5 pt-2 pb-1.5">
-      <span className="text-ui-micro font-medium tracking-wide text-(--ui-text-secondary) uppercase">
+      <Text
+        as="span"
+        size="micro"
+        weight="medium"
+        tone="secondary"
+        tracking="wide"
+        className="uppercase"
+      >
         {label}
-      </span>
+      </Text>
       {trailing}
     </div>
   );
@@ -244,11 +262,14 @@ function SettingRow({
     return (
       <div data-setting-id={setting.id} className="pb-1">
         {heading(
-          <span
-            className={`text-ui-caption font-medium ${isUltraEffort(value) ? "text-(--ui-tone-warning-fg)" : ""}`}
+          <Text
+            as="span"
+            size="caption"
+            weight="medium"
+            tone={isUltraEffort(value) ? "warning" : "inherit"}
           >
             {valueLabel}
-          </span>,
+          </Text>,
         )}
         <EffortBars
           setting={setting}
@@ -313,14 +334,20 @@ function SettingRow({
             aria-label={label}
           >
             {picked.map((option) => (
-              <span
+              <Text
+                as="span"
                 key={option.value}
-                className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-full border border-(--ui-tone-neutral-border) py-0.5 ps-2 pe-0.5 text-ui-caption"
+                size="caption"
+                tone="inherit"
+                {...surfaceAttributes(
+                  { radius: "pill", frame: "neutral", edge: "all" },
+                  "inline-flex max-w-full min-w-0 items-center gap-1   border-(--ui-tone-neutral-border) py-0.5 ps-2 pe-0.5",
+                )}
               >
                 <DelegationOptionIcon setting={setting} value={option.value} />
-                <span className="min-w-0 truncate">
+                <Text size="inherit" tone="inherit" truncate className="min-w-0">
                   {delegationShortLabel(setting, option.value, t(option.label))}
-                </span>
+                </Text>
                 <Button
                   iconOnly
                   size="sm"
@@ -335,7 +362,7 @@ function SettingRow({
                 >
                   <X className="icon-xs" />
                 </Button>
-              </span>
+              </Text>
             ))}
             <Button
               size="sm"
@@ -401,7 +428,9 @@ function SettingRow({
           onClick={onPick}
         >
           {picked[0] ? <DelegationOptionIcon setting={setting} value={picked[0].value} /> : null}
-          <span className="min-w-0 truncate">{picked[0] ? t(picked[0].label) : labels[0]}</span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {picked[0] ? t(picked[0].label) : labels[0]}
+          </Text>
         </PickButton>
         {hiddenHelp}
       </div>
@@ -420,7 +449,9 @@ function SettingRow({
           expanded={open}
           onClick={() => setOpen((next) => !next)}
         >
-          <span className="min-w-0 truncate">{valueLabel}</span>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {valueLabel}
+          </Text>
         </PickButton>
       </div>
       {open ? (
@@ -480,7 +511,11 @@ function OptionGrid({
       options={setting.options.map((option, index) => ({
         value: option.value,
         tooltip: labels[index],
-        content: <span className="min-w-0 truncate">{labels[index]}</span>,
+        content: (
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {labels[index]}
+          </Text>
+        ),
       }))}
       disabled={disabled}
       onValueChange={onChoose}
@@ -521,7 +556,8 @@ function PickButton({
     >
       {children}
       <ChevronDown
-        className={`icon-xs shrink-0 text-(--ui-text-secondary) ${expanded ? "rotate-180" : ""}`}
+        className={`icon-xs shrink-0 ${expanded ? "rotate-180" : ""}`}
+        tone="secondary"
         strokeWidth={1.75}
       />
     </Button>
@@ -579,20 +615,37 @@ function EffortBars({
           },
           content: (
             <>
-              <i style={{ height: `${30 + Math.round((index / Math.max(1, count - 1)) * 70)}%` }} />
+              <i
+                {...effortBarMotion}
+                {...surfaceAttributes(
+                  {
+                    variant:
+                      index <= current
+                        ? isUltraEffort(option.value)
+                          ? "effort-ultra"
+                          : "effort"
+                        : undefined,
+                  },
+                  effortBarMotion.className,
+                )}
+                style={{ height: `${30 + Math.round((index / Math.max(1, count - 1)) * 70)}%` }}
+              />
               <span className="sr-only">{option.label}</span>
             </>
           ),
         }))}
         onValueChange={onChoose}
       />
-      <div
-        className="flex justify-between px-1.5 pt-1 text-ui-micro text-(--ui-text-secondary)"
+      <Text
+        as="div"
+        size="micro"
+        tone="secondary"
+        className="flex justify-between px-1.5 pt-1"
         aria-hidden
       >
         <span>{t("Faster")}</span>
         <span>{t("Deeper")}</span>
-      </div>
+      </Text>
     </>
   );
 }

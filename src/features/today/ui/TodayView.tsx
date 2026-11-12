@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useId, useMemo, useState, type ReactNode } from "react";
 import {
   ActivitySources,
@@ -35,9 +36,24 @@ const range = (from: Date, to: Date) =>
 function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
   return (
     <Surface variant="outline" padding="md" className={styles.stat}>
-      <span className={styles.statLabel}>{label}</span>
-      <strong className={styles.statValue}>{value}</strong>
-      {hint ? <span className={styles.statHint}>{hint}</span> : null}
+      <Text size="caption" tone="secondary" leading="inherit">
+        {label}
+      </Text>
+      <Text
+        as="strong"
+        size="title"
+        tone="inherit"
+        weight="medium"
+        leading="tight"
+        className={styles.statValue}
+      >
+        {value}
+      </Text>
+      {hint ? (
+        <Text size="caption" tone="muted" leading="inherit">
+          {hint}
+        </Text>
+      ) : null}
     </Surface>
   );
 }
@@ -76,7 +92,7 @@ export function TodayView() {
   return (
     <section aria-labelledby={titleId} className={styles.root}>
       <div className={styles.header}>
-        <SectionLabel labelId={titleId}>{t("Activity on this computer")}</SectionLabel>
+        <SectionLabel labelId={titleId}>{t("Activity")}</SectionLabel>
         <div className={styles.controls}>
           <SegmentedControl
             label={t("Period")}
@@ -109,6 +125,9 @@ export function TodayView() {
         <>
           <div className={styles.stats}>{activeStat}</div>
           <ActivitySources overview={overview} />
+          <Surface variant="outline" padding="md" className={styles.chart}>
+            <TodayBars bars={activity ? activityBars(activity) : null} />
+          </Surface>
           <EmptyState
             title={t("No agent activity yet")}
             description={t("Sessions you run will show up here.")}
@@ -186,26 +205,38 @@ function TodayCharts({ data, activity }: { data: TodayData; activity: BarChartDa
         )}
       </Surface>
       <Surface variant="outline" padding="md" className={styles.chart}>
-        <SectionLabel>
-          {week ? t("Agent run time by day") : t("Active time, last 7 days")}
-        </SectionLabel>
-        {bars?.length ? (
-          <BarChart
-            data={bars}
-            label={week ? t("Agent run time by day") : t("Active minutes")}
-            period={
-              week
-                ? range(new Date(data.window.start), new Date(data.window.end))
-                : range(localDay(bars[0]!.key), localDay(bars[bars.length - 1]!.key))
-            }
-            formatValue={formatActiveMinutes}
-            height={120}
-          />
-        ) : (
-          <LoadingText>{t("Loading active time")}</LoadingText>
-        )}
+        <TodayBars
+          bars={bars}
+          agentPeriod={
+            week ? range(new Date(data.window.start), new Date(data.window.end)) : undefined
+          }
+        />
       </Surface>
     </div>
+  );
+}
+
+/** Keep the active-time history visible even before this computer has agent runs. */
+function TodayBars({ bars, agentPeriod }: { bars: BarChartDatum[] | null; agentPeriod?: string }) {
+  return (
+    <>
+      <SectionLabel>
+        {agentPeriod ? t("Agent run time by day") : t("Active time, last 7 days")}
+      </SectionLabel>
+      {bars?.length ? (
+        <BarChart
+          data={bars}
+          label={agentPeriod ? t("Agent run time by day") : t("Active minutes")}
+          period={
+            agentPeriod ?? range(localDay(bars[0]!.key), localDay(bars[bars.length - 1]!.key))
+          }
+          formatValue={formatActiveMinutes}
+          height={120}
+        />
+      ) : (
+        <LoadingText>{t("Loading active time")}</LoadingText>
+      )}
+    </>
   );
 }
 

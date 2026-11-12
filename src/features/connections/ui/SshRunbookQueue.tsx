@@ -1,3 +1,4 @@
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "../../../shared/i18n";
@@ -56,11 +57,15 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
   return (
     <>
       {queue.intents.length || queue.error || review?.runId ? (
-        <div className="flex shrink-0 items-center justify-end gap-2 border-b border-stroke px-3 py-1 text-ui-caption">
+        <Text
+          as="div"
+          tone="inherit"
+          className="flex shrink-0 items-center justify-end gap-2 border-b border-stroke px-3 py-1"
+        >
           <Button variant="ghost" onClick={() => setOpen(true)}>
             {t("SSH reviews")} · {queue.intents.length}
           </Button>
-        </div>
+        </Text>
       ) : null}
       {open && !reviewOpen ? (
         <Modal title={t("SSH reviews")} onClose={() => setOpen(false)} size="md">
@@ -77,9 +82,11 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
               </Button>
             </div>
             {queue.intents.map((intent) => (
-              <div
+              <Text
                 key={intent.id}
-                className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-stroke py-2 text-ui-caption"
+                as="div"
+                tone="inherit"
+                className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-stroke py-2"
               >
                 <span className="min-w-0 break-all">
                   {t(intent.trigger === "startup" ? "Startup" : "Scheduled")} ·{" "}
@@ -123,7 +130,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
                     {t("Review execution")}
                   </Button>
                 </div>
-              </div>
+              </Text>
             ))}
             {!queue.intents.length ? (
               <EmptyState size="inline" description={t("No pending SSH reviews.")} />

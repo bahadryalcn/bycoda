@@ -1,9 +1,18 @@
 import { memo, type CSSProperties, type ElementType } from "react";
+import { optionalTextAttributes, type TextSize, type TextTone, type TextRoles } from "./Text";
 
 export interface ShimmerProps {
   children: string;
   as?: ElementType;
   className?: string;
+  /** Text roles; unset preserves existing styling. */
+  size?: TextSize;
+  tone?: TextTone;
+  weight?: TextRoles["weight"];
+  /** Line height role; `inherit` keeps the surrounding line height. */
+  leading?: TextRoles["leading"];
+  /** One line with an ellipsis. */
+  truncate?: boolean;
   duration?: number;
   spread?: number;
 }
@@ -14,12 +23,20 @@ function ShimmerComponent({
   className = "",
   duration = 2,
   spread = 2,
+  size,
+  tone,
+  weight,
+  leading,
+  truncate,
 }: ShimmerProps) {
   const dynamicSpread = (children?.length ?? 0) * spread;
 
   return (
     <Component
-      className={`shimmer-text relative inline-block ${className}`.trim()}
+      {...optionalTextAttributes(
+        { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading, truncate },
+        `shimmer-text relative inline-block ${className}`.trim(),
+      )}
       style={
         {
           "--spread": `${dynamicSpread}px`,

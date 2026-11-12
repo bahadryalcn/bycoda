@@ -4,6 +4,8 @@ import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
+import { ScrollArea } from "../../../../shared/ui/ScrollArea";
+import { Text } from "../../../../shared/ui/Text";
 import { Plus } from "../../../../shared/ui/icons";
 import { InboxAccountActions, InboxConnectionError } from "../InboxConnectionStatus";
 import { Row, SettingsFeedback } from "../settingsControls";
@@ -100,16 +102,29 @@ export function MessagingAccountsCard({
           <EmptyState
             size="inline"
             className="settings-collection settings-collection-empty"
+            descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
             description={emptyLabel}
           />
         ) : (
           <div className="settings-collection">
-            <div className="settings-collection-list" role="list">
+            <ScrollArea gutter="stable" className="settings-collection-list" role="list">
               {accounts.map((account) => (
                 <div key={account.id} role="listitem" className="settings-collection-row">
                   <div className="settings-collection-main">
-                    <p className="settings-collection-title">{account.label || account.identity}</p>
-                    <p className="settings-collection-meta">{describe(account)}</p>
+                    <Text
+                      as="p"
+                      size="secondary"
+                      tone="primary"
+                      weight="medium"
+                      leading="normal"
+                      truncate
+                      className="settings-collection-title"
+                    >
+                      {account.label || account.identity}
+                    </Text>
+                    <Text as="p" leading="normal" className="settings-collection-meta">
+                      {describe(account)}
+                    </Text>
                   </div>
                   <div className="settings-collection-actions">
                     <Badge
@@ -135,7 +150,7 @@ export function MessagingAccountsCard({
                   </div>
                 </div>
               ))}
-            </div>
+            </ScrollArea>
           </div>
         )}
         {accounts !== null && !empty && target !== "new" ? (

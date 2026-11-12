@@ -35,6 +35,7 @@ export function SaveLookButton({
         <Button
           variant="item"
           className="theme-saved-add"
+          textTone="muted"
           startIcon={<Plus />}
           disabled={full}
           disabledReason={blocked}

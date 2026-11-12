@@ -1,7 +1,9 @@
 import type { ComponentProps } from "react";
 import { Button } from "../../../../shared/ui/Button";
+import { motionAttributes } from "../../../../shared/ui/Motion";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { LiveText } from "../../../../shared/ui/LiveText";
+import { Text } from "../../../../shared/ui/Text";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { StatusDot } from "../../../../shared/ui/StatusDot";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
@@ -55,18 +57,31 @@ export function VoiceCompanionStatus({
     <div className={styles.stage}>
       <div className={styles.status}>
         {name ? (
-          <span className={styles.avatar} data-state={visualState}>
-            <AssistantAvatarMark className={styles.avatarMark} value={avatar} name={name} />
+          <span
+            {...motionAttributes({ transition: "colors", duration: "standard" }, styles.avatar)}
+            data-state={visualState}
+          >
+            <AssistantAvatarMark
+              className={styles.avatarMark}
+              value={avatar}
+              name={name}
+              size="secondary"
+              tone="secondary"
+              weight="medium"
+              leading="none"
+            />
             {tone && (
               <StatusDot className={styles.avatarDot} tone={tone} size="fixed" appearance="solid" />
             )}
           </span>
         ) : null}
         <div className={styles.statusText}>
-          <LiveText className={styles.statusLine} text={statusText} />
+          <LiveText size="secondary" weight="medium" leading="snug" truncate text={statusText} />
           {caption ? (
             <OverflowTooltip label={caption}>
-              <span className={styles.caption}>{caption}</span>
+              <Text as="span" size="caption" tone="secondary" leading="snug" truncate>
+                {caption}
+              </Text>
             </OverflowTooltip>
           ) : null}
         </div>

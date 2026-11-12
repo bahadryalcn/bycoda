@@ -156,7 +156,10 @@
   white-space: nowrap;
 }
 .option[data-active="true"] {
-  background: var(--surface-muted);
+  background: var(--ui-surface-hover);
+}
+.option[aria-selected="true"] {
+  background: var(--ui-surface-selected);
 }
 .option[data-disabled="true"] {
   opacity: var(--ui-disabled-opacity, 0.5);
@@ -180,9 +183,8 @@
   }
 }
 
-/* Option rows for SearchableSelect and Select. One row grammar: a check slot, an optional icon, a truncating label with its
-   description beneath. Keyboard-active and selected are separate: the active row carries the selected surface, a selected row
-   that is not active keeps only its check and medium weight. Written here, unlayered, so it is not shadowed by utilities. */
+/* Option rows for SearchableSelect and Select share a check slot, an optional icon,
+   a truncating label and its description. State presentation stays unlayered. */
 .choice {
   display: flex;
   box-sizing: border-box;
@@ -206,9 +208,6 @@
   transition:
     background-color 80ms var(--ease-standard),
     color 80ms var(--ease-standard);
-}
-.choice[aria-selected="true"]:not([data-highlighted]) {
-  --ui-surface-selected: transparent;
 }
 /* Pressed outranks hover and the keyboard highlight, for selected and unselected rows alike. */
 .choice:active:not(:disabled, [aria-disabled="true"]) {
@@ -285,13 +284,7 @@
   }
 }
 
-/* The active row is a surface fill; forced-colors mode keeps it visible with an outline, and selection remains exposed through aria-selected. */
 @media (forced-colors: active) {
-  .choice[data-highlighted],
-  .choice[data-active] {
-    outline: 2px solid Highlight;
-    outline-offset: -2px;
-  }
   .choice:disabled,
   .choice[aria-disabled="true"] {
     color: GrayText;
@@ -306,5 +299,4 @@
 .choice:is([data-highlighted], [data-active], [aria-selected="true"]) {
   border-radius: calc(var(--ui-field-radius) - 2px);
   background: var(--ui-surface-selected);
-  box-shadow: inset 0 0 0 1px var(--ui-field-border);
 }

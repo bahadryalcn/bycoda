@@ -14,7 +14,6 @@
   min-inline-size: 0;
   min-block-size: 0;
   padding: 12px;
-  border-inline-end: 1px solid var(--ui-pane-border);
 }
 .listTools {
   display: flex;
@@ -95,16 +94,11 @@
   flex: 0 1 auto;
   min-inline-size: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ui-font-body);
-  font-weight: 500;
 }
 .threadTime {
   flex: none;
   margin-inline-start: auto;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-micro);
   font-variant-numeric: tabular-nums;
 }
 
@@ -113,7 +107,6 @@
   flex-direction: column;
   min-inline-size: 0;
   min-block-size: 0;
-  background: var(--ui-workspace-canvas-chat);
 }
 .header {
   display: flex;
@@ -124,7 +117,6 @@
   min-inline-size: 0;
   min-block-size: 52px;
   padding: 10px 20px;
-  border-block-end: 1px solid var(--ui-pane-border);
 }
 .identity {
   display: flex;
@@ -139,11 +131,6 @@
 .identity > strong {
   flex: 0 1 auto;
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
 }
 .summaryStatus {
   display: inline-flex;
@@ -155,8 +142,6 @@
 }
 .summaryText {
   margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
   white-space: nowrap;
 }
 .actions {
@@ -181,8 +166,6 @@
   align-items: center;
   gap: 12px;
   margin-block: 4px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .dayDivider::before,
 .dayDivider::after {
@@ -221,13 +204,9 @@
 }
 .bubbleText {
   margin: 0;
-  font-size: var(--ui-font-body);
-  line-height: 1.6;
   white-space: pre-wrap;
 }
 .note {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .detailsList {
   margin: 4px 0 0;
@@ -245,8 +224,9 @@
   gap: 6px;
   min-block-size: 24px;
   padding-inline: 4px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-micro);
+}
+.metaContent {
+  display: contents;
 }
 .metaTime {
   font-variant-numeric: tabular-nums;
@@ -264,8 +244,6 @@
 .composerNote {
   margin: 0;
   padding: 0 20px 12px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .draftError {
   flex: none;

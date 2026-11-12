@@ -173,6 +173,7 @@ export function HistoryItem({
           {/* Expanded, the same line shows the whole text instead of repeating it below. */}
           <Text
             className={expanded ? "notification-history-label" : "notification-history-preview"}
+            lines={expanded ? undefined : 2}
             leading="normal"
           >
             {entry.label}
@@ -181,7 +182,13 @@ export function HistoryItem({
             {entry.cwd ? (
               <NotificationProjectLabel cwd={entry.cwd} />
             ) : (
-              <span className="notification-project" />
+              <Text
+                as="span"
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className="notification-project"
+              />
             )}
             <span aria-hidden>·</span>
             <span className="notification-history-kind" data-tone={kind.tone}>
@@ -236,9 +243,18 @@ export function NotificationProjectLabel({ cwd }: { cwd: string }) {
     project.paths.some((path) => pathKey(path) === pathKey(cwd)),
   );
   return (
-    <span className="notification-project" title={cwd}>
-      <span className="notification-project-name">{project?.name || projectName(cwd)}</span>
+    <Text
+      as="span"
+      size="caption"
+      tone="secondary"
+      leading="inherit"
+      className="notification-project"
+      title={cwd}
+    >
+      <Text as="span" size="inherit" tone="inherit" truncate className="notification-project-name">
+        {project?.name || projectName(cwd)}
+      </Text>
       <span className="notification-project-path sr-only">{prettyCwd(cwd)}</span>
-    </span>
+    </Text>
   );
 }

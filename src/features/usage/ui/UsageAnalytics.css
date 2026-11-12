@@ -42,14 +42,6 @@
   margin-inline-start: auto;
   gap: 4px;
 }
-.usage-band-scope > p,
-.usage-muted,
-.usage-data-notes,
-.usage-section-heading > span,
-.usage-pagination {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
 .usage-analytics-actions {
   max-inline-size: 100%;
 }
@@ -100,34 +92,20 @@
 .usage-metrics strong {
   min-inline-size: 0;
   overflow-wrap: anywhere;
-  font-size: clamp(1.125rem, 2.5cqi, 1.5rem);
-  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: var(--color-content);
-}
-.usage-metrics small {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .usage-facts {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 24px;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .usage-facts b {
-  font-weight: 500;
-  color: var(--color-content);
   margin-inline-start: 6px;
   font-variant-numeric: tabular-nums;
 }
 .usage-panel {
   min-inline-size: 0;
   padding: 16px;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-card-surface);
 }
 .usage-panel > .usage-muted {
   margin-block: 8px;
@@ -135,8 +113,6 @@
 .usage-panel details,
 .usage-display-preferences {
   margin-block-start: 12px;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .usage-display-preferences summary {
   cursor: pointer;
@@ -175,15 +151,11 @@
   justify-self: start;
   max-inline-size: 100%;
   overflow: clip;
-  text-overflow: ellipsis;
 }
 .usage-contribution > span {
-  font-size: var(--ui-font-caption);
-  color: var(--color-content);
   font-variant-numeric: tabular-nums;
 }
 .usage-contribution small {
-  color: var(--ui-text-secondary);
   margin-inline-start: 8px;
 }
 .usage-rank-track {
@@ -204,9 +176,6 @@
 }
 .usage-pagination > span {
   margin-inline-end: auto;
-}
-.usage-data-notes {
-  line-height: 1.6;
 }
 .usage-data-notes p {
   margin-block-start: 6px;
@@ -231,7 +200,7 @@
 }
 .usage-week-grid {
   display: grid;
-  gap: 3px;
+  gap: 4px;
   margin-block-start: 16px;
   min-inline-size: 0;
 }
@@ -241,19 +210,11 @@
 .usage-week-row > [role="columnheader"] {
   display: grid;
   gap: 4px;
-  font-size: var(--ui-font-caption);
   text-align: center;
-  color: var(--ui-text-secondary);
   padding-block-end: 8px;
-}
-.usage-week-row > [role="columnheader"] b {
-  font-weight: 500;
-  color: var(--color-content);
 }
 .usage-week-row > [role="rowheader"] {
   align-self: center;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 .usage-week-grid .usage-hour-cell {
@@ -264,7 +225,6 @@
   border-radius: calc(var(--ui-control-radius) / 2);
   justify-content: center;
   background: var(--ui-chart-heat-0);
-  color: var(--color-content);
 }
 .usage-week-grid .usage-hour-cell[data-level="1"] {
   background: var(--ui-chart-heat-1);
@@ -277,10 +237,8 @@
 }
 .usage-week-grid .usage-hour-cell[data-level="4"] {
   background: var(--ui-chart-heat-4);
-  color: var(--color-on-solid);
 }
 .usage-week-grid .usage-hour-cell > span {
-  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .usage-heat-legend {
@@ -289,8 +247,6 @@
   flex-wrap: wrap;
   gap: 4px;
   margin-block-start: 12px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
 }
 .usage-heat-legend > i {
   inline-size: 12px;
@@ -336,7 +292,6 @@
   flex-wrap: wrap;
   gap: 8px 16px;
   margin-block-start: 12px;
-  font-size: var(--ui-font-caption);
 }
 .usage-quota-legend-item {
   display: inline-flex;
@@ -349,11 +304,9 @@
 .usage-quota-legend-dot {
   inline-size: 6px;
   block-size: 6px;
-  border-radius: var(--radius-pill);
   flex-shrink: 0;
 }
 .usage-quota-legend-value {
-  color: var(--ui-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 .usage-quota-point {
@@ -367,8 +320,6 @@
 .usage-quota-zero {
   position: absolute;
   inset-inline-end: calc(100% + 8px);
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
 }
 .usage-quota-max {
   inset-block-start: 0;
@@ -378,8 +329,6 @@
 }
 .usage-empty {
   padding-block: 12px;
-  font-size: var(--ui-font-body);
-  color: var(--ui-text-secondary);
 }
 @container (max-width: 900px) {
   .usage-overview-main,
