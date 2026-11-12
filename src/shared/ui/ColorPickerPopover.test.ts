@@ -106,6 +106,8 @@ it("marks the chosen swatch with a pressed state and a check glyph, not colour a
   const swatch = (label: string) =>
     container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
   expect(swatch("Green").getAttribute("aria-pressed")).toBe("true");
+  expect(swatch("Green").hasAttribute("title")).toBe(false);
+  expect(swatch("Green").hasAttribute("data-tooltip-owner")).toBe(true);
   expect(swatch("Green").querySelector("svg")).not.toBeNull();
   expect(swatch("Red").getAttribute("aria-pressed")).toBe("false");
   expect(swatch("Red").querySelector("svg")).toBeNull();
@@ -128,6 +130,8 @@ it("highlights the custom colour control while its picker is open and keeps the 
   );
   const custom = container.querySelector<HTMLButtonElement>('button[aria-label="Custom color"]')!;
   expect(custom.getAttribute("aria-expanded")).toBe("true");
+  expect(custom.hasAttribute("title")).toBe(false);
+  expect(custom.hasAttribute("data-tooltip-owner")).toBe(true);
   expect(custom.hasAttribute("data-selected")).toBe(true);
   expect(custom.querySelector("svg")).not.toBeNull();
 });

@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { PromptOutline } from "../../../src/features/sessions/ui/PromptOutline";
 import { TranscriptFind } from "../../../src/features/sessions/ui/TranscriptFind";
 import { ProjectQuickActions } from "../../../src/features/projects/ui/ProjectQuickActions";
-import type { ExpandingButtonGroupItem } from "../../../src/shared/ui/ExpandingButtonGroup";
+import type { ExpandingButtonGroupItem } from "../../../src/shared/ui/ButtonGroup";
 import { File, X } from "../../../src/shared/ui/icons";
 import type { Block } from "../../../src/features/sessions/model/session";
 import "../../../src/styles/index.css";

@@ -43,35 +43,41 @@ async function render(props: Partial<RadioGroupProps> = {}) {
   };
 }
 
-it("keeps native required validation, named FormData, input ref and real events", async () => {
-  const ref = createRef<HTMLInputElement>();
-  const onChange = vi.fn((event) => expect(event.currentTarget.value).toBe("c"));
-  const onValueChange = vi.fn();
-  const { form, inputs } = await render({ ref, onChange, onValueChange });
-  expect(ref.current).toBe(inputs[0]);
-  expect(form.checkValidity()).toBe(false);
-  await act(async () => inputs[2].click());
-  expect(onChange).toHaveBeenCalledOnce();
-  expect(onValueChange).toHaveBeenCalledWith("c");
-  expect(form.checkValidity()).toBe(true);
-  expect(new FormData(form).get("mode")).toBe("c");
-  expect(ref.current).toBe(inputs[2]);
-  ref.current!.focus();
-  expect(document.activeElement).toBe(inputs[2]);
-});
+it.each(["cards", "inline"] as const)(
+  "keeps %s native validation, named FormData, ref and events",
+  async (variant) => {
+    const ref = createRef<HTMLInputElement>();
+    const onChange = vi.fn((event) => expect(event.currentTarget.value).toBe("c"));
+    const onValueChange = vi.fn();
+    const { form, inputs } = await render({ variant, ref, onChange, onValueChange });
+    expect(ref.current).toBe(inputs[0]);
+    expect(form.checkValidity()).toBe(false);
+    await act(async () => inputs[2].click());
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(onValueChange).toHaveBeenCalledWith("c");
+    expect(form.checkValidity()).toBe(true);
+    expect(new FormData(form).get("mode")).toBe("c");
+    expect(ref.current).toBe(inputs[2]);
+    ref.current!.focus();
+    expect(document.activeElement).toBe(inputs[2]);
+  },
+);
 
-it("restores uncontrolled defaults on form reset without firing change", async () => {
-  const onChange = vi.fn();
-  const { form, inputs } = await render({ defaultValue: "a", onChange });
-  await act(async () => inputs[2].click());
-  await act(async () => {
-    form.reset();
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  });
-  expect(inputs.map((input) => input.checked)).toEqual([true, false, false]);
-  expect(new FormData(form).get("mode")).toBe("a");
-  expect(onChange).toHaveBeenCalledOnce();
-});
+it.each(["cards", "inline"] as const)(
+  "restores %s uncontrolled defaults on form reset without firing change",
+  async (variant) => {
+    const onChange = vi.fn();
+    const { form, inputs } = await render({ variant, defaultValue: "a", onChange });
+    await act(async () => inputs[2].click());
+    await act(async () => {
+      form.reset();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    expect(inputs.map((input) => input.checked)).toEqual([true, false, false]);
+    expect(new FormData(form).get("mode")).toBe("a");
+    expect(onChange).toHaveBeenCalledOnce();
+  },
+);
 
 it("honors cancelled resets and keeps controlled values authoritative", async () => {
   const onChange = vi.fn();
@@ -190,4 +196,35 @@ it("renders tiles as a roving radiogroup with custom content and arrow selection
       (radio) => radio.tabIndex,
     ),
   ).toEqual([0, -1, -1]);
+});
+
+it("previews icon tiles on pointer intent and focus without committing a value", async () => {
+  const onOptionIntent = vi.fn();
+  const onValueChange = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(RadioGroup, {
+        variant: "tiles",
+        label: "Scenes",
+        value: "a",
+        onOptionIntent,
+        onValueChange,
+        options: [
+          { value: "a", content: createElement("svg"), iconOnly: true, ariaLabel: "Alpha" },
+          { value: "b", content: createElement("svg"), iconOnly: true, ariaLabel: "Beta" },
+        ],
+      }),
+    ),
+  );
+  const radios = container.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+  expect(radios[1].getAttribute("aria-label")).toBe("Beta");
+  expect(radios[1].querySelector("svg")).not.toBeNull();
+  expect(radios[1].textContent).toBe("");
+  await act(async () => radios[1].dispatchEvent(new MouseEvent("pointerover", { bubbles: true })));
+  expect(onOptionIntent).toHaveBeenLastCalledWith("b");
+  onOptionIntent.mockClear();
+  await act(async () => radios[1].focus());
+  expect(onOptionIntent).toHaveBeenLastCalledWith("b");
+  expect(onValueChange).not.toHaveBeenCalled();
+  expect(radios[0].getAttribute("aria-checked")).toBe("true");
 });

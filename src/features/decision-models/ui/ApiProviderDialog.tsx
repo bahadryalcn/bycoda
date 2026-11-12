@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
@@ -106,9 +107,7 @@ export function ApiProviderDialog({
       <div className="flex min-w-0 flex-col gap-3">
         {catalogError !== null ? <ErrorNotice error={catalogError} /> : null}
         {catalog === null && catalogError === null ? (
-          <Text as="p" size="caption" tone="secondary">
-            {t("Loading providers…")}
-          </Text>
+          <LoadingText delay={false}>{t("Loading providers…")}</LoadingText>
         ) : null}
         {catalog !== null && entries.length === 0 ? (
           <InlineMessage tone="neutral">{t("No providers are listed yet.")}</InlineMessage>

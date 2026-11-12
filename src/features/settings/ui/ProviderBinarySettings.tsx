@@ -41,13 +41,16 @@ export function binaryInspectionError(
 ): string | null {
   if (inspection.error) return inspection.error;
   if (provider === "codex" && !/^codex-cli\s+\d+\.\d+\.\d+/.test(inspection.version ?? "")) {
-    return "Codex CLI returned an invalid version.";
+    return t("Codex CLI returned an invalid version.");
   }
   if (provider === "opencode") {
     const version = parseOpenCodeVersion(inspection.version ?? "");
-    if (!version) return "OpenCode CLI returned an invalid version.";
+    if (!version) return t("OpenCode CLI returned an invalid version.");
     if (compareSemver(version, MINIMUM_OPENCODE_VERSION) < 0) {
-      return `OpenCode v${version} is too old. Upgrade to v${MINIMUM_OPENCODE_VERSION} or newer.`;
+      return t("OpenCode v{p0} is too old. Upgrade to v{p1} or newer.", {
+        p0: version,
+        p1: MINIMUM_OPENCODE_VERSION,
+      });
     }
   }
   return null;
@@ -288,8 +291,9 @@ export function ProviderBinaryControl({
       />
       {inline ? <div className="mt-2">{chooseExecutable}</div> : null}
       <Text as="p" size="caption" tone="secondary" className="mt-1.5">
-        {t("Enter the absolute path to the CLI executable. Changes apply after restarting ")}
-        {PRODUCT_IDENTITY.displayName}.
+        {t("Enter the absolute path to the CLI executable. Changes apply after restarting {p0}.", {
+          p0: PRODUCT_IDENTITY.displayName,
+        })}
       </Text>
       {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       {inline ? <ModalFooter>{pathActions}</ModalFooter> : null}
@@ -389,8 +393,7 @@ export function ProviderBinaryControl({
                 {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
                 {revealError ? (
                   <SettingsFeedback state="error">
-                    {t("Could not open the CLI location: ")}
-                    {revealError}
+                    {t("Could not open the CLI location: {p0}", { p0: revealError })}
                   </SettingsFeedback>
                 ) : null}
                 <div className="mt-3 flex justify-end gap-2">

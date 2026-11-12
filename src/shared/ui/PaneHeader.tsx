@@ -1,6 +1,7 @@
 import type { ComponentPropsWithRef, ReactNode } from "react";
 import { IS_MAC } from "../../platform/tauri/platform";
 import styles from "./PaneHeader.module.css";
+import { Heading } from "./Heading";
 
 export type WindowChromeInsetProps = {
   /** Reserve the space only when this is true (e.g. `!besideRail`). Default true. */
@@ -88,7 +89,7 @@ export type PaneHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
  */
 export function PaneHeader({
   title,
-  titleAs: Title = "h2",
+  titleAs = "h2",
   titleId,
   leading,
   icon,
@@ -131,9 +132,9 @@ export function PaneHeader({
             </span>
           ) : null}
           {title != null ? (
-            <Title id={titleId} className={styles.title}>
+            <Heading as={titleAs} size="item" id={titleId} truncate className={styles.title}>
               {title}
-            </Title>
+            </Heading>
           ) : null}
           {meta != null ? <span className={styles.meta}>{meta}</span> : null}
         </div>

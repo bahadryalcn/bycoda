@@ -4,6 +4,24 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Select } from "./Select";
 
+it("explains an empty list without offering a selectable value", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Select, {
+        label: "Choice",
+        value: "",
+        options: [],
+        onValueChange: change,
+      }),
+    ),
+  );
+  await act(async () => trigger().click());
+  expect(menu()?.querySelector('[role="status"]')?.textContent).toBe("No matching options");
+  expect(menu()?.querySelector('[role="option"]')).toBeNull();
+  await act(async () => key(menu()!, "Enter"));
+  expect(change).not.toHaveBeenCalled();
+});
+
 let root: Root;
 let container: HTMLDivElement;
 const change = vi.fn();
@@ -11,6 +29,17 @@ const options = [
   { value: "a", label: "Alpha" },
   { value: "b", label: "Beta" },
 ];
+it("anchors the menu to the trigger rather than the wider field wrapper", async () => {
+  await render();
+  vi.spyOn(trigger(), "getBoundingClientRect").mockReturnValue(new DOMRect(600, 100, 300, 32));
+  vi.spyOn(container.querySelector("div")!, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(300, 80, 600, 52),
+  );
+  await act(async () => trigger().click());
+  const frame = menu()!.parentElement!;
+  expect(frame.style.left).toBe("600px");
+  expect(frame.style.top).toBe("138px");
+});
 const trigger = () => container.querySelector<HTMLButtonElement>("button")!;
 const menu = () => document.querySelector<HTMLElement>('[role="listbox"]');
 const key = (target: Element, value: string) =>

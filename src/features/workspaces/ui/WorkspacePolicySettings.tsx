@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -418,7 +419,7 @@ export function WorkspacePolicySettings({
                   className="settings-collection-empty"
                   role="status"
                 >
-                  <p>{t("No results")}</p>
+                  <EmptyState size="inline" kind="filtered" description={t("No results")} />
                   <Button
                     size="sm"
                     variant="ghost"

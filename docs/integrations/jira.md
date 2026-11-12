@@ -6,9 +6,32 @@ validated before credentials are saved. Create a token from
 [your Atlassian account](https://id.atlassian.com/manage-profile/security/api-tokens).
 Scoped tokens and Jira Data Center are not supported by this integration.
 
+The comment editor supports bold, italic, code, lists and links. Paste, drop or
+select up to eight PNG, JPEG, GIF or WebP images (10 MB each); remove previews
+before posting. Ctrl+Enter (Command+Enter on macOS) posts publicly using the
+connected account. Images upload as issue attachments and the ADF comment links
+to them. Text and images remain in the window's draft after an error. Completed
+uploads are reused on retry; removing a preview does not delete an attachment
+already uploaded to Jira. Credentials stay in the existing native Jira backend.
+
 Select the Jira source in Inbox to browse issues, read descriptions and comments,
 post comments, ask about a ticket, or start work in a local project. Starting work
 and asking about a ticket include its description and Jira identifier.
+
+Set **Default bycoda project** in the Jira integration settings to choose a global
+working folder, with optional Jira project and board overrides. Board overrides
+apply when opening issues from that board, followed by the Jira project and global
+defaults. An explicit **Agent working folder** choice is saved per issue and takes
+precedence over defaults. See [Jira working folders](../guides/integrations.md#jira-working-folders).
+
+The **Agent working folder** picker uses the sidebar's project groups, with an
+**Ungrouped** section for projects outside groups. Each choice shows its project
+icon, name and path. Type a project name or path to filter the list.
+
+People in issue details, comments and board cards show their Jira profile picture.
+Missing or failed pictures fall back to an initial with a stable color derived from
+the person's name. Private avatars load through the native media route; Jira
+credentials stay on the configured site's avatar endpoints.
 
 Select **Board** in the Jira inbox header to choose a Scrum or Kanban board.
 **Kanban** uses that board's actual column/status mappings. Filter it to the board,

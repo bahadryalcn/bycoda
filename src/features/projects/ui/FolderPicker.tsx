@@ -1,3 +1,5 @@
+/** Different job: Folder navigation opens directories; its separate membership checkbox selects folders without navigating. */
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -267,97 +269,105 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
             }}
           />
         </div>
-        <div
-          ref={listRef}
-          role="listbox"
-          aria-label={t("Folders")}
-          aria-multiselectable={multiple || undefined}
-          tabIndex={0}
-          aria-activedescendant={visibleEntries[active] ? `folder-picker-${active}` : undefined}
-          title={t("↑ ↓ Navigate · Enter Open folder · Backspace Parent folder · Esc Close")}
-          className="h-[min(340px,50vh)] overflow-y-auto overscroll-none p-1.5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--ui-focus-ring-color)"
-          onKeyDown={(event) => {
-            if (busy || loading) return;
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              event.preventDefault();
-              setActive((index) =>
-                Math.max(
-                  0,
-                  Math.min(visibleEntries.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
-                ),
-              );
-            } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
-              event.preventDefault();
-              if (visibleEntries[active]) navigate(visibleEntries[active].path);
-            } else if (event.key === "Backspace") {
-              event.preventDefault();
-              navigate(parent);
-            } else if (event.key === " " && multiple && visibleEntries[active]) {
-              event.preventDefault();
-              const path = visibleEntries[active].path;
-              setSelected((paths) =>
-                paths.some((item) => pathKey(item) === pathKey(path))
-                  ? paths.filter((item) => pathKey(item) !== pathKey(path))
-                  : [...paths, path],
-              );
-            }
-          }}
+        <Tooltip
+          label={t("↑ ↓ Navigate · Enter Open folder · Backspace Parent folder · Esc Close")}
+          asChild
         >
-          {loading ? (
-            <LoadingText className="p-3">{t("Loading folders…")}</LoadingText>
-          ) : visibleEntries.length === 0 && !error ? (
-            <EmptyState size="inline" className="p-3" description={t("No subfolders")} />
-          ) : null}
-          {visibleEntries.map((entry, index) => (
-            <ActionHost
-              key={entry.path}
-              id={`folder-picker-${index}`}
-              role="option"
-              selected={index === active}
-              data-active={index === active}
-              aria-selected={
-                multiple
-                  ? selected.some((path) => pathKey(path) === pathKey(entry.path))
-                  : index === active
+          <div
+            ref={listRef}
+            role="listbox"
+            aria-label={t("Folders")}
+            aria-multiselectable={multiple || undefined}
+            tabIndex={0}
+            aria-activedescendant={visibleEntries[active] ? `folder-picker-${active}` : undefined}
+
+            className="h-[min(340px,50vh)] overflow-y-auto overscroll-none "
+            onKeyDown={(event) => {
+              if (busy || loading) return;
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                setActive((index) =>
+                  Math.max(
+                    0,
+                    Math.min(
+                      visibleEntries.length - 1,
+                      index + (event.key === "ArrowDown" ? 1 : -1),
+                    ),
+                  ),
+                );
+              } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+                event.preventDefault();
+                if (visibleEntries[active]) navigate(visibleEntries[active].path);
+              } else if (event.key === "Backspace") {
+                event.preventDefault();
+                navigate(parent);
+              } else if (event.key === " " && multiple && visibleEntries[active]) {
+                event.preventDefault();
+                const path = visibleEntries[active].path;
+                setSelected((paths) =>
+                  paths.some((item) => pathKey(item) === pathKey(path))
+                    ? paths.filter((item) => pathKey(item) !== pathKey(path))
+                    : [...paths, path],
+                );
               }
-              className="flex items-center rounded-md"
-            >
-              {multiple ? (
-                <Checkbox
-                  aria-label={t("Select {p0}", { p0: entry.name })}
-                  checked={selected.some((path) => pathKey(path) === pathKey(entry.path))}
-                  onChange={(event) =>
-                    setSelected((paths) =>
-                      event.target.checked
-                        ? [...paths, entry.path]
-                        : paths.filter((path) => pathKey(path) !== pathKey(entry.path)),
-                    )
-                  }
-                  className="ml-2 size-3.5"
-                  disabled={busy}
-                />
-              ) : null}
-              <Button
-                variant="item"
-                motion="none"
-                type="button"
-                tabIndex={-1}
-                tooltip={t("Open folder")}
-                tooltipDetails={[entry.path]}
-                shortcut="Enter"
-                disabled={busy}
-                onMouseEnter={() => setActive(index)}
-                onClick={() => navigate(entry.path)}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            }}
+          >
+            {loading ? (
+              <LoadingText className="p-3">{t("Loading folders…")}</LoadingText>
+            ) : visibleEntries.length === 0 && !error ? (
+              <EmptyState size="inline" className="p-3" description={t("No subfolders")} />
+            ) : null}
+            {visibleEntries.map((entry, index) => (
+              <ActionHost
+                key={entry.path}
+                id={`folder-picker-${index}`}
+                role="option"
+                selected={index === active}
+                data-active={index === active}
+                aria-selected={
+                  multiple
+                    ? selected.some((path) => pathKey(path) === pathKey(entry.path))
+                    : index === active
+                }
+                className="flex items-center"
               >
-                <Folder tone="muted" className="icon-md shrink-0" />
-                <Text size="inherit" tone="inherit" truncate>
-                  {entry.name}
-                </Text>
-              </Button>
-            </ActionHost>
-          ))}
-        </div>
+                {multiple ? (
+                  <Checkbox
+                    aria-label={t("Select {p0}", { p0: entry.name })}
+                    checked={selected.some((path) => pathKey(path) === pathKey(entry.path))}
+                    onChange={(event) =>
+                      setSelected((paths) =>
+                        event.target.checked
+                          ? [...paths, entry.path]
+                          : paths.filter((path) => pathKey(path) !== pathKey(entry.path)),
+                      )
+                    }
+                    className="ml-2"
+                    disabled={busy}
+                  />
+                ) : null}
+                <Button
+                  variant="item"
+                  motion="none"
+                  type="button"
+                  tabIndex={-1}
+                  tooltip={t("Open folder")}
+                  tooltipDetails={[entry.path]}
+                  shortcut="Enter"
+                  disabled={busy}
+                  onMouseEnter={() => setActive(index)}
+                  onClick={() => navigate(entry.path)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <Folder tone="muted" className="icon-md shrink-0" />
+                  <Text size="inherit" tone="inherit" truncate>
+                    {entry.name}
+                  </Text>
+                </Button>
+              </ActionHost>
+            ))}
+          </div>
+        </Tooltip>
         {newName !== null ? (
           <form
             className="flex items-center gap-2 border-t border-stroke px-3 py-2"

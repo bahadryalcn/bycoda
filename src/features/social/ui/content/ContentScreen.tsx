@@ -1,3 +1,5 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Text } from "../../../../shared/ui/Text";
 import { useMemo, useState } from "react";
 import { formatDate, t } from "../../../../shared/i18n";
@@ -188,19 +190,13 @@ export function ContentScreen({
       {!projectId ? (
         <EmptyHint message={t("Choose a project at the top to see its posts.")} />
       ) : data.error ? (
-        <InlineMessage tone="danger" retry={{ onRetry: data.refetch, label: t("Try again") }}>
+        <InlineError retry={{ onRetry: data.refetch, label: t("Try again") }}>
           {t("Could not load posts.")}
-        </InlineMessage>
+        </InlineError>
       ) : data.loading ? (
-        <Text
-          as="p"
-          size="caption"
-          tone="muted"
-          leading="inherit"
-          className="content-platform-note"
-        >
+        <LoadingText delay={false} className="content-platform-note">
           {t("Loading…")}
-        </Text>
+        </LoadingText>
       ) : isEmpty ? (
         <EmptyHint
           message={t("No posts yet.")}

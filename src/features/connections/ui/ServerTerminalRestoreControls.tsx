@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { useId, useState } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -119,9 +120,7 @@ export function ServerTerminalRestoreControls({
           ) : null}
         </div>
         {state.saveStatus === "saving" ? (
-          <Text as="p" size="inherit" tone="muted" role="status">
-            {t("Saving…")}
-          </Text>
+          <LoadingText delay={false}>{t("Saving…")}</LoadingText>
         ) : null}
         {state.saveStatus === "failed" ? (
           <InlineError

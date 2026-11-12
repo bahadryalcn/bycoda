@@ -1,4 +1,5 @@
 import { killChild } from "../../core/child";
+import { humanizeModelId } from "../../../../shared/model/modelNameFromId";
 import {
   assertOptionalProviderProbeError,
   createProviderRetirementLedger,
@@ -149,7 +150,7 @@ function modelsFromListAvailable(result: unknown): AgentModel[] {
       const rec = asRecord(item);
       if (!rec) return [];
       const nativeId = String(rec.value ?? rec.modelId ?? rec.id ?? "").trim();
-      const name = String(rec.name ?? nativeId).trim();
+      const name = String(rec.name ?? humanizeModelId(nativeId)).trim();
       if (!nativeId || !name) return [];
       return [
         {
@@ -173,7 +174,7 @@ function modelsFromSessionNew(result: unknown): AgentModel[] {
         const model = asRecord(item);
         if (!model) return [];
         const nativeId = String(model.modelId ?? model.value ?? "").trim();
-        const name = String(model.name ?? nativeId).trim();
+        const name = String(model.name ?? humanizeModelId(nativeId)).trim();
         if (!nativeId || !name) return [];
         return [
           {

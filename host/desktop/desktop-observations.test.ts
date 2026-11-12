@@ -170,7 +170,7 @@ it("refuses outside apps, foreign inventory and invented window IDs before obser
   const f = await fixture();
   await expect(
     f.control.request({ op: "screenshot", app: "Private", windowId: "secret" }, agent),
-  ).rejects.toThrow("allowlist");
+  ).rejects.toThrow("not approved");
   expect(f.calls).toHaveLength(0);
   await expect(
     f.control.request(

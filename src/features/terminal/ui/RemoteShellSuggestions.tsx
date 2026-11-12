@@ -1,9 +1,8 @@
+import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
-import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import type { SshShellController, SshShellPreview } from "../model/sshShellIntegration";
 import styles from "./TerminalTools.module.css";
@@ -52,7 +51,6 @@ export function RemoteShellSuggestions({
   const suggestions = [...new Set(snapshot?.suggestions ?? [])];
   const retained = !snapshot && !selectionMode ? preview : undefined;
   const shown = snapshot ? suggestions : [...new Set(retained?.suggestions ?? [])];
-  const shownPrefix = (snapshot ? snapshot.prefix : retained?.prefix) ?? "";
   const choice =
     selection.prefix === snapshot?.prefix ? Math.max(0, suggestions.indexOf(selection.value)) : 0;
   const select = (index: number) =>
@@ -128,6 +126,18 @@ export function RemoteShellSuggestions({
     element.addEventListener("keydown", listener, true);
     return () => element.removeEventListener("keydown", listener, true);
   }, [terminal, selectionMode]);
+  const list = usePickerList({
+    options: shown.map((value) => ({ value, title: value, disabled: busy })),
+    value: shown[choice] ?? null,
+    activeValue: shown[choice] ?? null,
+    onActiveValueChange: (value) => {
+      const index = suggestions.indexOf(value ?? "");
+      if (index >= 0) select(index);
+    },
+    onChange: (value) => {
+      if (snapshot) void accept(value);
+    },
+  });
   return (
     <>
       {!selectionMode && terminal && snapshot?.prefix && suggestions[choice] ? (
@@ -194,41 +204,14 @@ export function RemoteShellSuggestions({
           </Text>
         ) : null}
         {snapshot || retained?.suggestions.length ? (
-          <div
-            role="listbox"
-            aria-label={t("Remote command suggestions")}
+          <PickerList
+            label={t("Remote command suggestions")}
+            controller={list}
+            checkPlacement="none"
+            pointerHighlight="movement"
             className={styles.list}
-            aria-busy={busy}
-          >
-            {shown.map((value, index) => (
-              <Button
-                key={value}
-                role="option"
-                tabIndex={-1}
-                variant="item"
-                size="sm"
-                className={styles.option}
-                aria-selected={index === choice}
-                disabled={busy}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={snapshot ? () => void accept(value) : undefined}
-              >
-                <OverflowTooltip label={value}>
-                  <Text as="span" size="inherit" tone="inherit" truncate className={styles.text}>
-                    <Text size="inherit" tone="accent" weight="medium" className={styles.match}>
-                      {value.slice(0, shownPrefix.length)}
-                    </Text>
-                    {value.slice(shownPrefix.length)}
-                  </Text>
-                </OverflowTooltip>
-              </Button>
-            ))}
-            {snapshot && !suggestions.length ? (
-              <Text as="p" size="caption" tone="muted" className={styles.hint}>
-                {t("No safe matching suggestions.")}
-              </Text>
-            ) : null}
-          </div>
+            emptyLabel={t("No safe matching suggestions.")}
+          />
         ) : null}
         {selectionMode ? (
           <Text as="p" size="caption" tone="muted" className={styles.hint}>

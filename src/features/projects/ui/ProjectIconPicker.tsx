@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Select } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -80,32 +81,28 @@ export function ProjectIconPicker({
           ]}
         />
       </div>
-      <div
-        className="max-h-44 overflow-y-auto overscroll-contain"
-        role="group"
-        aria-label={t("Project icons")}
-      >
-        <div className="grid grid-cols-5 gap-1">
-          {icons.map((icon) => (
-            <Button
-              variant="item"
-              motion="none"
-              layout="stacked"
-              key={icon.name}
-              type="button"
-              tooltip={`${icon.label} · ${icon.category}`}
-              aria-label={t("Project icon: {p0}", { p0: icon.label })}
-              aria-pressed={selected.name === icon.name}
-              onClick={() => onPick(icon.name)}
-              className="flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 px-0.5"
-            >
-              <ProjectMascot project={project} name={icon.name} className="size-6 shrink-0" />
-              <Text truncate size="micro" tone="secondary" className="max-w-full">
-                {icon.label.split(" / ")[0]}
-              </Text>
-            </Button>
-          ))}
-        </div>
+      <div className="max-h-44 overflow-y-auto overscroll-contain">
+        <RadioGroup
+          variant="tiles"
+          label={t("Project icons")}
+          value={selected.name}
+          onValueChange={onPick}
+          tile={{ motion: "none", layout: "stacked" }}
+          className="grid grid-cols-5 gap-1"
+          options={icons.map((icon) => ({
+            value: icon.name,
+            tooltip: `${icon.label} · ${icon.category}`,
+            ariaLabel: t("Project icon: {p0}", { p0: icon.label }),
+            content: (
+              <>
+                <ProjectMascot project={project} name={icon.name} className="size-6 shrink-0" />
+                <Text truncate size="micro" tone="secondary" className="max-w-full">
+                  {icon.label.split(" / ")[0]}
+                </Text>
+              </>
+            ),
+          }))}
+        />
         {icons.length === 0 ? (
           <EmptyState
             size="inline"

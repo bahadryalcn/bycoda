@@ -3,11 +3,12 @@ import type { BadgeTone } from "./Badge";
 import styles from "./StatusDot.module.css";
 
 export interface StatusDotProps extends Omit<HTMLAttributes<HTMLSpanElement>, "children"> {
-  tone?: BadgeTone | "secondary";
+  tone?: BadgeTone | "secondary" | "added" | "removed";
   /** Meaning of a standalone dot; omit when adjacent text already provides it. */
   label?: string;
+  /** Compatibility names; every static status dot uses the same compact 6px mark. */
   size?: "sm" | "md" | "compact" | "fixed";
-  /** Use the stronger solid status colors. */
+  /** Compatibility policy name; dots always use the shared foreground tone. */
   appearance?: "foreground" | "solid";
   /** Keep the surrounding control's existing forced-color behavior. */
   preserveColors?: boolean;

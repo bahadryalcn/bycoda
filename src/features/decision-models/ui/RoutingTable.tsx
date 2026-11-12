@@ -1,7 +1,5 @@
 import "./decisionModels.css";
 import { routingChanges } from "../model/presentation";
-import { SourceKindIcon } from "./SourceIcon";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Badge } from "../../../shared/ui/Badge";
 import { TextField } from "../../../shared/ui/TextField";
 import { InlineAction } from "../../../shared/ui/ActionHost";
@@ -14,7 +12,7 @@ import {
   Shield,
   Inbox,
   CircleHelp,
-  Check,
+  RotateCcw,
   Plus,
   Minus,
 } from "../../../shared/ui/icons";
@@ -23,22 +21,16 @@ import { useState } from "react";
 import { DECISION_TASK_TYPES } from "../../../shared/model/host-contracts/decision-models";
 import { formatNumber, t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { SourceOrderPicker } from "./SourceOrderPicker";
+import { parseThreshold, resetRoute } from "../model/routingEditor";
 import type { DecisionRouting, DecisionSource, DecisionTaskType } from "../model/decisionTypes";
 import {
   DEFAULT_ROUTE_THRESHOLD,
   setRouteSources,
   setRouteThreshold,
-  sourceKindLabel,
   taskTypeLabel,
 } from "../model/decisionView";
 import { ErrorNotice } from "./ErrorNotice";
-/** Empty or non-numeric input, or a value outside 0 to 1, is not a threshold. */
-function parseThreshold(text: string): number | null {
-  if (text.trim() === "") return null;
-  const value = Number(text.replace(",", "."));
-  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
-}
 /**
  * Per task type: the sources in fallback order and the confidence threshold. Edits stay in a draft
  * until Save; an invalid threshold blocks saving and is named on its field.
@@ -54,6 +46,7 @@ export function RoutingTable({
   busy: boolean;
   onSave: (routing: DecisionRouting) => Promise<unknown>;
 }) {
+  const [editingTask, setEditingTask] = useState<DecisionTaskType | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState<DecisionRouting>(routing);
   const [thresholdText, setThresholdText] = useState<Partial<Record<DecisionTaskType, string>>>({});
@@ -80,12 +73,6 @@ export function RoutingTable({
     inbox_priority: Inbox,
     generic: CircleHelp,
   };
-  const options = (sources ?? []).map((source) => ({
-    value: source.id,
-    label: source.name,
-    description: sourceKindLabel(source.kind),
-    icon: <SourceKindIcon kind={source.kind} />,
-  }));
   const changeSources = (task: DecisionTaskType, sourceIds: readonly string[]) => {
     setSaved(false);
     setDraft((current) => ({ ...current, [task]: setRouteSources(current[task], sourceIds) }));
@@ -138,7 +125,7 @@ export function RoutingTable({
       <div className="decision-routing-list">
         {expanded ? (
           <div className="decision-routing-row">
-            <Text size="caption" tone="secondary">
+            <Text size="caption" tone="secondary" className="decision-routing-task">
               {t("Task")}
             </Text>
             <Text size="caption" tone="secondary">
@@ -178,34 +165,23 @@ export function RoutingTable({
                     {taskTypeLabel(task)}
                   </Text>
                   {expanded && route?.sourceIds.length ? (
-                    <Tooltip label={t("Customized")}>
-                      <Badge size="xs" icon={<Check />} aria-label={t("Customized")} />
-                    </Tooltip>
+                    <Badge className="shrink-0" size="xs">
+                      {t("Custom")}
+                    </Badge>
                   ) : null}
                 </div>
-                {expanded ? (
+                {expanded && (route?.sourceIds.length || editingTask === task) ? (
                   <>
                     <div className="flex min-w-0 flex-col gap-1.5">
-                      <SearchableSelect
-                        hideLabel
+                      <SourceOrderPicker
                         label={taskTypeLabel(task)}
-                        multiple
                         value={route?.sourceIds ?? []}
-                        options={options}
-                        placeholder={t("Automatic")}
-                        selectionLabels={{
-                          summary: () =>
-                            orderedNames
-                              .map((name, index) => `${formatNumber(index + 1)} ${name}`)
-                              .join(", "),
-                        }}
-                        searchPlaceholder={t("Search sources")}
-                        emptyLabel={t("No sources connected")}
+                        sources={sources ?? []}
                         disabled={busy || sources === null}
                         onChange={(next) => changeSources(task, next)}
                       />
                     </div>
-                    <div className="flex min-w-0 flex-col gap-1">
+                    <div className="flex min-w-0 items-center gap-1">
                       <TextField
                         label={t("Minimum confidence")}
                         inputMode="decimal"
@@ -272,8 +248,41 @@ export function RoutingTable({
                           </span>
                         }
                       />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        label={t("Reset to automatic")}
+                        disabled={busy}
+                        onClick={() => {
+                          setDraft((current) => resetRoute(current, task));
+                          setThresholdText((current) => {
+                            const next = { ...current };
+                            delete next[task];
+                            return next;
+                          });
+                          setEditingTask(null);
+                          setSaved(false);
+                        }}
+                      >
+                        <RotateCcw />
+                      </Button>
                     </div>
                   </>
+                ) : expanded ? (
+                  <div className="col-span-2 flex min-w-0 items-center justify-between gap-2">
+                    <Text size="caption" tone="secondary">
+                      {t("Automatic: local models first")}
+                    </Text>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => setEditingTask(task)}
+                    >
+                      {t("Customize")}
+                    </Button>
+                  </div>
                 ) : (
                   <>
                     <div className="flex min-w-0 items-center gap-1">

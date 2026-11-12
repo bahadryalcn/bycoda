@@ -66,30 +66,35 @@ async function click(label: string) {
   expect(button).toBeTruthy();
   await act(async () => button.click());
 }
-it("offers allow-all-apps only in full access and saves the mode with the version", async () => {
+it("lists approved apps outside full access and saves the mode with the version", async () => {
   await render();
-  expect(container.textContent).not.toContain("Allow all apps");
+  expect(container.textContent).not.toContain("Approved apps");
   expect(container.textContent).not.toContain("Full access asks nothing");
   await act(() => root.unmount());
   root = createRoot(container);
   mock.request.mockReset().mockResolvedValue({
     ...state,
-    configuration: { ...config, permissionMode: "full", version: 4 },
+    configuration: { ...config, permissionMode: "auto", allowedApps: ["Chrome"], version: 3 },
+  });
+  await render();
+  expect(container.textContent).toContain("Approved apps");
+  expect(container.textContent).toContain("Chrome");
+  await act(() => root.unmount());
+  root = createRoot(container);
+  mock.request.mockReset().mockResolvedValue({
+    ...state,
+    configuration: { ...config, permissionMode: "full", allowedApps: ["Chrome"], version: 4 },
   });
   await render();
   expect(container.textContent).toContain("Full access asks nothing");
-  expect(container.textContent).toContain("Allow all apps");
-  const toggle = container.querySelector<HTMLButtonElement>(
-    '[role="switch"][aria-label="Allow all apps"]',
-  )!;
-  await act(async () => toggle.click());
+  expect(container.textContent).not.toContain("Approved apps");
   await click("Save computer controls");
-  expect(
-    mock.request.mock.calls.filter(([input]) => input.op === "configure").at(-1)?.[0],
-  ).toMatchObject({
+  const saved = mock.request.mock.calls.filter(([input]) => input.op === "configure").at(-1)?.[0];
+  expect(saved).toMatchObject({
     expectedVersion: 4,
-    configuration: { permissionMode: "full", allowAllApps: true },
+    configuration: { permissionMode: "full", allowedApps: ["Chrome"] },
   });
+  expect(saved.configuration).not.toHaveProperty("allowAllApps");
 });
 it("does not observe the desktop or enable an uninstalled helper on mount", async () => {
   await render();

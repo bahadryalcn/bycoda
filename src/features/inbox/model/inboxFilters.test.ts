@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   applyInboxFilters,
+  filterInboxByJira,
+  jiraActiveFilterCount,
+  jiraFilterOptions,
+  loadInboxFilters,
+  saveInboxFilters,
   DEFAULT_INBOX_FILTERS,
   filterInboxByKind,
   filterInboxByLinearProject,
@@ -20,6 +25,125 @@ import {
   visibleInboxSources,
 } from "./inboxFilters";
 import type { InboxItem } from "./githubTasks";
+
+describe("Jira workflow and assignment filters", () => {
+  const jiraItems: InboxItem[] = [
+    {
+      provider: "jira",
+      kind: "jira",
+      number: 1,
+      title: "Assigned",
+      state: "Development in progress",
+      stateType: "indeterminate",
+      url: "",
+      updatedAt: "2026-11-12",
+      labels: [],
+      assignees: [{ login: "Ada", accountId: "ada" }],
+      draft: false,
+      repo: "ENG",
+      projectPath: "",
+      teamId: "1",
+    },
+    {
+      provider: "jira",
+      kind: "jira",
+      number: 2,
+      title: "Unassigned",
+      state: "Test approved",
+      stateType: "done",
+      url: "",
+      updatedAt: "2026-11-12",
+      labels: [],
+      assignees: [],
+      draft: false,
+      repo: "ENG",
+      projectPath: "",
+      teamId: "1",
+    },
+    {
+      provider: "jira",
+      kind: "jira",
+      number: 3,
+      title: "Other",
+      state: "Release ready",
+      stateType: "indeterminate",
+      url: "",
+      updatedAt: "2026-11-12",
+      labels: [],
+      assignees: [{ login: "Ada", accountId: "other-ada" }],
+      draft: false,
+      repo: "OPS",
+      projectPath: "",
+      teamId: "2",
+    },
+  ];
+
+  it("ORs assignees with Unassigned, then intersects workflow and Open/Closed", () => {
+    const filters = {
+      ...DEFAULT_INBOX_FILTERS,
+      jiraAssignees: ["ada"],
+      jiraUnassigned: true,
+      jiraStatuses: ["Development in progress", "Test approved"],
+    };
+    expect(filterInboxByJira(jiraItems, filters).map((row) => row.number)).toEqual([1, 2]);
+    expect(
+      applyInboxFilters(
+        jiraItems,
+        { ...filters, status: { ...filters.status, closed: true } },
+        "",
+        Date.now(),
+        "jira",
+      ).map((row) => row.number),
+    ).toEqual([2]);
+    expect(filterInboxByJira(jiraItems, DEFAULT_INBOX_FILTERS)).toEqual(jiraItems);
+    expect(jiraActiveFilterCount(filters)).toBe(2);
+    expect(jiraActiveFilterCount({ ...filters, assignedToMe: true })).toBe(1);
+    expect(hasActiveInboxFilters(filters, "jira")).toBe(true);
+    expect(hasActiveInboxFilters(filters, "github")).toBe(false);
+  });
+
+  it("derives unique stable assignees and real statuses from visible projects", () => {
+    expect(jiraFilterOptions(jiraItems, ["2"])).toEqual({
+      assignees: [{ value: "ada", label: "Ada" }],
+      statuses: [
+        { value: "Development in progress", label: "Development in progress" },
+        { value: "Test approved", label: "Test approved" },
+      ],
+    });
+    expect(jiraFilterOptions(jiraItems).assignees).toHaveLength(2);
+  });
+
+  it("persists selections, migrates old data and sanitizes invalid stored values", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    };
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: storage });
+    try {
+      const filters = {
+        ...DEFAULT_INBOX_FILTERS,
+        jiraAssignees: ["ada"],
+        jiraStatuses: ["Test approved"],
+        jiraUnassigned: true,
+      };
+      saveInboxFilters(filters);
+      expect(loadInboxFilters()).toEqual(filters);
+      storage.setItem("bycoda.inboxFilters", JSON.stringify({ assignedToMe: true }));
+      expect(loadInboxFilters()).toEqual({ ...DEFAULT_INBOX_FILTERS, assignedToMe: true });
+      storage.setItem(
+        "bycoda.inboxFilters",
+        JSON.stringify({ jiraAssignees: [null, "", "ada", "ada"], jiraStatuses: 3 }),
+      );
+      expect(loadInboxFilters().jiraAssignees).toEqual(["ada"]);
+      expect(loadInboxFilters().jiraStatuses).toEqual([]);
+    } finally {
+      if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
+});
 
 function item(overrides: Partial<InboxItem> & Pick<InboxItem, "number" | "updatedAt">): InboxItem {
   return {

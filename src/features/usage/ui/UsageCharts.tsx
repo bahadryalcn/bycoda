@@ -1,4 +1,6 @@
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { useState } from "react";
 import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -253,7 +255,8 @@ export function UsageDataNotes({
                 className="min-w-0 flex-1"
                 items={unpriced.map((model, index) => ({
                   id: `${index}:${model}`,
-                  label: model,
+                  label: modelDisplayName(model),
+                  icon: <ModelLabel model={model} iconOnly size="xs" />,
                 }))}
               />
             </div>

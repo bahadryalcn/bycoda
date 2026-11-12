@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../../../shared/ui/Tooltip";
 import { Text } from "../../../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
@@ -131,14 +132,19 @@ export function InterfaceSizeGroup({ appearance: a }: { appearance: AppearanceSe
               checked={display.showModel}
               onCheckedChange={(showModel) => updateSessionListDisplay({ showModel })}
             />
-            <Switch
-              compact
-              label={t("Show branch")}
-              checked={display.showBranch}
-              disabled={display.density === "compact"}
-              title={display.density === "compact" ? t("Compact rows have no branch line") : ""}
-              onCheckedChange={(showBranch) => updateSessionListDisplay({ showBranch })}
-            />
+            <Tooltip
+              label={display.density === "compact" ? t("Compact rows have no branch line") : ""}
+              asChild
+            >
+              <Switch
+                compact
+                label={t("Show branch")}
+                checked={display.showBranch}
+                disabled={display.density === "compact"}
+
+                onCheckedChange={(showBranch) => updateSessionListDisplay({ showBranch })}
+              />
+            </Tooltip>
           </div>
         }
       >

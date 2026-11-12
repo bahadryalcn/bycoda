@@ -129,7 +129,7 @@ describe("crew roster", () => {
 
   it("qualifies a candidate with its provider and keeps unknown models readable", () => {
     expect(candidateDetailLabel(catalog, candidate)).toBe("Model M · codex");
-    expect(candidateDetailLabel(catalog, { ...candidate, model: "gone" })).toBe("gone · codex");
+    expect(candidateDetailLabel(catalog, { ...candidate, model: "gone" })).toBe("Gone · codex");
     expect(candidateDetailLabel(catalog, undefined)).toBe("");
   });
 

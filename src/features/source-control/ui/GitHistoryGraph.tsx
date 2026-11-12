@@ -1,3 +1,4 @@
+import { FailureState } from "../../../shared/ui/FailureState";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
@@ -307,9 +308,9 @@ export function GitHistoryGraph({
         loading ? (
           <GitLoading text="Loading commit graph…" />
         ) : error || failure ? (
-          <EmptyState
+          <FailureState
             size="inline"
-            kind="unavailable"
+
             className="px-3"
             description={t("Commit history unavailable")}
             onRetry={refresh}

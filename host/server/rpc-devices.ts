@@ -15,7 +15,10 @@ import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { WATCH_STAMP_MS } from "./support";
 import { saveDisabledModels } from "../providers/disabled-models";
-import { saveProviderAccountStyles } from "../providers/provider-account-styles";
+import {
+  readProviderAccountStyles,
+  saveProviderAccountStyles,
+} from "../providers/provider-account-styles";
 export async function handleDevicesRpc(
   dependencies: Pick<
     ServerBindings,
@@ -75,7 +78,10 @@ export async function handleDevicesRpc(
       );
       break;
     case "host.settings.get":
-      request.result = await dependencies.tasks.limits.state();
+      request.result = {
+        ...(await dependencies.tasks.limits.state()),
+        providerAccountStyles: await readProviderAccountStyles(dependencies.engine.store),
+      };
       break;
     case "host.settings.save":
       if (request.params.providerAccountStyles !== undefined)
@@ -87,7 +93,10 @@ export async function handleDevicesRpc(
         await saveDisabledModels(dependencies.engine.store, request.params.disabledModels);
       if (request.params.settings !== undefined)
         await dependencies.tasks.limits.save(request.params.settings);
-      request.result = await dependencies.tasks.limits.state();
+      request.result = {
+        ...(await dependencies.tasks.limits.state()),
+        providerAccountStyles: await readProviderAccountStyles(dependencies.engine.store),
+      };
       void dependencies.tasks
         .tick()
         .catch((error) => console.warn("Task scheduler tick failed", error));

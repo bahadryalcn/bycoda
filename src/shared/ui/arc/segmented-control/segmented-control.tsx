@@ -28,6 +28,8 @@ export interface Segment {
   disabled?: boolean;
 }
 export interface SegmentedControlProps {
+  /** Overall control height; sm fits compact toolbars without adding tray height. */
+  size?: "sm" | "md";
   /** Equal-width, compact steps; labels hide below a narrow container width. */
   compact?: boolean;
   options: Segment[];
@@ -44,6 +46,7 @@ export interface SegmentedControlProps {
 
 export default function SegmentedControl({
   options,
+  size = "md",
   compact = false,
   value,
   onValueChange,
@@ -145,6 +148,7 @@ export default function SegmentedControl({
     <div
       className={`${styles.root} ${className ?? ""}`}
       data-compact={compact || undefined}
+      data-size={size}
       role={selectionRole === "radio" ? "radiogroup" : "group"}
       aria-label={label}
     >
@@ -163,6 +167,7 @@ export default function SegmentedControl({
                 className={styles.button}
                 type="button"
                 data-value={option.value}
+                data-icon-only={iconOnly || undefined}
                 data-selected={value === option.value}
                 role={selectionRole === "radio" ? "radio" : undefined}
                 aria-checked={selectionRole === "radio" ? value === option.value : undefined}
@@ -193,9 +198,7 @@ export default function SegmentedControl({
                       {option.icon}
                     </span>
                   ) : null}
-                  {option.iconOnly && option.icon != null ? (
-                    <span className="sr-only">{option.label}</span>
-                  ) : (
+                  {option.iconOnly && option.icon != null ? null : (
                     <span className={styles.copy}>{option.label}</span>
                   )}
                   {option.accessory != null ? (

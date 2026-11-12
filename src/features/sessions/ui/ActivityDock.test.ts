@@ -140,7 +140,7 @@ describe("ActivityDock", () => {
       "Completed review",
     );
     expect(row.querySelector(".activity-dock-agent-identity")?.textContent).toContain(
-      "gpt-6.1-sol",
+      "GPT-6.1-Sol",
     );
     expect(row.querySelector(".activity-dock-agent-metrics")?.textContent).toContain("1 failed");
     expect(row.querySelector(".activity-dock-agent-metrics")?.textContent).toContain("1m 2s");

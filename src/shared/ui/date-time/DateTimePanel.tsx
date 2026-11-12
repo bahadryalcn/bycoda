@@ -40,7 +40,7 @@ export function DateTimePanel({
     if (!disabled && !readOnly) onChange(clampValue(next, mode, minimum, max));
   };
   return (
-    <div className={styles.panel}>
+    <div className={styles.panel} data-mode={mode}>
       {mode !== "time" ? (
         <CalendarGrid
           value={value.slice(0, 10)}
@@ -66,14 +66,16 @@ export function DateTimePanel({
           onChange={(next) => update(mode === "time" ? next : `${value.slice(0, 10)}T${next}`)}
         />
       ) : null}
-      <ValueEntry
-        value={value}
-        mode={mode}
-        onChange={update}
-        onValidityChange={onValidityChange}
-        disabled={disabled || readOnly}
-        label={mode === "date" ? t("Date") : mode === "time" ? t("Time") : t("Date and time")}
-      />
+      <div className={styles.wide}>
+        <ValueEntry
+          value={value}
+          mode={mode}
+          onChange={update}
+          onValidityChange={onValidityChange}
+          disabled={disabled || readOnly}
+          label={mode === "date" ? t("Date") : mode === "time" ? t("Time") : t("Date and time")}
+        />
+      </div>
     </div>
   );
 }

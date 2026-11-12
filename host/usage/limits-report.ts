@@ -4,12 +4,20 @@ import type { NamedWindow, WindowKind } from "./limits-parse";
 import { windowReading, type WindowReading } from "./limits-pace";
 
 type Provider = "claude" | "codex" | "opencode";
-type Account = { id: string; label: string; color: string };
+type Account = {
+  id: string;
+  label: string;
+  color: string;
+  kind?: "personal" | "work";
+  derivedKind?: "personal" | "work";
+};
 
 export type AccountLimit = {
   id: string;
   label: string;
   color: string;
+  kind?: "personal" | "work";
+  derivedKind?: "personal" | "work";
   reading: WindowReading;
 };
 export type LimitCard = {
@@ -24,6 +32,8 @@ export type AccountStatus = {
   id: string;
   label: string;
   color: string;
+  kind?: "personal" | "work";
+  derivedKind?: "personal" | "work";
   status: "ok" | "unavailable" | "error";
   error: string | null;
   resetCredits: number | null;

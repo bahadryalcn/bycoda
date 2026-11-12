@@ -40,6 +40,7 @@ import { isRemoteProvider, type RemoteProvider } from "../src/features/connectio
 import { providerLaunch, resolveProvider } from "./process";
 import { isOpencodeAcpLaunch, opencodeLaunchEnv } from "./providers/opencode-launch-env";
 import { bridgeToolGroup } from "./mcp/hub/bridge";
+import { mcpReady } from "./mcp/mcp-readiness";
 import { providerAccountEnvironment } from "./providers/provider-accounts";
 import { providerAuthStatus } from "./providers/provider-auth";
 import {
@@ -251,6 +252,12 @@ export class HostChildBackend implements ChildBackend {
     if (toolGroup) {
       const tools = this.preparation(id);
       const tool = await this.prepareTool(id, tools, toolGroup);
+      if (toolGroup === "conversation" && args.checkReady === true)
+        return {
+          ready:
+            !!tool?.mcpUrl &&
+            (await mcpReady(tool.mcpUrl, tool.env.BYCODA_CONVERSATION_TOKEN ?? "")),
+        } as T;
       return (
         tool
           ? {

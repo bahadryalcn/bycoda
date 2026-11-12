@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -72,25 +73,27 @@ export function GraphAvatar({
 }) {
   useLocale();
   return (
-    <Text
-      as="span"
-      size="inherit"
-      tone="inherit"
-      weight="medium"
-      leading="none"
-      aria-hidden
-      title={name || t("Unknown author")}
-      className={`grid shrink-0 place-items-center rounded-full select-none ${className}`}
-      style={{
-        width: size,
-        height: size,
-        fontSize: Math.round(size * 0.5),
-        backgroundColor: authorColor(name),
-        color: "var(--color-background-base)",
-      }}
-    >
-      {authorInitials(name)}
-    </Text>
+    <Tooltip label={name || t("Unknown author")} asChild>
+      <Text
+        as="span"
+        size="inherit"
+        tone="inherit"
+        weight="medium"
+        leading="none"
+        aria-hidden
+
+        className={`grid shrink-0 place-items-center rounded-full select-none ${className}`}
+        style={{
+          width: size,
+          height: size,
+          fontSize: Math.round(size * 0.5),
+          backgroundColor: authorColor(name),
+          color: "var(--color-background-base)",
+        }}
+      >
+        {authorInitials(name)}
+      </Text>
+    </Tooltip>
   );
 }
 
@@ -115,42 +118,44 @@ function TagGlyph() {
 export function RefPill({ refInfo }: { refInfo: GraphRefChip }) {
   useLocale();
   return (
-    <Text
-      as="span"
-      tone={refInfo.color ? "inherit" : "secondary"}
-      weight={refInfo.current ? "medium" : undefined}
-      leading="none"
-      title={refTitle(refInfo)}
-      {...surfaceAttributes(
-        {
-          radius: refInfo.kind === "tag" ? undefined : "pill",
-          variant: refInfo.color ? undefined : "inset",
-        },
-        `flex h-4 min-w-0 shrink items-center gap-0.5 px-1.5 ${
-          refInfo.kind === "tag" ? "rounded-(--ui-radius-control)" : ""
-        }  ${refInfo.current ? "ring-1 ring-(color:--ui-pane-border)" : ""}`,
-      )}
-      style={{
-        maxWidth: PILL_MAX_PX,
-        ...(refInfo.color
-          ? {
-              backgroundColor: refInfo.color,
-              color: "var(--color-background-base)",
-            }
-          : null),
-      }}
-    >
-      {refInfo.kind === "tag" ? (
-        <TagGlyph />
-      ) : refInfo.kind === "remote" ? (
-        <Globe className="icon-xs shrink-0" strokeWidth={2} />
-      ) : (
-        <GitBranch className="icon-xs shrink-0" strokeWidth={2} />
-      )}
-      <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0">
-        {refInfo.name}
+    <Tooltip label={refTitle(refInfo)} asChild>
+      <Text
+        as="span"
+        tone={refInfo.color ? "inherit" : "secondary"}
+        weight={refInfo.current ? "medium" : undefined}
+        leading="none"
+
+        {...surfaceAttributes(
+          {
+            radius: refInfo.kind === "tag" ? undefined : "pill",
+            variant: refInfo.color ? undefined : "inset",
+          },
+          `flex h-4 min-w-0 shrink items-center gap-0.5 px-1.5 ${
+            refInfo.kind === "tag" ? "rounded-(--ui-radius-control)" : ""
+          }  ${refInfo.current ? "ring-1 ring-(color:--ui-pane-border)" : ""}`,
+        )}
+        style={{
+          maxWidth: PILL_MAX_PX,
+          ...(refInfo.color
+            ? {
+                backgroundColor: refInfo.color,
+                color: "var(--color-background-base)",
+              }
+            : null),
+        }}
+      >
+        {refInfo.kind === "tag" ? (
+          <TagGlyph />
+        ) : refInfo.kind === "remote" ? (
+          <Globe className="icon-xs shrink-0" strokeWidth={2} />
+        ) : (
+          <GitBranch className="icon-xs shrink-0" strokeWidth={2} />
+        )}
+        <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0">
+          {refInfo.name}
+        </Text>
       </Text>
-    </Text>
+    </Tooltip>
   );
 }
 
@@ -184,18 +189,19 @@ export function RefPills({
         <RefPill key={`${ref.kind}:${ref.name}`} refInfo={ref} />
       ))}
       {hidden.length > 0 ? (
-        <Text
-          title={hidden.map(refTitle).join("\n")}
-          size="caption"
-          tone="secondary"
-          leading="none"
-          {...surfaceAttributes(
-            { radius: "pill", variant: "inset" },
-            "flex h-4 shrink-0 items-center px-1.5",
-          )}
-        >
-          +{hidden.length}
-        </Text>
+        <Tooltip label={hidden.map(refTitle).join("\n")} asChild>
+          <Text
+            size="caption"
+            tone="secondary"
+            leading="none"
+            {...surfaceAttributes(
+              { radius: "pill", variant: "inset" },
+              "flex h-4 shrink-0 items-center px-1.5",
+            )}
+          >
+            +{hidden.length}
+          </Text>
+        </Tooltip>
       ) : null}
     </span>
   );

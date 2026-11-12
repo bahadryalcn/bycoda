@@ -1,21 +1,12 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
-import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
-import { Button } from "../../../shared/ui/Button";
+import { PickerList, usePickerList } from "../../../shared/ui/picker";
+import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useLocale, useT } from "../../../shared/i18n";
-import { Check, Home, Star } from "../../../shared/ui/icons";
+import { Home, Star } from "../../../shared/ui/icons";
 import { StatusDot } from "../../../shared/ui/StatusDot";
-import {
-  useEffect,
-  useId,
-  useRef,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useId, type ReactNode } from "react";
 import { type AgentModel, type ModelPickerTab } from "../model/models";
 import { harnessUnavailableHint } from "../../../integrations/harness/core/availability";
 import { useModelSource } from "./modelSource";
@@ -92,12 +83,7 @@ export function ModelBrowser({
   const listId = useId();
   const source = useModelSource();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
-  const activeRef = useRef<HTMLButtonElement>(null);
   const groups = modelGroups(tab, models);
-
-  useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: "nearest" });
-  }, [active]);
 
   // Popover measures its initially hidden frame during layout. Focus only
   // after that measurement, when the browser can focus the visible input.
@@ -109,52 +95,51 @@ export function ModelBrowser({
     return () => cancelAnimationFrame(frame);
   }, [autoFocusSearch, searchRef]);
 
-  const onSearchKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      event.stopPropagation();
-      onActive(Math.min(models.length - 1, active + 1));
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      event.stopPropagation();
-      onActive(Math.max(0, active - 1));
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      event.stopPropagation();
-      const item = models[active];
+  const options = groups.flatMap((group) =>
+    group.models.map(({ item }) => ({
+      value: modelChoiceKey(item),
+      title: modelChoiceBaseName(item as AccountModelChoice),
+      icon: <HarnessIcon harness={item.harness} className="icon-sm" />,
+      meta: (item as AccountModelChoice).accountLabel ? (
+        <span className="inline-flex items-center gap-1">
+          {" "}
+          {(item as AccountModelChoice).accountColor ? (
+            <span
+              {...surfaceAttributes({ radius: "pill" }, "size-1.5 shrink-0")}
+              style={{ backgroundColor: (item as AccountModelChoice).accountColor }}
+              aria-hidden
+            />
+          ) : null}
+          {(item as AccountModelChoice).accountLabel}
+        </span>
+      ) : undefined,
+      group: group.name,
+      disabled: !source.available(item.harness),
+      disabledReason: !source.available(item.harness)
+        ? harnessUnavailableHint(item.harness)
+        : undefined,
+      trailing: (
+        <>
+          {tab === "favorites" ? " " : null}
+          {tab === "favorites" ? (item.provider?.name ?? HARNESS_TITLE[item.harness]) : null}
+          {defaultMark?.isDefault(item) ? <span data-model-default>{t("Default")}</span> : null}
+        </>
+      ),
+    })),
+  );
+  const list = usePickerList({
+    id: listId,
+    options,
+    value: currentId,
+    activeValue: models[active] ? modelChoiceKey(models[active]!) : null,
+    onActiveValueChange: (value) =>
+      onActive(models.findIndex((item) => modelChoiceKey(item) === value)),
+    onChange: (value) => {
+      const item = models.find((item) => modelChoiceKey(item) === value);
       if (item) onPick(item);
-      return;
-    }
-    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-      event.stopPropagation();
-    }
-  };
-
-  const onListKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    // Keyboard nav once focus leaves the search field (which stops its own keys).
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const direction = event.key === "ArrowDown" ? 1 : -1;
-      onActive(Math.min(models.length - 1, Math.max(0, active + direction)));
-      return;
-    }
-    if (event.key !== "Enter") return;
-    // Favorite toggles keep native activation; model rows activate the
-    // highlighted option so Enter never fires on a stale focused row.
-    if (
-      event.target instanceof HTMLButtonElement &&
-      event.target.getAttribute("role") !== "option"
-    ) {
-      return;
-    }
-    event.preventDefault();
-    const item = models[active];
-    if (item) onPick(item);
-  };
+    },
+    inputRef: searchRef,
+  });
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
@@ -170,7 +155,7 @@ export function ModelBrowser({
           // Width follows the tab button size (density-aware) plus padding and the 1px
           // divider, so the rail is never narrower than its buttons. Horizontal overflow is
           // clipped, never scrolled; only the vertical axis scrolls.
-          className="flex w-[max(2.75rem,calc(var(--ui-control-height-compact)+0.75rem+1px))] shrink-0 flex-col items-center gap-1 overflow-x-hidden overflow-y-auto overscroll-none border-r border-(--ui-tone-neutral-border) p-1.5"
+          className="flex w-[max(2.75rem,calc(var(--ui-control-height-compact)+0.75rem+1px))] shrink-0 flex-col items-center gap-1 overflow-x-hidden overflow-y-auto overscroll-none"
         >
           <ProviderTabButton
             value="favorites"
@@ -209,64 +194,42 @@ export function ModelBrowser({
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <PopoverSearchHeader
-          ref={searchRef}
+          {...list.searchProps}
           size="md"
           label={t("Search models")}
           value={query}
           autoFocus={false}
-          listId={listId}
-          activeOptionId={models[active] ? `${listId}-${active}` : undefined}
           onValueChange={onQuery}
-          onKeyDown={onSearchKey}
         />
         {header}
         {body ?? (
-          <div
-            ref={lockOverscroll}
-            id={listId}
-            role="listbox"
-            aria-label={t("Models")}
-            onKeyDown={onListKey}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1"
-          >
+          <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
             {leading}
-            {models.length === 0 ? (
-              <Text as="div" size="caption" tone="secondary" className="px-2 py-3">
-                {tab === "favorites" && !query.trim()
+            <PickerList
+              label={t("Models")}
+              controller={list}
+              query={query}
+              emptyLabel={
+                tab === "favorites" && !query.trim()
                   ? t("No favorite models")
                   : tab !== "favorites" && !source.available(tab)
                     ? harnessUnavailableHint(tab)
                     : tab === "codex" && !query.trim()
                       ? t("Loading Codex models…")
-                      : t("No matching models")}
-              </Text>
-            ) : (
-              groups.map((group) => (
-                <div key={group.id} role={group.name ? "group" : undefined} aria-label={group.name}>
-                  {group.name ? (
-                    <SectionLabel as="div" className="px-2.5">
-                      {group.name}
-                    </SectionLabel>
-                  ) : null}
-                  {group.models.map(({ item, index }) => (
-                    <ModelRow
-                      key={modelChoiceKey(item)}
-                      item={item}
-                      id={`${listId}-${index}`}
-                      tab={tab}
-                      selected={modelChoiceKey(item) === currentId}
-                      highlighted={index === active}
-                      favorited={favorites.includes(item.id)}
-                      defaultMark={defaultMark}
-                      activeRef={index === active ? activeRef : undefined}
-                      onActive={() => onActive(index)}
-                      onPick={() => onPick(item)}
-                      onToggleFavorite={() => onToggleFavorite(item.id)}
-                    />
-                  ))}
-                </div>
-              ))
-            )}
+                      : t("No matching models")
+              }
+              renderOptionActions={(option) => {
+                const item = models.find((item) => modelChoiceKey(item) === option.value)!;
+                return (
+                  <ModelActions
+                    item={item}
+                    favorited={favorites.includes(item.id)}
+                    defaultMark={defaultMark}
+                    onToggleFavorite={() => onToggleFavorite(item.id)}
+                  />
+                );
+              }}
+            />
           </div>
         )}
         {footer}
@@ -275,104 +238,23 @@ export function ModelBrowser({
   );
 }
 
-function ModelRow({
+/** Model persistence actions stay siblings of the shared option button. */
+function ModelActions({
   item,
-  id,
-  tab,
-  selected,
-  highlighted,
   favorited,
   defaultMark,
-  activeRef,
-  onActive,
-  onPick,
   onToggleFavorite,
 }: {
   item: AgentModel;
-  id: string;
-  tab: ModelPickerTab;
-  selected: boolean;
-  highlighted: boolean;
   favorited: boolean;
   defaultMark?: ModelDefaultMark;
-  activeRef?: React.RefObject<HTMLButtonElement | null>;
-  onActive: () => void;
-  onPick: () => void;
   onToggleFavorite: () => void;
 }) {
   const t = useT();
-  const source = useModelSource();
-  const { accountColor, accountLabel } = item as AccountModelChoice;
-  const disabled = !source.available(item.harness);
-  // Favorites mix harnesses, so every row names its source.
-  // Provider first (OpenCode Go vs OpenCode), else harness.
-  const provenance = item.provider?.name ?? HARNESS_TITLE[item.harness];
   const isDefault = defaultMark?.isDefault(item) === true;
   const pinned = isDefault && defaultMark?.pinned === true;
   return (
-    <ActionHost
-      selected={highlighted && !disabled}
-      tone={disabled ? "secondary" : "neutral"}
-      className="h-(--ui-control-height-compact) rounded-lg px-1"
-      onMouseEnter={onActive}
-    >
-      <Button
-        variant="item"
-        ref={activeRef}
-        id={id}
-        type="button"
-        role="option"
-        aria-selected={selected}
-        aria-label={`${item.name}, ${provenance}${isDefault ? `, ${t("Default")}` : ""}`}
-        disabled={disabled}
-        // The row truncates long names; the full name (and why a row is unavailable) stays in
-        // the tooltip, and the accessible name above always carries it.
-        tooltip={disabled ? `${item.name} · ${harnessUnavailableHint(item.harness)}` : item.name}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={onPick}
-        className="min-w-0 flex-1 text-left"
-      >
-        {accountColor ? (
-          <span
-            {...surfaceAttributes({ radius: "pill" }, "size-1.5 shrink-0 ")}
-            style={{ backgroundColor: accountColor }}
-            aria-hidden
-          />
-        ) : null}
-        <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-          {modelChoiceBaseName(item as AccountModelChoice)}
-        </Text>
-        {accountLabel ? (
-          <>
-            {" "}
-            <Text
-              size="inherit"
-              tone="inherit"
-              truncate
-              className="max-w-[45%] shrink-0 ui-caption-text"
-            >
-              {accountLabel}
-            </Text>
-          </>
-        ) : null}
-      </Button>
-      {tab === "favorites" ? (
-        <OverflowTooltip label={provenance}>
-          <Text
-            size="inherit"
-            tone="inherit"
-            truncate
-            className="max-w-24 shrink-0 ui-caption-text"
-          >
-            {provenance}
-          </Text>
-        </OverflowTooltip>
-      ) : null}
-      {isDefault ? (
-        <span data-model-default className="shrink-0 ui-caption-text" aria-hidden>
-          {t("Default")}
-        </span>
-      ) : null}
+    <>
       {defaultMark ? (
         <InlineAction
           className="shrink-0"
@@ -401,12 +283,7 @@ function ModelRow({
       >
         <Star className="icon-sm" strokeWidth={1.75} fill={favorited ? "currentColor" : "none"} />
       </InlineAction>
-      {selected ? (
-        <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center">
-          <Check className="icon-sm" tone="secondary" strokeWidth={2} />
-        </span>
-      ) : null}
-    </ActionHost>
+    </>
   );
 }
 

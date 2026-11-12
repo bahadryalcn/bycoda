@@ -25,8 +25,9 @@ it("keeps ordered source names and their count inside the selector", async () =>
       [...container.querySelectorAll("button")].find((b) => b.textContent === "Customize")!.click(),
     );
     const trigger = container.querySelector('button[aria-haspopup="dialog"]')!;
-    expect(trigger.textContent).toContain("1 clef-flash, 2 Clef-Flash-Q4_K_M");
-    expect(trigger.querySelector('[data-size="xs"]')?.textContent).toBe("2");
+    expect(trigger.textContent).toContain("1 clef-flash");
+    expect(trigger.textContent).toContain("2 Clef-Flash-Q4_K_M");
+    expect(trigger.querySelectorAll('[data-size="xs"]')).toHaveLength(2);
     expect(container.querySelector("ol")).toBeNull();
   } finally {
     await act(async () => root.unmount());
@@ -111,7 +112,11 @@ it("keeps automatic tasks compact until customization is requested", async () =>
     await act(async () =>
       [...container.querySelectorAll("button")].find((b) => b.textContent === "Customize")!.click(),
     );
-    expect(container.querySelector('input[inputmode="decimal"]')).not.toBeNull();
+    expect(container.querySelector('input[inputmode="decimal"]')).toBeNull();
+    await act(async () =>
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "Customize")!.click(),
+    );
+    expect(container.querySelector('button[aria-haspopup="dialog"]')).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -193,6 +198,43 @@ it("keeps localized decimal drafts, validates bounds, and steps by one hundredth
         .click(),
     );
     expect(save.mock.calls[0][0].screen_state.threshold).toBe(0.76);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+it("resets a custom task without changing other task routes", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onSave = vi.fn().mockResolvedValue({});
+  const route = { sourceIds: ["s1"], threshold: 0.7 };
+  try {
+    await act(async () =>
+      root.render(
+        createElement(RoutingTable, {
+          routing: { screen_state: route, generic: route },
+          sources: [],
+          busy: false,
+          onSave,
+        }),
+      ),
+    );
+    await act(async () =>
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "Customize")!.click(),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Reset to automatic"]')!
+        .click(),
+    );
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((b) => b.textContent === "Save routing")!
+        .click(),
+    );
+    expect(onSave.mock.calls[0][0]).toEqual({ generic: route });
   } finally {
     await act(async () => root.unmount());
     container.remove();

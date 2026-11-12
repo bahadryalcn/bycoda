@@ -1,3 +1,4 @@
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { TabList, Tab, Tabs } from "../../../shared/ui/Tabs";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useId, useMemo, useState } from "react";
@@ -51,11 +52,7 @@ export default function SheetViewer({
   }, [bytes, format, source]);
 
   if (state.status === "loading") {
-    return (
-      <div role="status" className="ui-secondary-text grid h-full place-items-center">
-        {t("Reading spreadsheet…")}
-      </div>
-    );
+    return <SurfaceLoading label={t("Reading spreadsheet…")} />;
   }
   if (state.status === "error") {
     return (

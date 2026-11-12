@@ -1,3 +1,4 @@
+/** Different job: terminal-range actions delegate to TranscriptSelectionMenu, preserving the selection owner. */
 import { useEffect, useState, type RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { requestAddToChat } from "../../sessions/model/quoteDraft";

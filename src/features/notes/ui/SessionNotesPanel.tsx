@@ -1,3 +1,4 @@
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { NoteSaveStatus } from "./NoteSaveStatus";
@@ -19,7 +20,7 @@ import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { requestOpenNoteLibrary } from "../noteNavigation";
 import "./notes.css";
-import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
+import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n";
@@ -539,9 +540,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           }
         />
       ) : (
-        <LoadingText layout="fill" className="min-h-0 flex-1">
-          {t("Loading notes…")}
-        </LoadingText>
+        <SurfaceLoading className="min-h-0 flex-1" title={t("Loading notes…")} />
       )}
       <div
         {...surfaceAttributes(
@@ -1027,7 +1026,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
       ) : null}
       <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 px-2 py-1">
         {preparing ? (
-          <span role="status">{t("Preparing checkpoint…")}</span>
+          <LoadingText>{t("Preparing checkpoint…")}</LoadingText>
         ) : (
           <NoteSaveStatus
             className="session-note-status"
@@ -1048,7 +1047,8 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
             }
           />
         )}
-        <ExpandingButtonGroup
+        <ButtonGroup
+          variant="expanding"
           label={t("Note actions")}
           size="sm"
           defaultExpanded="chat"

@@ -5,7 +5,6 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { Modal } from "./Modal";
 import { RadioGroup } from "./RadioGroup";
 import { Slider } from "./Slider";
-import { ElasticSlider } from "./ElasticSlider";
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -97,7 +96,7 @@ it("includes a native disclosure summary in the modal Tab sequence", async () =>
   await tab(document.activeElement!);
   expect(document.activeElement).toBe(document.querySelector("#inside-details"));
 });
-it.each([Slider, ElasticSlider])(
+it.each([Slider])(
   "invalidates a disabled gesture and allows a new enabled drag (%s)",
   async (Control) => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(

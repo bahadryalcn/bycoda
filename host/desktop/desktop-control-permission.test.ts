@@ -3,6 +3,7 @@ import {
   desktopGate,
   desktopGatePermits,
   isDesktopAppAllowed,
+  isPlainDesktopAppName,
   normalizeDesktopConfiguration,
 } from "./desktop-control-permission";
 
@@ -15,7 +16,7 @@ describe("desktop permission gate table", () => {
     ["ask", "clipboard", false, true, true],
     ["auto", "act", false, false, false],
     ["auto", "act", true, true, true],
-    ["auto", "launch", false, true, false],
+    ["auto", "launch", false, false, false],
     ["auto", "clipboard", false, true, true],
     ["full", "act", false, false, false],
     ["full", "act", true, false, false],
@@ -53,12 +54,16 @@ describe("desktop configuration normalization", () => {
     const bogus = normalizeDesktopConfiguration({ permissionMode: "bogus" as never });
     expect(bogus.permissionMode).toBe("ask");
   });
-  it("honors allow-all-apps only in full access", () => {
+  it("covers every app in full access and only approved apps otherwise", () => {
     const base = normalizeDesktopConfiguration({ allowedApps: ["Editor"] });
     const auto = normalizeDesktopConfiguration({ permissionMode: "auto", allowAllApps: true });
     expect(auto.allowAllApps).toBe(false);
-    const full = normalizeDesktopConfiguration({ permissionMode: "full", allowAllApps: true });
+    expect(isDesktopAppAllowed(auto, "Anything")).toBe(false);
+    const full = normalizeDesktopConfiguration({ permissionMode: "full", allowAllApps: false });
     expect(isDesktopAppAllowed(full, "Anything")).toBe(true);
+    for (const name of ["", " ", "-option", "a\nb", "x".repeat(201)])
+      expect(isPlainDesktopAppName(name)).toBe(false);
+    expect(isPlainDesktopAppName("Google Chrome")).toBe(true);
     expect(isDesktopAppAllowed(base, "Anything")).toBe(false);
     expect(isDesktopAppAllowed(base, "Editor")).toBe(true);
   });

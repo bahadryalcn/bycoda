@@ -84,6 +84,7 @@ import {
   BellOff as LucideBellOff,
   Keyboard as LucideKeyboard,
   List as LucideListBullet,
+  SquareKanban as LucideSquareKanban,
   LayoutGrid as LucideLayoutGrid,
   ListEnd as LucideListEnd,
   ListFilter as LucideListFilter,
@@ -101,6 +102,7 @@ import {
   MicOff as LucideMicOff,
   Laptop as LucideLaptop,
   AudioLines as LucideAudioLines,
+  Languages as LucideLanguages,
   VolumeX as LucideVolumeX,
   Volume2 as LucideVolume2,
   MessageSquarePlus as LucideMessageSquarePlus,
@@ -178,7 +180,7 @@ export type IconProps = LucideProps & {
 export type IconComponent = ReturnType<typeof wrap>;
 
 /**
- * Defaults are a contract, not an accident. `size = 24` is the lucide grid: Button, MorphSelect and other CSS size icons through
+ * Defaults are a contract, not an accident. `size = 24` is the lucide grid: Button, SearchableSelect and other CSS size icons through
  * `svg[viewBox="0 0 24 24"]` or `.icon > svg` rules, and a bare icon with no size, class or CSS keeps its natural size.
  * `strokeWidth = 1.75` mirrors the `--ui-icon-stroke` theme token. It stays a presentation attribute on purpose: an inline
  * `style="stroke-width: var(--ui-icon-stroke)"` would outrank every stylesheet override, and attributes cannot hold `var()`.
@@ -350,6 +352,7 @@ export const Bell = wrap(LucideBell, "Bell");
 export const BellOff = wrap(LucideBellOff, "BellOff");
 export const Keyboard = wrap(LucideKeyboard, "Keyboard");
 export const ListBullet = wrap(LucideListBullet, "ListBullet");
+export const SquareKanban = wrap(LucideSquareKanban, "SquareKanban");
 export const LayoutGrid = wrap(LucideLayoutGrid, "LayoutGrid");
 export const ListEnd = wrap(LucideListEnd, "ListEnd");
 export const ListFilter = wrap(LucideListFilter, "ListFilter");
@@ -374,6 +377,7 @@ export const Mic = wrap(LucideMic, "Mic");
 export const MicOff = wrap(LucideMicOff, "MicOff");
 export const Laptop = wrap(LucideLaptop, "Laptop");
 export const AudioLines = wrap(LucideAudioLines, "AudioLines");
+export const Languages = wrap(LucideLanguages, "Languages");
 export const Volume2 = wrap(LucideVolume2, "Volume2");
 export const VolumeX = wrap(LucideVolumeX, "VolumeX");
 export const MessageSquarePlus = wrap(LucideMessageSquarePlus, "MessageSquarePlus");

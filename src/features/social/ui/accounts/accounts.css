@@ -31,14 +31,6 @@
   min-width: 0;
 }
 
-.social-account-item:hover {
-  background: var(--ui-surface-hover);
-}
-
-.social-account-item[data-selected] {
-  background: var(--ui-surface-selected);
-}
-
 .social-account-row {
   display: flex;
   flex-direction: column;
@@ -47,15 +39,8 @@
   gap: 0.625rem;
   width: 100%;
   min-width: 0;
-  height: auto;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-align: start;
-}
 
-.social-account-row:hover {
-  background: var(--ui-surface-hover);
+  text-align: start;
 }
 
 .social-account-row-status {
@@ -180,9 +165,6 @@
 
 .social-autonomy-row > span {
   overflow-wrap: anywhere;
-}
-
-.social-capability-empty {
 }
 
 .social-live-view {

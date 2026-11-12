@@ -1,4 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { t } from "../../../../shared/i18n";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
@@ -112,15 +112,12 @@ export function EditorAdvanced({
               />
             ))
           ) : (
-            <Text
-              as="p"
-              size="caption"
-              tone="muted"
-              leading="inherit"
+            <EmptyState
+              size="inline"
+              kind="empty"
               className="content-platform-note"
-            >
-              {t("No brand facts for this project yet.")}
-            </Text>
+              description={t("No brand facts for this project yet.")}
+            />
           )}
         </FieldGroup>
         <FieldGroup

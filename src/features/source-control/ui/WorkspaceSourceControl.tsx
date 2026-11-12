@@ -1,3 +1,5 @@
+import { InlineError } from "../../../shared/ui/InlineError";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useId, useRef, useState } from "react";
 import {
@@ -228,44 +230,46 @@ export function WorkspaceSourceControl({
               {t("Repository")}
             </Button>
           ) : null}
-          <div className="min-w-0 flex-1" title={targetTitle}>
-            <SearchableSelect
-              hideLabel
-              label={checkouts ? t("Working copy") : t("Repository")}
-              value={target}
-              onChange={choose}
-              variant="row"
-              options={[
-                {
-                  value: "",
-                  label: checkouts ? t("All checkouts") : t("All repositories"),
-                },
-                ...repositories.map((path) => {
-                  const branch = worktrees[path] ? checkoutTitle(worktrees[path]) : undefined;
-                  return {
-                    value: path,
-                    label: optionName(path),
-                    keywords: branch ? `${path} ${branch}` : path,
-                    // The branch leads the second line; a side column squeezed long paths.
-                    description: branch ? `${branch} · ${path}` : path,
-                  };
-                }),
-                ...(pendingSelection &&
-                !repositories.some((path) => projectKey(path) === projectKey(pendingSelection))
-                  ? [
-                      {
-                        value: pendingSelection,
-                        label: name(pendingSelection),
-                        keywords: pendingSelection,
-                      },
-                    ]
-                  : []),
-                ...(!checkouts && !repositories.includes(cwd)
-                  ? [{ value: cwd, label: `${name(cwd)} · ${t("Workspace")}` }]
-                  : []),
-              ]}
-            />
-          </div>
+          <Tooltip label={targetTitle} asChild>
+            <div className="min-w-0 flex-1">
+              <SearchableSelect
+                hideLabel
+                label={checkouts ? t("Working copy") : t("Repository")}
+                value={target}
+                onChange={choose}
+                variant="row"
+                options={[
+                  {
+                    value: "",
+                    label: checkouts ? t("All checkouts") : t("All repositories"),
+                  },
+                  ...repositories.map((path) => {
+                    const branch = worktrees[path] ? checkoutTitle(worktrees[path]) : undefined;
+                    return {
+                      value: path,
+                      label: optionName(path),
+                      keywords: branch ? `${path} ${branch}` : path,
+                      // The branch leads the second line; a side column squeezed long paths.
+                      description: branch ? `${branch} · ${path}` : path,
+                    };
+                  }),
+                  ...(pendingSelection &&
+                  !repositories.some((path) => projectKey(path) === projectKey(pendingSelection))
+                    ? [
+                        {
+                          value: pendingSelection,
+                          label: name(pendingSelection),
+                          keywords: pendingSelection,
+                        },
+                      ]
+                    : []),
+                  ...(!checkouts && !repositories.includes(cwd)
+                    ? [{ value: cwd, label: `${name(cwd)} · ${t("Workspace")}` }]
+                    : []),
+                ]}
+              />
+            </div>
+          </Tooltip>
           {checkouts ? (
             <Button
               variant="ghost"
@@ -297,9 +301,11 @@ export function WorkspaceSourceControl({
           tone="secondary"
           className="flex shrink-0 flex-wrap items-center gap-x-2 px-2"
         >
-          <p role="status" className="min-w-0" title={error}>
-            {t("Could not refresh repositories. Refresh source control to retry.")}
-          </p>
+          <Tooltip label={error} asChild>
+            <InlineError className="min-w-0">
+              {t("Could not refresh repositories. Refresh source control to retry.")}
+            </InlineError>
+          </Tooltip>
           <Button variant="link" size="sm" disabled={!enabled} onClick={refreshAll}>
             {t("Retry")}
           </Button>

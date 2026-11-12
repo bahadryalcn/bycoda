@@ -134,3 +134,17 @@ These need a regression test with every fix; the cases are:
 - Schedulers that replay every missed occurrence after sleep.
 - Per-turn inactivity watchdogs for provider processes.
 - Size-driven work that runs on every frame of a live resize (live-resize work).
+
+## Component family ownership
+
+`check:ui-drift` and `check:ui-catalog` share the UI drift ratchet for component metadata and orphan
+exports. Shared wrappers are the door to Arc primitives and native-popup internals (`ui-wrapper-import`).
+`portal-outside-shared` also guards shared floating surfaces outside `Popover` and the explicit OS-window
+owners. Feature code uses shared overlay components instead of raw popup roles.
+
+Every exported shared component declares `@group` and `@use` (`component-metadata`); siblings in a group
+name one another in `@avoid` or `@replaces` (`component-family-choice`). No product importer means remove
+the export (`component-orphan`); an entry in `orphanAllowlist` needs a reason. Tests and specimens are not
+product importers. Native-control, loading, surface and interaction rules also cover progress bars,
+badges/chips, tab/segmented recipes and native `title` tooltips. Their messages name the shared owner.
+Existing debt is recorded per file/rule; only a new or widened rule justifies a baseline approval.

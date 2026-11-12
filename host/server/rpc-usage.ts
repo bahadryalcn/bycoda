@@ -2,6 +2,10 @@ import { join } from "node:path";
 import { costParams } from "../usage/cost-report";
 import { readUsageCost } from "../usage/cost-read";
 import { readUsageLimits } from "../usage/limits-report";
+import {
+  applyProviderAccountStyles,
+  readProviderAccountStyles,
+} from "../providers/provider-account-styles";
 import { hostProviderAccounts } from "../providers/provider-accounts";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
@@ -15,7 +19,15 @@ export async function handleUsageRpc(
   const environmentId = dependencies.engine.store.environmentId;
   switch (request.input.method) {
     case "usage.limits.read":
-      request.result = await readUsageLimits(hostUsageLimitsDeps(environmentId));
+      const limits = hostUsageLimitsDeps(environmentId);
+      request.result = await readUsageLimits({
+        ...limits,
+        accounts: async () =>
+          applyProviderAccountStyles(
+            await limits.accounts(),
+            await readProviderAccountStyles(dependencies.engine.store),
+          ),
+      });
       break;
     case "usage.cost.read":
       request.result = await readUsageCost(

@@ -204,7 +204,6 @@
 }
 .device-panel-zoom-value {
   min-inline-size: 3.5rem;
-  font-variant-numeric: tabular-nums;
 }
 /* Setup sheet: state line, one row per platform, then the actions. */
 .device-panel-setup {
@@ -283,8 +282,6 @@
   margin-block-end: 4px;
   opacity: 0.7;
 }
-.device-panel-state-title {
-}
 .device-panel-state-actions,
 .device-panel-waiting-actions {
   display: flex;
@@ -341,13 +338,6 @@
   flex-direction: column;
   min-inline-size: 0;
 }
-.device-panel-device-name,
-.device-panel-device-facts {
-}
-.device-panel-device-name {
-}
-.device-panel-device-facts {
-}
 /* Feedback strips under the header: tinted, padded, never flush with the pane edge. */
 .device-panel-error {
   flex: none;
@@ -370,15 +360,6 @@
   padding: 8px 12px;
   display: grid;
   gap: 8px;
-}
-.device-panel-notice {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 0;
-  padding: 2px 4px 2px 12px;
 }
 @media (pointer: coarse) {
   .device-panel-mark-tools {

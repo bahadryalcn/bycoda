@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
@@ -524,9 +525,11 @@ export function WorkspaceReview({
                   ))}
                 </ul>
               ) : (
-                <Text as="p" size="inherit" tone="secondary">
-                  {t("No check results recorded.")}
-                </Text>
+                <EmptyState
+                  size="inline"
+                  kind="filtered"
+                  description={t("No check results recorded.")}
+                />
               )}
             </section>
             <section>
@@ -548,9 +551,11 @@ export function WorkspaceReview({
                   ))}
                 </ul>
               ) : (
-                <Text as="p" size="inherit" tone="secondary">
-                  {t("No visual evidence recorded.")}
-                </Text>
+                <EmptyState
+                  size="inline"
+                  kind="empty"
+                  description={t("No visual evidence recorded.")}
+                />
               )}
             </section>
           </>

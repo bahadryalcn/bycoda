@@ -9,7 +9,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ModalActions } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { PasswordField } from "../../../shared/ui/PasswordField";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Surface } from "../../../shared/ui/Surface";
 import { TextField } from "../../../shared/ui/TextField";
 import { t } from "../../../shared/i18n";
@@ -251,7 +251,8 @@ export function MachineForm({
         </div>
         {!editing ? (
           <div className="flex">
-            <SegmentedControl
+            <RadioGroup
+              variant="inline"
               label={t("Connection method")}
               value={method}
               onValueChange={(next) => onMethodChange(next === "url" ? "url" : "ssh")}

@@ -1,3 +1,5 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { TimePicker } from "../../../../shared/ui/TimePicker";
 import { useEffect, useState } from "react";
@@ -6,7 +8,7 @@ import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { Heading } from "../../../../shared/ui/Heading";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Select } from "../../../../shared/ui/Select";
 import { Switch } from "../../../../shared/ui/Switch";
@@ -143,11 +145,11 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
       >
         <Heading size="item">{t("Autonomy")}</Heading>
         {loadError ? (
-          <InlineMessage tone="danger">{loadError}</InlineMessage>
+          <InlineError>{loadError}</InlineError>
         ) : (
-          <Text as="p" tone="muted" leading="snug" className="social-muted">
+          <LoadingText delay={false} className="social-muted">
             {t("Loading…")}
-          </Text>
+          </LoadingText>
         )}
       </section>
     );
@@ -328,8 +330,8 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
           {t("Save autonomy")}
         </DisabledReason>
       </div>
-      {formError ? <InlineMessage tone="danger">{formError}</InlineMessage> : null}
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {formError ? <InlineError>{formError}</InlineError> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {confirmation.dialog}
     </section>
   );

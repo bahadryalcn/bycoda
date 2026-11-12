@@ -1,8 +1,9 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Group, Row } from "../../../settings/public/settingsControls";
 import { Switch } from "../../../../shared/ui/Switch";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
@@ -31,9 +32,9 @@ export function InboxSettings({ client, enabled, onChanged }: InboxSettingsProps
       title={t("Inbox")}
       feedback={
         error ? (
-          <InlineMessage tone="danger" live="assertive" icon={null}>
+          <InlineError live="assertive" icon={null}>
             {error}
-          </InlineMessage>
+          </InlineError>
         ) : null
       }
     >

@@ -1,3 +1,5 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { JumpRelay } from "./transcriptJumpRelay";
 import { FrameMemory } from "./transcriptFrameMemory";
 import { SeenOutput } from "./transcriptSeenOutput";
@@ -14,7 +16,7 @@ import {
   TranscriptVirtualizationContext,
   useTranscriptActiveBlocksVersion,
 } from "./transcriptVirtualization";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { SessionMessageAuthor } from "./SessionMessageAuthor";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Alert } from "../../../shared/ui/Alert";
@@ -95,6 +97,7 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { Popover } from "../../../shared/ui/Popover";
 import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
@@ -125,7 +128,6 @@ import {
 } from "../model/translationProjection";
 import { TranscriptTurnCache } from "../model/transcriptTurnCache";
 import { ModelSwitchRow } from "./ModelSwitchRow";
-import { Shimmer } from "../../../shared/ui/Shimmer";
 import {
   hasPendingApproval,
   HARNESS_TITLE,
@@ -665,27 +667,20 @@ function AgentTranscriptComponent({
       >
         {activeVersionValid ? (
           <div className="sticky inset-bs-0 z-(--layer-pane-sheet) flex flex-wrap items-center justify-end gap-1 bg-(--ui-surface) px-3 py-1 font-sans text-ui-caption text-(--ui-text-secondary)">
-            <Button
-              motion="none"
+            <SegmentedControl
               size="sm"
-              variant="ghost"
-              type="button"
-              tooltip={t("After applying: ↑ original, ↓ translation.")}
-              aria-pressed={!activeVersion.translatedVisible}
-              onClick={() => showTranslation(false)}
-            >
-              {t("Original text")}
-            </Button>
-            <Button
-              motion="none"
-              size="sm"
-              variant="ghost"
-              type="button"
-              aria-pressed={activeVersion.translatedVisible}
-              onClick={() => showTranslation(true)}
-            >
-              {t("Translation")}
-            </Button>
+              label={t("Translation")}
+              value={activeVersion.translatedVisible ? "translation" : "original"}
+              onValueChange={(next) => showTranslation(next === "translation")}
+              options={[
+                {
+                  value: "original",
+                  label: t("Original text"),
+                  tooltip: t("After applying: ↑ original, ↓ translation."),
+                },
+                { value: "translation", label: t("Translation") },
+              ]}
+            />
             <Button
               motion="none"
               size="sm"
@@ -728,12 +723,9 @@ function AgentTranscriptComponent({
           className="transcript-content mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-1 pb-8"
         >
           {historyLoading ? (
-            <div
-              role="status"
-              className="px-4 py-3 font-sans text-ui-caption text-(--ui-text-secondary)"
-            >
+            <LoadingText delay={false} className="px-4 py-3">
               {t("Loading earlier messages…")}
-            </div>
+            </LoadingText>
           ) : null}
           {historyLoadError ? <Alert tone="danger">{historyLoadError}</Alert> : null}
           {remoteHistoryError ? <Alert tone="danger">{remoteHistoryError}</Alert> : null}
@@ -1430,7 +1422,7 @@ function InitialThinking({ live, embedded = false }: { live: boolean; embedded?:
     <div
       className={`min-w-0 pt-3 pb-1 font-sans text-ui-body text-(--ui-text-secondary) ${embedded ? "" : "px-4"}`}
     >
-      {live ? <Shimmer duration={1.6}>{t("Thinking…")}</Shimmer> : t("Thinking…")}
+      {live ? <WorkingIndicator>{t("Thinking…")}</WorkingIndicator> : t("Thinking…")}
     </div>
   );
 }
@@ -1462,14 +1454,13 @@ function LiveFoldTitle({
   // the line stops shimmering and counting rather than looking busy forever.
   if (!paused && background && isBackgroundOnly(true, background, backgroundAgents)) {
     return (
-      <span
-        className="min-w-0 truncate font-sans text-ui-body text-(--ui-text-secondary)"
-        title={background.join("\n")}
-      >
-        {background.length === 1
-          ? t("Finished · 1 command running in background")
-          : t("Finished · {p0} commands running in background", { p0: background.length })}
-      </span>
+      <Tooltip label={background.join("\n")} asChild>
+        <span className="min-w-0 truncate font-sans text-ui-body text-(--ui-text-secondary)">
+          {background.length === 1
+            ? t("Finished · 1 command running in background")
+            : t("Finished · {p0} commands running in background", { p0: background.length })}
+        </span>
+      </Tooltip>
     );
   }
   // Yielding with a command still going is not the end of the turn. The clock
@@ -1483,17 +1474,17 @@ function LiveFoldTitle({
     : background?.length
       ? `${formatWorkingDuration(t, format, elapsedMs, modelName)} · ${background.length === 1 ? t("running in background") : t("{p0} tasks running in background", { p0: background.length })}`
       : formatWorkingDuration(t, format, elapsedMs, modelName);
-  const shimmer = (
-    <Shimmer className="min-w-0 truncate font-sans text-ui-body" duration={1}>
+  const workLabel = (
+    <WorkingIndicator className="min-w-0" text={{ size: "body" }} truncate glyph={false}>
       {text}
-    </Shimmer>
+    </WorkingIndicator>
   );
   return background?.length ? (
-    <span className="flex min-w-0" title={background.join("\n")}>
-      {shimmer}
-    </span>
+    <Tooltip label={background.join("\n")} asChild>
+      <span className="flex min-w-0">{workLabel}</span>
+    </Tooltip>
   ) : (
-    shimmer
+    workLabel
   );
 }
 /**
@@ -2575,14 +2566,15 @@ function UserMessageBlock({
           ) : null}
           {block.draft ? (
             <div className="mt-2 flex items-center justify-between gap-4 border-t border-(--color-stroke) pt-2">
-              <span
-                className="flex items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)"
-                role={delivery ? "status" : undefined}
-                title={deliveryDescription}
-              >
-                <CircleDashed className="icon-sm" strokeWidth={1.75} />
-                {deliveryLabel}
-              </span>
+              <Tooltip label={deliveryDescription} asChild>
+                <span
+                  className="flex items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)"
+                  role={delivery ? "status" : undefined}
+                >
+                  <CircleDashed className="icon-sm" strokeWidth={1.75} />
+                  {deliveryLabel}
+                </span>
+              </Tooltip>
               <span className="flex items-center gap-1">
                 {onEditDraft ? (
                   <Button

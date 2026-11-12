@@ -61,21 +61,6 @@
   flex: none;
 }
 
-.host-browser-status-dot {
-  inline-size: 8px;
-  block-size: 8px;
-  border-radius: 50%;
-  background: var(--ui-tone-warning-solid);
-}
-
-.host-browser-status-dot[data-tone="success"] {
-  background: var(--ui-tone-success-solid);
-}
-
-.host-browser-status-dot[data-tone="danger"] {
-  background: var(--ui-tone-danger-solid);
-}
-
 /* Labelled control state at the row end: eye = view only, dot = you control it. */
 .host-browser-view-actions > .host-browser-control-toggle {
   flex: none;

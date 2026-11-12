@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { useId, useMemo, useState, type ReactNode } from "react";
 import {
@@ -255,7 +256,9 @@ function ProjectTable({ data }: { data: TodayData }) {
           label: t("Project"),
           sortable: true,
           render: (_, row) => (
-            <span title={row.path || todayLabel(row.label)}>{todayLabel(row.label)}</span>
+            <Tooltip label={row.path || todayLabel(row.label)} asChild>
+              <span>{todayLabel(row.label)}</span>
+            </Tooltip>
           ),
         },
         {

@@ -1,4 +1,4 @@
-import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Badge } from "../../../../shared/ui/Badge";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
@@ -98,17 +98,11 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
     <div className={styles.usage}>
       <ul className={styles.chips} aria-label={t("Today's usage")}>
         {chips.map(([label, value]) => (
-          <Text
-            as="li"
-            key={label}
-            leading="inherit"
-            {...surfaceAttributes({ frame: "pane", edge: "all", radius: "pill" }, styles.chip)}
-          >
-            <span>{label}:</span>{" "}
-            <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
-              {value}
-            </Text>
-          </Text>
+          <li key={label}>
+            <Badge size="sm" appearance="subtle">
+              {label}: {value}
+            </Badge>
+          </li>
         ))}
       </ul>
       <LiveText

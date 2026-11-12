@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useT } from "../i18n";
+import { StatusDot } from "./StatusDot";
 import { MiddleTruncate } from "./MiddleTruncate";
 import { OverflowTooltip } from "./Tooltip";
 import {
@@ -106,12 +107,5 @@ export function TabLabel({
  */
 export function TabDirtyDot({ className = "" }: { className?: string }) {
   const label = useT()("Unsaved changes");
-  return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      className={`size-1.5 shrink-0 rounded-full bg-(--ui-text-secondary) ${className}`}
-    />
-  );
+  return <StatusDot tone="secondary" label={label} title={label} className={className} />;
 }

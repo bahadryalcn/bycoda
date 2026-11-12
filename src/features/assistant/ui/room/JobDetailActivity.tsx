@@ -1,5 +1,6 @@
+import { LoadingText } from "../../../../shared/ui/LoadingText";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { useEffect, useEffectEvent, useState } from "react";
-import { Text } from "../../../../shared/ui/Text";
 import type { AssistantActivity } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { InlineError } from "../../../../shared/ui/InlineError";
@@ -47,9 +48,9 @@ export function JobDetailActivity({ jobId, request }: { jobId: string; request: 
 
   if (state.status === "loading")
     return (
-      <Text as="p" leading="inherit" className={styles.muted}>
+      <LoadingText delay={false} className={styles.muted}>
         {t("Loading...")}
-      </Text>
+      </LoadingText>
     );
   if (state.status === "error")
     return (
@@ -59,9 +60,12 @@ export function JobDetailActivity({ jobId, request }: { jobId: string; request: 
     );
   if (!state.items.length)
     return (
-      <Text as="p" leading="inherit" className={styles.muted}>
-        {t("No activity yet")}
-      </Text>
+      <EmptyState
+        size="inline"
+        kind="empty"
+        className={styles.muted}
+        description={t("No activity yet")}
+      />
     );
   return (
     <Timeline

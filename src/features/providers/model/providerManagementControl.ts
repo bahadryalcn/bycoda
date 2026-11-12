@@ -1,3 +1,4 @@
+import { readProviderAccountIdentity } from "./providerAccountIdentity";
 import {
   providerAccounts,
   PROVIDER_ACCOUNT_PROVIDERS,
@@ -24,22 +25,25 @@ type Deps = {
   quota: (provider: "claude" | "codex", id: string) => ProviderRateLimits;
   mcp: (cwd: string) => McpSettingsSnapshot | undefined;
   now: () => number;
+  identity?: typeof readProviderAccountIdentity;
 };
 const owners: Deps = {
   accounts: () => PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts),
   quota: getCachedRateLimits,
   mcp: getCachedMcpSettings,
   now: Date.now,
+  identity: readProviderAccountIdentity,
 };
 const text = (value: unknown, max: number): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= max && !/[\0\r\n]/.test(value);
 export function accountMetadataSignature(accounts: ProviderAccount[]) {
   return JSON.stringify(
-    accounts.map(({ provider, id, label, color, isDefault }) => ({
+    accounts.map(({ provider, id, label, color, kind, isDefault }) => ({
       provider,
       id,
       label,
       color: color ?? null,
+      ...(kind ? { kind } : {}),
       isDefault: isDefault === true,
     })),
   );
@@ -91,37 +95,48 @@ export async function readProviderManagement(
     throw new Error("Provider management source identity mismatch");
   const allAccounts = deps.accounts();
   const accountRevision = await accountMetadataRevision(allAccounts);
-  const accounts = allAccounts.slice(0, 128).map((account) => {
-    if (
-      !["claude", "codex"].includes(account.provider) ||
-      !text(account.id, 128) ||
-      !text(account.label, 160)
-    )
-      throw new Error("Invalid account metadata");
-    const cached = deps.quota(account.provider, account.id);
-    const known =
-      cached &&
-      cached.provider === account.provider &&
-      ["idle", "fetching", "ok", "error", "unavailable"].includes(cached.status);
-    return {
-      provider: account.provider,
-      id: account.id,
-      label: account.label,
-      color: account.color ?? null,
-      isDefault: account.isDefault === true,
-      quota: {
-        status: known ? cached.status : "unavailable",
-        updatedAt:
-          known && Number.isSafeInteger(cached.updatedAt) && cached.updatedAt >= 0
-            ? cached.updatedAt
-            : 0,
-        session: known ? windowView(cached.session) : null,
-        weekly: known ? windowView(cached.weekly) : null,
-        monthly: known ? windowView(cached.monthly) : null,
-        renewalPending: known && cached.renewalPending === true,
-      },
-    };
-  });
+  const accounts = await Promise.all(
+    allAccounts.slice(0, 128).map(async (account) => {
+      if (
+        !["claude", "codex"].includes(account.provider) ||
+        !text(account.id, 128) ||
+        !text(account.label, 160)
+      )
+        throw new Error("Invalid account metadata");
+      const identity = await deps.identity?.(account.provider, account.id);
+      const organization = identity?.organization?.trim();
+      const derivedKind = organization
+        ? /['’]s Organization$/.test(organization)
+          ? ("personal" as const)
+          : ("work" as const)
+        : undefined;
+      const cached = deps.quota(account.provider, account.id);
+      const known =
+        cached &&
+        cached.provider === account.provider &&
+        ["idle", "fetching", "ok", "error", "unavailable"].includes(cached.status);
+      return {
+        provider: account.provider,
+        id: account.id,
+        label: account.label,
+        color: account.color ?? null,
+        ...(account.kind ? { kind: account.kind } : {}),
+        ...(derivedKind ? { derivedKind } : {}),
+        isDefault: account.isDefault === true,
+        quota: {
+          status: known ? cached.status : "unavailable",
+          updatedAt:
+            known && Number.isSafeInteger(cached.updatedAt) && cached.updatedAt >= 0
+              ? cached.updatedAt
+              : 0,
+          session: known ? windowView(cached.session) : null,
+          weekly: known ? windowView(cached.weekly) : null,
+          monthly: known ? windowView(cached.monthly) : null,
+          renewalPending: known && cached.renewalPending === true,
+        },
+      };
+    }),
+  );
   const cachedMcp = context.workingCwd ? deps.mcp(context.workingCwd) : undefined;
   const mcp = (cachedMcp?.servers ?? []).slice(0, 256).map((server) => {
     if (

@@ -1,4 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { useRef, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -284,15 +284,9 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
               ) : null}
 
               {data.loading && !people.length ? (
-                <Text
-                  as="p"
-                  size="caption"
-                  tone="muted"
-                  leading="inherit"
-                  className="audience-muted"
-                >
+                <LoadingText delay={false} className="audience-muted">
                   {t("Loading people…")}
-                </Text>
+                </LoadingText>
               ) : null}
               {data.error ? (
                 <InlineError retry={{ onRetry: data.reload, label: t("Try again") }}>

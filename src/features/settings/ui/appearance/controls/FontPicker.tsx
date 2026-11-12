@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
-import { Button } from "../../../../../shared/ui/Button";
+import { SelectTrigger } from "../../../../../shared/ui/Select";
 import { ChevronDown } from "../../../../../shared/ui/icons";
 import { Text } from "../../../../../shared/ui/Text";
 import {
@@ -48,6 +48,9 @@ const fontStack = (family: string | undefined, monospace: boolean) =>
  * Searchable font list grouped by category. The trigger and every row paint the font's name in
  * that font. `leading` adds a non-catalog first choice (the terminal's "Same as code font");
  * a stored `value` the catalog does not know stays selectable as its own row.
+ * @use Font previews through SearchableSelect and its shared SelectTrigger.
+ * @avoid Ordinary labels without font previews: SearchableSelect directly.
+ * @replaces The font picker's Button-based field trigger.
  */
 export function FontPicker({
   id,
@@ -107,16 +110,18 @@ export function FontPicker({
       renderTrigger={({ props, selected }) => {
         const current = selected[0];
         return (
-          <Button
+          <SelectTrigger
             {...props}
             id={id ?? props.id}
-            className="font-picker-trigger"
-            endIcon={<ChevronDown />}
+            className="bycoda-arc-select font-picker-trigger"
+            data-field-size="sm"
+            data-disabled={props.disabled || undefined}
           >
             <Text as="span" size="inherit" tone="inherit" truncate style={current?.labelStyle}>
               {current?.label ?? label}
             </Text>
-          </Button>
+            <ChevronDown className="bycoda-arc-select-chevron icon-sm shrink-0" />
+          </SelectTrigger>
         );
       }}
     />

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { productProviderDefaults } from "./productProviderDefaults";
-import { decodeAdvisor, decodeSubagents } from "./host-contracts/delegation";
+import { decodeAdvisor } from "./host-contracts/delegation";
 import type { HarnessId } from "./harnessIdentity";
 
 describe("product provider defaults", () => {
@@ -19,7 +19,7 @@ describe("product provider defaults", () => {
     const result = productProviderDefaults(harness, models);
     expect(result.model).toBe(main);
     expect(decodeAdvisor(result.extras?.crossAdvisor)).toEqual({ harness, model: main });
-    expect(decodeSubagents(result.extras?.crossSubagents)).toEqual([{ harness, model: sub }]);
+    expect(result.extras?.crossSubagents).toBe("auto");
   });
 
   it("prefers exact Claude 5.5 versions over aliases targeting 5.6", () => {
@@ -36,7 +36,7 @@ describe("product provider defaults", () => {
       model: "claude:opus-5-5",
       providerAccountId: "account",
     });
-    expect(decodeSubagents(result.extras?.crossSubagents)[0]?.model).toBe("claude:sonnet-5-5");
+    expect(result.extras?.crossSubagents).toBe("auto");
   });
 
   it("uses available aliases whose targets or names identify 5.5", () => {
@@ -45,7 +45,7 @@ describe("product provider defaults", () => {
       { harness: "claude", id: "claude:sonnet", name: "Sonnet 5.5" },
     ]);
     expect(result.model).toBe("claude:opus");
-    expect(decodeSubagents(result.extras?.crossSubagents)[0]?.model).toBe("claude:sonnet");
+    expect(result.extras?.crossSubagents).toBe("auto");
   });
 
   it("retains empty and other-provider catalog behavior", () => {
@@ -55,6 +55,6 @@ describe("product provider defaults", () => {
       { harness: "codex", id: "codex:gpt-6.1-sol" },
     ]);
     expect(result.model).toBe("codex:gpt-6.1-sol");
-    expect(decodeSubagents(result.extras?.crossSubagents)[0]?.model).toBe("codex:gpt-6.1-terra");
+    expect(result.extras?.crossSubagents).toBe("auto");
   });
 });

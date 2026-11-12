@@ -81,16 +81,6 @@
   padding-block: 8px;
 }
 
-.skeleton span {
-  block-size: 8px;
-  border-radius: var(--radius-control);
-  background: var(--ui-surface-muted);
-}
-
-.skeleton span:last-child {
-  inline-size: 65%;
-}
-
 .hint {
   flex: 1 1 220px;
   margin: 0;

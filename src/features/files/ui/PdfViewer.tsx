@@ -1,3 +1,4 @@
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -89,14 +90,7 @@ export default function PdfViewer({
       </DocumentMessage>
     );
   if (!doc) {
-    return (
-      <div
-        role="status"
-        className="grid h-full min-w-0 place-items-center p-3 text-ui-caption text-(--ui-text-muted)"
-      >
-        {t("Loading PDF…")}
-      </div>
-    );
+    return <SurfaceLoading label={t("Loading PDF…")} />;
   }
   return <PdfPages doc={doc} trailing={trailing} />;
 }

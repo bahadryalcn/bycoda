@@ -185,19 +185,16 @@ describe("providers scope inheritance", () => {
   async function selectScope(label: string) {
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Save in"]')!;
     await act(async () => trigger.click());
-    const option = Array.from(
-      document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
-    ).find((node) =>
-      [...node.closest("label")!.querySelectorAll("span")].some(
-        (span) => span.textContent?.trim() === label,
-      ),
+    const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (node) => [...node.querySelectorAll("span.truncate")].some((span) => span.textContent === label),
     );
     expect(option).toBeTruthy();
     await act(async () => option!.click());
-    const global = document.querySelector<HTMLInputElement>(
-      '.provider-targets-list input[type="checkbox"]',
+    expect(option!.getAttribute("aria-selected")).toBe("true");
+    const global = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (node) => node.querySelector("span.truncate")?.textContent === "Global",
     );
-    if (global?.checked) await act(async () => global.click());
+    if (global?.getAttribute("aria-selected") === "true") await act(async () => global.click());
     const done = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (node) => node.textContent === "Done",
     );

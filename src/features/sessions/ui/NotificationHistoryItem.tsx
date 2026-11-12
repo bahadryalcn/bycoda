@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
@@ -203,9 +204,11 @@ export function HistoryItem({
       {expanded ? (
         <div className="notification-history-details" data-no-drag="">
           {entry.cwd ? (
-            <Text as="p" className="notification-history-path" leading="normal" title={entry.cwd}>
-              {prettyCwd(entry.cwd)}
-            </Text>
+            <Tooltip label={entry.cwd} asChild>
+              <Text as="p" className="notification-history-path" leading="normal">
+                {prettyCwd(entry.cwd)}
+              </Text>
+            </Tooltip>
           ) : null}
           <div className="notification-history-actions">
             {canOpen ? (
@@ -243,18 +246,25 @@ export function NotificationProjectLabel({ cwd }: { cwd: string }) {
     project.paths.some((path) => pathKey(path) === pathKey(cwd)),
   );
   return (
-    <Text
-      as="span"
-      size="caption"
-      tone="secondary"
-      leading="inherit"
-      className="notification-project"
-      title={cwd}
-    >
-      <Text as="span" size="inherit" tone="inherit" truncate className="notification-project-name">
-        {project?.name || projectName(cwd)}
+    <Tooltip label={cwd} asChild>
+      <Text
+        as="span"
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        className="notification-project"
+      >
+        <Text
+          as="span"
+          size="inherit"
+          tone="inherit"
+          truncate
+          className="notification-project-name"
+        >
+          {project?.name || projectName(cwd)}
+        </Text>
+        <span className="notification-project-path sr-only">{prettyCwd(cwd)}</span>
       </Text>
-      <span className="notification-project-path sr-only">{prettyCwd(cwd)}</span>
-    </Text>
+    </Tooltip>
   );
 }

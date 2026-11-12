@@ -933,7 +933,7 @@ describe("settings pages", () => {
         ?.getAttribute("aria-valuenow"),
     ).toBe("23");
     await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
         .find((button) => button.textContent === "Projects")!
         .click(),
     );

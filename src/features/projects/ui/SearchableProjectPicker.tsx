@@ -1,8 +1,9 @@
+import { PickerList, PickerPopover, usePickerList } from "../../../shared/ui/picker";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { useT } from "../../../shared/i18n";
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTabGroupLogos } from "../hooks/useTabGroupLogos";
 import { basename } from "../../../platform/tauri/fs";
 import { prettyParent, projectKey, projectName } from "../../../shared/lib/paths";
@@ -25,8 +26,7 @@ import {
   useResolvedTabGroupLogos,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
-import { Check, ChevronDown, Plus } from "../../../shared/ui/icons";
-import { Popover } from "../../../shared/ui/Popover";
+import { ChevronDown, Plus } from "../../../shared/ui/icons";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
@@ -85,7 +85,6 @@ export function SearchableProjectPicker({
   const [active, setActive] = useState(0);
   const pickerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
   const [{ groupLabels, groupColors, groupCustomColors, groupMascots }, setAppearance] =
     useState(loadAppearance);
   useEffect(() => subscribeProjectPathsChanged(() => setAppearance(loadAppearance())), []);
@@ -153,44 +152,41 @@ export function SearchableProjectPicker({
     if (!sameProjectPath(path, cwd)) onSelectProject(path);
   };
 
-  const onPickerKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
-    const target = event.target;
-    const rows = listRef.current?.children;
-    if (
-      onProjectContextMenu &&
-      rows &&
-      (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
-    ) {
-      // A Tab-focused row opens its own menu; the search input opens the highlighted one.
-      const index =
-        target instanceof HTMLInputElement ? active : Array.prototype.indexOf.call(rows, target);
-      const project = filteredProjects[index];
-      const row = rows[index];
-      if (!project || !row) return;
-      event.preventDefault();
-      const rect = row.getBoundingClientRect();
-      onProjectContextMenu(project.path, rect.left, rect.bottom, searchRef.current);
-      return;
-    }
-    if (!(target instanceof HTMLInputElement)) return;
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      if (filteredProjects.length === 0) return;
-      setActive((index) => Math.min(filteredProjects.length - 1, index + 1));
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setActive((index) => Math.max(0, index - 1));
-      return;
-    }
-    if (event.key === "Enter") {
-      const project = filteredProjects[active];
-      if (!project) return;
-      event.preventDefault();
-      pickProject(project.path);
-    }
-  };
+  const list = usePickerList({
+    options: filteredProjects.map((item) => {
+      const itemKey = projectKey(item.path);
+      const seed = projectName(item.path);
+      const logo = resolvedLogos[itemKey];
+      return {
+        value: item.path,
+        title: resolveTabGroupLabel(itemKey, groupLabels, basename(item.path) || seed),
+        meta: prettyParent(item.path),
+        icon: logo ? (
+          <ProjectLogoIcon path={logo} className="size-4" imageClassName="size-4" />
+        ) : (
+          <ProjectMascot
+            project={seed}
+            color={resolveTabGroupColor(itemKey, groupColors, groupCustomColors, seed)}
+            name={resolveTabGroupMascot(itemKey, groupMascots)}
+            className="size-3.5"
+          />
+        ),
+        onContextMenu: onProjectContextMenu
+          ? (event: React.MouseEvent<HTMLButtonElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onProjectContextMenu(item.path, event.clientX, event.clientY, searchRef.current);
+            }
+          : undefined,
+      };
+    }),
+    value: filteredProjects.find((item) => sameProjectPath(item.path, cwd))?.path,
+    activeValue: filteredProjects[active]?.path ?? null,
+    onActiveValueChange: (value) =>
+      setActive(filteredProjects.findIndex((item) => item.path === value)),
+    inputRef: searchRef,
+    onChange: pickProject,
+  });
 
   const action = mode === "move" ? "Move note to project" : "Switch project";
 
@@ -260,21 +256,20 @@ export function SearchableProjectPicker({
         )}
       </Button>
       {open && !disabled ? (
-        <Popover
+        <PickerPopover
+          open
           anchor={pickerRef}
           side="bottom"
           align="start"
-          gap={4}
           width={286}
           maxHeight={380}
-          role="dialog"
-          aria-label={t("Project picker")}
-          onDismiss={projectMenuActive ? undefined : closePicker}
-          onKeyDown={onPickerKeyDown}
-          className="flex flex-col overflow-hidden"
+          label={t("Project picker")}
+          onDismiss={closePicker}
+          dismissible={!projectMenuActive}
+          inputRef={searchRef}
         >
           <PopoverSearchHeader
-            ref={searchRef}
+            {...list.searchProps}
             size="md"
             autoFocus={false}
             label={t("Search projects")}
@@ -286,96 +281,14 @@ export function SearchableProjectPicker({
             }}
             headerClassName="shrink-0"
           />
-          <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5">
-            {filteredProjects.length > 0 ? (
-              filteredProjects.map((item, index) => {
-                const current = sameProjectPath(item.path, cwd);
-                const itemKey = projectKey(item.path);
-                const itemSeed = projectName(item.path);
-                const itemLabel = resolveTabGroupLabel(
-                  itemKey,
-                  groupLabels,
-                  basename(item.path) || itemSeed,
-                );
-                const itemLogo = resolvedLogos[itemKey] ?? null;
-                const itemColor = resolveTabGroupColor(
-                  itemKey,
-                  groupColors,
-                  groupCustomColors,
-                  itemSeed,
-                );
-                return (
-                  <Button
-                    variant="item"
-                    motion="none"
-                    key={item.path}
-                    type="button"
-                    tooltip={item.path}
-                    selected={active === index}
-                    onMouseEnter={() => setActive(index)}
-                    onClick={() => pickProject(item.path)}
-                    onContextMenu={
-                      onProjectContextMenu
-                        ? (event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onProjectContextMenu(
-                              item.path,
-                              event.clientX,
-                              event.clientY,
-                              searchRef.current,
-                            );
-                          }
-                        : undefined
-                    }
-                    className={` flex h-9 w-full items-center gap-2.5 text-left    `}
-                  >
-                    <span className="grid size-4 shrink-0 place-items-center">
-                      {current ? (
-                        <Check className="icon-sm" strokeWidth={2} />
-                      ) : itemLogo ? (
-                        <ProjectLogoIcon
-                          path={itemLogo}
-                          className="size-4 rounded-sm"
-                          imageClassName="size-4"
-                        />
-                      ) : (
-                        <ProjectMascot
-                          project={itemSeed}
-                          color={itemColor}
-                          name={resolveTabGroupMascot(itemKey, groupMascots)}
-                          className="size-3.5"
-                        />
-                      )}
-                    </span>
-                    <Text
-                      truncate
-                      size="secondary"
-                      tone="inherit"
-                      weight="medium"
-                      className="min-w-0 max-w-[calc(100%_-_36px)] shrink-0"
-                    >
-                      {itemLabel}
-                    </Text>
-                    <Text
-                      truncate
-                      size="micro"
-                      tone="muted"
-                      className="min-w-0 max-w-28 flex-1 font-mono"
-                    >
-                      {prettyParent(item.path)}
-                    </Text>
-                  </Button>
-                );
-              })
-            ) : (
-              <Text as="p" size="caption" tone="muted" className="px-2.5 py-5 text-center">
-                {t("No projects found")}
-              </Text>
-            )}
-          </div>
+          <PickerList
+            label={t("Project picker")}
+            controller={list}
+            emptyLabel={t("No projects found")}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-none"
+          />
           {onOpenProject ? (
-            <div className="shrink-0 border-t border-stroke p-1.5">
+            <div className="shrink-0">
               <Button
                 variant="item"
                 motion="none"
@@ -384,14 +297,14 @@ export function SearchableProjectPicker({
                   closePicker();
                   onOpenProject();
                 }}
-                className="flex h-9 w-full items-center gap-2.5 text-left"
+                className="flex w-full items-center gap-2.5 text-left"
               >
                 <Plus className="icon-md shrink-0" strokeWidth={1.75} />
                 <span>{t("New project")}</span>
               </Button>
             </div>
           ) : null}
-        </Popover>
+        </PickerPopover>
       ) : null}
     </div>
   );

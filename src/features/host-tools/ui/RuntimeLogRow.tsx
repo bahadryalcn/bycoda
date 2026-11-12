@@ -1,3 +1,4 @@
+/** Different job: Log disclosure expands structured output; it is not a committed value choice. */
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
@@ -105,7 +106,7 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
                     className="runtime-log-count"
                     label={t("{p0} repeated events", { p0: group.entries.length })}
                   >
-                    ×{group.entries.length}
+                    {group.entries.length}
                   </Badge>
                 </Tooltip>
               ) : null}

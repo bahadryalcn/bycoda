@@ -17,9 +17,10 @@ import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Modal } from "../../../shared/ui/Modal";
+import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import "./ServersView.css";
@@ -85,28 +86,25 @@ function ViewToggle({
 }) {
   useLocale();
   return (
-    <div role="group" aria-label={t("Server view")} className="flex shrink-0 items-center gap-0.5">
-      <Button
-        variant="ghost"
-        iconOnly
-        label={t("List view")}
-        selected={layout === "list"}
-        aria-pressed={layout === "list"}
-        onClick={() => onChange("list")}
-      >
-        <ListBullet aria-hidden className="icon-sm" />
-      </Button>
-      <Button
-        variant="ghost"
-        iconOnly
-        label={t("Card view")}
-        selected={layout === "cards"}
-        aria-pressed={layout === "cards"}
-        onClick={() => onChange("cards")}
-      >
-        <LayoutGrid aria-hidden className="icon-sm" />
-      </Button>
-    </div>
+    <SegmentedControl
+      label={t("Server view")}
+      value={layout}
+      onValueChange={(next) => onChange(next as ServersLayout)}
+      options={[
+        {
+          value: "list",
+          label: t("List view"),
+          icon: <ListBullet aria-hidden className="icon-sm" />,
+          iconOnly: true,
+        },
+        {
+          value: "cards",
+          label: t("Card view"),
+          icon: <LayoutGrid aria-hidden className="icon-sm" />,
+          iconOnly: true,
+        },
+      ]}
+    />
   );
 }
 
@@ -259,6 +257,7 @@ export function ServersView({
       }
       if (remove) setBulkTargets(failed.length ? failed : undefined);
       setActionError(failures.join("\n"));
+      return failures.join("\n");
     } finally {
       bulkLock.current = false;
       setBulkBusy(false);
@@ -892,52 +891,38 @@ export function ServersView({
         </Popover>
       ) : null}
       {bulkTargets ? (
-        <Modal
-          title={t("Delete {p0} servers?", { p0: bulkTargets.length })}
-          size="sm"
-          onClose={() => {
-            if (!bulkLock.current) setBulkTargets(undefined);
+        <ConfirmDialog
+          request={{
+            title: t("Delete {p0} servers?", { p0: bulkTargets.length }),
+            message: t(
+              "Removes saved connections from bycoda. Remote machines and their running sessions are not deleted.",
+            ),
+            confirmLabel: t("Delete selected"),
+            confirmDisabled: bulkBusy,
+            onConfirm: async () => {
+              const failure = await runBulk(bulkTargets, true);
+              if (failure) throw new Error(failure);
+            },
+            details: (
+              <ul className="max-h-48 overflow-auto">
+                {bulkTargets.map((server) => (
+                  <li key={server.id} className="py-1">
+                    <Text as="span" size="inherit" tone="inherit" weight="medium">
+                      {server.name}
+                    </Text>
+                    <Text tone="muted" className="block break-all">
+                      {address(server)}
+                    </Text>
+                  </li>
+                ))}
+              </ul>
+            ),
           }}
-          footer={
-            <div className="flex justify-end gap-2">
-              <Button disabled={bulkBusy} onClick={() => setBulkTargets(undefined)}>
-                {t("Cancel")}
-              </Button>
-              <Button
-                variant="danger"
-                loading={bulkBusy}
-                onClick={() => void runBulk(bulkTargets, true)}
-              >
-                {t("Delete selected")}
-              </Button>
-            </div>
-          }
-        >
-          <Text as="div" size="body" tone="inherit" className="flex flex-col gap-3">
-            <p>
-              {t(
-                "Removes saved connections from bycoda. Remote machines and their running sessions are not deleted.",
-              )}
-            </p>
-            <ul className="max-h-48 overflow-auto">
-              {bulkTargets.map((server) => (
-                <li key={server.id} className="py-1">
-                  <Text as="span" size="inherit" tone="inherit" weight="medium">
-                    {server.name}
-                  </Text>
-                  <Text tone="muted" className="block break-all">
-                    {address(server)}
-                  </Text>
-                </li>
-              ))}
-            </ul>
-            {actionError ? (
-              <Alert tone="danger">
-                <span className="whitespace-pre-wrap">{actionError}</span>
-              </Alert>
-            ) : null}
-          </Text>
-        </Modal>
+          onSettle={(confirmed) => {
+            // runBulk owns successful removal and keeps only failed targets for retry.
+            if (!confirmed && !bulkLock.current) setBulkTargets(undefined);
+          }}
+        />
       ) : null}
       {deleteTarget ? (
         <Popover

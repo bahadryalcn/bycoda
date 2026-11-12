@@ -204,8 +204,15 @@ describe("Merge Conflicts section", () => {
     expect(container.textContent).toContain("Merge in progress · 2 conflicts");
     expect(row("a.ts").textContent).toContain("UU");
     expect(row("sub/gone.ts").textContent).toContain("DU");
-    expect(row("a.ts").querySelector('[title^="Both modified"]')).not.toBeNull();
-    expect(row("sub/gone.ts").querySelector('[title^="Deleted by us"]')).not.toBeNull();
+    for (const [path, detail] of [["a.ts", "Both modified"], ["sub/gone.ts", "Deleted by us"]]) {
+      const badge = row(path!).querySelector<HTMLElement>("[data-tooltip-owner][aria-label]")!;
+      await act(async () => {
+        badge.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      });
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(detail);
+      await act(async () => badge.dispatchEvent(new PointerEvent("pointerout", { bubbles: true })));
+    }
     // Conflicted files are not also ordinary rows.
     expect(container.querySelectorAll('[data-git-file][aria-label="a.ts"]')).toHaveLength(0);
     expect(container.querySelectorAll('[data-git-file][aria-label="ok.ts"]')).toHaveLength(1);

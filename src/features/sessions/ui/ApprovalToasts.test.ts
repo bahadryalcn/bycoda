@@ -392,7 +392,7 @@ it("shows the registered project and distinguishing path in popups, pending requ
   expect(onApproval).not.toHaveBeenCalled();
 });
 
-it("uses the folder name for old history without a registered project, including Windows and remote paths", () => {
+it("uses the folder name for old history without a registered project, including Windows and remote paths", async () => {
   localStorage.setItem(
     NOTIFICATION_HISTORY_KEY,
     JSON.stringify([
@@ -421,11 +421,26 @@ it("uses the folder name for old history without a registered project, including
   expect(
     [...document.querySelectorAll(".notification-project-name")].map((node) => node.textContent),
   ).toEqual(["demo", "demo"]);
-  expect(
-    [...document.querySelectorAll(".notification-project")].map((node) =>
-      node.getAttribute("title"),
-    ),
-  ).toEqual(["G:\\Projects\\demo", "remote://mac/home/dev/demo"]);
+  const expectedPaths = ["G:\\Projects\\demo", "remote://mac/home/dev/demo"];
+  const projects = [...document.querySelectorAll(".notification-project")];
+  for (const [index, project] of projects.entries()) {
+    expect(project.hasAttribute("title")).toBe(false);
+    await act(async () => {
+      project.dispatchEvent(
+        new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+    const descriptions = (project.getAttribute("aria-describedby") ?? "")
+      .split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent);
+    expect(descriptions).toContain(expectedPaths[index]);
+    act(() =>
+      project.dispatchEvent(
+        new PointerEvent("pointerout", { bubbles: true, pointerType: "mouse" }),
+      ),
+    );
+  }
 });
 
 it("restores history after remounting and records reused request IDs separately", () => {

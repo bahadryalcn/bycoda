@@ -1,4 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -196,7 +197,7 @@ export function TaskMetricsComparison({ tasks }: { tasks: HostTask[] }) {
               )}
             >
               <Text as="p" size="caption" tone="inherit" weight="medium" className="break-words">
-                {group.harness} · {group.model}
+                <ModelLabel model={group.model} harness={group.harness} />
               </Text>
               {group.workflowId ? (
                 <Text as="p" size="micro" tone="secondary" className="break-words">

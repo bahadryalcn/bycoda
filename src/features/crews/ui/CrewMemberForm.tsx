@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TagInput } from "../../../shared/ui/TagInput";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -182,7 +182,8 @@ export function CrewMemberForm({
             <Text size="body" tone="inherit" weight="medium">
               {t("Responsibility in the crew")}
             </Text>
-            <SegmentedControl
+            <RadioGroup
+              variant="inline"
               label={t("Responsibility in the crew")}
               value={agent.role}
               options={(["coordinator", "specialist", "reviewer", "advisor"] as const).map(

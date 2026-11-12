@@ -15,7 +15,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TextField } from "../../../shared/ui/TextField";
 import { MoreHorizontal, Plus, Trash2 } from "../../../shared/ui/icons";
 import { Group, Row } from "../../settings/ui/settingsControls";
@@ -452,7 +452,8 @@ function LibraryMemberDialog({
                 {saved.projectId ? t("This project") : t("All projects on this host")}
               </Badge>
             ) : (
-              <SegmentedControl
+              <RadioGroup
+                variant="inline"
                 label={t("Available in")}
                 value={scope}
                 options={[

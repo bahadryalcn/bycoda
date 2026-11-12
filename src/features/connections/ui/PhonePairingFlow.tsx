@@ -8,7 +8,7 @@ import { Divider } from "../../../shared/ui/Divider";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Field } from "../../../shared/ui/Field";
 import { Switch } from "../../../shared/ui/Switch";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { QRCodeSVG } from "qrcode.react";
 import { useRef, useState } from "react";
@@ -187,7 +187,8 @@ export function PhonePairingFlow({
           }
         >
           <div className="flex">
-            <SegmentedControl
+            <RadioGroup
+              variant="inline"
               label={t("Phone network")}
               value={localNetwork ? "lan" : "tailscale"}
               options={[

@@ -74,7 +74,6 @@
 .scheduleSentence > * {
   display: flex;
   align-items: center;
-  min-block-size: var(--ui-control-height-md);
 }
 .scheduleSentence::after {
   content: "";
@@ -85,7 +84,6 @@
 .scheduleSentence > :nth-last-child(-n + 2) {
   order: 2;
   min-block-size: 0;
-  font-size: var(--ui-font-caption);
 }
 .quickNoteFields {
   grid-column: 1 / -1;
@@ -95,7 +93,6 @@
 }
 /* The field presentation is sized for body copy; here it sits beside Select and TextField. */
 .modelField button:global(.model-picker-field-trigger)[data-model-picker-presentation="field"] {
-  font-size: var(--ui-font-caption);
   font-weight: 400;
 }
 .content[data-view="Conversations"] {

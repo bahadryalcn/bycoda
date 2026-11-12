@@ -46,7 +46,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 function pickerRows(scope: ParentNode = document): { button: HTMLButtonElement; path: string }[] {
   const picker = scope.querySelector('[aria-label="Project picker"]') ?? scope;
   return [...picker.querySelectorAll<HTMLButtonElement>("button")].flatMap((button) => {
-    const [name, parent] = [...button.querySelectorAll("span.truncate, span[data-truncate]")].map(
+    const [name, parent] = [...button.querySelectorAll("span.truncate, span[title]")].map(
       (span) => span.textContent ?? "",
     );
     return name !== undefined && parent !== undefined
@@ -473,9 +473,11 @@ it("moves focus and selection through mode tabs and associates the active panel"
     expect(document.activeElement).toBe(selected);
     expect(selected.getAttribute("aria-selected")).toBe("true");
     expect(
-      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].filter(
-        (entry) => entry.tabIndex === 0,
-      ),
+      [
+        ...selected
+          .closest('[role="tablist"]')!
+          .querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+      ].filter((entry) => entry.tabIndex === 0),
     ).toEqual([selected]);
     const panel = document.getElementById(selected.getAttribute("aria-controls")!)!;
     expect(panel.getAttribute("role")).toBe("tabpanel");
@@ -647,18 +649,14 @@ it("opens in the Document view and edits a block with formatting, preserving oth
   expect(
     container.querySelector<HTMLElement>("[data-note-editor]")!.closest("[hidden]"),
   ).not.toBeNull();
-  // Leaving block editing only returns to reading; the edit is saved by Save/autosave.
+  // Leaving block editing only returns to reading; the edit is saved by Ctrl+S/autosave.
   await act(async () =>
     [...container.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent === "Read document")!
       .click(),
   );
   expect(container.querySelector(".note-active-block")).toBeNull();
-  await act(async () =>
-    [...container.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent === "Save")!
-      .click(),
-  );
+  await act(async () => saveShortcut());
   expect(stored.body).toBe(
     "# Heading\n\n**Keep** this text.\n\n```js\nconst unchanged = true;\n```",
   );
@@ -680,11 +678,7 @@ it("starts writing inside an empty preview and saves the text", async () => {
     container.querySelector<HTMLButtonElement>(".note-active-block button")!.click(),
   );
   expect(container.querySelector(".note-active-block")).toBeNull();
-  await act(async () =>
-    [...container.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent === "Save")!
-      .click(),
-  );
+  await act(async () => saveShortcut());
   expect(stored.body).toBe("New note body");
 });
 
@@ -701,11 +695,7 @@ it("appends a separate block and invalidates preview ranges after a source edit"
   expect(container.querySelector("[data-note-preview]")?.textContent).toContain(
     "Changed this text.",
   );
-  await act(async () =>
-    [...container.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent === "Save")!
-      .click(),
-  );
+  await act(async () => saveShortcut());
   expect(stored.body).toBe("Changed this text.\n\nSecond paragraph");
 });
 
@@ -1002,11 +992,6 @@ it("lets the user retry a project change after saving fails", async () => {
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk full");
   expect(retry!.isConnected).toBe(true);
   expect(retry!.getAttribute("aria-busy")).toBe("true");
-  const save = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (node) => node.textContent === "Save",
-  )!;
-  expect(save.hasAttribute("aria-busy")).toBe(false);
-  expect(save.disabled).toBe(true);
   expect(document.activeElement).toBe(retry);
   expect(stored.sourceCwd).toBe("/work/Edefyn");
 
@@ -1162,71 +1147,20 @@ it("finalizes only a pending slug after title blur", async () => {
     saves().some(([, args]) => args.note.finalizeSlug && args.note.title === "Completed report"),
   ).toBe(true);
 });
+/** Ctrl/Cmd+S on the open note; the editor saves on this shortcut. */
+function saveShortcut() {
+  document
+    .querySelector(".note-detail")!
+    .dispatchEvent(
+      new KeyboardEvent("keydown", { key: "s", ctrlKey: true, metaKey: true, bubbles: true }),
+    );
+}
+
 function button(label: string) {
   return [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (item) => item.textContent?.trim() === label,
   )!;
 }
-
-// Delete lives in the "Note actions" popover next to the note's details.
-async function openNoteActions() {
-  const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Note actions"]');
-  expect(trigger).not.toBeNull();
-  if (trigger!.getAttribute("aria-expanded") !== "true") await act(async () => trigger!.click());
-}
-
-it("requires confirmation and resumes saving after a failed delete", async () => {
-  vi.useFakeTimers();
-  await render();
-  const save = invoke.getMockImplementation()!;
-  invoke.mockImplementation((command, args) =>
-    command === "notes_delete" ? Promise.reject(new Error("Delete denied")) : save(command, args),
-  );
-  await openNoteActions();
-  await act(async () => button("Delete").click());
-  expect(invoke.mock.calls.some(([command]) => command === "notes_delete")).toBe(false);
-  expect(document.body.textContent).toContain("Delete note permanently?");
-  await act(async () => button("Cancel").click());
-  expect(document.querySelector(".bycoda-arc-confirm")?.getAttribute("data-state")).toBe("idle");
-  await act(async () => button("Delete").click());
-  await act(async () => {
-    if (vi.isFakeTimers()) vi.advanceTimersByTime(300);
-    else await new Promise((resolve) => setTimeout(resolve, 300));
-  });
-  await act(async () => button("Confirm delete").click());
-  expect(document.body.textContent).toContain("Delete denied");
-  await editTitle("Still editable");
-  await act(async () => vi.advanceTimersByTime(400));
-  expect(stored.title).toBe("Still editable");
-});
-
-it("does not recreate a successfully deleted note from queued saves", async () => {
-  await render();
-  vi.useFakeTimers();
-  const save = invoke.getMockImplementation()!;
-  let deleted = false;
-  invoke.mockImplementation((command, args) => {
-    if (command === "notes_delete") {
-      deleted = true;
-      return Promise.resolve();
-    }
-    if ((command === "notes_list" || command === "notes_list_summaries") && deleted)
-      return Promise.resolve([]);
-    return save(command, args);
-  });
-  await editTitle("Pending changes");
-  await openNoteActions();
-  await act(async () => button("Delete").click());
-  await act(async () => {
-    if (vi.isFakeTimers()) vi.advanceTimersByTime(300);
-    else await new Promise((resolve) => setTimeout(resolve, 300));
-  });
-  await act(async () => button("Confirm delete").click());
-  await act(async () => vi.advanceTimersByTimeAsync(1000));
-  expect(deleted).toBe(true);
-  expect(container.querySelector('[aria-label="Note title"]')).toBeNull();
-  expect(invoke.mock.calls.filter(([command]) => command === "notes_upsert")).toHaveLength(0);
-});
 
 it("shows list failures together with stale notes and supports retry", async () => {
   await render();

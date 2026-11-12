@@ -32,32 +32,30 @@ const advance = () => act(() => vi.advanceTimersByTime(COMPOSER_TIP_INTERVAL));
 
 it("only opens by activation, updates its label and stays closed after Escape", () => {
   render();
-  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(icon().textContent).toBe("Tip");
   expect(icon().getAttribute("aria-label")).toBe("Tip");
   expect(icon().getAttribute("aria-expanded")).toBe("false");
-  expect(icon().hasAttribute("aria-describedby")).toBe(false);
+  expect(icon().hasAttribute("aria-controls")).toBe(false);
   act(() => icon().dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
   act(() => icon().focus());
-  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(vi.getTimerCount()).toBe(0);
   open();
   expect(text()).toBe(COMPOSER_TIPS[0]);
   expect(icon().textContent).toBe("Next tip");
   expect(icon().getAttribute("aria-label")).toBe("Next tip");
   expect(icon().getAttribute("aria-expanded")).toBe("true");
-  expect(icon().getAttribute("aria-describedby")).toBe(
-    document.querySelector('[role="tooltip"]')!.id,
-  );
+  expect(icon().getAttribute("aria-controls")).toBe(document.querySelector('[role="dialog"]')!.id);
   act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(icon().textContent).toBe("Tip");
   expect(icon().getAttribute("aria-expanded")).toBe("false");
-  expect(icon().hasAttribute("aria-describedby")).toBe(false);
+  expect(icon().hasAttribute("aria-controls")).toBe(false);
   act(() => icon().blur());
   act(() => icon().focus());
   act(() => icon().dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   open();
   expect(text()).toBe(COMPOSER_TIPS[0]);
 });
@@ -71,7 +69,7 @@ it("stays open when the pointer or focus leaves and dismisses on an outside clic
   act(() => vi.advanceTimersByTime(150));
   expect(text()).toBe(COMPOSER_TIPS[0]);
   act(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
-  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(icon().textContent).toBe("Tip");
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -126,7 +124,7 @@ it("pauses while the document is hidden and does no cycling after closing", () =
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("translates the tooltip and manual action in every supported language", async () => {
+it("translates the help panel and manual action in every supported language", async () => {
   render();
   open();
   for (const { value } of LANGUAGES) {

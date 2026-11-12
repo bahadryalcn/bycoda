@@ -108,21 +108,6 @@
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
-.popover {
-  position: absolute;
-  z-index: 80;
-  top: calc(100% + 8px);
-  right: 0;
-  left: 0;
-  overflow: hidden;
-  transform-origin: top center;
-  border: 1px solid var(--border);
-  border-radius: var(--ui-radius-popup);
-  padding: 5px;
-  background: var(--surface-raised);
-  color: var(--foreground);
-  box-shadow: var(--ui-elevation-floating);
-}
 .autoHeight {
   overflow: hidden;
 }
@@ -130,44 +115,6 @@
   max-height: min(300px, 40vh);
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-/* Arrow keys move the highlight often, so it changes almost instantly. */
-.option {
-  display: flex;
-  min-height: 36px;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  border-radius: calc(var(--ui-radius-popup) - 5px);
-  padding: 0 12px;
-  color: var(--foreground);
-  font-size: var(--text-sm);
-  cursor: pointer;
-  outline: none;
-  user-select: none;
-  transition:
-    background-color 80ms var(--ease-standard),
-    color 80ms var(--ease-standard);
-}
-.option > span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.option[data-active="true"] {
-  background: var(--ui-surface-hover);
-}
-.option[aria-selected="true"] {
-  background: var(--ui-surface-selected);
-}
-.option[data-disabled="true"] {
-  opacity: var(--ui-disabled-opacity, 0.5);
-  cursor: not-allowed;
-}
-.check {
-  flex: 0 0 auto;
-  color: var(--foreground);
 }
 .empty {
   padding: var(--space-3);
@@ -177,8 +124,7 @@
 @media (prefers-reduced-motion: reduce) {
   .control,
   .chevron,
-  .clear,
-  .option {
+  .clear {
     transition: none;
   }
 }
@@ -194,6 +140,7 @@
   gap: 0.5rem;
   border: 0;
   border-radius: calc(var(--ui-radius-popup) - 5px);
+  min-block-size: var(--ui-control-height-compact);
   padding-block: 0;
   padding-inline: 0.5rem;
   background: transparent;
@@ -209,10 +156,8 @@
     background-color 80ms var(--ease-standard),
     color 80ms var(--ease-standard);
 }
-/* Pressed outranks hover and the keyboard highlight, for selected and unselected rows alike. */
-.choice:active:not(:disabled, [aria-disabled="true"]) {
-  background: var(--ui-surface-pressed);
-  color: var(--foreground);
+.choice[data-has-description] {
+  padding-block: var(--space-2);
 }
 .choice:disabled,
 .choice[aria-disabled="true"] {
@@ -251,8 +196,10 @@
 .choice[aria-selected="true"] .choiceLabel {
   font-weight: 500;
 }
+/* Secondary text never sets the popup width: it fills the width the label chose and wraps there. */
 .choiceDescription {
   display: block;
+  contain: inline-size;
   overflow-wrap: anywhere;
 }
 /* Loading, failure and empty states sit beside the list, never inside it, so the committed rows stay available. */
@@ -296,7 +243,27 @@
   }
 }
 
-.choice:is([data-highlighted], [data-active], [aria-selected="true"]) {
-  border-radius: calc(var(--ui-field-radius) - 2px);
+.choice:is([data-highlighted], [data-active], [aria-selected="true"]):not(
+    :disabled,
+    [aria-disabled="true"]
+  ) {
   background: var(--ui-surface-selected);
+  color: var(--foreground);
+}
+@media (hover: hover) and (pointer: fine) {
+  .choice:hover:not(:disabled, [aria-disabled="true"], [aria-selected="true"]) {
+    background: var(--ui-surface-hover);
+    color: var(--foreground);
+  }
+}
+
+.choice:has(.choiceDescription) {
+  min-block-size: var(--ui-control-height-lg);
+  padding-block: var(--space-2);
+}
+
+/* Pressed outranks hover and the keyboard highlight, for selected and unselected rows alike. */
+.choice:active:not(:disabled, [aria-disabled="true"]) {
+  background: var(--ui-surface-pressed);
+  color: var(--foreground);
 }

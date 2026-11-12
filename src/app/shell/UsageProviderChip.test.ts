@@ -124,13 +124,13 @@ describe("UsageProviderChip", () => {
     };
     act(() => root.render(createElement(UsageProviderChip, { limits, now })));
     const trigger = button("Claude Code usage details");
-    expect(trigger.querySelector('[role="progressbar"]')).toBeNull();
+    expect(trigger.querySelector('[role="meter"]')).toBeNull();
     expect(trigger.textContent).not.toContain("0%");
     expect(await tooltipText(trigger)).toBe(limits.error);
     await act(async () => trigger.click());
     const dialog = document.querySelector('[role="dialog"]');
     expect(dialog?.textContent).toContain(limits.error);
-    expect(dialog?.querySelector('[role="progressbar"]')).toBeNull();
+    expect(dialog?.querySelector('[role="meter"]')).toBeNull();
   });
   it("keeps usage selections independent across providers with the same account ids", async () => {
     const onSelectAccount = vi.fn();
@@ -391,13 +391,13 @@ describe("UsageProviderChip", () => {
     expect(needsProviderLogin(limits)).toBe(false);
   });
 
-  it("opens a column of detailed progress bars", async () => {
+  it("opens a column of detailed quota meters", async () => {
     act(() => root.render(createElement(UsageProviderChip, { limits: codexLimits(), now })));
 
     const trigger = button("Codex usage details");
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(
-      [...trigger.querySelectorAll('[role="progressbar"]')].map((bar) =>
+      [...trigger.querySelectorAll('[role="meter"]')].map((bar) =>
         bar.getAttribute("aria-valuenow"),
       ),
     ).toEqual(["58", "19"]);
@@ -409,9 +409,9 @@ describe("UsageProviderChip", () => {
     expect(dialog?.textContent).toContain("Weekly limit");
     expect(dialog?.textContent).toContain("58% remaining");
     expect(dialog?.textContent).toContain("19% remaining");
-    expect(dialog?.querySelectorAll('[role="progressbar"]')).toHaveLength(2);
-    const sessionBar = dialog?.querySelector('[aria-label="5-hour limit remaining"]');
-    const weeklyBar = dialog?.querySelector('[aria-label="Weekly limit remaining"]');
+    expect(dialog?.querySelectorAll('[role="meter"]')).toHaveLength(2);
+    const sessionBar = dialog?.querySelector('[role="meter"][aria-label="5-hour limit remaining"]');
+    const weeklyBar = dialog?.querySelector('[role="meter"][aria-label="Weekly limit remaining"]');
     expect(sessionBar?.getAttribute("aria-valuenow")).toBe("58");
     expect(sessionBar?.getAttribute("aria-valuenow")).toBe("58");
     expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("19");
@@ -424,13 +424,15 @@ describe("UsageProviderChip", () => {
 
     const trigger = button("Codex usage details");
     expect(
-      [...trigger.querySelectorAll('[role="progressbar"]')].map((bar) =>
+      [...trigger.querySelectorAll('[role="meter"]')].map((bar) =>
         bar.getAttribute("aria-valuenow"),
       ),
     ).toEqual(["42", "81"]);
     await act(async () => trigger.click());
 
-    const weeklyBar = document.querySelector('[role="dialog"] [aria-label="Weekly limit used"]');
+    const weeklyBar = document.querySelector(
+      '[role="dialog"] [role="meter"][aria-label="Weekly limit used"]',
+    );
     expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("81");
     expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("81");
   });
@@ -442,15 +444,15 @@ describe("UsageProviderChip", () => {
     act(() => root.render(createElement(UsageProviderChip, { limits, now })));
 
     expect(
-      [...button("Codex usage details").querySelectorAll('[role="progressbar"]')].map((bar) =>
+      [...button("Codex usage details").querySelectorAll('[role="meter"]')].map((bar) =>
         bar.getAttribute("aria-valuenow"),
       ),
     ).toEqual(["100", "0"]);
     await act(async () => button("Codex usage details").click());
 
     const dialog = document.querySelector('[role="dialog"]');
-    const sessionBar = dialog?.querySelector('[aria-label="5-hour limit remaining"]');
-    const weeklyBar = dialog?.querySelector('[aria-label="Weekly limit remaining"]');
+    const sessionBar = dialog?.querySelector('[role="meter"][aria-label="5-hour limit remaining"]');
+    const weeklyBar = dialog?.querySelector('[role="meter"][aria-label="Weekly limit remaining"]');
     expect(sessionBar?.getAttribute("aria-valuenow")).toBe("100");
     expect(sessionBar?.getAttribute("aria-valuenow")).toBe("100");
     expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("0");
@@ -485,7 +487,7 @@ describe("UsageProviderChip", () => {
     expect(document.body.textContent).toContain("Codex accounts");
     expect(document.body.textContent).toContain("Default account");
     const accountRow = button("Default account").parentElement!;
-    const accountBar = accountRow.querySelector('[aria-label="5h limit remaining"]');
+    const accountBar = accountRow.querySelector('[role="meter"][aria-label="5h limit remaining"]');
     expect(accountRow.textContent).toContain("58% left");
     expect(accountBar?.getAttribute("aria-valuenow")).toBe("58");
     expect(accountBar?.getAttribute("aria-valuemax")).toBe("100");

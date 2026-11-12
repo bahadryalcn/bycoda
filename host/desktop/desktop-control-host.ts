@@ -23,7 +23,11 @@ import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { z } from "zod";
 import type { HostStore } from "../store";
 import { desktopOperationAuditId, type DesktopOperationAudit } from "./desktop-control-audit";
-import { isDesktopAppAllowed, normalizeDesktopConfiguration } from "./desktop-control-permission";
+import {
+  isDesktopAppAllowed,
+  isPlainDesktopAppName,
+  normalizeDesktopConfiguration,
+} from "./desktop-control-permission";
 import {
   AGENT_DESKTOP_PROTOCOL,
   AGENT_DESKTOP_UPSTREAM_REF,
@@ -351,6 +355,40 @@ export class HostDesktopControl {
     const { permissionMode } = await this.configuration();
     return { mode: permissionMode };
   }
+  /** Whether the conversation gate must ask the owner before this app is used. */
+  async appAllowed(app: string) {
+    await this.ready;
+    return isDesktopAppAllowed(await this.configuration(), app);
+  }
+  /** Remembers an app after the owner's exact native approval, which the conversation gate
+   * holds. Never a model tool. Live snapshots stay valid: adding an app revokes nothing. */
+  async allowApp(app: string) {
+    await this.ready;
+    if (!isPlainDesktopAppName(app))
+      throw new Error("Desktop app names must be plain non-option names.");
+    await this.store.transaction(async () => {
+      const current = await this.configuration();
+      if (isDesktopAppAllowed(current, app)) return;
+      if (current.allowedApps.length >= 50)
+        throw new Error(
+          "The approved app list is full. Remove an app in Computer use settings first.",
+        );
+      const next = {
+        ...current,
+        allowedApps: [...current.allowedApps, app],
+        version: current.version + 1,
+      };
+      await this.store.db
+        .prepare(
+          "INSERT INTO desktop_control_configuration(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
+        )
+        .run(JSON.stringify(next));
+      for (const snapshot of this.snapshots.values())
+        if (snapshot.configurationVersion === current.version)
+          snapshot.configurationVersion = next.version;
+    }, "critical");
+    this.statusChanged();
+  }
   private async binary(configuration: DesktopControlConfiguration) {
     if (
       !configuration.binaryPath ||
@@ -504,7 +542,7 @@ export class HostDesktopControl {
     principal: DesktopControlPrincipal,
   ) {
     if (!isDesktopAppAllowed(configuration, app))
-      throw new Error("The app is outside the owner's desktop allowlist.");
+      throw new Error("The owner has not approved this app for computer use.");
     const data = this.requireData(
       await this.invoke(configuration, ["list-apps", "--app", app], principal),
     );
@@ -536,12 +574,8 @@ export class HostDesktopControl {
       return { operation: receipt.operation };
     }
     if (input.op === "launch") {
-      if (
-        input.app.startsWith("-") ||
-        hasControlCharacters(input.app, false) ||
-        !isDesktopAppAllowed(configuration, input.app)
-      )
-        throw new Error("The app is outside the owner's desktop allowlist.");
+      if (!isPlainDesktopAppName(input.app) || !isDesktopAppAllowed(configuration, input.app))
+        throw new Error("The owner has not approved this app for computer use.");
     } else {
       if ((input.action === "set") !== (input.text !== undefined) || input.text?.includes("\0"))
         throw new Error("Clipboard text must match the selected plain-text command.");

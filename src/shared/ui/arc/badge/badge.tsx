@@ -11,6 +11,7 @@ import {
   type AnimationPlaybackControls,
 } from "motion/react";
 import { observeResize } from "../../../lib/observeResize";
+import { StatusDot } from "../../StatusDot";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./badge.module.css";
 
@@ -21,6 +22,9 @@ export type BadgeSize = "sm" | "md";
 export type BadgeVariant = "label" | "dot" | "count";
 /** `outline` keeps the toned border; `subtle` is the borderless tone-subtle fill. */
 export type BadgeAppearance = "outline" | "subtle";
+
+/** Counts use one cap in both the primitive and the public adapter. */
+export const BADGE_COUNT_MAX = 99;
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   /** Use accent for workspace emphasis; semantic info/status tones stay independent. */
@@ -43,17 +47,22 @@ function iconKey(icon: ReactNode) {
 }
 
 export function Badge({
-  tone = "neutral",
+  tone: requestedTone = "neutral",
   size = "md",
   icon,
   variant = "label",
   appearance = "outline",
   label,
-  max,
+  max: requestedMax,
   className,
   children,
   ...props
 }: BadgeProps) {
+  const max = requestedMax === undefined && variant === "count" ? BADGE_COUNT_MAX : requestedMax;
+  const tone =
+    variant === "count" && requestedTone !== "warning" && requestedTone !== "danger"
+      ? "accent"
+      : requestedTone;
   const reduce = useReducedMotion();
   const text =
     typeof children === "number" && variant === "count" && max !== undefined && children > max
@@ -138,10 +147,17 @@ export function Badge({
   // Replace outgoing content immediately: stale labels would inherit the new status tone.
   // Keep content visible on mount and under reduced motion; only width animates.
   return (
-    <span {...a11y} {...props} className={classes}>
+    <span
+      {...a11y}
+      data-tone={tone}
+      data-size={size}
+      data-variant={variant}
+      {...props}
+      className={classes}
+    >
       <motion.span ref={body} className={styles.body} style={{ width }}>
         <span ref={content} className={styles.content}>
-          {variant === "dot" ? <span className={styles.dotMark} aria-hidden="true" /> : null}
+          {variant === "dot" ? <StatusDot tone={tone} /> : null}
           {icon ? (
             <span className={styles.icon} aria-hidden="true">
               <span className={styles.glyph}>{icon}</span>

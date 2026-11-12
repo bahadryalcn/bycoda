@@ -78,3 +78,14 @@ Owner decision, 2026-11-11, source: owner chat, pointing at Arc's toast and toas
 > toast yapımız çok basit eski tip gözüküyor bu tarz yapıya geçelim lütfen ortak bir yapı olsun heryer aynı şekilde kullanaiblsin.
 
 Recorded decision: every toast is the one shared card (tone glyph, title, description, one pill action at the end of the row, dismiss) in one stack per corner: newest in front, three visible, fanned out on hover or keyboard focus. Feature cards in `ToastSlot` share the corner but stay outside the stack.
+
+## Component families
+
+Owner decision, 2026-11-12, source: owner chat:
+
+> eğer farklı componentse gösterim filan farklıysa tamam ama aynı işi farklı şekilde gösteren bir componentse bunun düzeltilmesi gerekiyor ... tutarlı görünüm istiyorum
+
+Recorded decision: components with the same job share one appearance and owner. Distinct jobs remain
+separate and explain their choice in catalog JSDoc. Shared wrappers own Arc and native popup access;
+feature code uses those wrappers. The UI drift and catalog ratchets enforce imports, floating-surface
+ownership, family metadata, unused exports and known hand-written control recipes.

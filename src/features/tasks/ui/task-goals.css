@@ -16,9 +16,6 @@
   display: grid;
   min-inline-size: 0;
   gap: 0.5rem;
-  padding: 0.625rem 0.75rem;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 .goal-card-head {
   display: grid;
@@ -60,7 +57,7 @@
   gap: 0.5rem;
   font-variant-numeric: tabular-nums;
 }
-.goal-card-progress > [role="meter"] {
+.goal-card-progress > [role="progressbar"] {
   inline-size: 6rem;
 }
 .goal-card-projects {

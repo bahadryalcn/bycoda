@@ -979,7 +979,8 @@ test("welcome and working labels stay readable in narrow panels and both themes"
     });
   });
   await page.goto("/tests/browser/chat/composer-extras.html");
-  const label = page.locator(".shimmer-text").first();
+  const label = page.getByRole("status", { name: "Chat composer · provider options" });
+  await expect(label.locator("[data-size]")).toHaveCSS("animation-name", "none");
   await expect(label).toHaveCSS("animation-name", "none");
   expect(await label.evaluate((el) => getComputedStyle(el).color)).not.toBe("rgba(0, 0, 0, 0)");
   await page.goto("/tests/browser/chat/composer-extras.html?footer");
@@ -1370,9 +1371,9 @@ test("model panel stays inside the viewport", async ({ page }, testInfo) => {
       );
     });
     if (viewport.width >= 800) {
-      const lineHeight = await help.locator("p").evaluate((el) =>
-        parseFloat(getComputedStyle(el).lineHeight),
-      );
+      const lineHeight = await help
+        .locator("p")
+        .evaluate((el) => parseFloat(getComputedStyle(el).lineHeight));
       expect(helpText!.height).toBeLessThanOrEqual(lineHeight + 1);
     }
     // The trailing icon button can be slightly taller than a single text line.

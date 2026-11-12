@@ -15,7 +15,9 @@ vi.mock("../../../integrations/harness/core/registry", () => ({
   refreshHarnessCatalogs: () => Promise.resolve(),
 }));
 
-vi.mock("../../../shared/ui/Popover", () => ({
+vi.mock("../../../shared/ui/Popover", async () => ({
+  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>("../../../shared/ui/Popover")),
+  popupListClassName: "shared-popup-list",
   Popover: ({
     children,
     role,
@@ -337,7 +339,9 @@ describe("model panel", () => {
     const unselectedRow = listbox().querySelector(
       '[role="option"][aria-selected="false"]',
     )!.parentElement!;
-    expect(unselectedRow.lastElementChild?.getAttribute("aria-label")).toBe("Add to favorites");
+    expect(
+      unselectedRow.querySelector("[data-picker-actions] button")?.getAttribute("aria-label"),
+    ).toBe("Add to favorites");
 
     const settings = container.querySelector("[data-model-settings]")!;
     await click(optionByText(settings, "radio", "Extra High"));
@@ -374,17 +378,17 @@ describe("model panel", () => {
     expect(trigger().getAttribute("aria-label")).toBe("OpenCode, OpenCode Go, GPT-5.6 Luna");
     await openPanel();
     const groups = () =>
-      [...listbox().querySelectorAll('[role="group"]')].map((group) =>
-        group.getAttribute("aria-label"),
+      [...listbox().querySelectorAll('[role="group"]')].map(
+        (group) => document.getElementById(group.getAttribute("aria-labelledby")!)?.textContent,
       );
     expect(groups()).toEqual(["OpenCode Go", "OpenAI"]);
+    expect(listbox().querySelector('[role="group"]')?.textContent).toContain("GPT-5.6 Luna");
     expect(
-      listbox().querySelector('[role="group"][aria-label="OpenCode Go"]')?.textContent,
-    ).toContain("GPT-5.6 Luna");
-    expect(
-      listbox().querySelector('[role="option"][aria-label="GPT-5.6 Luna, OpenCode Go"]'),
+      [...listbox().querySelectorAll('[role="option"]')].find((option) =>
+        option.textContent?.includes("GPT-5.6 Luna"),
+      ),
     ).not.toBeNull();
-    expect(listbox().querySelector('[role="group"][aria-label="OpenAI"]')?.textContent).toContain(
+    expect(listbox().querySelectorAll('[role="group"]')[1]?.textContent).toContain(
       "GPT-5.6 Luna Fast",
     );
     await inputText(
@@ -427,7 +431,7 @@ describe("model panel", () => {
     await click(providerTab("Favorites"));
     expect(
       [...listbox().querySelectorAll('[role="option"]')].map((option) =>
-        option.getAttribute("aria-label"),
+        option.textContent?.trim().replace(/\s+(Cursor|OpenCode Go)$/, ", $1"),
       ),
     ).toEqual(["Auto, Cursor", "Muse Spark 1.3, Cursor", "Muse Spark 1.3, OpenCode Go"]);
   });
@@ -580,10 +584,10 @@ describe("model panel settings column", () => {
   it("renders the field presentation as a full-width trigger that opens below", async () => {
     await openOrdered({});
     expect(trigger().getAttribute("data-model-picker-presentation")).toBe("inline");
-    expect(trigger().classList.contains("model-picker-field-trigger")).toBe(false);
+    expect(trigger().classList.contains("bycoda-arc-select")).toBe(false);
     await render({ harness: "cursor", model: "cursor:ordered", presentation: "field" });
     expect(trigger().getAttribute("data-model-picker-presentation")).toBe("field");
-    expect(trigger().classList.contains("model-picker-field-trigger")).toBe(true);
+    expect(trigger().classList.contains("bycoda-arc-select")).toBe(true);
     await act(async () => trigger().click());
     await act(async () => trigger().click());
     expect(panel()!.dataset.side).toBe("bottom");
@@ -612,10 +616,10 @@ describe("model panel settings column", () => {
     expect(trigger().textContent).toContain("Use the global agent");
     expect(trigger().getAttribute("aria-label")).toBe("Use the global agent");
     await openPanel();
-    const inherit = listbox().querySelector<HTMLButtonElement>('[role="option"]')!;
+    const inherit = panel()!.querySelector<HTMLButtonElement>("[data-model-inherit-choice]")!;
     expect(inherit.hasAttribute("data-model-inherit-choice")).toBe(true);
     expect(inherit.textContent).toBe("Use the global agent");
-    expect(inherit.getAttribute("aria-selected")).toBe("true");
+    expect(inherit.getAttribute("aria-pressed")).toBe("true");
     // Inherited: no model options to edit.
     expect(container.querySelector("[data-model-settings]")).toBeNull();
     await click(inherit);
@@ -626,7 +630,7 @@ describe("model panel settings column", () => {
     await renderInherit(false);
     await openPanel();
     expect(
-      listbox().querySelector("[data-model-inherit-choice]")!.getAttribute("aria-selected"),
+      panel()!.querySelector("[data-model-inherit-choice]")!.getAttribute("aria-pressed"),
     ).toBe("false");
     expect(
       container.querySelector('[data-model-settings] [data-setting-id="effort"]'),

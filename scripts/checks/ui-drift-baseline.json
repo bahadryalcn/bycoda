@@ -12,11 +12,16 @@
       "interaction-state": 4
     },
     "src/app/shell/LastSessionsSection.tsx": {
+      "loading-motion": 1,
+      "native-title": 1,
       "surface-style": 3
     },
     "src/app/shell/MenuBar.tsx": {
       "spacing-step": 1,
       "surface-style": 1
+    },
+    "src/app/shell/PiUsage.tsx": {
+      "native-title": 1
     },
     "src/app/shell/ProjectRail.tsx": {
       "fixed-control-size": 5,
@@ -24,6 +29,9 @@
       "interaction-state": 2,
       "spacing-step": 6,
       "surface-style": 7
+    },
+    "src/app/shell/RailAction.tsx": {
+      "surface-style": 1
     },
     "src/app/shell/SessionDetailTimes.tsx": {
       "spacing-step": 1
@@ -51,8 +59,9 @@
     "src/app/shell/Sidebar.tsx": {
       "fixed-control-size": 1,
       "interaction-state": 3,
+      "native-title": 1,
       "spacing-step": 8,
-      "surface-style": 15,
+      "surface-style": 17,
       "theme-palette-literal": 1
     },
     "src/app/shell/SidebarAccountFooter.module.css": {
@@ -68,6 +77,7 @@
     },
     "src/app/shell/UsageProviderChip.tsx": {
       "inline-style-property": 1,
+      "loading-motion": 1,
       "spacing-step": 11,
       "surface-style": 14
     },
@@ -85,6 +95,9 @@
     },
     "src/app/shell/sessionListWindow.tsx": {
       "spacing-step": 2
+    },
+    "src/app/shell/useProjectMenu.tsx": {
+      "native-title": 1
     },
     "src/app/shell/useRailSections.tsx": {
       "interaction-state": 1,
@@ -111,6 +124,9 @@
     "src/features/account/ui/AccountAvatar.module.css": {
       "spacing-step": 1,
       "surface-style": 5
+    },
+    "src/features/account/ui/AccountAvatar.tsx": {
+      "surface-style": 1
     },
     "src/features/account/ui/FeedbackDialog.module.css": {
       "spacing-step": 2,
@@ -250,7 +266,7 @@
       "spacing-step": 1
     },
     "src/features/connections/ui/ServersView.tsx": {
-      "spacing-step": 2,
+      "spacing-step": 1,
       "surface-style": 6
     },
     "src/features/connections/ui/SshConfigImportChoices.tsx": {
@@ -275,8 +291,10 @@
       "surface-style": 2
     },
     "src/features/crews/ui/CrewAppearancePicker.tsx": {
-      "fixed-control-size": 1,
-      "spacing-step": 1
+      "fixed-control-size": 1
+    },
+    "src/features/crews/ui/CrewDialogs.tsx": {
+      "surface-style": 1
     },
     "src/features/crews/ui/CrewEditorAdd.tsx": {
       "spacing-step": 1
@@ -322,11 +340,11 @@
       "surface-style": 1
     },
     "src/features/decision-models/ui/SourceRow.tsx": {
-      "spacing-step": 2,
+      "spacing-step": 1,
       "surface-style": 2
     },
     "src/features/devices/DevicePanel.css": {
-      "spacing-step": 8,
+      "spacing-step": 7,
       "surface-style": 17
     },
     "src/features/devices/DevicePanel.tsx": {
@@ -354,7 +372,8 @@
       "surface-style": 2
     },
     "src/features/files/ui/FilePickerLists.tsx": {
-      "fixed-control-size": 2
+      "fixed-control-size": 2,
+      "portal-outside-shared": 2
     },
     "src/features/files/ui/FilePreview.tsx": {
       "interaction-state": 1,
@@ -369,6 +388,9 @@
       "spacing-step": 2,
       "surface-style": 1
     },
+    "src/features/files/ui/HtmlPreview.tsx": {
+      "native-title": 1
+    },
     "src/features/files/ui/SheetGridView.tsx": {
       "inline-style-property": 8,
       "surface-style": 17
@@ -382,7 +404,7 @@
     },
     "src/features/host-tools/BrowserPanel.css": {
       "spacing-step": 5,
-      "surface-style": 21
+      "surface-style": 17
     },
     "src/features/host-tools/BrowserPanel.tsx": {
       "inline-style-property": 3
@@ -400,6 +422,9 @@
       "interaction-state": 6,
       "spacing-step": 1,
       "surface-style": 6
+    },
+    "src/features/host-tools/desktopControlWindowMain.tsx": {
+      "ui-wrapper-import": 1
     },
     "src/features/host-tools/tools-workspace.css": {
       "interaction-state": 2,
@@ -434,7 +459,7 @@
       "surface-style": 4
     },
     "src/features/inbox/ui/InboxPresentation.tsx": {
-      "inline-style-property": 3,
+      "inline-style-property": 2,
       "surface-style": 3
     },
     "src/features/inbox/ui/InboxProviderMark.tsx": {
@@ -490,7 +515,7 @@
     },
     "src/features/notes/ui/notes.css": {
       "spacing-step": 1,
-      "surface-style": 5
+      "surface-style": 6
     },
     "src/features/notifications/ui/NotificationMuteDatePicker.tsx": {
       "surface-style": 2
@@ -540,6 +565,8 @@
     "src/features/projects/ui/FolderPicker.tsx": {
       "fixed-control-size": 1,
       "interaction-state": 3,
+      "native-title": 1,
+      "portal-outside-shared": 1,
       "spacing-step": 1,
       "surface-style": 9
     },
@@ -548,6 +575,7 @@
     },
     "src/features/projects/ui/ProjectActionDialog.tsx": {
       "fixed-control-size": 1,
+      "native-title": 1,
       "surface-style": 2
     },
     "src/features/projects/ui/ProjectBackgroundDialog.tsx": {
@@ -555,8 +583,7 @@
       "surface-style": 7
     },
     "src/features/projects/ui/ProjectIconPicker.tsx": {
-      "fixed-control-size": 1,
-      "spacing-step": 3
+      "spacing-step": 1
     },
     "src/features/projects/ui/ProjectLogoIcon.tsx": {
       "surface-style": 1
@@ -583,10 +610,17 @@
     "src/features/providers/ui/HarnessUpdateNotice.tsx": {
       "surface-style": 2
     },
+    "src/features/quick-composer/main.tsx": {
+      "ui-wrapper-import": 1
+    },
+    "src/features/quick-composer/ui/QuickComposer.tsx": {
+      "portal-outside-shared": 2
+    },
     "src/features/quick-composer/ui/QuickGitPopup.tsx": {
-      "surface-style": 2
+      "ui-wrapper-import": 1
     },
     "src/features/quick-composer/ui/QuickModelSelector.tsx": {
+      "portal-outside-shared": 1,
       "surface-style": 4
     },
     "src/features/quick-composer/ui/QuickPermissions.tsx": {
@@ -594,6 +628,12 @@
     },
     "src/features/quick-composer/ui/QuickProjectIcon.tsx": {
       "surface-style": 1
+    },
+    "src/features/search/ui/ChatSearchResults.tsx": {
+      "portal-outside-shared": 1
+    },
+    "src/features/search/ui/SearchView.tsx": {
+      "portal-outside-shared": 1
     },
     "src/features/search/ui/search.css": {
       "interaction-state": 4,
@@ -603,20 +643,17 @@
     "src/features/search/ui/searchRowCopy.tsx": {
       "surface-style": 1
     },
-    "src/features/sessions/ui/AccessPicker.tsx": {
-      "surface-style": 1
-    },
     "src/features/sessions/ui/ActivityDock.tsx": {
       "spacing-step": 3
     },
     "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
       "fixed-control-size": 1
     },
-    "src/features/sessions/ui/ApprovalToasts.tsx": {
-      "surface-style": 3
-    },
     "src/features/sessions/ui/AttachmentChip.module.css": {
       "interaction-state": 1,
+      "surface-style": 1
+    },
+    "src/features/sessions/ui/AttachmentChip.tsx": {
       "surface-style": 1
     },
     "src/features/sessions/ui/AttachmentFilePreview.tsx": {
@@ -644,9 +681,6 @@
       "spacing-step": 2,
       "surface-style": 3
     },
-    "src/features/sessions/ui/ComposerSuggestions.tsx": {
-      "inline-style-property": 1
-    },
     "src/features/sessions/ui/DelegationSettings.tsx": {
       "fixed-control-size": 1,
       "inline-style-property": 1,
@@ -659,6 +693,7 @@
       "inline-style-property": 1
     },
     "src/features/sessions/ui/FileMentionPicker.tsx": {
+      "portal-outside-shared": 1,
       "spacing-step": 1,
       "surface-style": 1
     },
@@ -679,9 +714,6 @@
     "src/features/sessions/ui/MarkdownModeToggle.tsx": {
       "spacing-step": 1
     },
-    "src/features/sessions/ui/McpServerPicker.tsx": {
-      "surface-style": 1
-    },
     "src/features/sessions/ui/MessageQueue.tsx": {
       "surface-style": 4
     },
@@ -693,6 +725,7 @@
     "src/features/sessions/ui/ModelBrowser.tsx": {
       "fixed-control-size": 1,
       "inline-style-property": 1,
+      "portal-outside-shared": 1,
       "surface-style": 2
     },
     "src/features/sessions/ui/ModelExtras.tsx": {
@@ -706,13 +739,9 @@
       "inline-style-property": 1
     },
     "src/features/sessions/ui/ModelPicker.css": {
-      "fixed-control-size": 3,
-      "interaction-state": 7,
-      "surface-style": 10
-    },
-    "src/features/sessions/ui/ModelSettingPicker.tsx": {
-      "spacing-step": 1,
-      "surface-style": 1
+      "fixed-control-size": 2,
+      "interaction-state": 1,
+      "surface-style": 5
     },
     "src/features/sessions/ui/ModelSettingsColumn.tsx": {
       "inline-style-property": 1,
@@ -761,11 +790,7 @@
       "surface-style": 2
     },
     "src/features/sessions/ui/SessionDirsPicker.tsx": {
-      "spacing-step": 2,
-      "surface-style": 1
-    },
-    "src/features/sessions/ui/SessionFolderPicker.tsx": {
-      "surface-style": 1
+      "spacing-step": 2
     },
     "src/features/sessions/ui/SessionImportDialog.tsx": {
       "fixed-control-size": 1,
@@ -810,9 +835,6 @@
     },
     "src/features/sessions/ui/TranscriptSelectionMenu.module.css": {
       "surface-style": 1
-    },
-    "src/features/sessions/ui/TranslationResultDialog.module.css": {
-      "surface-style": 2
     },
     "src/features/sessions/ui/UserLinkPreview.tsx": {
       "inline-style-property": 3,
@@ -974,6 +996,12 @@
       "interaction-state": 1,
       "surface-style": 4
     },
+    "src/features/settings/ui/appearance/controls/BackgroundLibrary.tsx": {
+      "surface-style": 1
+    },
+    "src/features/settings/ui/appearance/controls/CodeFontGroup.tsx": {
+      "surface-style": 1
+    },
     "src/features/settings/ui/appearance/controls/GradientStrip.module.css": {
       "interaction-state": 2,
       "surface-style": 11
@@ -1005,6 +1033,7 @@
     },
     "src/features/settings/ui/appearance/controls/StateLadder.tsx": {
       "inline-style-property": 1,
+      "surface-style": 1,
       "theme-palette-literal": 2
     },
     "src/features/settings/ui/appearance/controls/ThemeControls.css": {
@@ -1036,6 +1065,7 @@
       "surface-style": 3
     },
     "src/features/skills/ui/SkillPicker.tsx": {
+      "portal-outside-shared": 1,
       "spacing-step": 1,
       "surface-style": 1
     },
@@ -1072,13 +1102,19 @@
       "spacing-step": 2,
       "surface-style": 6
     },
+    "src/features/social/ui/content/ContentCalendar.tsx": {
+      "surface-style": 3
+    },
+    "src/features/social/ui/content/ContentStatus.tsx": {
+      "surface-style": 1
+    },
     "src/features/social/ui/content/content.css": {
       "spacing-step": 4,
       "surface-style": 14
     },
     "src/features/social/ui/inbox/inbox.css": {
       "spacing-step": 5,
-      "surface-style": 8
+      "surface-style": 6
     },
     "src/features/source-control/model/gitGraph.ts": {
       "theme-palette-literal": 7
@@ -1099,7 +1135,7 @@
     },
     "src/features/source-control/ui/GitChangesList.tsx": {
       "fixed-control-size": 2,
-      "surface-style": 2
+      "portal-outside-shared": 1
     },
     "src/features/source-control/ui/GitCommitBlameView.tsx": {
       "surface-style": 2
@@ -1148,11 +1184,15 @@
     "src/features/source-control/ui/GitPanelSections.tsx": {
       "surface-style": 2
     },
+    "src/features/source-control/ui/GitPickerTrigger.tsx": {
+      "ui-wrapper-import": 1
+    },
     "src/features/source-control/ui/GitStashSection.tsx": {
       "fixed-control-size": 1
     },
     "src/features/source-control/ui/SidebarWorktreeSwitcher.tsx": {
       "fixed-control-size": 1,
+      "portal-outside-shared": 1,
       "surface-style": 2
     },
     "src/features/source-control/ui/SourceControl.tsx": {
@@ -1169,6 +1209,7 @@
       "spacing-step": 1
     },
     "src/features/source-control/ui/WorktreePicker.tsx": {
+      "portal-outside-shared": 1,
       "surface-style": 2
     },
     "src/features/source-control/ui/WorktreesPage.module.css": {
@@ -1178,6 +1219,9 @@
     "src/features/source-control/ui/conflict-layout.css": {
       "spacing-step": 5,
       "surface-style": 9
+    },
+    "src/features/tasks/ui/GoalForm.tsx": {
+      "surface-style": 1
     },
     "src/features/tasks/ui/TaskDetail.tsx": {
       "surface-style": 5
@@ -1229,9 +1273,15 @@
     "src/features/terminal/runtime/terminalTheme.ts": {
       "theme-palette-literal": 37
     },
+    "src/features/terminal/ui/LocalTerminalSuggestions.tsx": {
+      "portal-outside-shared": 1
+    },
     "src/features/terminal/ui/ProjectTerminalDock.tsx": {
       "inline-style-property": 2,
       "surface-style": 5
+    },
+    "src/features/terminal/ui/RemoteShellSuggestions.tsx": {
+      "portal-outside-shared": 1
     },
     "src/features/terminal/ui/TerminalTools.module.css": {
       "interaction-state": 4,
@@ -1288,17 +1338,23 @@
       "spacing-step": 2,
       "surface-style": 2
     },
+    "src/features/voice/ui/VoiceTurnControl.tsx": {
+      "ui-wrapper-import": 1
+    },
     "src/features/voice/ui/VoiceVisualizer.module.css": {
       "surface-style": 3
     },
     "src/features/voice/ui/VoiceVisualizer.tsx": {
-      "surface-style": 1
+      "surface-style": 2
     },
     "src/features/voice/ui/companion/VoiceCompanionParts.module.css": {
       "surface-style": 16
     },
     "src/features/voice/ui/companion/VoiceSidePanel.tsx": {
       "inline-style-property": 1
+    },
+    "src/features/voice/voiceOverlayMain.tsx": {
+      "ui-wrapper-import": 1
     },
     "src/features/workspace/ui/PaneTree.tsx": {
       "inline-style-property": 1,
@@ -1311,6 +1367,9 @@
       "spacing-step": 1,
       "surface-style": 1
     },
+    "src/features/workspace/ui/WorkspacePicker.tsx": {
+      "ui-wrapper-import": 1
+    },
     "src/features/workspaces/ui/WorkspaceManagedRow.module.css": {
       "interaction-state": 1,
       "spacing-step": 2
@@ -1318,6 +1377,188 @@
     "src/features/workspaces/ui/WorkspacePolicySettings.module.css": {
       "spacing-step": 1,
       "surface-style": 5
+    },
+    "src/main.tsx": {
+      "ui-wrapper-import": 1
+    },
+    "src/shared/ui/ActionHost.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/Alert.tsx": {
+      "component-metadata": 5
+    },
+    "src/shared/ui/AnsiText.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/BadgeList.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/ButtonGroup.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/CapabilityStatus.tsx": {
+      "component-orphan": 1
+    },
+    "src/shared/ui/ConfirmDialog.tsx": {
+      "component-metadata": 4
+    },
+    "src/shared/ui/ConfirmMorph.tsx": {
+      "component-metadata": 5
+    },
+    "src/shared/ui/ContinuousList.tsx": {
+      "component-family-choice": 2
+    },
+    "src/shared/ui/DateRangePicker.tsx": {
+      "component-orphan": 1
+    },
+    "src/shared/ui/DateTimePicker.tsx": {
+      "component-family-choice": 1,
+      "component-orphan": 1
+    },
+    "src/shared/ui/DescriptionList.tsx": {
+      "component-family-choice": 1,
+      "component-metadata": 1
+    },
+    "src/shared/ui/Disclosure.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/Divider.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/ExpandingSearch.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/FailureState.tsx": {
+      "component-metadata": 1
+    },
+    "src/shared/ui/Field.tsx": {
+      "component-family-choice": 1,
+      "component-metadata": 1
+    },
+    "src/shared/ui/FileField.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/FilterTrigger.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/HoverCard.tsx": {
+      "component-metadata": 9,
+      "component-orphan": 1
+    },
+    "src/shared/ui/ImageCompare.tsx": {
+      "component-family-choice": 1,
+      "component-metadata": 1
+    },
+    "src/shared/ui/ImageLightbox.tsx": {
+      "portal-outside-shared": 1
+    },
+    "src/shared/ui/Link.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/LoadingCard.tsx": {
+      "component-metadata": 3
+    },
+    "src/shared/ui/MatchText.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/MediaToolbar.tsx": {
+      "component-family-choice": 2
+    },
+    "src/shared/ui/MiddleTruncate.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/Modal.tsx": {
+      "component-family-choice": 1,
+      "component-metadata": 1,
+      "portal-outside-shared": 3
+    },
+    "src/shared/ui/MorphSelect.tsx": {
+      "component-orphan": 1
+    },
+    "src/shared/ui/Motion.tsx": {
+      "component-orphan": 1
+    },
+    "src/shared/ui/NativePopupHost.tsx": {
+      "component-metadata": 2
+    },
+    "src/shared/ui/NativeSearchableSelect.tsx": {
+      "component-orphan": 1
+    },
+    "src/shared/ui/ParticleText.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/Portal.tsx": {
+      "component-metadata": 2
+    },
+    "src/shared/ui/PrivateEmail.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/RadioTileGroup.tsx": {
+      "component-metadata": 2
+    },
+    "src/shared/ui/Sash.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/ScrollArea.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/SearchInput.tsx": {
+      "component-family-choice": 1,
+      "component-orphan": 1
+    },
+    "src/shared/ui/SectionLabel.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/Select.tsx": {
+      "component-metadata": 3
+    },
+    "src/shared/ui/Sheet.tsx": {
+      "portal-outside-shared": 1
+    },
+    "src/shared/ui/Shimmer.tsx": {
+      "component-metadata": 3,
+      "component-orphan": 1
+    },
+    "src/shared/ui/ShortcutRecorder.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/Tabs.tsx": {
+      "component-family-choice": 3,
+      "component-metadata": 3
+    },
+    "src/shared/ui/Timestamp.tsx": {
+      "component-family-choice": 1
+    },
+    "src/shared/ui/ToastCard.tsx": {
+      "component-family-choice": 1,
+      "component-metadata": 1
+    },
+    "src/shared/ui/ToastRegion.tsx": {
+      "component-metadata": 4,
+      "portal-outside-shared": 2
+    },
+    "src/shared/ui/TransientNotice.tsx": {
+      "component-metadata": 4,
+      "portal-outside-shared": 1
+    },
+    "src/shared/ui/TreeRow.tsx": {
+      "component-family-choice": 1,
+      "component-metadata": 8
+    },
+    "src/shared/ui/date-time/CalendarGrid.tsx": {
+      "ui-wrapper-import": 1
+    },
+    "src/shared/ui/date-time/PickerShell.tsx": {
+      "ui-wrapper-import": 1
+    },
+    "src/shared/ui/date-time/RangePicker.tsx": {
+      "ui-wrapper-import": 1
+    },
+    "src/shared/ui/picker/PickerChoice.tsx": {
+      "ui-wrapper-import": 1
+    },
+    "src/shared/ui/picker/PickerList.tsx": {
+      "ui-wrapper-import": 1
     }
   }
 }

@@ -19,10 +19,10 @@ import { NumberField } from "./NumberField";
 import { PasswordField } from "./PasswordField";
 import { RadioGroup } from "./RadioGroup";
 import { TagInput } from "./TagInput";
-import { NativeSearchableSelect } from "./NativeSearchableSelect";
 import { Checkbox } from "./Checkbox";
 import { ActionHost, InlineAction, InlineTextAction } from "./ActionHost";
 import { EmptyState } from "./EmptyState";
+import { FailureState } from "./FailureState";
 import { ExpandingSearch } from "./ExpandingSearch";
 import { FilterTrigger } from "./FilterTrigger";
 import { Spinner } from "./Spinner";
@@ -381,9 +381,8 @@ function StateMatrix({ layout }: { layout: ControlMatrixLayout }) {
               title={t("Preview")}
               description={t("No results match the filters.")}
             />
-            <EmptyState
+            <FailureState
               context="panel"
-              kind="unavailable"
               title={t("Preview")}
               description={t("Could not load.")}
               onRetry={noop}
@@ -848,12 +847,12 @@ export function ControlSpecimen({
       {expanded ? <TextField label={t("Required")} error={t("Required")} required /> : null}
       {expanded ? (
         <div className="grid min-w-0 gap-3">
-          <NativeSearchableSelect
+          <SearchableSelect
             hideLabel
             label={t("Layout")}
             options={choices}
             value={value}
-            onChange={(event) => setValue(event.currentTarget.value)}
+            onChange={setValue}
           />
           <NumberField label={t("Preview")} defaultValue={50} min={0} max={100} />
           <PasswordField label={t("Password")} defaultValue="preview" autoComplete="off" />
@@ -929,9 +928,8 @@ export function ControlSpecimen({
             ]}
             current={1}
           />
-          <EmptyState
+          <FailureState
             context="panel"
-            kind="unavailable"
             title={t("Preview")}
             description={t("Unavailable")}
             onRetry={() => undefined}

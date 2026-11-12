@@ -1,3 +1,4 @@
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { Text } from "../../shared/ui/Text";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
@@ -252,17 +253,16 @@ function ProjectDiagnosticsPanel({
         >
           {busy ? t("Measuring…") : sample ? time(sample.at) : t("No samples yet")}
         </Text>
-        <Text
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          className="resource-scope"
-          title={t(
+        <Tooltip
+          label={t(
             "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to 60 samples are retained.",
           )}
+          asChild
         >
-          {hostLabel ?? t("Host process")} · {t("Node process only")}
-        </Text>
+          <Text size="caption" tone="secondary" leading="inherit" className="resource-scope">
+            {hostLabel ?? t("Host process")} · {t("Node process only")}
+          </Text>
+        </Tooltip>
         <InfoPopover label={t("Measurement details")}>
           <p>{hostLabel ?? t("Host process")}</p>
           {sample ? (

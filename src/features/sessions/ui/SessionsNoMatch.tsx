@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { Button } from "../../../shared/ui/Button";
@@ -28,9 +29,7 @@ export function SessionsNoMatch({
       <div className="flex min-w-0 items-start gap-2">
         <Search aria-hidden className="icon-sm mt-0.5 shrink-0" tone="muted" strokeWidth={1.75} />
         <div className="min-w-0">
-          <Text as="p" size="body" tone="inherit" weight="medium">
-            {t("No matching sessions")}
-          </Text>
+          <EmptyState size="inline" kind="filtered" description={t("No matching sessions")} />
           <OverflowTooltip label={query}>
             <Text as="p" size="caption" tone="secondary" truncate>
               “{query}”

@@ -1,4 +1,5 @@
 import { Text } from "../../shared/ui/Text";
+import { modelDisplayName, modelSearchText } from "../../features/sessions/public/modelDisplayName";
 import { Alert } from "../../shared/ui/Alert";
 import { Badge } from "../../shared/ui/Badge";
 import { RecoveryStatusBadge } from "../../features/workspace/ui/RecoveryStatusBadge";
@@ -203,7 +204,7 @@ export function SessionRecoveryPanel({
     .filter(
       (row) =>
         (filter === "all" || recoveryNeedsAttention(row.status)) &&
-        `${row.title} ${projectDisplayNameFrom(row.stub.cwd, projectLabels)} ${row.stub.cwd} ${row.machine} ${row.stub.model}`
+        `${row.title} ${projectDisplayNameFrom(row.stub.cwd, projectLabels)} ${row.stub.cwd} ${row.machine} ${modelSearchText(row.stub.model, row.stub.harness)}`
           .toLocaleLowerCase()
           .includes(query.toLocaleLowerCase()),
     )
@@ -455,7 +456,7 @@ export function SessionRecoveryPanel({
                       <p>{`${projectDisplayNameFrom(stub.cwd, projectLabels)} · ${machine}`}</p>
                       <p className="select-text [overflow-wrap:anywhere]">{stub.cwd}</p>
                       <p>
-                        {HARNESS_TITLE[stub.harness]} · {stub.model}
+                        {HARNESS_TITLE[stub.harness]} · {modelDisplayName(stub.model, stub.harness)}
                       </p>
                     </Text>
                     <Text as="div" size="caption" tone="secondary">

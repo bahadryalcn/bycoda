@@ -100,6 +100,40 @@ automatically. Connection changes use the existing explicit connection controls.
 Finishing setup opens the workspace directly. The usage guide is an explicit,
 optional action and remains available in Settings.
 
+## Manage providers after setup
+
+**Settings > Providers** has five tabs: **Accounts**, **CLI**, **Defaults**,
+**Models** and **Decision models**. Settings search opens the relevant tab.
+
+- **Accounts** shows a provider rail with a **Default** badge and an account
+  summary. Choose a provider to manage its accounts. **Edit account** changes the
+  name, color and Personal or Work kind; **Automatic** restores the derived kind.
+  Changes save together when you save the editor. The Host stores kind alongside
+  name and color. Mobile shows the effective kind; editing requires the Host's
+  `providers.desktop.accountKind.v1` capability alongside metadata editing support.
+  Claude Code hooks remain a
+  provider option here.
+- **CLI** lists every provider CLI in a table with **Installed version** and
+  **Status** columns. The checked time appears above the table; row tooltips give
+  individual check times. Installed CLIs without an update feed show a neutral
+  status rather than an available update.
+  Check or update one provider, or use **Check all** and **Update all**. Open a
+  provider's path control to configure its executable; missing providers offer
+  **Set up**. Custom ACP providers use **Add provider**.
+- **Defaults** sets the provider, model, effort, permissions and agent choices for
+  new conversations. Effort uses a stepped scale with the selected label beside it.
+  Use the apply bar to choose provider scope and several save
+  destinations, then save. See [provider defaults](agent-tools.md#cross-provider-advisor-and-subagents)
+  for inheritance, skipped fields and retrying failed destinations.
+- **Models** controls which models appear in pickers. The header and search stay
+  in place while the list scrolls; search appears for longer lists. Changes save
+  immediately, and at least one model must remain enabled per provider. The header
+  refresh button checks the catalog. Successful checks stay quiet, including when
+  nothing changed; failures show a notice. Built-in lists and unavailable CLIs
+  retain their provenance or setup guidance.
+- **Decision models** manages connected sources, local discovery, privacy and
+  task routing. See [Manage decision models](decision-models.md).
+
 ## Guide
 
 The Guide (View → Usage guide, or Settings → General) is a topic-by-topic walkthrough

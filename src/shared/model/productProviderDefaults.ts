@@ -2,7 +2,7 @@ import {
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
   encodeAdvisor,
-  encodeSubagents,
+  AUTOMATIC_SUBAGENTS,
 } from "./host-contracts/delegation";
 import type { HarnessId } from "./harnessIdentity";
 type AgentModel = {
@@ -14,24 +14,20 @@ type AgentModel = {
 };
 type ProviderSessionDefaults = { extras?: Record<string, string> };
 
-const candidates: Partial<Record<HarnessId, { main: string[]; sub?: string[] }>> = {
+const candidates: Partial<Record<HarnessId, { main: string[] }>> = {
   claude: {
     main: ["claude:opus-5-5", "claude-opus-5-5", "claude:opus", "opus"],
-    sub: ["claude:sonnet-5-5", "claude-sonnet-5-5", "claude:sonnet", "sonnet"],
   },
   codex: {
     main: ["codex:gpt-6.1-sol", "gpt-6.1-sol"],
-    sub: ["codex:gpt-6.1-terra", "gpt-6.1-terra"],
   },
   grok: { main: ["grok:grok-4.7", "grok-4.7"] },
   cursor: { main: ["cursor:composer-2.5", "composer-2.5"] },
   opencode: {
     main: ["opencode:opencode/glm-5.3", "opencode/glm-5.3"],
-    sub: ["opencode:opencode/glm-5.3-flash", "opencode/glm-5.3-flash"],
   },
   antigravity: {
     main: ["antigravity:gemini-3.8-flash-high", "gemini-3.8-flash-high"],
-    sub: ["antigravity:gemini-3.8-flash-medium", "gemini-3.8-flash-medium"],
   },
   pi: { main: ["pi:default"] },
   omp: { main: ["omp:default"] },
@@ -63,7 +59,6 @@ export function productProviderDefaults(
       : find(ids);
   const main = preferred(preference?.main ?? [], "opus") ?? available[0];
   if (!main) return {};
-  const sub = preferred(preference?.sub ?? [], "sonnet") ?? main;
   const ref = (model: AgentModel) => ({
     harness,
     model: model.id,
@@ -72,7 +67,7 @@ export function productProviderDefaults(
   return {
     model: main.id,
     extras: {
-      [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref(sub)])!,
+      [CROSS_SUBAGENTS_KEY]: AUTOMATIC_SUBAGENTS,
       [CROSS_ADVISOR_KEY]: encodeAdvisor(ref(main))!,
     },
   };

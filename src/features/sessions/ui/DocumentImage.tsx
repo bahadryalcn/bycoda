@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useRef, useState, type CSSProperties, type ComponentProps } from "react";
 import { Text } from "../../../shared/ui/Text";
 import { readProjectImage } from "../../../platform/tauri/fs";
@@ -26,16 +27,18 @@ export function ImageAltText({ alt, title }: { alt?: string; title?: string }) {
   const text = alt?.trim();
   if (!text) return null;
   return (
-    <Text
-      as="em"
-      size="inherit"
-      tone="secondary"
-      data-image-alt=""
-      title={title}
-      className="text-[0.92em]"
-    >
-      {text}
-    </Text>
+    <Tooltip label={title} asChild>
+      <Text
+        as="em"
+        size="inherit"
+        tone="secondary"
+        data-image-alt=""
+
+        className="text-[0.92em]"
+      >
+        {text}
+      </Text>
+    </Tooltip>
   );
 }
 
@@ -144,21 +147,23 @@ function ProjectImage({
     );
   }
   return (
-    <img
-      src={url}
-      alt={alt ?? ""}
-      title={title}
-      width={width}
-      height={height}
-      {...(align ? { align } : {})}
-      data-document-image={path}
-      draggable={false}
-      style={style}
-      onError={() => {
-        releaseBlob(blobRef);
-        setUrl(null);
-        setFailed(true);
-      }}
-    />
+    <Tooltip label={title} asChild>
+      <img
+        src={url}
+        alt={alt ?? ""}
+
+        width={width}
+        height={height}
+        {...(align ? { align } : {})}
+        data-document-image={path}
+        draggable={false}
+        style={style}
+        onError={() => {
+          releaseBlob(blobRef);
+          setUrl(null);
+          setFailed(true);
+        }}
+      />
+    </Tooltip>
   );
 }

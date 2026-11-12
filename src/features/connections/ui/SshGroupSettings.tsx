@@ -14,7 +14,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
 import { SshIdentityField } from "./SshIdentityField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Alert } from "../../../shared/ui/Alert";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { sshEndpointPreview } from "../model/sshEndpointReview";
@@ -411,7 +411,8 @@ export function SshGroupSettings({
                   )}
                 </p>
                 <FieldGroup variant="bare" disabled={busy}>
-                  <SegmentedControl
+                  <RadioGroup
+                    variant="inline"
                     label={t("Environment shell")}
                     value={draft.value.shellKind}
                     onValueChange={(value) =>

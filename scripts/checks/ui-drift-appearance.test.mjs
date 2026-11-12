@@ -40,7 +40,7 @@ test("generated pseudo-element type and disabled motion are not hierarchy or mot
     "feature-typography",
     "feature-motion",
   ]);
-  assert.deepEqual(tsx('<span className="motion-safe:animate-pulse" />'), ["feature-motion"]);
+  assert.deepEqual(tsx('<span className="motion-safe:animate-pulse" />'), []);
 });
 
 test("every appearance rule is listed with the other UI drift rules", () => {
@@ -304,4 +304,12 @@ test("bespoke surfaces, shared UI and suppressed lines are outside the appearanc
     ),
     [],
   );
+});
+
+test("family recipes use Badge, ProgressBar, Tabs and SegmentedControl", () => {
+  assert.ok(tsx('<span className="project-badge" />').includes("surface-style"));
+  assert.ok(tsx('<div className="progress-fill" />').includes("surface-style"));
+  assert.ok(tsx('<nav className="project-tab-bar" />').includes("interaction-state"));
+  assert.ok(tsx('<div className="segmented-row" />').includes("interaction-state"));
+  assert.deepEqual(tsx("<Badge /><ProgressBar /><Tabs /><SegmentedControl />"), []);
 });

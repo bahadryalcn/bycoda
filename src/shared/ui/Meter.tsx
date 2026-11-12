@@ -16,7 +16,7 @@ export type MeterProps = Omit<ComponentPropsWithRef<"div">, "children" | "role">
   danger?: number;
   /** Tone below the thresholds. Default `neutral` (secondary ink). */
   tone?: MeterTone;
-  /** linear: 4px / 6px thick; ring: 16px / 24px. Default `sm`. */
+  /** Linear bars are always 4px thick; ring: 16px / 24px. Default `sm`. */
   size?: "sm" | "md";
   /** Accessible name. Use `aria-labelledby` instead when a visible label names it. */
   label?: string;
@@ -66,16 +66,22 @@ export function Meter({
   ...props
 }: MeterProps) {
   const span = max - min;
-  const ratio = value === null || !(span > 0) ? 0 : Math.min(1, Math.max(0, (value - min) / span));
-  const known = value !== null;
+  const known =
+    value !== null &&
+    Number.isFinite(value) &&
+    Number.isFinite(min) &&
+    Number.isFinite(max) &&
+    span > 0;
+  const bounded = known ? Math.min(max, Math.max(min, value!)) : undefined;
+  const ratio = known ? (bounded! - min) / span : 0;
   const shared = {
     ...props,
     role: known ? "meter" : undefined,
-    "aria-label": label,
+    "aria-label": label ?? props["aria-label"],
     "aria-valuemin": known ? min : undefined,
     "aria-valuemax": known ? max : undefined,
-    "aria-valuenow": known ? value : undefined,
-    "aria-valuetext": known ? valueText : undefined,
+    "aria-valuenow": bounded,
+    "aria-valuetext": known ? (valueText ?? props["aria-valuetext"]) : undefined,
     "data-tone": meterTone(value, { warning, danger, tone }),
     "data-size": size,
   };

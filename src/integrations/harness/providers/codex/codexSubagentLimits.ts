@@ -11,9 +11,12 @@ export function codexThreadConfig(
   base: Record<string, unknown> | undefined,
   modelSettings: Readonly<Record<string, string>> | undefined,
 ): Record<string, unknown> | undefined {
-  if (modelSettings?.nativeSubagents !== "off") return base;
+  const policy = modelSettings?.nativeSubagents;
+  if (policy !== "off" && policy !== "on") return base;
   return {
     ...base,
-    ...Object.fromEntries(NATIVE_SUBAGENT_FEATURES.map((name) => [`features.${name}`, false])),
+    ...Object.fromEntries(
+      NATIVE_SUBAGENT_FEATURES.map((name) => [`features.${name}`, policy === "on"]),
+    ),
   };
 }

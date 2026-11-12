@@ -46,8 +46,8 @@
       "baseline": "ui-drift-baseline.json",
       "rule": "surface-style",
       "from": 0,
-      "to": 1452,
-      "reason": "New appearance ownership rule surface-style recorded with its existing debt."
+      "to": 984,
+      "reason": "Widened surface-style to known badge, chip and progress recipes; use Badge or ProgressBar."
     },
     {
       "baseline": "ui-drift-baseline.json",
@@ -67,8 +67,8 @@
       "baseline": "ui-drift-baseline.json",
       "rule": "interaction-state",
       "from": 0,
-      "to": 159,
-      "reason": "New appearance ownership rule interaction-state recorded with its existing debt."
+      "to": 133,
+      "reason": "Widened interaction-state to known tab-bar and segmented-row recipes; use Tabs or SegmentedControl."
     },
     {
       "baseline": "ui-drift-baseline.json",
@@ -195,6 +195,55 @@
       "from": 0,
       "to": 208,
       "reason": "New React Compiler coverage ratchet recorded with the functions the compiler already skips."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "component-family-choice",
+      "from": 0,
+      "to": 34,
+      "reason": "New family-choice rule records existing groups whose members do not name a sibling in avoid or replaces metadata."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "component-metadata",
+      "from": 0,
+      "to": 63,
+      "reason": "New catalog ratchet records existing missing metadata on every exported shared component, including internal parts and aliases."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "component-orphan",
+      "from": 0,
+      "to": 9,
+      "reason": "New orphan rule records existing exported shared components without a product importer; tests and specimens are excluded."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "loading-motion",
+      "from": 0,
+      "to": 2,
+      "reason": "Widened loading-motion to all spin, pulse and shimmer recipes, including reduced-motion variants; shared loading components own rendering."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "native-title",
+      "from": 0,
+      "to": 7,
+      "reason": "Widened native-title from interactive controls to native DOM and shared text/badge tooltips, preserving heading title APIs."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "portal-outside-shared",
+      "from": 0,
+      "to": 24,
+      "reason": "Widened portal ownership to shared floating surfaces and raw popup roles, with explicit OS-window owners."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "ui-wrapper-import",
+      "from": 0,
+      "to": 13,
+      "reason": "New single-door rule records existing direct Arc and native-popup internal imports outside shared wrappers."
     }
   ]
 }

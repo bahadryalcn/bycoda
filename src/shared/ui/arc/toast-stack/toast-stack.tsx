@@ -298,6 +298,8 @@ export interface ToastStackCardProps extends Omit<HTMLAttributes<HTMLDivElement>
   close?: ReactNode;
   /** Extra body under the copy: rows, progress, answers to a question. */
   children?: ReactNode;
+  /** Answers below the body, using the card's full content width. */
+  footer?: ReactNode;
 }
 
 /**
@@ -312,6 +314,7 @@ export function ToastStackCard({
   action,
   close,
   children,
+  footer,
   className,
   role,
   ...props
@@ -355,6 +358,7 @@ export function ToastStackCard({
         </div>
         {action ? <div className={styles.actionSlot}>{action}</div> : null}
         {close ? <div className={styles.closeSlot}>{close}</div> : null}
+        {footer ? <div className={styles.footer}>{footer}</div> : null}
       </motion.div>
     </div>
   );

@@ -15,6 +15,7 @@ mod assistant_native_note_baseline;
 mod assistant_notification_owner;
 #[path = "assistant/assistant_observation_publisher.rs"]
 mod assistant_observation_publisher;
+mod delegation_readiness;
 mod management_actions;
 mod owner_approval;
 #[path = "privacy_account_capture.rs"]
@@ -540,6 +541,14 @@ struct DesktopRefApprovalOperation {
     action: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<String>,
+    /// drag: destination ref from the same snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    to_ref: Option<String>,
+    /// scroll only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    direction: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    amount: Option<u32>,
     headed: bool,
 }
 
@@ -562,6 +571,14 @@ struct DesktopClipboardApprovalOperation {
     text: Option<String>,
 }
 
+/// Remembered access to one application; the Host adds it to the owner's approved apps.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DesktopAppApprovalOperation {
+    kind: String,
+    app: String,
+}
+
 /// Untagged retains the original ref-action byte order/hash without adding a
 /// discriminator. New targets have explicit kinds and no fabricated refs.
 #[derive(Deserialize, Serialize)]
@@ -570,6 +587,7 @@ enum DesktopApprovalOperation {
     Ref(DesktopRefApprovalOperation),
     Launch(DesktopLaunchApprovalOperation),
     Clipboard(DesktopClipboardApprovalOperation),
+    App(DesktopAppApprovalOperation),
 }
 
 #[derive(Deserialize)]
@@ -584,6 +602,7 @@ struct DesktopActionApproval {
     deadline: u64,
     operation_hash: String,
     message: String,
+    confirm: &'static str,
 }
 
 enum DesktopApprovalSubject {
@@ -787,6 +806,14 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
             && !value.chars().any(char::is_control)
     };
     match operation {
+        DesktopApprovalOperation::App(operation) => {
+            if operation.kind != "app"
+                || !plain(&operation.app, 200)
+                || operation.app.starts_with('-')
+            {
+                return Err("Invalid exact desktop application".into());
+            }
+        }
         DesktopApprovalOperation::Launch(operation) => {
             if operation.kind != "launch"
                 || !plain(&operation.request_id, 200)
@@ -848,8 +875,36 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
                     | "double-click"
                     | "right-click"
                     | "press"
+                    | "scroll"
+                    | "hover"
+                    | "drag"
+                    | "focus-window"
             ) {
                 return Err("Unsupported desktop action approval".into());
+            }
+            // The same agreement rules as the Host's act validation.
+            let drag_target_ok = match &operation.to_ref {
+                Some(to_ref) => {
+                    operation.action == "drag"
+                        && plain(to_ref, 200)
+                        && to_ref.starts_with(&format!("@{}:", operation.snapshot_id))
+                }
+                None => operation.action != "drag",
+            };
+            let scroll_ok =
+                if operation.action == "scroll" {
+                    operation.direction.as_deref().is_some_and(|direction| {
+                        matches!(direction, "up" | "down" | "left" | "right")
+                    }) && operation
+                        .amount
+                        .is_none_or(|amount| (1..=50).contains(&amount))
+                } else {
+                    operation.direction.is_none() && operation.amount.is_none()
+                };
+            if !drag_target_ok || !scroll_ok {
+                return Err(
+                    "Desktop drag or scroll settings do not match the reviewed action".into(),
+                );
             }
             let requires_text = matches!(
                 operation.action.as_str(),
@@ -863,7 +918,11 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
             {
                 return Err("Desktop action text does not match its reviewed operation".into());
             }
-            if matches!(operation.action.as_str(), "press" | "double-click") && !operation.headed {
+            if matches!(
+                operation.action.as_str(),
+                "press" | "double-click" | "hover" | "drag" | "focus-window"
+            ) && !operation.headed
+            {
                 return Err("This desktop action requires explicit physical input review".into());
             }
         }
@@ -896,11 +955,23 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
     };
     let message = match operation {
       DesktopApprovalOperation::Ref(operation) => format!(
-        "Review this exact desktop action. Approval applies once to this operation only.\n\nHost: {}\n{}\nProject: {}\nApplication: {}\nWindow: {}\nSnapshot: {}\nTarget ref: {}\nAction: {}\nInput mode: {}\nRequest: {}\nText (JSON literal): {}\n\nOperation SHA-256: {}",
+        "Review this exact desktop action. Approval applies once to this operation only.\n\nHost: {}\n{}\nProject: {}\nApplication: {}\nWindow: {}\nSnapshot: {}\nTarget ref: {}\nAction: {}{}\nInput mode: {}\nRequest: {}\nText (JSON literal): {}\n\nOperation SHA-256: {}",
         literal(&environment_id), subject_context, literal(&cwd), literal(&operation.app), literal(&operation.window_id), literal(&operation.snapshot_id), literal(&operation.target_ref), literal(&operation.action),
+        match (&operation.to_ref, &operation.direction) {
+            (Some(to_ref), _) => format!("\nDrag to ref: {}", literal(to_ref)),
+            (None, Some(direction)) => format!(
+                "\nScroll: {direction}, amount {}",
+                operation.amount.map_or("default".to_string(), |amount| amount.to_string())
+            ),
+            _ => String::new(),
+        },
         if operation.headed { "PHYSICAL — may move the pointer or change focus" } else { "HEADLESS — no physical input grant" },
         literal(&operation.request_id), operation.text.as_ref().map(|text| literal(text)).unwrap_or_else(|| "(none)".into()), input.operation_hash,
     ),
+      DesktopApprovalOperation::App(operation) => format!(
+        "Allow computer use for this application? Approval is remembered: the application joins your approved apps until you remove it in Computer use settings. Your permission mode still decides which actions ask.\n\nHost: {}\n{}\nProject: {}\nApplication: {}\nAccess: read its windows and content, launch or attach to it, and act in it\n\nOperation SHA-256: {}",
+        literal(&environment_id), subject_context, literal(&cwd), literal(&operation.app), input.operation_hash,
+      ),
       DesktopApprovalOperation::Launch(operation) => format!(
         "Review this exact application launch. Approval applies once to this operation only.\n\nHost: {}\n{}\nProject: {}\nApplication: {}\nAction: LAUNCH OR ATTACH — headless, no activation, arguments, environment or CDP access\nRequest: {}\n\nOperation SHA-256: {}",
         literal(&environment_id), subject_context, literal(&cwd), literal(&operation.app), literal(&operation.request_id), input.operation_hash,
@@ -912,11 +983,16 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
         literal(&operation.request_id), operation.text.as_ref().map(|text| literal(text)).unwrap_or_else(|| "(none)".into()), input.operation_hash,
       ),
     };
+    let confirm = match operation {
+        DesktopApprovalOperation::App(_) => "Allow this application",
+        _ => "Approve this exact action",
+    };
     Ok(DesktopActionApproval {
         relay_id,
         deadline,
         operation_hash: input.operation_hash,
         message,
+        confirm,
     })
 }
 
@@ -1123,8 +1199,14 @@ fn decorate_frame(line: String, grant: &Value) -> String {
 pub async fn harness_conversation_tools_bridge(
     app: AppHandle,
     session_id: String,
+    check_ready: Option<bool>,
 ) -> Result<Option<Value>, String> {
     crate::harness::run_blocking("harness_conversation_tools_bridge", move || {
+        if check_ready == Some(true) {
+            return Ok(Some(
+                json!({"ready": delegation_readiness::delegation_bridge_ready(&app, &session_id)}),
+            ));
+        }
         if session_id.is_empty() {
             return Ok(None);
         }
@@ -1411,6 +1493,11 @@ mod tests {
                 vec!["Notepad", "LAUNCH OR ATTACH", "headless"],
             ),
             (
+                json!({"kind":"app","app":"Chrome"}),
+                "8f81a60c784c9df5cffff8f4a63f5cb216ad79c2065cfcfe383b3fc95d9d1655",
+                vec!["Chrome", "Approval is remembered", "approved apps"],
+            ),
+            (
                 json!({"kind":"clipboard","requestId":"clipboard-one","target":"global-clipboard","action":"set","text":"Ayşe: \"tam metin\"\nikinci satır"}),
                 "606539e22b382156f830663a0aedd7b3e08d7c078a6f472f392dbab940c7b423",
                 vec![
@@ -1448,6 +1535,83 @@ mod tests {
         }
     }
     #[test]
+    fn desktop_human_input_approval_matches_javascript_hash_and_shows_its_parameters() {
+        // Fixed SHA-256 from Node JSON.stringify of the Host's canonical operation.
+        let base = |extra: Value| {
+            let mut operation = json!({"requestId":"operation-one","snapshotId":"snapshot-one","app":"Editor","windowId":"window-one","ref":"@snapshot-one:field"});
+            for (key, value) in extra.as_object().unwrap() {
+                operation[key] = value.clone();
+            }
+            operation
+        };
+        for (operation, hash, required) in [
+            (
+                base(json!({"action":"drag","toRef":"@snapshot-one:target","headed":true})),
+                "049e492f3d0f3909285c4426e91d15351123959a728608a4e5e1eda30bb853c7",
+                vec!["drag", "Drag to ref: \"@snapshot-one:target\"", "PHYSICAL"],
+            ),
+            (
+                base(json!({"action":"scroll","direction":"down","amount":4,"headed":false})),
+                "52b9965becc79f7e65d9dc76fc11decc7e7fe5426c195b1e99c9c1f0e1ab0d81",
+                vec!["scroll", "Scroll: down, amount 4", "HEADLESS"],
+            ),
+            (
+                base(json!({"action":"scroll","direction":"up","headed":false})),
+                "305de0d05a1be66cc21c81583e5c0f1a2239cdff8c734f7806cad20f5489d4dd",
+                vec!["Scroll: up, amount default"],
+            ),
+            (
+                base(json!({"action":"hover","headed":true})),
+                "1b9c65501f772a8ea30dbf18314d54f433808e3896bd17df6e36ec0e9a4e3e8e",
+                vec!["hover", "PHYSICAL"],
+            ),
+            (
+                base(json!({"action":"focus-window","headed":true})),
+                "adc06b80ce26da4583881bcc430e3ab59b95c320384f578362b7c5ecd3a9f67c",
+                vec!["focus-window", "PHYSICAL"],
+            ),
+        ] {
+            let mut request = desktop_approval_fixture();
+            request["input"] = json!({"operation":operation,"operationHash":hash});
+            let approval = desktop_action_approval(&request, 10).unwrap();
+            for value in required {
+                assert!(
+                    approval.message.contains(value),
+                    "Missing displayed field: {value}"
+                );
+            }
+        }
+        // Parameters must agree with the action, as on the Host.
+        for extra in [
+            json!({"action":"drag","headed":true}),
+            json!({"action":"drag","toRef":"@other:target","headed":true}),
+            json!({"action":"drag","toRef":"@snapshot-one:target","headed":false}),
+            json!({"action":"click","toRef":"@snapshot-one:target","headed":false}),
+            json!({"action":"scroll","headed":false}),
+            json!({"action":"scroll","direction":"sideways","headed":false}),
+            json!({"action":"scroll","direction":"down","amount":0,"headed":false}),
+            json!({"action":"scroll","direction":"down","amount":51,"headed":false}),
+            json!({"action":"click","direction":"down","headed":false}),
+            json!({"action":"click","amount":2,"headed":false}),
+            json!({"action":"hover","headed":false}),
+            json!({"action":"focus-window","headed":false}),
+        ] {
+            let operation = base(extra);
+            let canonical: DesktopApprovalOperation =
+                serde_json::from_value(operation.clone()).unwrap();
+            let hash = format!(
+                "{:x}",
+                Sha256::digest(serde_json::to_string(&canonical).unwrap().as_bytes())
+            );
+            let mut request = desktop_approval_fixture();
+            request["input"] = json!({"operation":operation,"operationHash":hash});
+            assert!(
+                desktop_action_approval(&request, 10).is_err(),
+                "Accepted {operation}"
+            );
+        }
+    }
+    #[test]
     fn desktop_global_approval_rejects_self_grants_alternate_channels_and_invalid_union_shapes() {
         let mut request = desktop_approval_fixture();
         request["input"]["operation"] = json!({"kind":"clipboard","requestId":"clear","target":"global-clipboard","action":"clear"});
@@ -1481,6 +1645,9 @@ mod tests {
         }
         for operation in [
             json!({"kind":"launch","requestId":"l","app":"-option"}),
+            json!({"kind":"app","app":"-option"}),
+            json!({"kind":"app","app":"Editor","remember":false}),
+            json!({"kind":"launch","app":"Editor"}),
             json!({"kind":"launch","requestId":"l","app":"Editor","args":["--cdp"]}),
             json!({"kind":"launch","requestId":"l","app":"Editor","activate":true}),
             json!({"kind":"clipboard","requestId":"s","target":"global-clipboard","action":"set"}),

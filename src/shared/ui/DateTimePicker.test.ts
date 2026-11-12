@@ -145,6 +145,15 @@ it("round-trips valid local dates and rejects malformed or normalized values", (
   }
 });
 
+it("keeps calendar focus on the controlled selection after an external date change", () => {
+  const props = { value: "2028-02-20T18:30", onChange: vi.fn() };
+  act(() => root.render(createElement(DateTimePicker, props)));
+  day("2028-02-20").focus();
+  act(() => root.render(createElement(DateTimePicker, { ...props, value: "2029-03-04T10:00" })));
+  expect(document.activeElement).toBe(day("2029-03-04"));
+  expect(props.onChange).not.toHaveBeenCalled();
+});
+
 it("follows a changed controlled date without stealing focus from the time field", () => {
   const props = { value: "2028-02-20T18:30", onChange: vi.fn() };
   act(() => root.render(createElement(DateTimePicker, props)));
@@ -154,6 +163,17 @@ it("follows a changed controlled date without stealing focus from the time field
   expect(day("2029-03-04").tabIndex).toBe(0);
   expect(day("2029-03-04").parentElement?.getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement).toBe(input);
+  expect(props.onChange).not.toHaveBeenCalled();
+});
+
+it("retains calendar focus when an external month removes the focused week", () => {
+  const props = { value: "2028-01-31T18:30", onChange: vi.fn() };
+  act(() => root.render(createElement(DateTimePicker, props)));
+  const previous = day("2028-01-31");
+  previous.focus();
+  act(() => root.render(createElement(DateTimePicker, { ...props, value: "2028-02-02T18:30" })));
+  expect(previous.isConnected).toBe(false);
+  expect(document.activeElement).toBe(day("2028-02-02"));
   expect(props.onChange).not.toHaveBeenCalled();
 });
 

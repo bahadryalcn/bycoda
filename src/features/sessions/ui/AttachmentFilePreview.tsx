@@ -1,3 +1,4 @@
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
@@ -56,7 +57,7 @@ function AttachmentTextPreview({ readBytes }: { readBytes: () => Promise<Uint8Ar
       cancelled = true;
     };
   }, [readBytes, retry]);
-  if (!state) return <DocumentMessage title={t("Loading…")} />;
+  if (!state) return <SurfaceLoading label={t("Loading…")} />;
   if ("error" in state)
     return (
       <DocumentMessage title={t("Preview unavailable. Try again.")} error>

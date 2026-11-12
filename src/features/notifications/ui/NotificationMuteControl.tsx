@@ -1,3 +1,4 @@
+/** Different job: Mute commands open a separate custom-deadline form; command menu and date field keep their shared owners. */
 import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";

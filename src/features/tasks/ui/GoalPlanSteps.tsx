@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { type ReactNode, useState } from "react";
 import { t } from "../../../shared/i18n";
@@ -24,41 +25,43 @@ export function GoalPlanSteps({ goal }: { goal: BoardGoal }) {
       </SectionLabel>
       <ol aria-label={t("Plan")} className="goal-plan">
         {tasks.map((task, index) => (
-          <li key={task.key} title={task.prompt} className="goal-plan-step">
-            <Text
-              size="micro"
-              tone="muted"
-              leading="normal"
-              aria-hidden
-              className="goal-plan-index"
-            >
-              {index + 1}
-            </Text>
-            <span className="goal-plan-text">
-              <Text tone="primary" size="inherit" leading="inherit" className="goal-plan-title">
-                {task.title}
+          <Tooltip key={task.key} label={task.prompt} asChild>
+            <li key={task.key} className="goal-plan-step">
+              <Text
+                size="micro"
+                tone="muted"
+                leading="normal"
+                aria-hidden
+                className="goal-plan-index"
+              >
+                {index + 1}
               </Text>
-              <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
-                {t("in ")}
-                {projectOf(task.projectId, task.project)}
-              </Text>
-              {task.dependsOn.length ? (
-                <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
-                  <span className="shrink-0">{t("· after ")}</span>
-                  <BadgeList
-                    label={t("After")}
-                    size="xs"
-                    max={2}
-                    className="min-w-0"
-                    items={task.dependsOn.map((key, position) => {
-                      const title = titleOf(key);
-                      return { id: `${position}:${title}`, label: title };
-                    })}
-                  />
+              <span className="goal-plan-text">
+                <Text tone="primary" size="inherit" leading="inherit" className="goal-plan-title">
+                  {task.title}
                 </Text>
-              ) : null}
-            </span>
-          </li>
+                <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
+                  {t("in ")}
+                  {projectOf(task.projectId, task.project)}
+                </Text>
+                {task.dependsOn.length ? (
+                  <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
+                    <span className="shrink-0">{t("· after ")}</span>
+                    <BadgeList
+                      label={t("After")}
+                      size="xs"
+                      max={2}
+                      className="min-w-0"
+                      items={task.dependsOn.map((key, position) => {
+                        const title = titleOf(key);
+                        return { id: `${position}:${title}`, label: title };
+                      })}
+                    />
+                  </Text>
+                ) : null}
+              </span>
+            </li>
+          </Tooltip>
         ))}
       </ol>
     </div>

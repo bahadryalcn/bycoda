@@ -1,3 +1,4 @@
+import { popupListClassName } from "./Popover";
 import { optionalTextAttributes } from "./Text";
 import { OverflowTooltip } from "./Tooltip";
 import {
@@ -17,7 +18,9 @@ import { SelectTrigger, SelectOption, SelectValue } from "./arc/select/select";
 
 /** The bordered field trigger, for menus that read as a select (for example multi-pick lists). */
 export { SelectTrigger };
-import { ComboboxChoice } from "./arc/combobox/combobox";
+import { ComboboxStatus } from "./arc/combobox/combobox";
+import { PickerChoice } from "./picker/PickerChoice";
+import { useT } from "../i18n";
 import { Field, fieldDescribedBy, type FieldVariant } from "./Field";
 import { useKeyedActiveIndex } from "../hooks/useKeyedActiveIndex";
 
@@ -130,8 +133,9 @@ export function Select({
   onClick,
   ...triggerProps
 }: SelectProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
-  // The list is as wide as the trigger was when it opened.
+  // The trigger width is the floor; the popup grows with its option labels.
   const [listWidth, setListWidth] = useState(200);
   // A disabled select cannot stay open: close during render so re-enabling does not reopen it.
   if (disabled && open) setOpen(false);
@@ -287,10 +291,10 @@ export function Select({
       {expanded ? (
         <Popover
           id={listId}
-          anchor={root}
+          anchor={trigger}
           side="bottom"
-          align="start"
-          width={listWidth}
+          align="end"
+          minWidth={listWidth}
           maxHeight={320}
           autoFocus
           onDismiss={(reason) => {
@@ -302,8 +306,11 @@ export function Select({
           aria-activedescendant={activeId}
           tabIndex={-1}
           onKeyDown={onMenuKey}
-          className="bycoda-arc bycoda-arc-menu overflow-y-auto overscroll-contain p-1"
+          className={`${popupListClassName} bycoda-arc bycoda-arc-menu overflow-y-auto overscroll-contain`}
         >
+          {options.length === 0 ? (
+            <ComboboxStatus empty>{t("No matching options")}</ComboboxStatus>
+          ) : null}
           {options.map((option, index) => {
             const isSelected = option.value === value;
             const highlighted = index === active;
@@ -324,9 +331,9 @@ export function Select({
                   if (!option.disabled) setActive(index);
                 }}
                 onClick={() => pick(option.value)}
-                className="bycoda-arc-select-option h-8"
+                className={`bycoda-arc-select-option`}
               >
-                <ComboboxChoice
+                <PickerChoice
                   selected={isSelected}
                   icon={option.icon}
                   label={option.label}

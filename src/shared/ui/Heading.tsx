@@ -7,6 +7,8 @@ import type { TextTone, TextLeading } from "./Text";
 export type HeadingSize = "page" | "section" | "item" | "caption" | "heading";
 
 export type HeadingProps = ComponentPropsWithRef<"h2"> & {
+  /** Use a non-heading title inside a pane that already has an outline heading. */
+  as?: "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "div";
   /**
    * - `page`: the title of a page, dialog body or full view (16px).
    * - `section`: a section inside a page (14px). Default.
@@ -44,6 +46,7 @@ const DEFAULT_LEVEL = { page: 1, section: 2, item: 3, caption: 3, heading: 1 } a
  * <Heading size="item" lines={2} tone="danger">{card.title}</Heading>
  */
 export function Heading({
+  as,
   size = "section",
   level,
   leading,
@@ -54,7 +57,7 @@ export function Heading({
   style,
   ...props
 }: HeadingProps) {
-  const Tag = `h${level ?? DEFAULT_LEVEL[size]}` as "h2";
+  const Tag = (as ?? `h${level ?? DEFAULT_LEVEL[size]}`) as "h2";
   return (
     <Tag
       {...props}

@@ -95,6 +95,14 @@
   color: var(--ui-control-disabled-fg);
   cursor: not-allowed;
 }
+.root[data-size="sm"] .button {
+  min-height: calc(var(--ui-control-height-sm) - var(--space-2));
+  padding-inline: var(--space-2);
+}
+.button[data-icon-only] {
+  min-width: var(--control-height-sm);
+  padding-inline: 0;
+}
 .selection {
   position: absolute;
   z-index: -1;
@@ -170,4 +178,13 @@
   .root[data-compact] .copy {
     display: none;
   }
+}
+
+.root[data-compact] .button:first-child {
+  margin-inline-end: var(--space-1);
+  border-inline-end: 1px solid var(--border);
+}
+.root[data-compact] .selection {
+  background: var(--ui-surface-selected);
+  border-color: var(--accent);
 }

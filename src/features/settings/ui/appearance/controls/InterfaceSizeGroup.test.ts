@@ -189,7 +189,7 @@ it("keeps one preview row and the model/branch switches under Row density", () =
   expect(state.update).toHaveBeenCalledWith({ showBranch: false });
 });
 
-it("disables the branch switch while rows are compact, and marks changed rows", () => {
+it("disables the branch switch while rows are compact, and marks changed rows", async () => {
   state.display = { ...state.display, density: "compact", showModel: false };
   render();
   const row = host.querySelector('[data-row="Row density"]')!;
@@ -197,6 +197,13 @@ it("disables the branch switch while rows are compact, and marks changed rows", 
     el.textContent?.includes("Show branch"),
   )!;
   expect(branch.disabled).toBe(true);
-  expect(branch.getAttribute("title")).toBe("Compact rows have no branch line");
+  expect(branch.hasAttribute("title")).toBe(false);
+  await act(async () => {
+    branch.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
+    "Compact rows have no branch line",
+  );
   expect(row.getAttribute("data-modified")).toBe("true");
 });

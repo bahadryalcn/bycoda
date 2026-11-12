@@ -1,5 +1,6 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { DiffStat } from "../../../shared/ui/DiffStat";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
@@ -215,9 +216,12 @@ export function UnifiedDiffView({
 
   if (files.length === 0) {
     return (
-      <p className="px-4 py-6 text-ui-secondary text-[var(--ui-text-muted)]">
-        {t("No file changes")}
-      </p>
+      <EmptyState
+        size="inline"
+        kind="empty"
+        className="px-4 py-6"
+        description={t("No file changes")}
+      />
     );
   }
 
@@ -1451,14 +1455,18 @@ function EmptyBody({ children }: { children: string }) {
 function DiffCounts({ additions, deletions }: { additions: number; deletions: number }) {
   useLocale();
   return (
-    <DiffStat
-      additions={additions}
-      deletions={deletions}
-      size="micro"
-      weight="medium"
-      className="font-sans"
-      title={t("{p0} lines added, {p1} lines removed", { p0: additions, p1: deletions })}
-    />
+    <Tooltip
+      label={t("{p0} lines added, {p1} lines removed", { p0: additions, p1: deletions })}
+      asChild
+    >
+      <DiffStat
+        additions={additions}
+        deletions={deletions}
+        size="micro"
+        weight="medium"
+        className="font-sans"
+      />
+    </Tooltip>
   );
 }
 

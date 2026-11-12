@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import type {
@@ -140,9 +141,12 @@ export function TodayGlance({
               }))}
             />
           ) : (
-            <Text as="p" size="caption" tone="muted" leading="inherit" className={styles.muted}>
-              {t("No updates in the last 7 days")}
-            </Text>
+            <EmptyState
+              size="inline"
+              kind="empty"
+              className={styles.muted}
+              description={t("No updates in the last 7 days")}
+            />
           )}
         </ChartBlock>
         <ChartBlock title={t("Jobs by status")} caption={t("Jobs you can see")}>
@@ -158,9 +162,12 @@ export function TodayGlance({
               }))}
             />
           ) : (
-            <Text as="p" size="caption" tone="muted" leading="inherit" className={styles.muted}>
-              {t("No jobs yet")}
-            </Text>
+            <EmptyState
+              size="inline"
+              kind="empty"
+              className={styles.muted}
+              description={t("No jobs yet")}
+            />
           )}
         </ChartBlock>
       </div>

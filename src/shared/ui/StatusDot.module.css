@@ -7,17 +7,11 @@
   background: var(--ui-tone-accent-fg);
   vertical-align: middle;
 }
-.dot[data-size="md"] {
-  inline-size: 0.5rem;
-  block-size: 0.5rem;
+.dot[data-tone="added"] {
+  background: var(--color-diff-add-fg);
 }
-.dot[data-size="compact"] {
-  inline-size: 0.45rem;
-  block-size: 0.45rem;
-}
-.dot[data-size="fixed"] {
-  inline-size: 8px;
-  block-size: 8px;
+.dot[data-tone="removed"] {
+  background: var(--color-diff-del-fg);
 }
 .dot[data-tone="secondary"] {
   background: var(--ui-text-secondary);
@@ -36,15 +30,6 @@
 }
 .dot[data-tone="danger"] {
   background: var(--ui-tone-danger-fg);
-}
-.dot[data-appearance="solid"][data-tone="success"] {
-  background: var(--ui-tone-success-solid);
-}
-.dot[data-appearance="solid"][data-tone="warning"] {
-  background: var(--ui-tone-warning-solid);
-}
-.dot[data-appearance="solid"][data-tone="danger"] {
-  background: var(--ui-tone-danger-solid);
 }
 @media (forced-colors: active) {
   .dot:not([data-preserve-colors]) {

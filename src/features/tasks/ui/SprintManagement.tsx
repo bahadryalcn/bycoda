@@ -7,7 +7,7 @@ import { DescriptionItem, DescriptionList } from "../../../shared/ui/Description
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { Calendar, Plus } from "../../../shared/ui/icons";
-import { Meter } from "../../../shared/ui/Meter";
+import { Progress } from "../../../shared/ui/Progress";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import {
   sprintProjectKey,
@@ -236,12 +236,13 @@ export function SprintManagement({
             </DescriptionItem>
           </DescriptionList>
           {summary.points > 0 ? (
-            <Meter
+            <Progress
+              compact
               tone="accent"
-              label={t("Completed points")}
+              aria-label={t("Completed points")}
               value={summary.completedPoints}
               max={summary.points}
-              valueText={`${summary.completedPoints} / ${summary.points}`}
+              aria-valuetext={`${summary.completedPoints} / ${summary.points}`}
             />
           ) : null}
         </div>

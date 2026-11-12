@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { DiffStat } from "../../../shared/ui/DiffStat";
 import { Text } from "../../../shared/ui/Text";
 import {
@@ -132,9 +133,7 @@ export const ChangeRow = memo(function ChangeRow({
         selected={selected}
         hoverReveal
         style={tree ? { paddingLeft: 8 + depth * 12 } : undefined}
-        className={`flex h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 ${
-          tree ? "" : "pl-2"
-        }`}
+        className={`flex w-full items-center gap-1 ${tree ? "" : "pl-2"}`}
       >
         <Button
           size="sm"
@@ -153,7 +152,7 @@ export const ChangeRow = memo(function ChangeRow({
             if (canOpen && !event.ctrlKey && !event.metaKey && !event.shiftKey)
               onOpenFile(file.path, kind, true);
           }}
-          className="flex h-full min-w-0 flex-1 select-none items-center gap-1.5 text-left focus-visible:-outline-offset-1"
+          className="flex h-full min-w-0 flex-1 select-none items-center gap-1.5 text-left "
         >
           {tree ? <span className="size-4 shrink-0" /> : null}
           <FileTypeIcon name={name} isDir={false} />
@@ -201,22 +200,25 @@ export const ChangeRow = memo(function ChangeRow({
             kind === "unstaged" ? "pointer-fine:w-17" : "pointer-fine:w-11"
           }`}
         >
-          <DiffStat
-            additions={file.additions}
-            deletions={file.deletions}
-            title={t("{p0} lines added, {p1} lines removed", {
+          <Tooltip
+            label={t("{p0} lines added, {p1} lines removed", {
               p0: file.additions,
               p1: file.deletions,
             })}
-          />
-          <Text
-            size="inherit"
-            tone={statusTone(file.status)}
-            title={statusLabel(file.status)}
-            className="w-3.5 text-center font-mono"
+            asChild
           >
-            {statusLetter(file.status)}
-          </Text>
+            <DiffStat additions={file.additions} deletions={file.deletions} />
+          </Tooltip>
+          <Tooltip label={statusLabel(file.status)} asChild>
+            <Text
+              size="inherit"
+              tone={statusTone(file.status)}
+
+              className="w-3.5 text-center font-mono"
+            >
+              {statusLetter(file.status)}
+            </Text>
+          </Tooltip>
         </Text>
         <div
           data-action-slot="collapse"

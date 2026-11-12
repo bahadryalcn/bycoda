@@ -132,6 +132,15 @@ async function render(both = false, strict = false) {
 function source() {
   return EditorView.findFromDOM(host.querySelector<HTMLElement>("[data-note-editor] .cm-editor")!)!;
 }
+/** Ctrl/Cmd+S on the open note; the editor saves on this shortcut. */
+function saveShortcut() {
+  document
+    .querySelector(".note-detail")!
+    .dispatchEvent(
+      new KeyboardEvent("keydown", { key: "s", ctrlKey: true, metaKey: true, bubbles: true }),
+    );
+}
+
 function button(label: string) {
   const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent?.trim() === label || node.getAttribute("aria-label") === label,
@@ -317,7 +326,7 @@ it("retains a failed original save after unmount and gates detached recovery ret
     return actual(command, args);
   });
   act(() => source().dispatch({ changes: { from: 0, insert: "retained " } }));
-  await act(async () => button("Save").click());
+  await act(async () => saveShortcut());
   const gate = close();
   await act(async () => root.render(null));
   await expect(captureNotesInputs("target")).rejects.toMatchObject({ code: "busy" });
@@ -535,7 +544,7 @@ it("keeps the actual library draft and owner through StrictEffects replay and a 
       : actual(command, args),
   );
   act(() => source().dispatch({ changes: { from: 0, insert: "strict retained " } }));
-  await act(async () => button("Save").click());
+  await act(async () => saveShortcut());
   const record = drafts.get(stored.id)!;
   expect(record.edits.current.body).toContain("strict retained Original.");
   expect(record.error).toBe("StrictEffects original failure");

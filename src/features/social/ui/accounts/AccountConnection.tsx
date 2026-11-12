@@ -1,9 +1,10 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { openExternal } from "../../../../platform/tauri/openExternal";
@@ -216,9 +217,9 @@ export function AccountConnection({
         <XProfileEditor client={client} accountId={account.id} accountName={account.name} />
       ) : null}
       {browser?.error || oauth?.error ? (
-        <InlineMessage tone="danger">{browser?.error ?? oauth?.error}</InlineMessage>
+        <InlineError>{browser?.error ?? oauth?.error}</InlineError>
       ) : null}
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
     </section>
   );
 }

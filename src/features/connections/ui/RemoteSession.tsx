@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
@@ -1404,7 +1405,7 @@ function ConnectedRemoteSession({
     id: configuration.model,
     name:
       findRemoteModel(catalog?.models[configuration.harness] ?? [], configuration.model)?.name ??
-      configuration.model.replace(/^[^:]+:/, ""),
+      modelDisplayName(configuration.model, configuration.harness),
   });
   const optimisticTurn = (
     text: string,

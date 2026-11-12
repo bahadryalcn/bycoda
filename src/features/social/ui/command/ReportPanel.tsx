@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
@@ -72,9 +73,12 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
           <ReportList title={t("Results")} lines={data.results} />
           <ReportList title={t("Suggestions")} lines={data.suggestions} />
           {!data.done.length && !data.results.length ? (
-            <Text as="p" size="caption" tone="muted" leading="inherit" className="command-muted">
-              {t("No AI activity in this period.")}
-            </Text>
+            <EmptyState
+              size="inline"
+              kind="empty"
+              className="command-muted"
+              description={t("No AI activity in this period.")}
+            />
           ) : null}
         </div>
       ) : null}

@@ -59,6 +59,8 @@ available while the original result is checked.
 
 ## Conversation tools
 
+Before a turn disables native subagents, bycoda checks whether Conversation Tools can initialize for that session. If this bounded check fails, Automatic without an effort ceiling uses the provider's built-in subagents for that turn. Explicit model selections and effort ceilings remain enforced; bycoda tells the model and shows a non-blocking conversation status when delegation is unavailable. Off stays Off. A successful check cannot guarantee that a provider's later MCP connection will succeed.
+
 The assistant can search bycoda's tools by purpose and inspect the full contract
 only for the tools it needs. Existing tool names remain available. Finding a tool
 does not mean its machine, device or provider is connected or ready.
@@ -208,33 +210,58 @@ member when a Host provider works, and for Antigravity members through Nano Bana
 
 ## Cross-provider advisor and subagents
 
-Provider Settings also sets advisor and subagent defaults for new conversations.
-The **Apply to** picker lists workspaces and groups before projects. Use its
-category filters or search by project name, group name or project path. While
-searching, PageUp and PageDown switch categories. Project rows show their group;
-empty groups cannot be selected. Selecting a target does not save changes.
-Saving defaults confirms with **Saved** on the save button. Hover or focus the
-button for the saved target; unsaved counts and save errors remain beside it.
+**Settings > Providers > Defaults** sets advisor and subagent defaults for new
+conversations. Provider and permission choices include icons; effort uses a
+stepped scale with the selected label beside it, and Fast / Service Tier uses
+segmented choices where supported.
+The apply bar separates provider scope from save destinations. **Apply to** chooses
+the current provider or **All providers**. All providers copies only supported,
+portable changes; model and account choices are never copied between providers.
+Skipped fields are counted, with details available beside the pending changes.
+**Save in** selects several destinations at once: Global, workspaces, groups and
+projects. Use category filters, search by name or project path, or quick picks for
+Global only, all projects or everything. Empty groups cannot be selected.
+Selecting destinations does not save changes. Saving confirms with **Saved** on
+the button; partial failures name the destinations that failed and retain the
+draft. **Retry** attempts the failed destinations again. Workspace and group
+destinations save into their current member projects, including nested workspaces;
+projects added later follow Global. Account overrides remain machine-wide.
 Project defaults can override the global choices, including turning delegation off;
 reset a project field to follow the global setting again. Existing conversations
 keep their own settings.
 
 When no choice has been saved, every account starts with product defaults:
 
-- Claude: Opus 5.5, Sonnet 5.5 subagents, Opus 5.5 advisor.
-- Codex: GPT-6.1 Sol, GPT-6.1 Terra subagents, GPT-6.1 Sol advisor.
-- Grok: Grok 4.7 for all three roles.
-- Cursor: Composer 2.5 for all three roles.
-- OpenCode: GLM-5.3, GLM-5.3-Flash subagents, GLM-5.3 advisor.
-- Antigravity: Gemini 3.8 Flash High, Flash Medium subagents, Flash High advisor.
-- Pi, OMP, Hermes and FX: their configured catalog model for all three roles.
+- Claude: Opus 5.5 main and advisor.
+- Codex: GPT-6.1 Sol main and advisor.
+- Grok: Grok 4.7 main and advisor.
+- Cursor: Composer 2.5 main and advisor.
+- OpenCode: GLM-5.3 main and advisor.
+- Antigravity: Gemini 3.8 Flash High main and advisor.
+- Pi, OMP, Hermes and FX: their configured catalog model for main and advisor.
+- Every provider: **Automatic** subagents.
 
-Defaults use enabled models from the connected provider's catalog and the same
-account as the conversation. If a preferred model is unavailable, bycoda uses an
-enabled model from that provider; an empty catalog does not invent a model.
-Saved provider, account and project choices, including explicit Off, override
-these defaults. Resetting an override restores inheritance. Advisors may use the
-same model as the main conversation in an independent run.
+Automatic resolves enabled models from connected providers at use time, up to 24
+references. Its preview groups models as Best, Strong, Medium, Light and Unranked;
+unknown families remain available. Claude Fable/Mythos, Opus, Sonnet and Haiku are
+ordered in those four tiers. Other known families use the shared family anchors;
+these tiers are guidance, not measured capability scores. The agent picks the
+lowest tier that can do the part well, using higher tiers for hard parts:
+usefulness first, then cost. Provider and tier representation survives trimming.
+The conversation's provider uses its own account; other providers use their default
+account. Known signed-out accounts are excluded. `agents.options` is authoritative.
+
+**Automatic**, **Off** and explicit model lists are separate choices. Adding a model
+switches to an explicit list; Automatic restores live resolution without saving a
+catalog snapshot. Saved lists and Off, including existing conversations, retain
+their values. Advisors keep their independent selection and may use the main model.
+
+**Subagent max effort** is independent of main-model effort. Automatic means no
+ceiling. A selected level caps both requested effort and an omitted model default,
+including later replies to that child. For example the main model may use Low while
+subagents may use Max. The control appears beside Subagents in the Agents tab and
+Provider Defaults; defaults remain drafts until saved, inherit through the existing
+scopes, and the ceiling is portable across providers.
 
 A provider with several accounts shows an **Account** picker above its defaults.
 **All accounts** edits the provider's defaults; picking an account edits that
@@ -253,7 +280,7 @@ usage and reset time, and six or more can be searched. Picking an account on the
 current provider switches the conversation to it; on another provider it applies to
 the model picked there.
 
-The panel's **Agents** tab has two settings: **Subagents** and **Advisor**. Both list
+The panel's **Agents** tab includes **Subagents**, **Subagent max effort** and **Advisor**. Both list
 enabled models and accounts from available providers, so a Claude conversation can
 hand work to a Codex model, or the reverse. Panel choices apply to the current
 conversation.
@@ -296,8 +323,8 @@ it has finished, the message starts a new turn in that child session. Cancelling
 the parent turn stops its running children. A stopped child keeps the work it has
 already done, so check its files before continuing.
 
-Subagents use their model's default effort unless the assistant explicitly chooses
-an effort. Advisors match the main model's reasoning level, or the closest offered
+The assistant chooses each subagent's effort by the difficulty of its part, up to the
+highest level the model offers; a run with no effort named uses the model's default. Advisors match the main model's reasoning level, or the closest offered
 level. The assistant answers a finished child's question with `agents.reply`, keeping
 the same conversation context. Follow-ups can update earlier task instructions;
 advisor read-only access and child authority limits still apply. Approvals still

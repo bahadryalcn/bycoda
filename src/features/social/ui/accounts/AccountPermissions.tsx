@@ -1,3 +1,4 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useState } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
@@ -6,7 +7,7 @@ import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Text } from "../../../../shared/ui/Text";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { Heading } from "../../../../shared/ui/Heading";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import type { HostProject } from "../../../connections/public/protocol";
 import type { SocialAccount, SocialPermission } from "../../model/social";
@@ -98,11 +99,11 @@ export function AccountPermissions({
         )}
       </Text>
       {account.assistantGrantPending ? (
-        <InlineMessage tone="danger">
+        <InlineError>
           {t(
             "Assistant access is paused while voice retirement is pending. Reconnect the original device and save again to retry.",
           )}
-        </InlineMessage>
+        </InlineError>
       ) : null}
       <form
         className="social-field-row"
@@ -141,9 +142,7 @@ export function AccountPermissions({
           {t("Save permissions")}
         </Button>
       </form>
-      {assistantWrite.error ? (
-        <InlineMessage tone="danger">{assistantWrite.error}</InlineMessage>
-      ) : null}
+      {assistantWrite.error ? <InlineError>{assistantWrite.error}</InlineError> : null}
 
       <div className="social-field-row">
         <SearchableSelect
@@ -202,9 +201,7 @@ export function AccountPermissions({
           {t("Create a project first to give this account project access.")}
         </Text>
       )}
-      {projectWrite.error ? (
-        <InlineMessage tone="danger">{projectWrite.error}</InlineMessage>
-      ) : null}
+      {projectWrite.error ? <InlineError>{projectWrite.error}</InlineError> : null}
     </section>
   );
 }

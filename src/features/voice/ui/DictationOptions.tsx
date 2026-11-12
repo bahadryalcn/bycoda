@@ -1,7 +1,9 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuAction } from "../../../shared/ui/DropdownMenu";
-import { ChevronUp } from "../../../shared/ui/icons";
+import { HarnessIcon } from "../../../shared/ui/identity";
+import { AudioLines, Brain, ChevronUp, Globe, Languages, Laptop } from "../../../shared/ui/icons";
+import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import {
   CLOUD_DICTATION_PROVIDERS,
@@ -35,13 +37,36 @@ export function DictationOptions({
   const engine = settings.dictationEngine;
   const engineName = (value: DictationEngine) =>
     value === "local" ? t("This computer") : DICTATION_PROVIDER_NAMES[value];
-  const radio = (id: string, label: string, checked: boolean): DropdownMenuAction => ({
+  // OpenAI and Grok reuse the marks of their harnesses; OpenRouter has no mark in the app.
+  const engineIcon = (value: DictationEngine) =>
+    value === "local" ? (
+      <Laptop />
+    ) : value === "openai" ? (
+      <HarnessIcon harness="codex" size="sm" />
+    ) : value === "xai" ? (
+      <HarnessIcon harness="grok" size="sm" />
+    ) : (
+      <Globe />
+    );
+  const radio = (
+    id: string,
+    label: string,
+    checked: boolean,
+    icon?: ReactNode,
+  ): DropdownMenuAction => ({
     kind: "item",
     id,
     label,
+    icon,
     checked,
     selectionRole: "radio",
   });
+  // The current choice reads as a quiet value beside the row label.
+  const chosen = (value: string) => (
+    <Text size="micro" tone="secondary" className="shrink-0">
+      {value}
+    </Text>
+  );
   const model =
     engine === "local" ? undefined : dictationModel(engine, settings.dictationModels[engine]);
   const languageName =
@@ -97,9 +122,10 @@ export function DictationOptions({
               kind: "item",
               id: "engine",
               label: t("Dictation recognition"),
-              trailing: engineName(engine),
+              icon: <AudioLines />,
+              trailing: chosen(engineName(engine)),
               submenu: (["local", ...CLOUD_DICTATION_PROVIDERS] as DictationEngine[]).map((value) =>
-                radio(`engine:${value}`, engineName(value), value === engine),
+                radio(`engine:${value}`, engineName(value), value === engine, engineIcon(value)),
               ),
             },
             ...(engine === "local"
@@ -109,6 +135,7 @@ export function DictationOptions({
                     kind: "item" as const,
                     id: "model",
                     label: t("Dictation model"),
+                    icon: <Brain />,
                     submenuWidth: 280,
                     submenu: DICTATION_MODELS[engine].map((entry) =>
                       radio(`model:${entry.id}`, entry.label, entry.id === model),
@@ -119,7 +146,8 @@ export function DictationOptions({
               kind: "item",
               id: "language",
               label: t("Dictation language"),
-              trailing: languageName,
+              icon: <Languages />,
+              trailing: chosen(languageName),
               submenu: [
                 radio("language:auto", t("Automatic"), settings.dictationLanguage === "auto"),
                 ...DICTATION_LANGUAGES.map(([code, label]) =>

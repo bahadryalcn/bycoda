@@ -3,7 +3,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Heading } from "../../../shared/ui/Heading";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import type { HostModelCatalog } from "../../connections/public/protocol";
 import type { CrewAgent, CrewPolicy } from "../model/crew";
 import { useCrewModelPools } from "../model/crewModelPools";
@@ -54,7 +54,8 @@ export function MemberModelSection({
         <Heading size="section" level={3}>
           {t("Model")}
         </Heading>
-        <SegmentedControl
+        <RadioGroup
+          variant="inline"
           label={t("Model choice")}
           value={agent.selection}
           options={[

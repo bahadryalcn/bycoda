@@ -1,9 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
-import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { Checkbox } from "../../../shared/ui/Checkbox";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { PickerList, PopoverSearchHeader, usePickerList } from "../../../shared/ui/picker";
 import { useT } from "../../../shared/i18n";
 import { useRef, useState } from "react";
 import { basename, pickFolders } from "../../../platform/tauri/fs";
@@ -107,7 +105,12 @@ async function pickSessionFolders({
   }
 }
 
-/** The working folder is always included; extra folders are scoped to this session. */
+/**
+ * The working folder is always included; extra folders are scoped to this session.
+ * @use Session-only folder selection plus native folder browsing, using shared picker primitives.
+ * @avoid Plain project selection: SearchableSelect.
+ * @replaces Local folder option rows and search field.
+ */
 export function SessionDirsPicker({
   sessionId,
   project,
@@ -194,6 +197,46 @@ export function SessionDirsPicker({
     });
   };
 
+  const options = matching.map((path) => ({
+    value: pathKey(path),
+    title: basename(path) || prettyCwd(path),
+    description: (
+      <Text size="micro" tone="inherit">
+        {prettyCwd(path)}
+      </Text>
+    ),
+    icon: <Folder className="icon-sm" />,
+    meta:
+      mode === "project"
+        ? pathKey(path) === pathKey(project)
+          ? t("Current")
+          : undefined
+        : pathKey(path) === pathKey(workingDirectory)
+          ? t("Working folder")
+          : undefined,
+    disabled:
+      picking ||
+      !enabled ||
+      pathKey(path) === pathKey(mode === "project" ? project : workingDirectory),
+  }));
+  const choose = (key: string) => {
+    const path = matching.find((path) => pathKey(path) === key);
+    if (!path || picking || !enabled) return;
+    if (mode === "project") changeProject(path);
+    else toggle(path);
+  };
+  const list = usePickerList({
+    options,
+    resetKey: `${open}:${mode}:${query}`,
+    ...(mode === "folders"
+      ? {
+          multiple: true as const,
+          value: [...effectiveKeys],
+          onChange: (_values: string[], option: { value: string }) => choose(option.value),
+        }
+      : { value: pathKey(project), onChange: choose }),
+  });
+
   return (
     <div ref={root} className="relative shrink-0">
       <Button
@@ -229,7 +272,7 @@ export function SessionDirsPicker({
         <Popover
           anchor={root}
           side="top"
-          width={320}
+          minWidth={320}
           autoFocus
           onDismiss={(reason) => dismiss(reason === "escape")}
           role="dialog"
@@ -237,7 +280,7 @@ export function SessionDirsPicker({
             mode === "project" ? t("Change session project") : t("Folders for this session")
           }
           tabIndex={-1}
-          className="flex min-h-0 flex-col p-1.5"
+          className="flex min-h-0 flex-col"
         >
           <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-0.5">
             <Text as="p" weight="medium">
@@ -258,73 +301,21 @@ export function SessionDirsPicker({
               </Button>
             ) : null}
           </div>
-          <SearchInput
-            appearance="field"
+          <PopoverSearchHeader
             type="search"
-            aria-label={t("Search projects and folders")}
+            label={t("Search projects and folders")}
             placeholder={t("Search projects and folders…")}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            containerClassName="mx-2 my-1"
+            onValueChange={setQuery}
+            {...list.searchProps}
           />
-          <div className="min-h-0 max-h-64 shrink overflow-y-auto overscroll-contain">
-            {matching.map((path) => {
-              const working = pathKey(path) === pathKey(workingDirectory);
-              const details = (
-                <span className="flex min-w-0 flex-1 flex-col" title={path}>
-                  <Text size="secondary" tone="neutral" truncate>
-                    {basename(path) || prettyCwd(path)}
-                  </Text>
-                  <Text size="micro" truncate>
-                    {prettyCwd(path)}
-                  </Text>
-                </span>
-              );
-              return mode === "project" ? (
-                <Button
-                  fullWidth
-                  variant="item"
-                  key={pathKey(path)}
-                  type="button"
-                  disabled={picking || !enabled || pathKey(path) === pathKey(project)}
-                  onClick={() => changeProject(path)}
-                  className="w-full text-left"
-                >
-                  <Folder className="icon-sm shrink-0" />
-                  {details}
-                  {pathKey(path) === pathKey(project) ? (
-                    <Text size="caption" tone="secondary">
-                      {t("Current")}
-                    </Text>
-                  ) : null}
-                </Button>
-              ) : (
-                <ActionHost key={pathKey(path)} className="rounded-md">
-                  <Checkbox
-                    checked={effectiveKeys.has(pathKey(path))}
-                    disabled={working || picking || !enabled}
-                    onChange={() => toggle(path)}
-                    label={
-                      <>
-                        {details}
-                        {working ? (
-                          <Text size="caption" tone="secondary" className="shrink-0">
-                            {t("Working folder")}
-                          </Text>
-                        ) : null}
-                      </>
-                    }
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2 py-1.5"
-                  />
-                </ActionHost>
-              );
-            })}
-            {matching.length === 0 ? (
-              <Text as="p" size="caption" tone="secondary" className="px-2 py-2">
-                {t("No matching folders")}
-              </Text>
-            ) : null}
-          </div>
+          <PickerList
+            label={mode === "project" ? t("Change session project") : t("Folders for this session")}
+            controller={list}
+            density="sm"
+            emptyLabel={t("No matching folders")}
+            className="max-h-64"
+          />
           <Button
             variant="ghost"
             type="button"

@@ -6,7 +6,7 @@ import {
   globalProviderSessionDefaults,
 } from "../../sessions/public/providerSessionDefaults";
 import { defaultsAccounts } from "./providerDefaultsScope";
-import { decodeAdvisor, decodeSubagents } from "../../../shared/model/host-contracts/delegation";
+import { decodeAdvisor } from "../../../shared/model/host-contracts/delegation";
 
 beforeEach(() => {
   localStorage.clear();
@@ -27,7 +27,7 @@ it("shows unsaved product defaults bound to each account without saving override
   for (const accountId of ["account-home", "account-work"]) {
     const inherited = globalProviderSessionDefaults("claude", accountId);
     expect(decodeAdvisor(inherited.extras?.crossAdvisor)?.providerAccountId).toBe(accountId);
-    expect(decodeSubagents(inherited.extras?.crossSubagents)[0]?.providerAccountId).toBe(accountId);
+    expect(inherited.extras?.crossSubagents).toBe("auto");
     expect(accountSessionDefaults("claude", accountId)).toEqual({});
   }
 });

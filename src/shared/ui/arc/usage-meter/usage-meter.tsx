@@ -28,6 +28,7 @@ import {
   type Variants,
 } from "motion/react";
 import { CircleAlert, TriangleAlert } from "../../icons";
+import { Badge, type BadgeTone } from "../../Badge";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./usage-meter.module.css";
 
@@ -46,6 +47,12 @@ export interface UsageMeterProps {
   /** Omit the interactive legend when a compact quota row already labels the value. */
   showLegend?: boolean;
   showRemaining?: boolean;
+  /** Existing quota rows may carry a domain-specific warning threshold. */
+  tone?: BadgeTone;
+  /** Spoken amount when the surrounding row formats domain units. */
+  valueText?: string;
+  /** Unknown usage leaves an empty track without implying zero use. */
+  unknown?: boolean;
   /** Used amounts in display order. Up to four read clearly. */
   segments: UsageMeterSegment[];
   /** The plan limit, in the same unit as the segments. */
@@ -321,52 +328,18 @@ function Ticker({
 
 type Status = "ok" | "near" | "over";
 
-/** The plan status as a compact mark. Its width springs to each new message and the warning icon grows in beside the words. */
-function StatusBadge({
-  status,
-  text,
-  reduced,
-}: {
-  status: Status;
-  text: string;
-  reduced: boolean;
-}) {
-  const inner = useRef<HTMLSpanElement>(null);
-  const width = useMotionValue<number | "auto">("auto");
-  useLayoutEffect(() => {
-    const node = inner.current;
-    if (!node || typeof ResizeObserver === "undefined") return;
-    let measured = false;
-    const observer = new ResizeObserver(() => {
-      const next = node.offsetWidth;
-      if (measured && !reduced) animate(width, next, fit);
-      else width.jump(next);
-      measured = next > 0;
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [reduced, width]);
+/** Quota state uses the same badge renderer as every other labelled state. */
+function StatusBadge({ status, text }: { status: Status; text: string; reduced: boolean }) {
   const Icon = status === "over" ? TriangleAlert : CircleAlert;
   return (
-    <motion.span className={styles.badge} data-status={status} style={{ width }}>
-      <span ref={inner} className={styles.badgeInner}>
-        <AnimatePresence mode="popLayout" initial={false}>
-          {status !== "ok" && (
-            <motion.span
-              key={status}
-              className={styles.badgeIcon}
-              variants={reduced ? fade : pop}
-              initial="hidden"
-              animate="shown"
-              exit="gone"
-            >
-              <Icon size={14} strokeWidth={2} aria-hidden="true" />
-            </motion.span>
-          )}
-        </AnimatePresence>
-        <Swap text={text} reduced={reduced} />
-      </span>
-    </motion.span>
+    <Badge
+      size="sm"
+      appearance="subtle"
+      tone={status === "over" ? "danger" : status === "near" ? "warning" : "neutral"}
+      icon={status === "ok" ? undefined : <Icon />}
+    >
+      {text}
+    </Badge>
   );
 }
 
@@ -411,6 +384,9 @@ export function UsageMeter({
   compact = false,
   showLegend = true,
   showRemaining = false,
+  tone,
+  valueText,
+  unknown = false,
   segments,
   limit,
   unit = "",
@@ -435,7 +411,11 @@ export function UsageMeter({
   const format = (value: number) => `${value.toFixed(decimals)}${unit ? ` ${unit}` : ""}`;
   const limitText = format(limit).replace(/\.0+(?= |$)/, "");
 
-  const trackSegments = showRemaining ? [{ id: "free", label: freeLabel, value: free }] : segments;
+  const trackSegments = unknown
+    ? []
+    : showRemaining
+      ? [{ id: "free", label: freeLabel, value: free }]
+      : segments;
 
   // One motion value per segment id, kept across renders so a changed value springs from where it is.
   const [store] = useState(() => new Map<string, MotionValue<number>>());
@@ -610,6 +590,7 @@ export function UsageMeter({
       role="group"
       aria-label={label}
       data-status={status}
+      data-tone={tone}
       data-compact={compact || undefined}
     >
       {compact ? (
@@ -641,12 +622,13 @@ export function UsageMeter({
         <div
           ref={trackRef}
           className={styles.track}
-          role="meter"
+          data-tone={tone}
+          role={unknown ? undefined : "meter"}
           aria-label={label}
-          aria-valuemin={0}
-          aria-valuemax={limit}
-          aria-valuenow={showRemaining ? free : total}
-          aria-valuetext={summary}
+          aria-valuemin={unknown ? undefined : 0}
+          aria-valuemax={unknown ? undefined : limit}
+          aria-valuenow={unknown ? undefined : Math.min(limit, showRemaining ? free : total)}
+          aria-valuetext={unknown ? undefined : (valueText ?? summary)}
           data-active={active ?? undefined}
           onPointerMove={onTrackMove}
           onPointerLeave={() => setHovered(null)}

@@ -1,8 +1,9 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { Surface } from "../../../../shared/ui/Surface";
 import { TextField } from "../../../../shared/ui/TextField";
 import { useSocialPending } from "../../hooks/useSocialPending";
@@ -97,12 +98,12 @@ export function ContentEditorAi({
             {t("Write with AI")}
           </DisabledReason>
           {error ? (
-            <InlineMessage tone="danger">
+            <InlineError>
               {error}
               <Button variant="link" size="sm" onClick={() => onNavigate("command")}>
                 {t("Open Command")}
               </Button>
-            </InlineMessage>
+            </InlineError>
           ) : null}
           {suggestion ? (
             <Surface variant="card" padding="sm" className="content-ai-suggestion">

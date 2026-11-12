@@ -212,6 +212,7 @@ describe("agents.options", () => {
     expect(options).toEqual({
       subagents: [
         {
+          tier: "medium",
           ref: "claude:sonnet-5",
           harness: "claude",
           model: "claude:sonnet-5",
@@ -220,6 +221,7 @@ describe("agents.options", () => {
           effortLevels: [],
         },
         {
+          tier: "strong",
           ref: "codex:gpt-5",
           harness: "codex",
           model: "codex:gpt-5",
@@ -921,4 +923,67 @@ it("does not flag a parent reply as ownerFollowUp during concurrent waits", asyn
   host.finish(String(first.sessionId), "Done B");
   expect(await wait).toMatchObject({ result: "Done B" });
   expect(await call("agents.wait", { runId: first.runId })).not.toHaveProperty("ownerFollowUp");
+});
+
+describe("Automatic and the subagent ceiling", () => {
+  it("resolves the live catalog and rejects models outside it", async () => {
+    setup();
+    const session = host.entries.get("parent")!.session;
+    session.modelSettings.crossSubagents = "auto";
+    deps.defaultAccounts = async () => ({ codex: "work" });
+    session.harness = "claude";
+    session.providerAccountId = "own";
+    const options = await call("agents.options");
+    const refs = options.subagents as Array<{ ref: string; tier: string }>;
+    expect(refs).toHaveLength(3);
+    expect(refs.some((ref) => ref.ref.endsWith("@work"))).toBe(true);
+    expect(refs.some((ref) => ref.ref.endsWith("@own"))).toBe(true);
+    await expect(delegate("outside", { model: "codex:missing@default" })).rejects.toThrow(
+      "not one of",
+    );
+    await delegate("inside", { model: refs[0]!.ref });
+  });
+
+  it("skips signed-out accounts in Automatic", async () => {
+    setup();
+    host.entries.get("parent")!.session.modelSettings.crossSubagents = "auto";
+    deps.authStatus = async (provider) => (provider === "codex" ? "signedOut" : "signedIn");
+    const options = await call("agents.options");
+    expect(options.subagents).toHaveLength(1);
+  });
+
+  it.each([undefined, "max"])(
+    "clamps omitted or explicit effort %s, then clamps reply again",
+    async (effort) => {
+      setup({ subagents: [codexSix] });
+      const model = catalog.models.codex![0]!;
+      const previous = model.settings;
+      model.settings = [
+        {
+          id: "effort",
+          label: "Effort",
+          kind: "select",
+          value: "high",
+          options: ["low", "medium", "high", "max"].map((value) => ({ value, label: value })),
+        },
+      ];
+      try {
+        host.entries.get("parent")!.session.modelSettings.crossSubagentMaxEffort = "medium";
+        const options = await call("agents.options");
+        expect(options.maxEffort).toBe("medium");
+        const run = await delegate("ceiling", effort ? { effort } : {});
+        const child = host.commandsOf("create").at(-1)!;
+        expect((child.modelSettings as Record<string, string>).effort).toBe("medium");
+        const record = (await delegation.store.list())[0]!;
+        host.finish(record.childSessionId, "Done");
+        host.entries.get("parent")!.session.modelSettings.crossSubagentMaxEffort = "low";
+        await call("agents.reply", { requestId: "again", runId: run.runId, message: "Continue" });
+        expect(
+          (host.commandsOf("configure").at(-1)!.modelSettings as Record<string, string>).effort,
+        ).toBe("low");
+      } finally {
+        model.settings = previous;
+      }
+    },
+  );
 });

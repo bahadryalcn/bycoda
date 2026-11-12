@@ -78,8 +78,8 @@ export type TabsProps<T extends string = string> = {
  * reordering. Put selection side effects in `onValueChange`: keyboard selection does not
  * call a tab's `onClick`.
  * @group navigation
- * @use Switch between views or panels of one context with roving focus and linked panel ids.
- * @avoid Exclusive filter or display mode over one content area: SegmentedControl. Draggable editor or workspace document tabs: SurfaceTabs. Views with no panel to link: TabStrip.
+ * @use Navigate between tools, sections or editors of one context, with roving focus and linked panel ids.
+ * @avoid Filter or presentation mode over the same content: SegmentedControl. In-form value choice: RadioGroup. Draggable editor or workspace document tabs: SurfaceTabs. Views with no panel to link: TabStrip.
  * @replaces role=tab role=tablist
  *
  * @example
@@ -140,6 +140,8 @@ export type TabItem<T extends string = string> = {
   value: T;
   label: string;
   icon?: ReactNode;
+  /** Hide the short label; the icon remains visible and the label names the tab. */
+  iconOnly?: boolean;
   count?: number | null;
   countLabel?: string;
   disabled?: boolean;
@@ -244,13 +246,16 @@ export function TabList({
             <Tab
               key={item.value}
               value={item.value}
-              icon={item.icon}
+              icon={item.iconOnly ? undefined : item.icon}
+              {...(item.iconOnly
+                ? { iconOnly: true as const, label: item.label }
+                : { iconOnly: false as const })}
               count={item.count}
               countLabel={item.countLabel}
               disabled={item.disabled}
               tooltip={item.tooltip}
             >
-              {item.label}
+              {item.iconOnly ? item.icon : item.label}
             </Tab>
           ))
         : children}
@@ -413,8 +418,8 @@ export type TabStripProps<T extends string = string> = Omit<TabsProps<T>, "child
  * Data-driven strip for the common case without `TabPanel` children: a view switcher whose
  * content lives elsewhere, or one shared region (`controls`).
  * @group navigation
- * @use Tab-style switcher from an `items` array (view switch, filter header) without per-tab panels.
- * @avoid Real panels per tab: Tabs with TabPanel. Exclusive mode choice: SegmentedControl. Draggable document tabs: SurfaceTabs.
+ * @use Navigate between tools, sections or editors from an `items` array when content lives elsewhere (including Preview/Source).
+ * @avoid Filtering or changing presentation of the same content: SegmentedControl. In-form value choice: RadioGroup. Real panels per tab: Tabs with TabPanel. Draggable document tabs: SurfaceTabs.
  *
  * @example
  * <TabStrip
@@ -460,14 +465,17 @@ export function TabStrip<T extends string = string>({
           <Tab
             key={item.value}
             value={item.value}
-            icon={item.icon}
+            icon={item.iconOnly ? undefined : item.icon}
+            {...(item.iconOnly
+              ? { iconOnly: true as const, label: item.label }
+              : { iconOnly: false as const })}
             count={item.count}
             countLabel={item.countLabel}
             disabled={item.disabled}
             tooltip={item.tooltip}
             controls={controls}
           >
-            {item.label}
+            {item.iconOnly ? item.icon : item.label}
           </Tab>
         ))}
       </TabList>

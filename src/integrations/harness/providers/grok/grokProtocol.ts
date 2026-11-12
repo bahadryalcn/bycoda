@@ -1,4 +1,5 @@
 import { acpUsageEvents } from "../../core/acpUsage";
+import { humanizeModelId } from "../../../../shared/model/modelNameFromId";
 import { trimAndCapText as cap } from "../../../../shared/lib/cappedText";
 import { asRecord, numberField, pickOption, stringField } from "../../../../shared/lib/records";
 import { humanField, textFromContent } from "../../../../shared/lib/contentText";
@@ -525,7 +526,7 @@ function modelsFromAvailable(raw: unknown): AgentModel[] {
     if (!rec) continue;
     const nativeId = String(rec.modelId ?? rec.model_id ?? rec.id ?? rec.value ?? "").trim();
     if (!nativeId) continue;
-    const name = String(rec.name ?? rec.displayName ?? nativeId).trim();
+    const name = String(rec.name ?? rec.displayName ?? humanizeModelId(nativeId)).trim();
     const meta = asRecord(rec._meta) ?? rec;
     const window =
       numberField(meta, "totalContextTokens") ??

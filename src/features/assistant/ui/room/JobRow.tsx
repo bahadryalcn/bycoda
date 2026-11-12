@@ -13,7 +13,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../../shared/ui/InlineError";
-import { Meter } from "../../../../shared/ui/Meter";
+import { Progress } from "../../../../shared/ui/Progress";
 import { motionAttributes } from "../../../../shared/ui/Motion";
 import { WorkingIndicator } from "../../../../shared/ui/WorkingIndicator";
 import {
@@ -152,11 +152,12 @@ export function JobRow({
           className={styles.progressLine}
         >
           {total > 0 && (
-            <Meter
-              label={t("Progress")}
+            <Progress
+              compact
+              aria-label={t("Progress")}
               value={done}
               max={total}
-              valueText={`${done}/${total}`}
+              aria-valuetext={`${done}/${total}`}
               tone={job.status === "failed" ? "danger" : "accent"}
             />
           )}

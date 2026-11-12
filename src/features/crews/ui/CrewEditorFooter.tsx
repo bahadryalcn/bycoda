@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -38,13 +39,9 @@ export function CrewEditorFooter({
   onStart: () => void;
 }) {
   const state = issue ? (
-    <InlineMessage tone="danger" live="polite">
-      {issue}
-    </InlineMessage>
+    <InlineError live="polite">{issue}</InlineError>
   ) : status === "error" ? (
-    <InlineMessage tone="danger" retry={{ onRetry }}>
-      {error}
-    </InlineMessage>
+    <InlineError retry={{ onRetry }}>{error}</InlineError>
   ) : status === "saving" ? (
     <InlineMessage tone="neutral" icon={null}>
       {t("Saving…")}

@@ -1137,7 +1137,16 @@ it("refreshes summaries only explicitly and keeps a lost ACK nonce through retry
   expect(container.textContent).toContain("Updating conversation summary");
   await click("Conversation actions");
   await click("Refresh conversation summary");
-  expect(container.querySelector('[title="Summary refresh was not confirmed."]')).not.toBeNull();
+  const summary = [...container.querySelectorAll<HTMLElement>("[data-tooltip-owner]")].find(
+    (element) => element.textContent === "Summary unavailable",
+  )!;
+  await act(async () => {
+    summary.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
+    "Summary refresh was not confirmed.",
+  );
   expect(container.textContent).toContain("Summary unavailable");
   expect(container.textContent).not.toContain("Sensitive upstream");
   await click("Conversation actions");

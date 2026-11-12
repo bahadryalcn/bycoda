@@ -120,5 +120,7 @@ it("does not mirror the chevron the wrong way when open in RTL", () => {
 it("renders the count with an accessible label", async () => {
   const { details } = await mount({ count: 3, countLabel: "3 items" });
   expect(details().textContent).toContain("3");
-  expect(details().querySelector(".sr-only")?.textContent).toBe("3 items");
+  expect(details().querySelector('[data-variant="count"]')?.getAttribute("aria-label")).toBe(
+    "3 items",
+  );
 });

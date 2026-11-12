@@ -15,7 +15,7 @@ import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { TextField } from "../../../shared/ui/TextField";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { errorText } from "./serverActionFeedback";
 import { updateServerMetadata, type ServerRecord } from "../model/serverInventory";
@@ -223,7 +223,8 @@ export function ServerForwards({
             }}
           >
             <FieldGroup variant="bare" disabled={Boolean(busy)}>
-              <SegmentedControl
+              <RadioGroup
+                variant="inline"
                 label={t("Forwarding type")}
                 value={draft.kind ?? "local"}
                 options={[

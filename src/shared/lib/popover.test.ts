@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { placePopover, type AnchorRect } from "./popover";
+import { placePopover, popupListWidth, type AnchorRect } from "./popover";
 
 function anchor(left: number, top: number, width: number, height: number): AnchorRect {
   return { left, top, width, height, right: left + width, bottom: top + height };
@@ -189,5 +189,14 @@ describe("placePopover", () => {
       expect(position.left).toBeGreaterThanOrEqual(8);
       expect(position.left + position.width).toBeLessThanOrEqual(300 - 8);
     });
+  });
+});
+
+describe("popupListWidth", () => {
+  it("uses the larger of content and floor without exceeding the shared cap", () => {
+    expect(popupListWidth(180, 272)).toBe(272);
+    expect(popupListWidth(620, 272)).toBe(620);
+    expect(popupListWidth(1200, 272)).toBe(800);
+    expect(popupListWidth(1200, 900)).toBe(800);
   });
 });

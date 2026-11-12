@@ -40,12 +40,43 @@ comes from the catalog.
   rule, selector or ink inside an ordinary file goes in `bespokeParts` instead (see "Open items").
 - Breakpoints (`@media`, `@container`) have no shared step list yet and are not checked.
 
+## Models
+
+Wherever the app shows an AI model (select or filter option and trigger, table row, chart legend,
+badge, tooltip, setting, form), the user sees the provider icon plus a readable name, never a bare
+raw id and never a model without its icon.
+
+- Name: `modelDisplayName(id, harness?)` (`features/sessions/public/modelDisplayName`). The catalog's
+  display name first; for an id no catalog knows, a name derived from it (`claude-haiku-4-5-20251001`
+  becomes "Claude Haiku 4.5"). Do not format ids by hand and do not add a second naming scheme.
+- Icon plus name: `ModelLabel` (`features/sessions/public/ModelLabel`). In a select, filter or menu
+  option use `icon: <ModelLabel model={id} harness={harness} iconOnly />` with the readable `label`.
+- The stored and submitted value stays the raw id. Search matches the readable name and the raw id:
+  pass the id as the option's `keywords` or use `modelSearchText`. Do not put the raw id in `meta`,
+  `description` or a tooltip.
+- A line that already shows the same provider's icon beside the name needs no second icon.
+
 Review, because no rule can see it: empty, loading and failure states are `EmptyState`,
 `LoadingText`, `Skeleton` and `FailureState`. The rules catch the known shapes (a loader icon as
 a spinner, `role="alert"`, `aria-live`, unguarded `animate-spin`); a hand-written "nothing here"
 block or a text-only "Loading…" passes them and must be caught in review.
 
-## Migration
+## Popup lists
+
+Every shared popup list (Select, SearchableSelect, DropdownMenu and its submenus, ContextMenu, Combobox,
+MorphSelect, ExpandingSearch, PickerPopover) follows one sizing rule. It lives in `Popover` and the
+Arc primitives; feature code never restates it.
+
+- Every option row is one line. The popup is as wide as its longest primary label: the trigger width
+  (or the component's `width`/`panelWidth`) is the floor, not the width. It may be wider than the
+  trigger and than the popover or dialog it opened from.
+- The cap is `POPUP_MAX_WIDTH` (800px, `src/shared/lib/popover.ts`) and never more than the viewport
+  minus its padding. Only a label longer than that wraps or ellipsizes, as its row does today.
+- `Popover` takes `minWidth` for a list and `width` for a fixed panel (form, filter, details card).
+  A feature never passes `width` to a list popup, and never sets `inline-size`, `max-inline-size` or
+  `white-space` on a popup or its rows.
+- Secondary text (descriptions, a menu `header`) sets `contain: inline-size`, so it fills the width the
+  label chose and never widens the popup. Short right-aligned hints count as part of the row.
 
 - Semantic containers with inherited type use `Text as="section"`, `as="ul"`, `as="ol"`, `as="header"`, `as="footer"`, `as="nav"`, `as="aside"` or `as="main"`.
 - Preformatted output with inherited or relaxed line height uses `OutputBlock leading="inherit"` or `leading="relaxed"`.
@@ -108,3 +139,22 @@ with a one-line reason; the rest of the file still counts. The classes:
 - Appearance specimens whose TSX is already a bespoke surface (sidebar row, scrollbar, theme).
 - Product colours of one feature, not a text tone: skill, mention, orchestration, attachment chip,
   presence, social activity and terminal suggestion inks; the voice visualizer's drawn inks.
+
+## Component families
+
+Same job means the same shared component and appearance. A distinct component needs a distinct job.
+Import wrappers from `src/shared/ui/*`; Arc primitives and native-popup internals belong behind those
+wrappers. Only `Popover` and the explicit OS-window owners listed in `floatingSurfaceOwners` position
+floating surfaces. Features use `Popover`, `Modal`, `Sheet`, `Tooltip`, `Select` or `DropdownMenu`.
+
+Every exported shared component, including internal parts, declares `@group` and `@use`. When a group
+has siblings, `@avoid` or `@replaces` names a sibling so the catalog explains the choice. An unused
+export is removed; runtime entry points may use `orphanAllowlist` only with a reason for each entry.
+Tests and specimens do not count as product consumers.
+
+Use `Spinner`/`LoadingText`/`Skeleton` for loading, `ProgressBar` for progress, `Badge` for chips,
+`Tabs`/`SegmentedControl` for choices and `Tooltip`/`OverflowTooltip` instead of native `title`.
+The existing loading, native-control, surface and interaction rules also reject these known recipes.
+Catalog metadata and orphan debt share `ui-drift-baseline.json`; both catalog and drift checks reject
+new debt. Baselines only fall; a new or widened rule needs a reasoned baseline approval when it records
+existing debt. Regenerate the catalog after changing component JSDoc.

@@ -23,9 +23,11 @@ function SourceIconWell({ children }: { children: ReactNode }) {
 export function SourceKindIcon({
   kind,
   modelPath,
+  compact = false,
 }: {
   kind: DecisionSourceKind;
   modelPath?: string;
+  compact?: boolean;
 }) {
   const Icon =
     kind === "local"
@@ -37,6 +39,7 @@ export function SourceKindIcon({
         : kind === "gateway"
           ? Globe
           : Bot;
+  if (compact) return <Icon className="icon-sm shrink-0" aria-hidden="true" />;
   return (
     <SourceIconWell>
       <Icon className="icon-md" />

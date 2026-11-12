@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { Tab, TabList, Tabs } from "./Tabs";
+import { Tab, TabList, Tabs, TabStrip } from "./Tabs";
 
 let root: Root;
 let host: HTMLDivElement;
@@ -17,6 +17,33 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+});
+
+it("keeps icon-only view navigation labelled and keyboard selectable", async () => {
+  const onValueChange = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(TabStrip, {
+        label: "Document view",
+        value: "preview",
+        onValueChange,
+        items: [
+          { value: "preview", label: "Preview", iconOnly: true, icon: createElement("svg") },
+          { value: "source", label: "Source", iconOnly: true, icon: createElement("svg") },
+        ],
+      }),
+    ),
+  );
+  const tabs = host.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+  expect(tabs[0].getAttribute("aria-label")).toBe("Preview");
+  expect(tabs[0].querySelector("svg")).not.toBeNull();
+  expect(tabs[0].textContent).toBe("");
+  expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+  await act(async () =>
+    tabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
+  );
+  expect(onValueChange).toHaveBeenLastCalledWith("source");
+  expect(document.activeElement).toBe(tabs[1]);
 });
 
 function rail(onValueChange: (v: string) => void, onKeyDown?: (e: unknown) => void) {

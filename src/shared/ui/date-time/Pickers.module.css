@@ -22,13 +22,28 @@
   .value[data-placeholder] {
     color: var(--ui-text-secondary);
   }
+  /* The popover sizes to its content: a calendar is seven day cells wide and
+     the time columns sit beside it instead of below. */
   .popover {
-    inline-size: calc(var(--ui-control-height-compact) * 7 + var(--space-3) * 2);
+    --picker-calendar: calc(var(--ui-control-height-compact) * 7);
+    --picker-time: calc(var(--ui-control-height-compact) * 5);
     padding: var(--space-3);
   }
   .panel {
     display: grid;
     gap: var(--space-3);
+  }
+  .popover .panel {
+    inline-size: var(--picker-calendar);
+  }
+  .popover .panel[data-mode="datetime"] {
+    inline-size: auto;
+    grid-template-columns: var(--picker-calendar) var(--picker-time);
+    align-items: start;
+    --picker-rail-rows: 7;
+  }
+  .wide {
+    grid-column: 1 / -1;
   }
   .calendar {
     min-inline-size: 0;
@@ -118,11 +133,12 @@
   }
   .rail {
     position: relative;
-    block-size: calc(var(--ui-control-height-compact) * 5);
+    block-size: calc(var(--ui-control-height-compact) * var(--picker-rail-rows, 5));
     border: 1px solid var(--ui-field-border);
     border-radius: var(--ui-control-radius);
     background: var(--ui-surface);
-    padding-block: calc(var(--ui-control-height-compact) * 2);
+    /* Half the rail above and below, so the first and last option can centre. */
+    padding-block: calc(var(--ui-control-height-compact) * (var(--picker-rail-rows, 5) - 1) / 2);
   }
   .option {
     display: block;
@@ -143,14 +159,49 @@
   .clear {
     margin-inline-end: auto;
   }
+  /* Presets | calendar | time, left to right; entries and actions below. */
   .range {
     display: grid;
     gap: var(--space-3);
+    align-items: start;
+  }
+  .range[data-presets] {
+    grid-template-columns: auto auto;
+  }
+  .range > .footer {
+    grid-column: 1 / -1;
+    margin-block-start: 0;
   }
   .presets {
-    display: flex;
+    display: grid;
     gap: var(--space-1);
-    flex-wrap: wrap;
+    align-content: start;
+    align-self: stretch;
+    border-inline-end: 1px solid var(--ui-field-border);
+    padding-inline-end: var(--space-3);
+  }
+  .presets > * {
+    justify-content: flex-start;
+    white-space: nowrap;
+  }
+  .rangeMain {
+    display: grid;
+    gap: var(--space-3);
+    grid-template-columns: var(--picker-calendar);
+    align-items: start;
+  }
+  .range[data-time] .rangeMain {
+    grid-template-columns: var(--picker-calendar) var(--picker-time);
+  }
+  .side {
+    display: grid;
+    gap: var(--space-2);
+  }
+  .entries {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: var(--space-2);
+    grid-template-columns: repeat(auto-fit, minmax(var(--picker-time), 1fr));
   }
   .endpoints {
     display: flex;
@@ -158,5 +209,22 @@
   }
   .endpoints > * {
     flex: 1;
+  }
+  /* A window too narrow for the side-by-side layout stacks it again. */
+  @media (max-width: 40rem) {
+    .range[data-presets],
+    .range[data-time] .rangeMain,
+    .popover .panel[data-mode="datetime"] {
+      grid-template-columns: var(--picker-calendar);
+    }
+    .presets {
+      display: flex;
+      flex-wrap: wrap;
+      border-inline-end: 0;
+      padding-inline-end: 0;
+    }
+    .presets > * {
+      white-space: normal;
+    }
   }
 }

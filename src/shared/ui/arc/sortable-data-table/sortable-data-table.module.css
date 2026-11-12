@@ -587,3 +587,17 @@
   overflow-y: auto;
   overscroll-behavior-y: contain;
 }
+
+/* Stateful, non-sortable tables keep column headers and fit compact settings panes. */
+.table.staticTable {
+  min-width: 0;
+}
+.table.staticTable th,
+.table.staticTable td {
+  height: auto;
+  padding: var(--space-2);
+}
+.table.staticTable code {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

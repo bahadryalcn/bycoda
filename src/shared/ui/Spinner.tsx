@@ -23,7 +23,7 @@ export type SpinnerProps = Omit<ComponentPropsWithoutRef<"span">, "children"> & 
  * Pass `label` only when nothing else announces progress; otherwise the initiating control's aria-busy does.
  * @group feedback
  * @use Short pending state on the control that started the work (button, row action, inline label).
- * @avoid Standard loading line: LoadingText. Known final layout: Skeleton. Animated status text: Shimmer. Never spin a lucide Loader icon.
+ * @avoid Standard loading line: LoadingText. Surface/page loading: SurfaceLoading. Known final layout: Skeleton. Agent working: WorkingIndicator. Never spin a lucide Loader icon.
  */
 export function Spinner({
   size = "sm",

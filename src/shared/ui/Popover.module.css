@@ -10,3 +10,35 @@
     overscroll-behavior: contain;
   }
 }
+
+/* One frame for portalled surfaces and OS-window popup roots. */
+.frame {
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-popup);
+  box-shadow: var(--ui-elevation-floating);
+}
+.list {
+  max-inline-size: min(var(--popup-max-width), 100vw);
+}
+
+.listContent {
+  padding: var(--space-1);
+}
+
+.nativeFrame {
+  position: relative;
+  box-sizing: border-box;
+  inline-size: max-content;
+  min-inline-size: var(--popup-min-width);
+  max-inline-size: var(--popup-max-width);
+}
+.nativeContent {
+  position: relative;
+  z-index: 1;
+}
+/* The current OS window is resized to fit this content, not used as its width cap. */
+.nativeFrame .list {
+  max-inline-size: var(--popup-max-width);
+}

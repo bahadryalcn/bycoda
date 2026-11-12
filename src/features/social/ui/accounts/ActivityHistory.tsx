@@ -1,8 +1,10 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatDate, t } from "../../../../shared/i18n";
 import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
-import { Text } from "../../../../shared/ui/Text";
 import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { ActivityRow } from "../common/ActivityRow";
@@ -119,20 +121,21 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
     >
       <Heading size="item">{t("Activity")}</Heading>
       {loadError ? (
-        <InlineMessage tone="danger" retry={{ onRetry: reload, label: t("Try again") }}>
-          {loadError}
-        </InlineMessage>
+        <InlineError retry={{ onRetry: reload, label: t("Try again") }}>{loadError}</InlineError>
       ) : null}
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {loading && !jobs.length && !actions.length ? (
-        <Text as="p" tone="muted" leading="snug" className="social-muted">
+        <LoadingText delay={false} className="social-muted">
           {t("Loading…")}
-        </Text>
+        </LoadingText>
       ) : null}
       {!loading && !jobs.length && !actions.length && !loadError ? (
-        <Text as="p" tone="muted" leading="snug" className="social-muted">
-          {t("Nothing has been sent or changed yet.")}
-        </Text>
+        <EmptyState
+          size="inline"
+          kind="empty"
+          className="social-muted"
+          description={t("Nothing has been sent or changed yet.")}
+        />
       ) : null}
       {jobs.map((job) => (
         <div key={job.id}>

@@ -239,7 +239,8 @@ it("updates assigned names immediately while motion is disabled", () => {
     ),
   );
   expect(label.textContent).toBe("UX Designer");
-  expect(label.title).toBe("UX Designer");
+  expect(label.hasAttribute("title")).toBe(false);
+  expect(label.hasAttribute("data-tooltip-owner")).toBe(true);
   expect(vi.getTimerCount()).toBe(0);
 });
 it("changes an empty crew to babies after the first message and honors the growth switch", () => {

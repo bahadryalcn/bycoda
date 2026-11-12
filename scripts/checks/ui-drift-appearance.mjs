@@ -15,9 +15,9 @@ export const appearanceRules = {
   "feature-typography":
     "type chosen in feature code: font-size, font-weight, line-height, letter-spacing or text color, in CSS or as text-*/font-*/leading-*/tracking-* classes (use Text, including semantic containers; Heading for a title, SectionLabel for a group caption, Code for a literal, OutputBlock for command or log output (leading for line height), DiffStat for added and removed line counts; Timestamp, MiddleTruncate and LiveText take size and tone)",
   "surface-style":
-    "surface drawn in feature code: border, outline, border-radius, background or box-shadow, in CSS or as border/rounded/bg-*/shadow/ring/outline/divide classes (use Surface, Divider, FieldGroup)",
+    "surface drawn in feature code, including badge/chip/progress recipes: border, outline, radius, background or shadow (use Surface, Divider, FieldGroup; Badge for chips, ProgressBar for meters)",
   "interaction-state":
-    "interaction state styled in feature code: :hover, :active, :focus*, [aria-selected] selectors or hover:/active:/focus*:/aria-selected: classes (use Button, Button variant=item, ActionHost, TreeRow, MenuRow, Tabs)",
+    "interaction state or tab/segmented recipe in feature code (use Button, ActionHost, TreeRow, MenuRow, Tabs or SegmentedControl)",
   "text-truncation":
     "truncation written in feature code: text-overflow, line-clamp, truncate, text-ellipsis (one line: Text truncate; several lines: ClampText, with expandable={false} for a cut without the Show more action; a path or id: MiddleTruncate)",
   "feature-motion":
@@ -573,6 +573,14 @@ const spacingUtility = String.raw`-?(?:p|px|py|ps|pe|pt|pb|pl|pr|m|mx|my|ms|me|m
 
 /** Order matters: a class reported by an earlier rule is not reported again by a later one. */
 const classRules = [
+  [
+    "surface-style",
+    /(?<![\w-])[\w-]*(?:badge|chip|progress-bar|progress-track|progress-fill)(?:-[\w-]+)?(?![\w-])/g,
+  ],
+  [
+    "interaction-state",
+    /(?<![\w-])[\w-]*(?:tab-bar|tab-list|segmented-row|segmented-control)(?:-[\w-]+)?(?![\w-])/g,
+  ],
   [
     "interaction-state",
     new RegExp(String.raw`(?<![\w\-\[(:/])(?:${variantChars}+:)*${stateVariant}[\w\-\[(!]`, "g"),

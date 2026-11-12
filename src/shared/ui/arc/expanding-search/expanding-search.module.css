@@ -127,7 +127,6 @@
 .body {
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--space-1);
 }
 .view,
 .group {
@@ -176,10 +175,15 @@
   line-height: var(--leading-body);
 }
 .optionTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--foreground);
   font-size: var(--text-sm);
 }
+/* Secondary text never sets the popup width: it fills the width the title chose and wraps there. */
 .optionMeta {
+  contain: inline-size;
   color: var(--text-muted);
   font-size: var(--text-xs);
 }

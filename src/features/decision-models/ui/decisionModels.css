@@ -11,7 +11,7 @@
 }
 .decision-routing-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) 8rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) 10rem;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
@@ -22,9 +22,9 @@
   gap: var(--space-2);
   min-width: 0;
 }
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   .decision-routing-row {
-    grid-template-columns: minmax(0, 1fr) 8rem;
+    grid-template-columns: minmax(0, 1fr) 10rem;
   }
   .decision-routing-task {
     grid-column: 1 / -1;
@@ -35,4 +35,13 @@
   .decision-source-duplicate {
     max-width: 7rem;
   }
+}
+
+.decision-sources {
+  max-block-size: 18rem;
+  overflow-y: auto;
+}
+.decision-routing-list {
+  max-block-size: 24rem;
+  overflow-y: auto;
 }

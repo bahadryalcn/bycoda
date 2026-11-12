@@ -102,7 +102,7 @@ pub(super) fn call(
                 crate::control::owner_approval::Prompt {
                     title: "bycoda — Desktop action approval",
                     message: &approval.message,
-                    confirm: "Approve this exact action",
+                    confirm: approval.confirm,
                     cancel: "Cancel",
                 },
                 || taken.check(),

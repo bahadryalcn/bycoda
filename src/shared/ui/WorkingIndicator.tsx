@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { Text, type TextRoles } from "./Text";
 import styles from "./WorkingIndicator.module.css";
 
 /** Bar centers on the original 24-unit grid. */
@@ -48,15 +49,27 @@ export function WorkingIndicator({
   className = "",
   label,
   size = "xs",
+  children,
+  text,
+  truncate,
+  glyph = true,
 }: {
   /** Placement only (margins, alignment). Toggle visibility on a wrapper; color and size belong to the component. */
   className?: string;
+  /** Visible agent-work label; the enclosing activity owns live announcements. */
+  children?: ReactNode;
+  /** Typography of the label, never the glyph. */
+  text?: TextRoles;
+  truncate?: boolean;
+  /** Omit the glyph only when the same row already renders its working mark. */
+  glyph?: boolean;
   /** Announces the activity politely. Omit it when a nearby status already does. */
   label?: string;
   /** Matches the shared icon scale: xs 12px (default), sm 14px, md 16px. */
   size?: WorkingIndicatorSize;
 }) {
   const root = useRef<HTMLSpanElement>(null);
+  // Pause the shared working animation while its signal is outside the viewport.
   useEffect(() => {
     const element = root.current;
     const observer = offscreenObserver();
@@ -66,14 +79,14 @@ export function WorkingIndicator({
       observer.unobserve(element);
       element.removeAttribute(OFFSCREEN_ATTRIBUTE);
     };
-  }, []);
-  return (
+  }, [glyph]);
+  const signal = (
     <span
       ref={root}
       aria-hidden={label ? undefined : "true"}
       role={label ? "status" : undefined}
       data-size={size}
-      className={className ? `${styles.indicator} ${className}` : styles.indicator}
+      className={!children && className ? `${styles.indicator} ${className}` : styles.indicator}
     >
       {label ? <span className="sr-only">{label}</span> : null}
       <span className={styles.grid} aria-hidden={label ? "true" : undefined}>
@@ -81,6 +94,15 @@ export function WorkingIndicator({
           <span key={x} className={styles.bar} style={{ left: `${((x - 1.3) / 24) * 100}%` }} />
         ))}
       </span>
+    </span>
+  );
+  if (children === undefined) return signal;
+  return (
+    <span className={[styles.labeled, className].filter(Boolean).join(" ")}>
+      {glyph ? signal : null}
+      <Text size="inherit" tone="secondary" {...text} truncate={truncate}>
+        {children}
+      </Text>
     </span>
   );
 }

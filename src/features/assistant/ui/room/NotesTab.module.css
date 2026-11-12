@@ -52,7 +52,6 @@
 }
 .item {
   gap: 0;
-  padding-inline-start: 8px;
 }
 .check {
   flex: none;
@@ -181,8 +180,6 @@
 }
 .summary p {
   overflow-wrap: anywhere;
-}
-.summaryMeta {
 }
 .unavailable {
   margin: 0 0 12px;

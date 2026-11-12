@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ModalPanel } from "./Modal";
+import { Sheet } from "./Sheet";
 
 describe("ModalPanel", () => {
   it("names the dialog and close action", () => {
@@ -40,7 +41,7 @@ describe("ModalPanel", () => {
     expect(markup).toContain("Provider login");
   });
 
-  it("uses the shared raised surface and a compact or task title by context", () => {
+  it("uses the shared raised surface and compact title at every size", () => {
     const render = (props: Record<string, unknown>) =>
       renderToStaticMarkup(
         createElement(ModalPanel, {
@@ -53,14 +54,35 @@ describe("ModalPanel", () => {
     const compact = render({ size: "sm" });
     expect(compact).toContain("popover-backdrop");
     expect(compact).not.toContain("bg-background-base");
-    expect(compact).toContain("text-ui-title");
-    expect(render({ size: "md" })).toContain("text-ui-heading");
-    expect(render({ size: "lg" })).toContain("text-ui-heading");
+    expect(compact).toContain('data-size="page"');
+    expect(render({ size: "md" })).toContain('data-size="page"');
+    expect(render({ size: "lg" })).toContain('data-size="page"');
     const sheet = render({ size: "lg", placement: "end" });
-    expect(sheet).toContain("text-ui-title");
+    expect(sheet).toContain('data-size="page"');
     expect(sheet).toContain("border-s");
     expect(sheet).toContain("rounded-none");
     expect(sheet).not.toContain("rounded-(--ui-radius-popup)");
+  });
+
+  it("keeps identical header, close, body padding and footer chrome across dialogs and sheets", () => {
+    const props = { title: "Details", onClose: vi.fn(), footer: "Actions", children: "Body" };
+    const variants = [
+      ...(["sm", "md", "lg", "xl", "full"] as const).map((size) =>
+        createElement(ModalPanel, { ...props, size }),
+      ),
+      ...(["end", "bottom"] as const).map((placement) =>
+        createElement(ModalPanel, { ...props, placement }),
+      ),
+      createElement(Sheet, { ...props, modal: false, anchor: "container" }),
+    ].map((element) => renderToStaticMarkup(element));
+    const header = (markup: string) =>
+      /<header[\s\S]*?<\/header>/.exec(markup)![0].replace(/id="[^"]*"/g, 'id="title"');
+    const footer = (markup: string) => /<footer[^>]*>/.exec(markup)![0];
+    for (const markup of variants) {
+      expect(header(markup)).toBe(header(variants[0]));
+      expect(footer(markup)).toBe(footer(variants[0]));
+      expect(markup).toContain("px-4 pt-2 pb-4");
+    }
   });
 
   it("keeps the footer outside the scrolling body", () => {

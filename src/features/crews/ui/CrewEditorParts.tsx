@@ -3,7 +3,7 @@ import { t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Copy } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TextField } from "../../../shared/ui/TextField";
 import type { CrewDefinition } from "../model/crew";
 import type { useProjectCrews } from "../model/crewClient";
@@ -39,7 +39,8 @@ export function CrewEditorHeader({
           <Text size="body" tone="inherit" weight="medium">
             {t("Available in")}
           </Text>
-          <SegmentedControl
+          <RadioGroup
+            variant="inline"
             label={t("Available in")}
             value={draft.projectId ? "project" : "global"}
             options={[

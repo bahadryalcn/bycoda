@@ -5,7 +5,7 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Alert } from "../../../shared/ui/Alert";
 import { sshEndpointPreview } from "../model/sshEndpointReview";
 import {
@@ -160,7 +160,8 @@ function ProxyApprovalDialog({
             </p>
           ) : null}
         </Text>
-        <SegmentedControl
+        <RadioGroup
+          variant="inline"
           label={t("Proxy authentication")}
           value={mode}
           onValueChange={(value) => {

@@ -20,6 +20,11 @@ export type InboxStatusFilter = {
 
 export type InboxFilters = {
   assignedToMe: boolean;
+  /** Jira account ids, ORed with Assigned to me and Unassigned. */
+  jiraAssignees?: string[];
+  jiraUnassigned?: boolean;
+  /** Actual workflow status names, independent of Open/Closed categories. */
+  jiraStatuses?: string[];
   hiddenProjects: string[];
   /** Linear project ids to hide. `LINEAR_NO_PROJECT` stands for issues outside every project. */
   hiddenLinearProjects: string[];
@@ -48,6 +53,9 @@ export const DEFAULT_INBOX_STATUS_FILTER: InboxStatusFilter = {
 
 export const DEFAULT_INBOX_FILTERS: InboxFilters = {
   assignedToMe: false,
+  jiraAssignees: [],
+  jiraUnassigned: false,
+  jiraStatuses: [],
   hiddenProjects: [],
   hiddenLinearProjects: [],
   hiddenKinds: [],
@@ -177,6 +185,9 @@ export function loadInboxFilters(): InboxFilters {
     const parsed = JSON.parse(raw) as Partial<InboxFilters>;
     return {
       assignedToMe: parsed.assignedToMe === true,
+      jiraAssignees: filterStrings(parsed.jiraAssignees),
+      jiraUnassigned: parsed.jiraUnassigned === true,
+      jiraStatuses: filterStrings(parsed.jiraStatuses),
       hiddenProjects: Array.isArray(parsed.hiddenProjects)
         ? parsed.hiddenProjects.filter(
             (path): path is string => typeof path === "string" && path.length > 0,
@@ -236,6 +247,7 @@ export function hasActiveInboxFilters(
     : filters.status.open || filters.status.draft || filters.status.closed || filters.status.merged;
   return (
     filters.assignedToMe ||
+    (source === "jira" && jiraActiveFilterCount(filters) > 0) ||
     (source === "linear" && hiddenLinearTeamIds.length > 0) ||
     (source === "jira" && hiddenJiraProjectIds.length > 0) ||
     (source === "linear"
@@ -363,7 +375,10 @@ export function applyInboxFilters(
   now = Date.now(),
   source?: InboxSource,
 ): InboxItem[] {
-  const scoped = source ? filterInboxByProvider(items, source) : [...items];
+  const scoped = filterInboxByJira(
+    source ? filterInboxByProvider(items, source) : [...items],
+    filters,
+  );
   const hiddenProjects =
     isTrackerSource(source) ||
     ((source === "gitlab" || source === "azuredevops") && filters.assignedToMe)
@@ -400,6 +415,67 @@ export function statusFilterForSource(
     draft: false,
     merged: false,
   };
+}
+
+function filterStrings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [
+        ...new Set(
+          value.filter(
+            (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+          ),
+        ),
+      ]
+    : [];
+}
+
+/** Extra Jira dimensions; Assigned to me is counted by the shared toolbar. */
+export function jiraActiveFilterCount(filters: InboxFilters): number {
+  return (
+    (!filters.assignedToMe && ((filters.jiraAssignees?.length ?? 0) > 0 || filters.jiraUnassigned)
+      ? 1
+      : 0) + ((filters.jiraStatuses?.length ?? 0) > 0 ? 1 : 0)
+  );
+}
+
+export function jiraFilterOptions(
+  items: readonly InboxItem[],
+  hiddenProjectIds: readonly string[] = [],
+) {
+  const assignees = new Map<string, string>();
+  const statuses = new Set<string>();
+  for (const item of items) {
+    if (item.provider !== "jira" || (item.teamId && hiddenProjectIds.includes(item.teamId)))
+      continue;
+    statuses.add(item.state);
+    for (const person of item.assignees) {
+      // Older native builds expose display names only; they cannot safely identify a JQL user.
+      if (person.accountId) assignees.set(person.accountId, person.login);
+    }
+  }
+  return {
+    assignees: [...assignees]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    statuses: [...statuses]
+      .sort((a, b) => a.localeCompare(b))
+      .map((value) => ({ value, label: value })),
+  };
+}
+
+export function filterInboxByJira(items: readonly InboxItem[], filters: InboxFilters): InboxItem[] {
+  const assignees = new Set(filters.jiraAssignees ?? []);
+  const statuses = new Set(filters.jiraStatuses ?? []);
+  return items.filter((item) => {
+    if (item.provider !== "jira") return true;
+    if (statuses.size > 0 && !statuses.has(item.state)) return false;
+    // currentUser() identity is resolved by Jira. Its OR union is already narrowed server-side.
+    if (filters.assignedToMe || (assignees.size === 0 && !filters.jiraUnassigned)) return true;
+    return (
+      (filters.jiraUnassigned && item.assignees.length === 0) ||
+      item.assignees.some((person) => person.accountId && assignees.has(person.accountId))
+    );
+  });
 }
 
 function isGithubInboxKind(value: unknown): value is InboxKind {

@@ -142,6 +142,6 @@ it("SectionLabel truncates the inline and menu variants on request", async () =>
   ) as HTMLElement[];
   expect(inline!.dataset.truncate).toBe("true");
   expect(plain!.dataset.truncate).toBeUndefined();
-  expect(menu!.className).toContain("truncate");
+  expect(menu!.dataset.truncate).toBe("true");
   view.done();
 });

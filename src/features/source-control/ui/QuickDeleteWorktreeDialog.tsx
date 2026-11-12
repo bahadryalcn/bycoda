@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -147,7 +148,9 @@ export function QuickDeleteWorktreeDialog({
         {(!trees && !error) || (tree && !tree.missing && !index && !error) ? (
           <GitLoading text={t("Loading worktrees…")} />
         ) : null}
-        {trees && !trees.length ? <p>{t("No additional worktrees")}</p> : null}
+        {trees && !trees.length ? (
+          <EmptyState size="inline" kind="empty" description={t("No additional worktrees")} />
+        ) : null}
         {trees && request.deletePath && !tree ? (
           <InlineError>{t("This worktree is no longer available.")}</InlineError>
         ) : null}

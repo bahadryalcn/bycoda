@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
@@ -65,13 +66,11 @@ export function ConversationHeader({
                   {t("Updating conversation summary")}
                 </Text>
               ) : (
-                <Badge
-                  size="xs"
-                  tone={summaryFailed ? "neutral" : "warning"}
-                  title={summaryFailed ? summaryError?.text : undefined}
-                >
-                  {summaryFailed ? t("Summary unavailable") : summaryLabel}
-                </Badge>
+                <Tooltip label={summaryFailed ? summaryError?.text : undefined} asChild>
+                  <Badge size="xs" tone={summaryFailed ? "neutral" : "warning"}>
+                    {summaryFailed ? t("Summary unavailable") : summaryLabel}
+                  </Badge>
+                </Tooltip>
               )}
               <Button
                 iconOnly

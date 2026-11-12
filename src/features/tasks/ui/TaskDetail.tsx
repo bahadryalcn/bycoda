@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
@@ -129,22 +130,26 @@ export function TaskDetail({
       >
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-(--ui-pane-border) px-3">
           {actions.pending ? <Spinner size="xs" label={t("Loading…")} /> : null}
-          <Badge
-            data-task-status={status.kind}
-            tone={status.tone}
-            icon={
-              status.tone === "accent" ? (
-                <StatusDot tone="accent" label={status.label} />
-              ) : undefined
-            }
-            title={
+          <Tooltip
+            label={
               status.label === t(STATUS_LABELS[task.status])
                 ? undefined
                 : t(STATUS_LABELS[task.status])
             }
+            asChild
           >
-            {status.label}
-          </Badge>
+            <Badge
+              data-task-status={status.kind}
+              tone={status.tone}
+              icon={
+                status.tone === "accent" ? (
+                  <StatusDot tone="accent" label={status.label} />
+                ) : undefined
+              }
+            >
+              {status.label}
+            </Badge>
+          </Tooltip>
           {task.source === "steward" ? (
             <Badge data-task-suggested tone="info" className="">
               {t("Suggested")}

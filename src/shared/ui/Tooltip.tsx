@@ -353,6 +353,7 @@ export function useTooltip({
  * use `useTooltip` instead. A wrapped shared `Button` takes `title=""` so it adds no hint of
  * its own; prefer the Button's own `tooltip`/`tooltipDetails`/`shortcut` props over wrapping.
  * Opens after a pointer delay or at once on keyboard focus, never on touch; add `shortcut` or `details` lines.
+ * Native title tooltip attributes and hand-written plain hover hints; iframe and SVG accessible titles retain their naming job.
  * @group overlay
  * @use Add what the visible label lacks: a shortcut, detail, or the reason a control is disabled.
  * @avoid Repeating a visible label; essential info only in a hover hint; interactive preview: HoverCard. Clipped text: OverflowTooltip.

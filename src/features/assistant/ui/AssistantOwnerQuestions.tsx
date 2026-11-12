@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT, formatDate } from "../../../shared/i18n";
@@ -402,9 +403,9 @@ function OwnerQuestionCard({
           }}
         />
       ) : (
-        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.status}>
+        <LoadingText delay={false} className={styles.status}>
           {t("Loading...")}
-        </Text>
+        </LoadingText>
       )}
       {error && (!ready || snoozed || stale) ? <InlineError>{t(error)}</InlineError> : null}
       {!ready && error ? (

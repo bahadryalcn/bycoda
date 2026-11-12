@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -47,23 +48,25 @@ export function WorkspaceCreationStatus({
         </>
       ) : preview ? (
         // The consequence leads; the exact ref and commit are the hover detail.
-        <span
-          className="break-words"
-          title={t("Based on {p0} @ {p1}", {
+        <Tooltip
+          label={t("Based on {p0} @ {p1}", {
             p0: shortWorkspaceRef(preview.baseRef),
             p1: preview.baseCommit.slice(0, 8),
           })}
+          asChild
         >
-          <Text size="inherit" tone="primary">
-            {t("New worktree from {p0}", { p0: shortWorkspaceRef(preview.baseRef) })}
-          </Text>
-          {preview.excludedPaths > 0 ? (
-            <span className="tabular-nums">
-              {" · "}
-              {t("{p0} uncommitted changes not included", { p0: preview.excludedPaths })}
-            </span>
-          ) : null}
-        </span>
+          <span className="break-words">
+            <Text size="inherit" tone="primary">
+              {t("New worktree from {p0}", { p0: shortWorkspaceRef(preview.baseRef) })}
+            </Text>
+            {preview.excludedPaths > 0 ? (
+              <span className="tabular-nums">
+                {" · "}
+                {t("{p0} uncommitted changes not included", { p0: preview.excludedPaths })}
+              </span>
+            ) : null}
+          </span>
+        </Tooltip>
       ) : null}
     </Text>
   );

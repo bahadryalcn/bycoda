@@ -1,6 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -204,90 +204,89 @@ export function ShortcutEditor({
       aria-busy={busy}
       data-capturing={recording || undefined}
     >
-      <div
-        className={styles.control}
-        title={recording ? t("Del disables · Esc cancels") : undefined}
-      >
-        <div
-          className={styles.recorder}
-          onPointerDownCapture={() => {
-            intent.current = true;
-          }}
-          onKeyDownCapture={(event) => {
-            if (event.key === "Enter" || event.key === " ") intent.current = true;
-          }}
-          onFocusCapture={() => {
-            focusing.current = true;
-          }}
-          onFocus={() => {
-            focusing.current = false;
-            intent.current = false;
-          }}
-          onBlur={() => {
-            focusing.current = false;
-            intent.current = false;
-          }}
-        >
-          <ShortcutRecorder
-            label={t("Change {p0} shortcut", { p0: name })}
-            hideLabel
-            hideActions
-            platform={IS_MAC ? "mac" : "other"}
-            disabled={busy || disabled}
-            recording={recording}
-            displayKeys={
-              !recording && !busy && display && display !== t("Unassigned")
-                ? (display.match(/[⌘⌃⌥⇧]|(?:Ctrl|Control|Alt|Shift|Win)\+|.+/g) ?? [display]).map(
-                    (key) => (key.length > 1 ? key.replace(/\+$/, "") : key),
-                  )
-                : undefined
-            }
-            onRecordingChange={(next) => {
-              if (!next) {
-                setRecording(false);
-                return;
-              }
-              if (focusing.current && !intent.current) return;
-              beginRecording();
+      <Tooltip label={recording ? t("Del disables · Esc cancels") : undefined} asChild>
+        <div className={styles.control}>
+          <div
+            className={styles.recorder}
+            onPointerDownCapture={() => {
+              intent.current = true;
             }}
-            displayText={
-              busy
-                ? t("Saving…")
-                : recording
-                  ? preview || t("Record shortcut")
-                  : (display ?? t("Disabled"))
-            }
-          />
-        </div>
-        <span className={styles.actionSlot}>
-          {recording ? (
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Cancel")}
-              tooltip={t("Del disables · Esc cancels")}
-              onClick={() => {
-                setRecording(false);
-                setError(null);
-                onFeedbackChange?.(null);
-              }}
-            >
-              <X aria-hidden className="icon-sm" />
-            </Button>
-          ) : resetVisible ? (
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Reset {p0} shortcut", { p0: name })}
-              tooltip={t("Restore default")}
+            onKeyDownCapture={(event) => {
+              if (event.key === "Enter" || event.key === " ") intent.current = true;
+            }}
+            onFocusCapture={() => {
+              focusing.current = true;
+            }}
+            onFocus={() => {
+              focusing.current = false;
+              intent.current = false;
+            }}
+            onBlur={() => {
+              focusing.current = false;
+              intent.current = false;
+            }}
+          >
+            <ShortcutRecorder
+              label={t("Change {p0} shortcut", { p0: name })}
+              hideLabel
+              hideActions
+              platform={IS_MAC ? "mac" : "other"}
               disabled={busy || disabled}
-              onClick={() => void run(onReset)}
-            >
-              <RotateCcw aria-hidden strokeWidth={1.75} />
-            </Button>
-          ) : null}
-        </span>
-      </div>
+              recording={recording}
+              displayKeys={
+                !recording && !busy && display && display !== t("Unassigned")
+                  ? (display.match(/[⌘⌃⌥⇧]|(?:Ctrl|Control|Alt|Shift|Win)\+|.+/g) ?? [display]).map(
+                      (key) => (key.length > 1 ? key.replace(/\+$/, "") : key),
+                    )
+                  : undefined
+              }
+              onRecordingChange={(next) => {
+                if (!next) {
+                  setRecording(false);
+                  return;
+                }
+                if (focusing.current && !intent.current) return;
+                beginRecording();
+              }}
+              displayText={
+                busy
+                  ? t("Saving…")
+                  : recording
+                    ? preview || t("Record shortcut")
+                    : (display ?? t("Disabled"))
+              }
+            />
+          </div>
+          <span className={styles.actionSlot}>
+            {recording ? (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Cancel")}
+                tooltip={t("Del disables · Esc cancels")}
+                onClick={() => {
+                  setRecording(false);
+                  setError(null);
+                  onFeedbackChange?.(null);
+                }}
+              >
+                <X aria-hidden className="icon-sm" />
+              </Button>
+            ) : resetVisible ? (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Reset {p0} shortcut", { p0: name })}
+                tooltip={t("Restore default")}
+                disabled={busy || disabled}
+                onClick={() => void run(onReset)}
+              >
+                <RotateCcw aria-hidden strokeWidth={1.75} />
+              </Button>
+            ) : null}
+          </span>
+        </div>
+      </Tooltip>
       {onFeedbackChange ? null : error ? (
         <SettingsFeedback state="error">{error}</SettingsFeedback>
       ) : busy || saved ? (

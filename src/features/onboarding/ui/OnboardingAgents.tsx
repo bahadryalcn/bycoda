@@ -1,3 +1,6 @@
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
 import { Alert } from "../../../shared/ui/Alert";
@@ -186,9 +189,7 @@ export function OnboardingAgents({
       <div className="onboarding-scroll">
         {checking && listed.length === 0 ? (
           <>
-            <Text as="p" size="inherit" tone="muted" leading="normal" role="status">
-              {t("Scanning this computer…")}
-            </Text>
+            <LoadingText>{t("Scanning this computer…")}</LoadingText>
             <div className="onboarding-agent-skeleton" aria-hidden="true">
               {[0, 1, 2].map((row) => (
                 <Skeleton key={row} aria-hidden className="h-9 w-full" />
@@ -198,9 +199,7 @@ export function OnboardingAgents({
         ) : null}
         {!checking && listed.length === 0 ? (
           <div className="onboarding-provider-empty" role="status">
-            <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
-              {t("No providers found")}
-            </Text>
+            <EmptyState size="inline" kind="empty" description={t("No providers found")} />
             <Text as="p" size="caption" tone="secondary" leading="normal">
               {t("Already installed one? Choose its executable, or install it and scan again.")}
             </Text>
@@ -326,13 +325,15 @@ export function OnboardingAgents({
                 </div>
                 <div className="onboarding-agent-controls">
                   <span className="onboarding-agent-primary">{primary}</span>
-                  <span className="onboarding-agent-visibility" title={t("Show in picker")}>
-                    <Switch
-                      aria-label={t("Use {p0}", { p0: title })}
-                      checked={visible}
-                      onCheckedChange={(next) => savePickerProviderVisible(provider, next)}
-                    />
-                  </span>
+                  <Tooltip label={t("Show in picker")} asChild>
+                    <span className="onboarding-agent-visibility">
+                      <Switch
+                        aria-label={t("Use {p0}", { p0: title })}
+                        checked={visible}
+                        onCheckedChange={(next) => savePickerProviderVisible(provider, next)}
+                      />
+                    </span>
+                  </Tooltip>
                   <span className="onboarding-agent-more">
                     {hasMore ? (
                       <AgentMore label={t("More options for {p0}", { p0: title })}>
@@ -478,7 +479,7 @@ export function OnboardingAgents({
             refresh();
           }}
         >
-          <Suspense fallback={<LoadingText layout="fill" />}>
+          <Suspense fallback={<SurfaceLoading />}>
             <GenericAcpSettings />
           </Suspense>
         </Modal>
@@ -510,7 +511,7 @@ function AgentMore({ label, children }: { label: string; children: ReactNode }) 
           role="dialog"
           aria-label={label}
           align="end"
-          width={220}
+          minWidth={220}
           autoFocus
           onDismiss={() => setOpen(false)}
           className="onboarding-agent-menu"

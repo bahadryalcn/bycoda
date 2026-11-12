@@ -118,7 +118,7 @@ export function ModelPanel({
       data-model-picker
       data-model-panel
       style={{ height: PANEL_HEIGHT }}
-      className="flex min-h-0 flex-col overflow-hidden font-sans"
+      className="flex min-h-0 flex-col overflow-hidden"
     >
       {/* Narrow panels stack the settings under the list instead of squeezing the list. */}
       <div className="@container/model-panel flex min-h-0 min-w-0 flex-1">

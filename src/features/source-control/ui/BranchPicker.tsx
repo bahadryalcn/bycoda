@@ -483,7 +483,6 @@ export function BranchPicker({
           <PickerList
             label={t("Branches")}
             controller={picker}
-            checkPlacement="icon"
             disabled={busy}
             emptyLabel={query.trim() ? t("No matching branches") : t("No branches")}
           />

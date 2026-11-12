@@ -475,3 +475,36 @@ it("sorts new discoveries first and offers no Add action on connected items", as
   expect(rows[1].textContent).toContain("Connected");
   expect(rows[1].querySelector("button")).toBeNull();
 });
+
+it("tests all models and keeps each result visible after stale list refresh", async () => {
+  const { mocks } = await renderSettings({
+    sources: [
+      source({ id: "s1", status: "unknown" }),
+      source({ id: "s2", name: "Second", status: "unknown" }),
+    ],
+  });
+  mocks.test.mockResolvedValueOnce({ sourceId: "s1", ok: true, durationMs: 12 });
+  mocks.test.mockResolvedValueOnce({ sourceId: "s2", ok: false, durationMs: 42 });
+  clickButton("Test all");
+  await settleDecisionUi();
+  expect(mocks.test).toHaveBeenCalledWith({ id: "s1" });
+  expect(mocks.test).toHaveBeenCalledWith({ id: "s2" });
+  const list = document.querySelector('[aria-label="Connected decision models"]')!;
+  expect(list.textContent).toContain("Test: 12 ms");
+  expect(list.textContent).toContain("Test: 42 ms");
+  expect(bodyText()).toContain("1 working");
+  expect(bodyText()).toContain("1 failed");
+});
+
+it("keeps local runtime Stop available after a failed connection test", async () => {
+  const { mocks } = await renderSettings({ sources: [source()] });
+  mocks.test.mockResolvedValueOnce({ sourceId: "s1", ok: false, durationMs: 42 });
+  clickInList("Connected decision models", "Test");
+  await settleDecisionUi();
+  act(() =>
+    document.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!.click(),
+  );
+  await settleDecisionUi();
+  expect(bodyText()).toContain("Stop");
+  expect(bodyText()).toContain("Failed");
+});

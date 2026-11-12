@@ -1,3 +1,4 @@
+/** Different job: Selection toolbar and comment editor act on transcript ranges; they are not a value picker. */
 import { Text } from "../../../shared/ui/Text";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";

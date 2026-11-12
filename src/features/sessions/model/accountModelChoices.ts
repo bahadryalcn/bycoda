@@ -18,7 +18,7 @@ export type AccountModelChoice = AgentModel & {
   accountLabel?: string;
 };
 export type ModelAccountCatalog = Partial<
-  Record<"codex" | "claude", readonly { id: string; label: string }[]>
+  Record<"codex" | "claude", readonly { id: string; label: string; isDefault?: boolean }[]>
 >;
 
 /**
@@ -26,7 +26,7 @@ export type ModelAccountCatalog = Partial<
  * only the display gains the local account ID so same-named accounts remain distinguishable.
  */
 export function accountDisplayLabel(
-  accounts: readonly { id: string; label: string }[],
+  accounts: readonly { id: string; label: string; isDefault?: boolean }[],
   account: { id: string; label: string },
 ): string {
   const key = account.label.trim().toLocaleLowerCase();

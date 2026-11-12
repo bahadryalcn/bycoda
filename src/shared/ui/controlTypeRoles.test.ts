@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import { Checkbox } from "./Checkbox";
 import { Disclosure } from "./Disclosure";
-import { Shimmer } from "./Shimmer";
+import { WorkingIndicator } from "./WorkingIndicator";
 import { Spinner } from "./Spinner";
 import { TabLabel } from "./TabLabel";
 
@@ -24,7 +24,9 @@ it("keeps default roles absent and applies explicit roles to control text", () =
     ),
   ).toContain('data-tone="secondary"');
   expect(
-    renderToStaticMarkup(createElement(Shimmer, { size: "micro", children: "Working" })),
+    renderToStaticMarkup(
+      createElement(WorkingIndicator, { text: { size: "micro" }, children: "Working" }),
+    ),
   ).toContain('data-size="micro"');
   for (const truncate of ["end", "middle"] as const) {
     expect(

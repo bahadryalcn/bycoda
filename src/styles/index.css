@@ -6,6 +6,7 @@
 @import "./surface-motion.css";
 @import "./surface-roles.css";
 @import "./working-row.css";
+@import "./inbox-avatar.css";
 
 /* Desktop UI classes come from product code under src/ and the root entry documents. The scan
    starts at src/ instead of the repository root: walking the root also crawls host, mobile, build
@@ -3798,8 +3799,7 @@ html:not(.theme-light) .markdown-code-token {
 @media (prefers-reduced-motion: reduce) {
   .activity-dock-done,
   .activity-dock-check,
-  .activity-dock-waiting,
-  [data-activity-dock] .shimmer-text {
+  .activity-dock-waiting {
     animation: none;
   }
 }
@@ -3877,14 +3877,8 @@ html:not(.theme-light) .markdown-code-token {
   }
 }
 
-.shimmer-text {
-  /* Working labels stay readable and still while their adjacent status updates. */
-  color: inherit;
-}
-
 /* One light sweep across a composer mode command as it appears. */
 /* Opt-in diagnostic A/B controls. Default appearance and reduced motion remain. */
-:root[data-performance-no-shimmer] .shimmer-text,
 :root[data-performance-no-shimmer] .composer-mode-shimmer {
   animation: none;
 }
@@ -4427,23 +4421,11 @@ html:not(.theme-light) .markdown-code-token {
   animation: zen-thinking-pulse 1.8s ease-in-out infinite;
 }
 
-@keyframes zen-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* The dashed ring on a running tool turns slowly, so the line reads as live. */
-.zen-tool-spin {
-  animation: zen-spin 3.6s linear infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .agent-markdown.word-fading [data-word-fade],
   .zen-phase-step[data-entering],
   .zen-phase-step[data-entering]::before,
   .zen-phase-step[data-entering]::after,
-  .zen-tool-spin,
   .zen-thinking-pulse {
     animation: none;
   }

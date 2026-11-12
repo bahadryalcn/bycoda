@@ -808,7 +808,7 @@ it("switches between list and card layouts and remembers the choice", async () =
   await click("Card view");
   expect(layout()).toBe("cards");
   expect(
-    document.body.querySelector('[aria-label="Card view"]')?.getAttribute("aria-pressed"),
+    document.body.querySelector('[aria-label="Card view"]')?.getAttribute("aria-checked"),
   ).toBe("true");
   expect(localStorage.getItem("bycoda.servers.layout")).toBe("cards");
   await act(async () => root.render(null));

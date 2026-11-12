@@ -1,6 +1,7 @@
+/** Different job: Commit rows align graph lanes and metadata columns; they are not popup choices. */
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -434,16 +435,18 @@ const CompactRow = memo(function CompactRow(props: RowProps) {
           className="ml-1 shrink-0 self-center"
         />
         <GraphAvatar name={commit.author} className="git-graph-author ml-1.5 self-center" />
-        <Text
-          as="span"
-          size="caption"
-          tone="secondary"
-          leading="relaxed"
-          title={formatAbsoluteTime(commit.timestamp)}
-          className="git-graph-date ml-1.5 w-7 shrink-0 text-right"
-        >
-          {formatRelativeTime(commit.timestamp, now)}
-        </Text>
+        <Tooltip label={formatAbsoluteTime(commit.timestamp)} asChild>
+          <Text
+            as="span"
+            size="caption"
+            tone="secondary"
+            leading="relaxed"
+
+            className="git-graph-date ml-1.5 w-7 shrink-0 text-right"
+          >
+            {formatRelativeTime(commit.timestamp, now)}
+          </Text>
+        </Tooltip>
       </Button>
       {hover.card(<GitGraphHoverCard commit={commit} row={row} />)}
     </li>
@@ -499,15 +502,16 @@ const WideRow = memo(function WideRow(props: RowProps & { columns: string; works
           </span>
         ) : null}
         {
-          <Text
-            title={formatAbsoluteTime(commit.timestamp)}
-            size="caption"
-            tone="secondary"
-            truncate
-            className={`${workspace ? styles.date : ""}`}
-          >
-            {formatRelativeTime(commit.timestamp, now)}
-          </Text>
+          <Tooltip label={formatAbsoluteTime(commit.timestamp)} asChild>
+            <Text
+              size="caption"
+              tone="secondary"
+              truncate
+              className={`${workspace ? styles.date : ""}`}
+            >
+              {formatRelativeTime(commit.timestamp, now)}
+            </Text>
+          </Tooltip>
         }
         <Text as="span" size="micro" tone="secondary" truncate>
           <Code size="inherit">{commit.shortSha}</Code>

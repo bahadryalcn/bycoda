@@ -1,3 +1,5 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { DiffStat } from "../../../shared/ui/DiffStat";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
@@ -159,9 +161,9 @@ function SessionReviewContent({
   if (!enabled || busy || (files.length === 0 && !error && !recording)) return null;
   if (recording) {
     return (
-      <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-2">
+      <LoadingText delay={false} className="px-3 py-2">
         {t("Loading changes…")}
-      </Text>
+      </LoadingText>
     );
   }
 
@@ -263,9 +265,8 @@ function SessionReviewContent({
             >
               {t("Review")}
             </Button>
-            <span
-              className="ms-1.5 border-s border-(--color-stroke) ps-1.5"
-              title={
+            <Tooltip
+              label={
                 canUndoAll
                   ? t("Undo all session changes")
                   : undoLockReason === "session"
@@ -274,16 +275,19 @@ function SessionReviewContent({
                       ? t("Undo is unavailable while an orchestration run is active or paused")
                       : t("Undo is unavailable because a file changed outside this session")
               }
+              asChild
             >
-              <ConfirmMorph
-                label={t("Undo")}
-                prompt={t("Undo all session changes")}
-                confirmLabel={t("Undo")}
-                pendingLabel={t("Restoring…")}
-                disabled={disabled || !canUndoAll}
-                onConfirm={() => run("undo")}
-              />
-            </span>
+              <span className="ms-1.5 border-s border-(--color-stroke) ps-1.5">
+                <ConfirmMorph
+                  label={t("Undo")}
+                  prompt={t("Undo all session changes")}
+                  confirmLabel={t("Undo")}
+                  pendingLabel={t("Restoring…")}
+                  disabled={disabled || !canUndoAll}
+                  onConfirm={() => run("undo")}
+                />
+              </span>
+            </Tooltip>
           </div>
         </div>
         <ScrollArea

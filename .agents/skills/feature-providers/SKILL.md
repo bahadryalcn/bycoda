@@ -11,6 +11,8 @@ Own provider settings and catalog/account workflows. Composer owns the submitted
 
 - `src/features/providers/`
 - `src/features/settings/ui/ProviderSettings.tsx`
+- `src/features/settings/ui/ProviderCliTab.tsx`: CLI inventory, path and setup entry point.
+- `src/features/settings/model/providerDefaultsMapping.ts` and `providerDefaultsSave.ts`: portable provider scope and multi-target saves.
 - `src/integrations/harness/providers/`
 - `src/shared/model/productProviderDefaults.ts`
 
@@ -31,9 +33,11 @@ Own provider settings and catalog/account workflows. Composer owns the submitted
 - Installed catalog, machine enable policy, invocation visibility, account entitlement and selected session model are different facts. Remote models.list/capabilities remain authoritative for remote sessions.
 - Retain bundled/useful old catalog data on discovery failure with truthful source/freshness/error; hidden providers and owner restrictions cannot be bypassed by toggles.
 - Model preference defaults/inheritance and explicit reset keep their storage keys and error recovery. The last enabled model remains on; all-off lookup falls back to the catalog. Changing this policy requires all consumers updated together.
+- Defaults stay drafts until explicit save. Multi-target saves retain failed destinations for retry; All providers copies supported portable fields, never model/account selections. Account kind is an owner override; Automatic restores derivation.
+- The Host stores account kind with name/color. Mobile kind edits require `providers.desktop.accountKind.v1` and metadata support; older Hosts retain existing account actions.
 - Product defaults are catalog-aware, use the conversation's provider/account and remain below explicit saved choices, including Off. Do not persist inherited delegation as a manual selection. An independent advisor may use the main model. See [defaults decision](references/decisions.md).
 - Delegation guidance names the selected models and how to call them; it never routes work to a model, a tool or delegation itself. See [routing decision](references/decisions.md).
-- Native subagents stay inside the saved selection (`providerTurnInput`): Claude's Agent tool is forced to the one same-account Claude model or removed; Codex, Grok and OpenCode native subagents are off; other providers are not enforced yet. See [native decision](references/decisions.md).
+- Native subagents stay inside the saved selection (`providerTurnInput`): Claude's Agent tool is forced to the one same-account Claude model or removed; Codex, Grok and OpenCode native subagents are off; other providers are not enforced yet. A failed scoped bridge preflight permits native fallback only for Automatic without an effort ceiling. See [native and Automatic decisions](references/decisions.md).
 - Preserve verified stable account identity, duplicate rejection, abort/temporary cleanup, defaults/pins and running-turn consequences on removal. Pending sign-in must not disappear silently on navigation.
 - Visible probe timeout is not physical process completion or signed-out proof. Retain/coalesce original provider/profile work; dismissing an update notice does not cancel an update.
 - Do not fabricate CLI cancellation or current version from catalog refresh. Binary path drafts, active/configured-next distinction and restart recovery remain explicit.

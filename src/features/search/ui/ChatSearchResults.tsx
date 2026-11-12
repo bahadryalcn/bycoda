@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { Button } from "../../../shared/ui/Button";
@@ -236,9 +237,9 @@ export function ChatSearchResults({
             classNames={{ label: "app-search-project-label" }}
           >
             <Folder className="icon-xs shrink-0" strokeWidth={1.75} />
-            <span className="min-w-0 flex-1 break-words" title={group.cwd}>
-              {group.name}
-            </span>
+            <Tooltip label={group.cwd} asChild>
+              <span className="min-w-0 flex-1 break-words">{group.name}</span>
+            </Tooltip>
             {group.groupName ? (
               <Badge size="sm" appearance="subtle" className="shrink-0">
                 {group.groupName}

@@ -1,3 +1,4 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
@@ -126,7 +127,7 @@ export function AccountDetail({
           {t("Connect to this computer to change this account.")}
         </InlineMessage>
       ) : null}
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       <AccountConnection
         client={client}
         account={account}

@@ -5,7 +5,6 @@ import { ActionHost, InlineAction } from "./ActionHost";
 import { Button } from "./Button";
 import { ButtonGroup } from "./ButtonGroup";
 import { SplitButton } from "./SplitButton";
-import { ExpandingButtonGroup } from "./ExpandingButtonGroup";
 import { TextField } from "./TextField";
 import { TextareaField } from "./TextareaField";
 import { Select } from "./Select";
@@ -16,9 +15,7 @@ import { DateRangePicker, type DateRange } from "./DateRangePicker";
 import { PasswordField } from "./PasswordField";
 import { RadioGroup } from "./RadioGroup";
 import { TagInput } from "./TagInput";
-import { NativeSearchableSelect } from "./NativeSearchableSelect";
 import { SearchableSelect } from "./SearchableSelect";
-import { MorphSelect } from "./MorphSelect";
 import { SearchInput, SearchInputGroup } from "./SearchInput";
 import { InlineEdit } from "./InlineEdit";
 import { Checkbox } from "./Checkbox";
@@ -187,7 +184,8 @@ function ActionsMatrix() {
           loading
           actions={[{ id: "one", label: t("Unavailable option"), onSelect: bump }]}
         />
-        <ExpandingButtonGroup
+        <ButtonGroup
+          variant="expanding"
           label={t("Expanding actions")}
           items={[
             { id: "copy", label: t("Copy item"), icon: <Copy />, onSelect: bump },
@@ -610,14 +608,18 @@ function ChoicesMatrix() {
           onChange={setMultiple}
           showSelectedValues
         />
-        <NativeSearchableSelect
+        <SearchableSelect
           hideLabel
           label={t("Matrix native select")}
           options={[...short, { value: "locked", label: t("Locked option"), disabled: true }]}
           value={native}
-          onChange={(event) => setNative(event.currentTarget.value)}
+          onChange={setNative}
         />
-        <MorphSelect
+        <SearchableSelect
+          variant="pill"
+          hideLabel
+          searchable={false}
+          loopNavigation
           label={t("Matrix morph select")}
           value={morph}
           options={short}

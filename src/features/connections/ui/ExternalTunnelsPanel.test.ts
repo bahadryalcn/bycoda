@@ -126,9 +126,10 @@ function button(text: string) {
   return value;
 }
 async function choose(label: string, value: string) {
-  const radio = container.querySelector<HTMLButtonElement>(
-    `[role="radiogroup"][aria-label="${label}"] [data-value="${value}"]`,
+  const group = [...container.querySelectorAll("fieldset")].find(
+    (fieldset) => fieldset.querySelector("legend")?.textContent === label,
   );
+  const radio = group?.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`);
   if (radio) {
     await act(async () => radio.click());
     return;

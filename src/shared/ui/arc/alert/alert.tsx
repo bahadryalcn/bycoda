@@ -18,6 +18,7 @@ import {
 } from "motion/react";
 import { Check, AlertCircle as WarningCircle, CircleX as XmarkCircle, Info, X } from "../../icons";
 import { Button } from "../../Button";
+import { InlineMessage } from "../../InlineError";
 import { observeResize } from "../../../lib/observeResize";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./alert.module.css";
@@ -33,7 +34,7 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
   open?: boolean;
   /** Shows a dismiss button. An uncontrolled alert collapses first, then calls this. */
   onDismiss?: () => void;
-  /** Compact one-line form without card chrome, for in-row errors and warnings. The icon keeps the tone readable without colour. */
+  /** Compatibility form rendered through InlineMessage, preserving Alert presence and dismissal. Prefer InlineError / InlineMessage for new row feedback. */
   inline?: boolean;
   /** Recovery or follow-up controls, such as Retry. Rendered beside the copy and wrapped under it only when the row is too narrow; the caller keeps the operation. */
   action?: ReactNode;
@@ -168,12 +169,55 @@ function AlertBox({
     exit: reduce ? fadeOut : textOut,
     transition: enter,
   };
+  // Inline feedback has one presentation owner; Alert only retains its presence/dismiss API.
+  if (inline) {
+    return (
+      <div {...props} className={className} role={role ?? (tone === "danger" ? "alert" : "status")}>
+        <InlineMessage
+          tone={tone}
+          icon={icon}
+          live="off"
+          action={
+            action || onDismiss ? (
+              <>
+                {action}
+                {onDismiss ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    label={dismissLabel ?? (title ? `Dismiss: ${title}` : "Dismiss")}
+                    onClick={onDismiss}
+                  >
+                    <X width={16} height={16} strokeWidth={1.75} aria-hidden="true" />
+                  </Button>
+                ) : null}
+              </>
+            ) : undefined
+          }
+        >
+          {title ? (
+            <strong>
+              {title}
+              {hasDetails ? " " : ""}
+            </strong>
+          ) : null}
+          <AnimatePresence mode="popLayout" initial={false}>
+            {hasDetails ? (
+              <Swap key={text ?? "details"} className={styles.line} {...swap}>
+                {children}
+              </Swap>
+            ) : null}
+          </AnimatePresence>
+        </InlineMessage>
+      </div>
+    );
+  }
   return (
     <div
       {...props}
-      className={[styles.alert, styles[tone], inline && styles.inline, className]
-        .filter(Boolean)
-        .join(" ")}
+      className={[styles.alert, styles[tone], className].filter(Boolean).join(" ")}
       role={role ?? (tone === "danger" ? "alert" : "status")}
     >
       {/* A new tone morphs its icon in place; a newly shown alert gives the icon a small settle. */}
@@ -192,7 +236,7 @@ function AlertBox({
             exit={reduce ? fadeOut : { ...iconIn, transition: exitFast }}
             transition={reduce ? enter : motionTokens.spring.snappy}
           >
-            {icon ?? <Icon width={inline ? 14 : 16} height={inline ? 14 : 16} aria-hidden="true" />}
+            {icon ?? <Icon width={16} height={16} aria-hidden="true" />}
           </Swap>
         </AnimatePresence>
       </motion.span>

@@ -73,7 +73,7 @@ it("reads finite owner indicator state without hashing or executing a configured
   await expect(f.control.indicatorStatus(agent, async () => true)).rejects.toThrow();
   await expect(f.control.indicatorStatus(owner, async () => false)).rejects.toThrow("revoked");
 });
-it("launches only an allowlisted app headlessly and journals before dispatch without replay", async () => {
+it("launches only an owner-approved app headlessly and journals before dispatch without replay", async () => {
   let f: Awaited<ReturnType<typeof setup>>;
   let effects = 0;
   f = await setup({
@@ -95,7 +95,7 @@ it("launches only an allowlisted app headlessly and journals before dispatch wit
   await f.configure();
   await expect(
     f.request({ op: "launch", requestId: "outside", app: "Other" }, agent),
-  ).rejects.toThrow("allowlist");
+  ).rejects.toThrow("not approved");
   for (const field of ["args", "env", "cwd", "activate", "cdp", "force", "headed"])
     await expect(
       f.request({ op: "launch", requestId: "strict", app: "Notepad", [field]: true }, agent),
@@ -640,7 +640,7 @@ it("binds exact qualified refs to the caller, app, process and configuration", a
   const f = await setup();
   await f.configure();
   await expect(f.control.request({ op: "snapshot", app: "Browser" }, agent)).rejects.toThrow(
-    "allowlist",
+    "not approved",
   );
   const snapshot = await f.snapshot();
   const input = {
@@ -941,7 +941,7 @@ it("rejects mismatched drag, scroll and destination parameters before any journa
     await expect(f.control.request(act(bad), agent)).rejects.toThrow();
   expect(effects()).toBe(before);
 });
-it("stores the owner-only permission mode, defaults old configs to ask and limits all-apps to full access", async () => {
+it("stores the owner-only permission mode, defaults old configs to ask and covers every app only in full access", async () => {
   const f = await setup();
   expect((await f.configure()).configuration).toMatchObject({
     permissionMode: "ask",
@@ -964,10 +964,11 @@ it("stores the owner-only permission mode, defaults old configs to ask and limit
   const full = await f.request({
     op: "configure",
     expectedVersion: 2,
-    configuration: { ...base, permissionMode: "full", allowAllApps: true },
+    configuration: { ...base, permissionMode: "full" },
   });
   expect(full.configuration).toMatchObject({ permissionMode: "full", allowAllApps: true });
   expect(await f.control.permission()).toEqual({ mode: "full" });
+  expect(await f.control.appAllowed("Anything")).toBe(true);
   await expect(
     f.control.request(
       {
@@ -978,6 +979,24 @@ it("stores the owner-only permission mode, defaults old configs to ask and limit
       agent,
     ),
   ).rejects.toThrow("owner");
+});
+it("remembers an owner-approved app without retiring live snapshots", async () => {
+  const f = await setup();
+  await f.configure();
+  const snapshot = await f.snapshot();
+  expect(await f.control.appAllowed("Browser")).toBe(false);
+  await expect(f.control.allowApp("-option")).rejects.toThrow("plain");
+  await f.control.allowApp("Browser");
+  await f.control.allowApp("Browser");
+  expect(await f.control.appAllowed("Browser")).toBe(true);
+  const status = await f.request({ op: "status" });
+  expect(status.configuration).toMatchObject({ allowedApps: ["Notepad", "Browser"], version: 2 });
+  // The snapshot taken before the approval still pages.
+  const page = await f.control.request(
+    { op: "snapshot", app: "Notepad", cursor: `0:${snapshot.snapshotId}` },
+    agent,
+  );
+  expect(page.snapshot?.snapshotId).toBe(snapshot.snapshotId);
 });
 it("keeps Host presence headless and treats unsupported, failed and malformed reads as a locked, unsupported desktop", async () => {
   let args: string[] = [];

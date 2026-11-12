@@ -173,6 +173,39 @@ it("remeasures intrinsic width when an open picker receives different options", 
   expect(placed.style.width).toBe("240px");
 });
 
+it("grows a list popup with its longest row up to 800px and never past the viewport", async () => {
+  vi.stubGlobal("innerWidth", 1400);
+  let contentWidth = 1200;
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.style.width === "max-content"
+      ? contentWidth
+      : Number.parseFloat(this.style.width) || contentWidth;
+  });
+  await act(async () => root.render(createElement(Popover, { anchor, minWidth: 240 }, "Long row")));
+  const placed = document.querySelector<HTMLElement>(
+    "[data-popover-side]:not([data-popover-flow])",
+  )!;
+  await frame();
+  expect(placed.style.width).toBe("800px");
+  // The hard popup cap also bounds an oversized trigger-width floor.
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, minWidth: 900 }, "Wide trigger")),
+  );
+  await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+  await frame();
+  expect(placed.style.width).toBe("800px");
+  // A narrow window clamps below the cap.
+  vi.stubGlobal("innerWidth", 500);
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, minWidth: 240 }, "Narrow window")),
+  );
+  await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+  await frame();
+  expect(placed.style.width).toBe("484px");
+});
+
 it("bounds the default content so it scrolls instead of clipping, and owns one strict region when asked", async () => {
   await act(async () => root.render(createElement(Popover, { anchor, solid: true }, "Menu")));
   let content = document.querySelector<HTMLElement>("[data-popover-flow]")!;

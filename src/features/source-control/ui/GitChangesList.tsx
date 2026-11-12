@@ -1,3 +1,4 @@
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer, defaultRangeExtractor } from "@tanstack/react-virtual";
@@ -359,7 +360,7 @@ function ChangeDirRow({
     <li style={style}>
       <ActionHost
         style={{ "--git-row-depth": depth } as CSSProperties}
-        className="flex h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 pl-[calc(0.5rem+var(--git-row-depth)*0.75rem)]"
+        className="flex w-full items-center gap-1 pl-[calc(0.5rem+var(--git-row-depth)*0.75rem)]"
       >
         <Button
           size="sm"
@@ -412,7 +413,7 @@ function ChangeDirRow({
           className="grid w-3.5 shrink-0 place-items-center"
           aria-hidden
         >
-          <span className="size-1.5 rounded-full bg-current" />
+          <StatusDot tone={dir.status ? statusTone(dir.status) : "secondary"} />
         </Text>
       </ActionHost>
     </li>

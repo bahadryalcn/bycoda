@@ -1,9 +1,11 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Group, Row, SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
+import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { MoreHorizontal, Plus, UserRound, Briefcase, Check } from "../../../shared/ui/icons";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
@@ -564,15 +566,12 @@ export function ProviderAccountsSettings({
                   );
                 })}
                 {accounts.length === 0 ? (
-                  <Text
-                    as="p"
-                    size="caption"
-                    tone="secondary"
-                    leading="inherit"
+                  <EmptyState
+                    size="inline"
+                    kind="empty"
                     className="provider-account-empty"
-                  >
-                    {t("No accounts. Add an account to sign in.")}
-                  </Text>
+                    description={t("No accounts. Add an account to sign in.")}
+                  />
                 ) : null}
                 {adding && editor ? (
                   <ProviderAccountEditor
@@ -647,29 +646,18 @@ export function ProviderAccountsSettings({
         />
       ) : null}
       {confirmRemove ? (
-        <Modal
-          size="sm"
-          title={t("Remove {p0} account", { p0: HARNESS_TITLE[confirmRemove.provider] })}
-          description={removeAccountMessage(confirmRemove)}
-          onClose={() => setConfirmRemove(null)}
-          footer={
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setConfirmRemove(null)}>{t("Cancel")}</Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  const account = confirmRemove;
-                  setConfirmRemove(null);
-                  void removeAccount(account);
-                }}
-              >
-                {t("Remove account")}
-              </Button>
-            </div>
-          }
-        >
-          {null}
-        </Modal>
+        <ConfirmDialog
+          request={{
+            title: t("Remove {p0} account", { p0: HARNESS_TITLE[confirmRemove.provider] }),
+            message: removeAccountMessage(confirmRemove),
+            confirmLabel: t("Remove account"),
+          }}
+          onSettle={(confirmed) => {
+            const account = confirmRemove;
+            setConfirmRemove(null);
+            if (confirmed) void removeAccount(account);
+          }}
+        />
       ) : null}
     </div>
   );

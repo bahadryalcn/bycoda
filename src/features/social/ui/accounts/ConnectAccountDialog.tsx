@@ -1,9 +1,10 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { useId, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
@@ -204,7 +205,7 @@ export function ConnectAccountDialog({
         <Button variant="link" size="sm" onClick={() => setKind("email")}>
           {t("Add an email account instead")}
         </Button>
-        {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+        {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>
   );

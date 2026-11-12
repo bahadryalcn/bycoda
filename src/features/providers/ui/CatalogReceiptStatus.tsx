@@ -1,9 +1,7 @@
-import { Text } from "../../../shared/ui/Text";
 import { useSyncExternalStore } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, formatDate } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { RefreshCw } from "../../../shared/ui/icons";
-import { hasLiveCatalog } from "../../sessions/model/models";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { SettingsFeedback } from "../../settings/ui/settingsControls";
 import {
@@ -32,7 +30,8 @@ export function CatalogReceiptStatus({
     getCatalogReceiptsSnapshot,
   );
   const receipt = getCatalogReceipt(harness);
-  if (!available) return null;
+  if (!available)
+    return <SettingsFeedback state="warning">{t("Available after CLI setup")}</SettingsFeedback>;
   const refreshing = receipt?.status === "refreshing";
   const retry = (label: string) => (
     <Button
@@ -42,15 +41,14 @@ export function CatalogReceiptStatus({
       loading={refreshing}
       startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />}
       aria-label={t("{p0} for {p1} models", { p0: label, p1: HARNESS_TITLE[harness] })}
-      onClick={() => void refreshProviderCatalog(harness, { force: true })}
+      onClick={() => {
+        refreshProviderCatalog(harness, { force: true }).catch(() => undefined);
+      }}
     >
       {label}
     </Button>
   );
 
-  if (receipt?.status === "refreshing") {
-    return <SettingsFeedback state="loading">{t("Refreshing the model list…")}</SettingsFeedback>;
-  }
   if (receipt?.status === "error") {
     return (
       <SettingsFeedback state="error" action={retry(t("Retry"))}>
@@ -66,27 +64,43 @@ export function CatalogReceiptStatus({
       </SettingsFeedback>
     );
   }
-  if (receipt?.status === "retained") {
-    return (
-      <SettingsFeedback state="warning" action={retry(t("Refresh"))}>
-        {t("The CLI returned no new model list. Showing the earlier list ({p0}).", {
-          p0: receipt.count,
-        })}
-      </SettingsFeedback>
-    );
-  }
-  if (receipt?.status === "bundled" || (!receipt && !hasLiveCatalog(harness))) {
+  if (receipt?.status === "bundled")
     return (
       <SettingsFeedback state="warning" action={retry(t("Refresh"))}>
         {t("Showing the built-in model list. It was not discovered from the CLI.")}
       </SettingsFeedback>
     );
-  }
+  return null;
+}
+
+/** Quiet refresh with last-check provenance. */
+export function CatalogRefreshButton({ harness }: { harness: HarnessId }) {
+  useLocale();
+  useSyncExternalStore(
+    subscribeCatalogReceipts,
+    getCatalogReceiptsSnapshot,
+    getCatalogReceiptsSnapshot,
+  );
+  const receipt = getCatalogReceipt(harness);
+  const previous = receipt?.status === "refreshing" ? receipt.previous : receipt;
+  const at = previous && "at" in previous ? previous.at : undefined;
   return (
-    <Text as="p" size="caption" tone="muted" role="status" className="provider-cli-catalog-source">
-      {receipt?.status === "fresh"
-        ? t("Model list refreshed from the CLI. Account access is not checked.")
-        : t("Model list from the CLI. Not rechecked in this session.")}
-    </Text>
+    <Button
+      size="sm"
+      variant="ghost"
+      iconOnly
+      label={t("Refresh")}
+      tooltip={
+        at
+          ? `${t("Refresh")} · ${t("Last checked: {p0}", { p0: formatDate(at, { dateStyle: "short", timeStyle: "short" }) })}`
+          : t("Refresh")
+      }
+      loading={receipt?.status === "refreshing"}
+      disabled={receipt?.status === "refreshing"}
+      onClick={() => {
+        refreshProviderCatalog(harness, { force: true }).catch(() => undefined);
+      }}
+      startIcon={<RefreshCw className="icon-sm" />}
+    />
   );
 }

@@ -1445,7 +1445,7 @@ describe("sidebar orchestration card", () => {
       await tooltipText(
         card().querySelector<HTMLElement>('[data-orchestration-agent="worker-a"] button')!,
       ),
-    ).toContain("codex:worker-a");
+    ).toContain("Codex · Worker A");
     expect(card().querySelectorAll("[data-orchestration-agent]")).toHaveLength(3);
     const normal = container.querySelector<HTMLElement>('[data-session-card="unrelated"]')!;
     expect(normal.hasAttribute("data-orchestration-card")).toBe(false);

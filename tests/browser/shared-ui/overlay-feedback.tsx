@@ -10,9 +10,9 @@ import { Button } from "../../../src/shared/ui/Button";
 import { EmptyState } from "../../../src/shared/ui/EmptyState";
 import { FailureState } from "../../../src/shared/ui/FailureState";
 import { Check, Inbox } from "../../../src/shared/ui/icons";
+import { UsageMeter } from "../../../src/shared/ui/UsageMeter";
 import { Progress } from "../../../src/shared/ui/Progress";
 import { RecoveryBoundary } from "../../../src/shared/ui/RecoveryBoundary";
-import { Shimmer } from "../../../src/shared/ui/Shimmer";
 import { Skeleton } from "../../../src/shared/ui/Skeleton";
 import { toast, ToastRegion, type ToastOptions } from "../../../src/shared/ui/ToastRegion";
 import { TransientNotice } from "../../../src/shared/ui/TransientNotice";
@@ -309,6 +309,24 @@ function NoticesSection() {
       <div className="flex items-center gap-2">
         <Button onClick={() => setShowFileError(true)}>Show file action error</Button>
         <Button onClick={addToast}>Add toast</Button>
+        <Button
+          onClick={() =>
+            toast.show({
+              title: "bycoda beklenmedik şekilde kapandı",
+              message:
+                "Düzeltmemize yardımcı olmak için tanılama günlükleri gönderilsin mi? Günlükler bu bilgisayarda temizlenir ve konuşmalarınızı asla içermez.",
+              durationMs: null,
+              actionsPlacement: "footer",
+              actions: ["Gönder", "Her zaman gönder", "Gönderme"].map((label) => (
+                <Button key={label} variant="secondary" onClick={() => count(label)}>
+                  {label}
+                </Button>
+              )),
+            })
+          }
+        >
+          Show consent toast
+        </Button>
       </div>
       <ToastRegion />
       {showFileError ? (
@@ -456,19 +474,26 @@ function ProgressSection() {
           <Progress label="Downloading" value={42} showValue />
           <Progress label="Almost there" value={99.6} showValue />
           <Progress label="Finished" value={100} showValue tone="success" />
-          <Progress
+          <UsageMeter
+            compact
+            showLegend={false}
+            showRemaining
             label="Quota remaining"
-            value={18}
-            showValue
-            valueLabel="18% remaining"
+            segments={[{ id: "used", label: "Used", value: 82 }]}
+            limit={100}
+            unit="%"
+            valueText="18% remaining"
             tone="warning"
           />
-          <Progress
-            aria-label="Weekly remaining"
-            value={64}
-            showValue
-            valuePlacement="inside"
-            valueLabel="64% left"
+          <UsageMeter
+            compact
+            showLegend={false}
+            showRemaining
+            label="Weekly remaining"
+            segments={[{ id: "used", label: "Used", value: 36 }]}
+            limit={100}
+            unit="%"
+            valueText="64% left"
           />
           <Progress compact aria-label="Compact" value={30} />
         </div>
@@ -476,7 +501,7 @@ function ProgressSection() {
           <Skeleton label="Loading sessions" avatar lines={3} />
           <div className="flex items-center gap-2">
             <Button onClick={() => setLoading((value) => !value)}>Toggle loading</Button>
-            <Shimmer>Thinking about it…</Shimmer>
+            <WorkingIndicator>Thinking about it…</WorkingIndicator>
           </div>
           <Skeleton label="Loading records" loading={loading}>
             <ul className="grid gap-1 text-ui-secondary" data-testid="skeleton-content">

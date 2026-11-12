@@ -1,3 +1,4 @@
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
 import { Text } from "../../shared/ui/Text";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
@@ -445,23 +446,27 @@ function ConversationHostTools({
                 </div>
               </div>
             ) : (
-              <span className="host-tools-host" title={`${ownerLabel}\n${cwd}`}>
-                <Server className="icon-sm" aria-hidden />
-                <Text size="inherit" tone="primary" truncate className="host-tools-host-name">
-                  {ownerLabel}
-                </Text>
-                <Text size="inherit" className="host-tools-host-role">
-                  {t("Project host")}
-                </Text>
-              </span>
+              <Tooltip label={`${ownerLabel}\n${cwd}`} asChild>
+                <span className="host-tools-host">
+                  <Server className="icon-sm" aria-hidden />
+                  <Text size="inherit" tone="primary" truncate className="host-tools-host-name">
+                    {ownerLabel}
+                  </Text>
+                  <Text size="inherit" className="host-tools-host-role">
+                    {t("Project host")}
+                  </Text>
+                </span>
+              </Tooltip>
             )}
             {!hideHeading ? (
-              <span className="host-tools-context" title={`${title}\n${cwd}`}>
-                <Folder className="icon-sm" aria-hidden />
-                <Text size="inherit" tone="primary" truncate className="host-tools-context-name">
-                  {title}
-                </Text>
-              </span>
+              <Tooltip label={`${title}\n${cwd}`} asChild>
+                <span className="host-tools-context">
+                  <Folder className="icon-sm" aria-hidden />
+                  <Text size="inherit" tone="primary" truncate className="host-tools-context-name">
+                    {title}
+                  </Text>
+                </span>
+              </Tooltip>
             ) : null}
           </Text>
           {!hidePresentation ? (

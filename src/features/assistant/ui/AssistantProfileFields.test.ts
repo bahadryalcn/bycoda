@@ -356,7 +356,9 @@ it("saves address frequency, tone, profanity and persona as profile drafts witho
     { addressFrequency: "sometimes", tone: "friendly", allowProfanity: false },
     "identity",
   );
-  await click("Never", container);
+  const never = container.querySelector<HTMLInputElement>('input[type="radio"][value="never"]')!;
+  expect(never.labels?.[0]?.textContent).toContain("Never");
+  await act(async () => never.click());
   expect(observed.patches.at(-1)).toEqual({ addressFrequency: "never" });
   await setup({ tone: "friendly", allowProfanity: false, persona: "" }, "personality");
   await choose("Tone", "Blunt");

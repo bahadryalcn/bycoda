@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { QuestionFields, updateCustomAnswer, nextSelection } from "./QuestionFields";
@@ -536,18 +537,15 @@ function QuestionFormContent({
               <span>{status}</span>
             </Text>
             {prompt.autoResolveAt != null && !transportHeld ? (
-              <Text
-                size="caption"
-                tone="secondary"
-                className="tabular-nums"
-                title={t("Interact to keep this question open.")}
-              >
-                {prompt.autoResolveAt - now > 60_000
-                  ? t("Optional question")
-                  : t("Continues without an answer in {p0}s", {
-                      p0: Math.max(0, Math.ceil((prompt.autoResolveAt - now) / 1000)),
-                    })}
-              </Text>
+              <Tooltip label={t("Interact to keep this question open.")} asChild>
+                <Text size="caption" tone="secondary" className="tabular-nums">
+                  {prompt.autoResolveAt - now > 60_000
+                    ? t("Optional question")
+                    : t("Continues without an answer in {p0}s", {
+                        p0: Math.max(0, Math.ceil((prompt.autoResolveAt - now) / 1000)),
+                      })}
+                </Text>
+              </Tooltip>
             ) : null}
           </div>
           <div className={styles.actions}>

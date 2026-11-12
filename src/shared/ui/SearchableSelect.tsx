@@ -1,3 +1,4 @@
+import { popupListClassName } from "./Popover";
 import { OverflowTooltip } from "./Tooltip";
 import { useT } from "../i18n";
 import {
@@ -36,13 +37,9 @@ import { Button } from "./Button";
 import { useTooltip, type TooltipContent } from "./Tooltip";
 import { isImeComposition } from "../lib/keyboard";
 import { SelectTrigger, SelectValue } from "./arc/select/select";
-import {
-  ComboboxChoice,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxStatus,
-} from "./arc/combobox/combobox";
+import { ComboboxItem, ComboboxList, ComboboxStatus } from "./arc/combobox/combobox";
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
+import { PickerChoice } from "./picker/PickerChoice";
 import { PickerFooter } from "./picker/PickerList";
 import {
   ALL_GROUPS,
@@ -78,6 +75,7 @@ export type SearchableSelectTriggerRender = {
     "aria-expanded": boolean;
     "aria-haspopup": "dialog";
     "aria-controls"?: string;
+    "aria-readonly"?: boolean;
     "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling";
     "aria-describedby"?: string;
     "aria-busy"?: boolean | "true" | "false";
@@ -144,6 +142,12 @@ type FieldOptions = {
 
 type SelectionOptions = AsyncOptions &
   FieldOptions & {
+    /** Keep the committed value focusable without allowing the list to open. */
+    readOnly?: boolean;
+    /** Preserve ownership and interaction data hooks on the portalled popup. */
+    menuAttributes?: { [attribute: `data-${string}`]: string | boolean | undefined };
+    /** Called after dismissal or selection; true when focus returned to the trigger. */
+    onClose?: (restoreFocus: boolean) => void;
     /** Locale used for case folding, independently of the UI language. */
     searchLocale?: string;
     triggerProps?: Omit<
@@ -152,6 +156,7 @@ type SelectionOptions = AsyncOptions &
     > & {
       /** Same as the `tooltip` prop (the prop wins). */
       tooltip?: SelectionOptions["tooltip"];
+      [attribute: `data-${string}`]: string | boolean | undefined;
     };
     /** Shared tooltip on the trigger while the list is closed (hover and keyboard focus). A string
      *  is the title; an object adds `details`, `shortcut`, `side`, `wide`. Also read from
@@ -181,11 +186,16 @@ type SelectionOptions = AsyncOptions &
 
 /**
  * Trigger plus popover list with a type-to-filter header; single or multiple values, grouped options, async states.
- * Options take `icon`, `meta`, `group`; `renderTrigger` swaps the trigger, `footer` adds actions, `fieldVariant`/`description` add field chrome.
+ * Options take `icon`, `description`, `meta`, `group`; consecutive groups have compact sticky headings retained when filtering.
+ * Selected icons appear inside the trigger; option descriptions render below labels and are searched.
+ * `renderTrigger` swaps the trigger, `footer` adds actions, `fieldVariant`/`description` add field chrome.
  * Shows its label above the trigger like Select; `hideLabel` keeps it for assistive tech only (toolbars, compact filters).
  * The caller owns value, fetching and retry; the picker keeps the committed value visible while loading.
  * Menus fit their content within the viewport; long labels and descriptions truncate with full text on hover/focus.
  * `groupFilter` adds a one-row filter by option `group` (needs two or more groups; PageUp/PageDown switch it from the search field); `menuMinWidth` and `menuMaxHeight` enlarge the menu.
+ * Trigger variants are owned here: `field` is a labelled form control; `transparent` is an
+ * unfilled field in an existing surface; `row` and `pill` are compact toolbar controls;
+ * `panel` is a full-width value row in a touch panel. All share the same option rows.
  * @group choice
  * @use Long or growing list filtered by typing, one or many values, no free entry (branches, projects, models).
  * @avoid Short stable list: Select. Free text or custom values: Combobox. Commands without a selection: DropdownMenu. `hideLabel` only where context is supplied.
@@ -279,6 +289,8 @@ const OptionRow = memo(function OptionRow({
       aria-disabled={option.disabled || undefined}
       disabled={controlDisabled || option.disabled}
       aria-describedby={option.description ? `${listId}-description-${index}` : undefined}
+      data-density={compact ? "sm" : "md"}
+      data-has-description={option.description ? "" : undefined}
       data-active={highlighted || undefined}
       data-highlighted={highlighted || undefined}
       onMouseDown={(event) => event.preventDefault()}
@@ -286,11 +298,9 @@ const OptionRow = memo(function OptionRow({
         if (!option.disabled) onHover(index);
       }}
       onClick={() => onPick(option.value)}
-      className={`${styles.option} bycoda-arc-select-option ${
-        option.description ? "min-h-8 py-1.5" : compact ? "h-7" : "h-8"
-      }`}
+      className={`bycoda-arc-select-option`}
     >
-      <ComboboxChoice
+      <PickerChoice
         selected={selected}
         icon={option.icon}
         label={
@@ -305,8 +315,8 @@ const OptionRow = memo(function OptionRow({
         description={option.description}
         descriptionId={`${listId}-description-${index}`}
         title={title}
+        meta={option.meta}
       />
-      {option.meta != null ? <span className={styles.optionMeta}>{option.meta}</span> : null}
     </ComboboxItem>
   );
 });
@@ -337,11 +347,14 @@ function SearchableSelectMenu({
   searchPlaceholder: searchPlaceholderOption,
   emptyLabel: emptyLabelOption,
   disabled = false,
+  readOnly = false,
+  onClose,
+  menuAttributes,
   layer,
   variant = "field",
   searchable = true,
   side = "bottom",
-  align = "start",
+  align = "end",
   menuMinWidth = 240,
   menuMaxHeight = 240,
   groupFilter = false,
@@ -395,7 +408,7 @@ function SearchableSelectMenu({
   const [groupKey, setGroupKey] = useState(ALL_GROUPS);
   const [menuWidth, setMenuWidth] = useState<number>();
   // A disabled picker cannot stay open: close during render so re-enabling does not reopen it.
-  if (disabled && (open || query)) {
+  if ((disabled || readOnly) && (open || query)) {
     setOpen(false);
     setQuery("");
     setGroupKey(ALL_GROUPS);
@@ -459,11 +472,12 @@ function SearchableSelectMenu({
     setQuery("");
     setGroupKey(ALL_GROUPS);
     if (restoreFocus) trigger.current?.focus({ preventScroll: true });
+    if (open) onClose?.(restoreFocus);
   };
 
   const openMenu = () => {
-    if (disabled || trigger.current?.matches(":disabled")) return;
-    setMenuWidth(Math.max(menuMinWidth, root.current?.getBoundingClientRect().width ?? 0));
+    if (disabled || readOnly || trigger.current?.matches(":disabled")) return;
+    setMenuWidth(Math.max(menuMinWidth, trigger.current?.getBoundingClientRect().width ?? 0));
     setQuery("");
     setGroupKey(ALL_GROUPS);
     const committed = options.findIndex(
@@ -503,7 +517,7 @@ function SearchableSelectMenu({
   }, [activeIndex, open]);
 
   const pick = (next: string) => {
-    if (disabled || optionLookup.get(next)?.disabled) return;
+    if (disabled || readOnly || optionLookup.get(next)?.disabled) return;
     onPick(next);
     if (!multiple) close(true);
   };
@@ -613,6 +627,7 @@ function SearchableSelectMenu({
     ref: trigger,
     type: triggerProps?.type ?? "button",
     disabled,
+    "aria-readonly": readOnly || undefined,
     "aria-invalid": fieldError ? true : triggerProps?.["aria-invalid"],
     "aria-describedby": composed
       ? fieldDescribedBy(
@@ -762,6 +777,7 @@ function SearchableSelectMenu({
       ) : null}
       {open ? (
         <Popover
+          {...menuAttributes}
           id={`${listId}-menu`}
           anchor={trigger}
           side={side}
@@ -840,7 +856,7 @@ function SearchableSelectMenu({
             aria-activedescendant={searchable ? undefined : activeId}
             tabIndex={searchable ? undefined : 0}
             onKeyDown={searchable ? undefined : onSearchKeyDown}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1 focus-visible:outline-2 focus-visible:outline-accent"
+            className={`${popupListClassName} min-h-0 flex-1 overflow-y-auto overscroll-none focus-visible:outline-2 focus-visible:outline-accent`}
           >
             {filtered.length > 0 ? (
               optionSections(filtered).map((section) => {

@@ -436,11 +436,20 @@ it("explains that an orchestration run locks Undo", async () => {
       }),
     ),
   );
-  const undo = container.querySelector<HTMLElement>(
-    '[title="Undo is unavailable while an orchestration run is active or paused"]',
+  const undo = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Undo",
   );
   expect(undo).not.toBeNull();
-  expect(undo!.querySelector("button")?.disabled).toBe(true);
+  expect(undo?.disabled).toBe(true);
+  const anchor = undo!.closest<HTMLElement>("span[data-tooltip-owner]")!;
+  expect(anchor.hasAttribute("title")).toBe(false);
+  await act(async () => {
+    anchor.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+    "Undo is unavailable while an orchestration run is active or paused",
+  );
 });
 
 it("omits Preview for source files without a rendered viewer", () => {

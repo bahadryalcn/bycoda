@@ -2,7 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { activeQueueFeedback, type QueueFeedback } from "./queueFeedback";
 import { canSendQueueMessage } from "../model/queueAction";
 import { useAcceptedQueueDeparture, type MessageQueueProps } from "./useAcceptedQueueDeparture";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { InlineError } from "../../../shared/ui/InlineError";
 import {
   DeliveryProgressNotice,
@@ -357,23 +357,19 @@ export function MessageQueue({
           <Text as="div" size="caption" tone="inherit" className="mb-1 flex h-7 items-center gap-2">
             <Pause className="icon-sm" />
             {messages.length > 0 ? <DeliveryProgressIndicator sessionId={sessionId} /> : null}
-            <Text
-              size="inherit"
-              tone="inherit"
-              truncate
-              className="min-w-0 flex-1"
-              title={holdDetail}
-            >
-              {(delivery && (delivery.stage === "rejected" || delivery.stage === "unknown")) ||
-              messages.some((message) => message.deliveryUnknown)
-                ? `${t("Queue")} · ${messages.length}`
-                : hold.kind === "held" && hold.reason === "unknown"
-                  ? t("Queue held: delivery is not confirmed")
-                  : hold.kind === "held" && hold.reason === "rejected"
-                    ? holdDetail?.split(/\r?\n/, 1)[0] ||
-                      t("Queue paused: the last message was not accepted")
-                    : t("Queue paused because you interrupted")}
-            </Text>
+            <Tooltip label={holdDetail} asChild>
+              <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                {(delivery && (delivery.stage === "rejected" || delivery.stage === "unknown")) ||
+                messages.some((message) => message.deliveryUnknown)
+                  ? `${t("Queue")} · ${messages.length}`
+                  : hold.kind === "held" && hold.reason === "unknown"
+                    ? t("Queue held: delivery is not confirmed")
+                    : hold.kind === "held" && hold.reason === "rejected"
+                      ? holdDetail?.split(/\r?\n/, 1)[0] ||
+                        t("Queue paused: the last message was not accepted")
+                      : t("Queue paused because you interrupted")}
+              </Text>
+            </Tooltip>
             <Button
               variant="ghost"
               type="button"
@@ -596,16 +592,20 @@ export function MessageQueue({
                     </Text>
                   </OverflowTooltip>
                   {attachmentGone ? (
-                    <Text
-                      size="inherit"
-                      tone="warning"
-                      className="block [overflow-wrap:anywhere]"
-                      title={t(
+                    <Tooltip
+                      label={t(
                         "An attached file is gone. Edit this message to drop it, or remove the message.",
                       )}
+                      asChild
                     >
-                      {t("Attachment missing")}
-                    </Text>
+                      <Text
+                        size="inherit"
+                        tone="warning"
+                        className="block [overflow-wrap:anywhere]"
+                      >
+                        {t("Attachment missing")}
+                      </Text>
+                    </Tooltip>
                   ) : null}
                   {target && targetLabel ? (
                     <Text
@@ -616,14 +616,11 @@ export function MessageQueue({
                     >
                       <HarnessIcon harness={target.harness} className="size-3 shrink-0" />
                       <span aria-hidden="true">·</span>
-                      <Text
-                        size="inherit"
-                        tone="inherit"
-                        truncate
-                        title={t("Queued for {p0}", { p0: targetLabel })}
-                      >
-                        {targetLabel}
-                      </Text>
+                      <Tooltip label={t("Queued for {p0}", { p0: targetLabel })} asChild>
+                        <Text size="inherit" tone="inherit" truncate>
+                          {targetLabel}
+                        </Text>
+                      </Tooltip>
                       {routeNote ? <span className="shrink-0">· {routeNote}</span> : null}
                     </Text>
                   ) : null}

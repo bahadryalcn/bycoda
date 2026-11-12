@@ -64,11 +64,12 @@ function open() {
   act(() => container.querySelector<HTMLButtonElement>("button")!.click());
 }
 function checkbox(path: string) {
-  return document
-    .querySelector<HTMLSpanElement>(`span[title="${path}"]`)
-    ?.closest("label")
-    ?.querySelector<HTMLInputElement>("input");
+  return [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (option) =>
+      document.getElementById(option.getAttribute("aria-describedby") ?? "")?.textContent === path,
+  );
 }
+
 async function browse() {
   await act(async () => button("Choose from").click());
 }
@@ -78,7 +79,7 @@ describe("session folders", () => {
     render();
     expect(visibleSessionTestText(container)).toBe("web");
     open();
-    expect(checkbox("/work/web")?.checked).toBe(true);
+    expect(checkbox("/work/web")?.getAttribute("aria-selected")).toBe("true");
     expect(checkbox("/work/web")?.disabled).toBe(true);
     expect(document.body.textContent).toContain("Working folder");
     expect(document.body.textContent).not.toContain("No folders");
@@ -89,7 +90,7 @@ describe("session folders", () => {
     render("/work/web-worktree");
     expect(visibleSessionTestText(container)).toBe("web-worktree");
     open();
-    expect(checkbox("/work/web-worktree")?.checked).toBe(true);
+    expect(checkbox("/work/web-worktree")?.getAttribute("aria-selected")).toBe("true");
     expect(checkbox("/work/web")).toBeUndefined();
   });
 
@@ -114,10 +115,10 @@ describe("session folders", () => {
     expect(pickFolders).toHaveBeenCalledWith("Add folders to this session", true);
     expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/custom/api", "/custom/ui"]);
     expect(visibleSessionTestText(container)).toBe("3 folders");
-    expect(checkbox("/custom/api")?.checked).toBe(true);
+    expect(checkbox("/custom/api")?.getAttribute("aria-selected")).toBe("true");
     open();
     open();
-    expect(checkbox("/custom/api")?.checked).toBe(true);
+    expect(checkbox("/custom/api")?.getAttribute("aria-selected")).toBe("true");
     act(() => checkbox("/custom/api")!.click());
     expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/custom/ui"]);
   });
@@ -143,8 +144,8 @@ describe("session folders", () => {
     open();
     click("Reset");
     expect(loadSessionAdditionalDirs("s1")).toBeUndefined();
-    expect(checkbox("/work/web")?.checked).toBe(true);
-    expect(checkbox("/work/api")?.checked).toBe(true);
+    expect(checkbox("/work/web")?.getAttribute("aria-selected")).toBe("true");
+    expect(checkbox("/work/api")?.getAttribute("aria-selected")).toBe("true");
   });
 
   it("changes project through the existing session callback", () => {
@@ -186,6 +187,20 @@ describe("session folders", () => {
     expect(input.value).toBe("");
     expect(checkbox("/other/api")).toBeDefined();
     expect(document.activeElement).toBe(input);
+  });
+
+  it("shares combobox navigation and skips the fixed working folder", () => {
+    rememberProject("/other/api");
+    render();
+    open();
+    const list = document.querySelector('[role="listbox"]')!;
+    expect(list.getAttribute("aria-multiselectable")).toBe("true");
+    const search = document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    expect(search.getAttribute("aria-controls")).toBe(list.id);
+    act(() => search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/other/api"]);
+    expect(checkbox("/work/web")?.disabled).toBe(true);
+    expect(checkbox("/other/api")?.getAttribute("aria-selected")).toBe("true");
   });
 
   it("rejects a drive root without changing session folders", async () => {

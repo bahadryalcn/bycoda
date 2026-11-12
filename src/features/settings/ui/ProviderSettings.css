@@ -347,14 +347,6 @@
 .provider-inventory {
   min-inline-size: 0;
 }
-.provider-inventory-row {
-  display: grid;
-  grid-template-columns: minmax(9rem, 1fr) 6rem minmax(10rem, 1fr) 6rem 9rem;
-  align-items: center;
-  gap: 12px;
-  min-block-size: 44px;
-  padding-inline: 8px;
-}
 .provider-inventory-name {
   display: flex;
   align-items: center;
@@ -373,53 +365,15 @@
 .provider-inventory-heading {
   margin: 12px 8px 4px;
 }
-.provider-cli-option {
-  block-size: 40px;
-}
 .provider-cli-option-name {
   flex-wrap: nowrap;
 }
 .provider-cli-add .provider-cli-item {
   inline-size: 100%;
 }
-@media (max-width: 1100px) {
-  .provider-inventory-row {
-    grid-template-columns: minmax(9rem, 1fr) 5rem minmax(10rem, 1fr) 8rem;
-    gap: 8px;
-  }
-  .provider-inventory-checked {
-    display: none;
-  }
-}
-@media (max-width: 900px) {
-  .provider-inventory-row {
-    grid-template-columns: minmax(8rem, 1fr) minmax(0, 1.3fr) 8rem;
-    gap: 6px;
-  }
-  .provider-inventory-version {
-    display: none;
-  }
-  .provider-inventory-inline-version {
-    display: inline;
-  }
-}
-
-.provider-inventory-row > .bycoda-arc {
-  justify-self: start;
-}
-
 .provider-account-dialog-editor {
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-inline-size: 0;
-}
-
-.provider-inventory-columns {
-  min-block-size: 28px;
-}
-@media (max-width: 1100px) {
-  .provider-inventory-columns {
-    display: none;
-  }
 }

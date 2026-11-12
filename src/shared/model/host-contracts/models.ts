@@ -30,9 +30,12 @@ export const CatalogModelSchema = z.strictObject({
   contextWindow: z.number().optional(),
 });
 const account = z.strictObject({
+  isDefault: z.boolean().optional(),
   id: z.string(),
   label: z.string(),
   color: z.string().optional(),
+  kind: z.enum(["personal", "work"]).optional(),
+  derivedKind: z.enum(["personal", "work"]).optional(),
 });
 export const HostModelAccountsSchema = z.strictObject({
   codex: z.array(account).optional(),

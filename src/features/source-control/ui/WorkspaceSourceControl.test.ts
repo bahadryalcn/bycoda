@@ -351,7 +351,7 @@ it("retains known repositories on a discovery error and offers refresh", async (
   discovery.error = "offline";
   await render();
   expect(host.querySelectorAll("section")).toHaveLength(3);
-  expect(host.querySelector('[role="status"]')?.textContent).toContain(
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
     "Could not refresh repositories",
   );
   await act(async () =>

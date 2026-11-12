@@ -3,6 +3,7 @@ import { productProviderDefaults } from "../../../shared/model/productProviderDe
 import { withClaudeAdvisor } from "./claudeAdvisor";
 import * as delegation from "../../../shared/model/host-contracts/delegation";
 import { HARNESSES } from "../../../shared/model/harnessIdentity";
+import { humanizeModelId } from "../../../shared/model/modelNameFromId";
 import { loadProjectProviderSettings } from "./projectProviders";
 import { accountSessionDefaults } from "./accountSessionDefaults";
 import {
@@ -22,6 +23,7 @@ export type ModelSetting = {
   value: string;
   options: ModelSettingChoice[];
   description?: string;
+  resolvedSubagents?: import("../../../shared/model/automaticSubagents").RankedSubagent[];
 };
 
 export type AgentModel = {
@@ -629,7 +631,10 @@ export function resolveModelFromCatalog(
     const requested = id.trim();
     if (harness === "claude" && /^claude:[a-z][a-z0-9-]*-\d/.test(requested)) {
       const nativeId = nativeIdForUnknownKey(requested);
-      return withAliasSettings({ id: requested, harness, name: nativeId, nativeId }, available);
+      return withAliasSettings(
+        { id: requested, harness, name: humanizeModelId(nativeId), nativeId },
+        available,
+      );
     }
   }
   // Codex has no built-in catalog. During startup, retain the saved model
@@ -645,9 +650,7 @@ export function resolveModelFromCatalog(
       id: modelId,
       harness,
       name: nativeId
-        ? nativeId
-            .replace(/^gpt/i, "GPT")
-            .replace(/-([a-z])/g, (_, letter: string) => `-${letter.toUpperCase()}`)
+        ? humanizeModelId(nativeId)
         : harness.charAt(0).toUpperCase() + harness.slice(1),
       nativeId,
     };

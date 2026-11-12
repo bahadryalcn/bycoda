@@ -1,4 +1,5 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { ModelLabel } from "./ModelLabel";
 import { Text } from "../../../shared/ui/Text";
 import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
@@ -151,6 +152,7 @@ export function SubagentStateLine({
   const failed = toolCallState(block) === "rejected";
   const summary = lifecycle === "stopped" ? "" : subagentStatusLine(block, steps);
   const identity = [run?.agentType, model].filter(Boolean).join(" · ");
+  const identityType = run?.agentType;
   const visibleSummary = summary && !failed ? summary : undefined;
   return (
     <Text
@@ -177,7 +179,9 @@ export function SubagentStateLine({
       <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
       {identity || visibleSummary ? (
         <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-          {identity}
+          {identityType}
+          {identityType && model ? " · " : ""}
+          {model ? <ModelLabel model={run?.model ?? ""} name={model} size="xs" /> : null}
           {identity && visibleSummary ? " · " : ""}
           {visibleSummary ? (
             <SubagentStatusSummary parts={subagentStatusParts(block, steps)} />

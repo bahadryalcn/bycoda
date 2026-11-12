@@ -63,9 +63,14 @@ describe("settingControlKind", () => {
     expect(settingControlKind(compact, ["Claude varsayılanı", "Açık", "Kapalı"])).toBe("grid");
   });
 
-  it("uses two grid columns when a label is long", () => {
+  it("picks grid columns that fill whole rows", () => {
     expect(settingGridColumns(["200K", "300K", "1M"])).toBe(3);
     expect(settingGridColumns(["Claude default", "200K"])).toBe(2);
+    expect(settingGridColumns(["Claude varsayılanı", "Açık", "Kapalı"])).toBe(3);
+    expect(settingGridColumns(["Default", "200K", "300K", "500K"])).toBe(4);
+    expect(settingGridColumns(["Claude varsayılanı", "200K", "300K", "500K"])).toBe(2);
+    expect(settingGridColumns(["Claude default", "200K", "300K", "500K", "750K", "1M"])).toBe(3);
+    expect(settingGridColumns(["Long label one", "Long label two", "a", "b", "c"])).toBe(2);
   });
 });
 

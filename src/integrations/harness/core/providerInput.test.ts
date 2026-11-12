@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+const automaticModels = vi.hoisted(() =>
+  vi.fn(() => [] as Array<{ harness: string; model: string; providerAccountId?: string }>),
+);
+vi.mock("./automaticSubagents", () => ({ runtimeAutomaticSubagents: automaticModels }));
+import { describe, expect, it, vi } from "vitest";
 import {
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
@@ -6,7 +10,7 @@ import {
   encodeAdvisor,
   encodeSubagents,
 } from "../../../shared/model/host-contracts/delegation";
-import { providerInput } from "./providerInput";
+import { providerInput, providerTurnInput } from "./providerInput";
 
 const reserved = {
   [CROSS_SUBAGENTS_KEY]: encodeSubagents([{ harness: "codex", model: "gpt-6.1-sol" }]) ?? "",
@@ -30,4 +34,42 @@ describe("providerInput", () => {
     const input = { prompt: "hi" } as { prompt: string; modelSettings?: Record<string, string> };
     expect(providerInput(input)).toBe(input);
   });
+});
+
+it("Automatic disables native delegation when its runtime set is not exactly one same-account Claude ref", () => {
+  const input = {
+    harness: "claude",
+    providerAccountId: "own",
+    modelSettings: { crossSubagents: "auto" },
+  };
+  const result = providerTurnInput(input, (id) => id);
+  expect(result.modelSettings.subagentModel).toBe("off");
+  expect(
+    providerTurnInput({ ...input, harness: "codex" }, (id) => id).modelSettings.nativeSubagents,
+  ).toBe("off");
+});
+
+it("Automatic keeps Claude native Agent only for exactly one resolved same-account model", () => {
+  const input = {
+    harness: "claude",
+    providerAccountId: "own",
+    modelSettings: { crossSubagents: "auto" },
+  };
+  automaticModels.mockReturnValue([
+    { harness: "claude", model: "sonnet", providerAccountId: "own" },
+  ]);
+  expect(providerTurnInput(input, (id) => id).modelSettings).toMatchObject({
+    subagentModel: "sonnet",
+    subagentPolicy: "force",
+  });
+  automaticModels.mockReturnValue([
+    { harness: "claude", model: "sonnet", providerAccountId: "other" },
+  ]);
+  expect(providerTurnInput(input, (id) => id).modelSettings.subagentModel).toBe("off");
+  automaticModels.mockReturnValue([
+    { harness: "claude", model: "sonnet", providerAccountId: "own" },
+    { harness: "codex", model: "sol" },
+  ]);
+  expect(providerTurnInput(input, (id) => id).modelSettings.subagentModel).toBe("off");
+  automaticModels.mockReturnValue([]);
 });

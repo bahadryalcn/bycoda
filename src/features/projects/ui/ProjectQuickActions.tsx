@@ -1,8 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
-import {
-  ExpandingButtonGroup,
-  type ExpandingButtonGroupItem,
-} from "../../../shared/ui/ExpandingButtonGroup";
+import { ButtonGroup, type ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
 import { useT } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -285,7 +282,8 @@ function ProjectQuickActionsFor({
       // Portal menus still bubble through this React owner into the draggable header.
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <ExpandingButtonGroup
+      <ButtonGroup
+        variant="expanding"
         label={t("Project actions")}
         size="sm"
         chrome="bare"

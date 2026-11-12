@@ -7,6 +7,7 @@ import {
   isSearchTool,
   isWeakToolTitle,
 } from "../../../integrations/harness/core/preview";
+import { modelDisplayName } from "./modelDisplayName";
 import { leafName } from "../../files/public/fileName";
 import { displayPath, pathKey, resolveWorkspacePath } from "../../../shared/lib/paths";
 import { delegatedChildIdOf } from "./delegatedBlockId";
@@ -15,7 +16,6 @@ import { isSessionErrorBlock } from "./sessionIssue";
 import { COMPACTING_TEXT, isRunningCompaction } from "./compactionStatus";
 import { isStartupStatusBlock } from "./startupStatus";
 import type { AgentStep, Block, ToolPreview } from "./session";
-import { findModelIdentity } from "./models";
 import { bycodaWorkSummary } from "./bycodaToolCall";
 import { streamingTextUpdate } from "./stableBlocks";
 const groupedSources = new WeakMap<Block[][], { blocks: Block[]; managed: boolean }>();
@@ -666,7 +666,7 @@ export function subagentName(block: Block): string {
 export function subagentModelName(block: Block): string | undefined {
   const id = block.agentRun?.model?.trim();
   if (!id || /^(?:auto|default|inherit|unspecified)$/i.test(id)) return undefined;
-  return findModelIdentity(id)?.name ?? id;
+  return modelDisplayName(id);
 }
 
 /**

@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -636,9 +637,13 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   ))}
                 </div>
               ) : registryState === "loaded" ? (
-                <Text as="p" size="micro" tone="secondary" className="px-3 pb-2">
-                  {t("No ACP registry entries found.")}
-                </Text>
+                <EmptyState
+                  size="inline"
+                  kind="empty"
+                  className="px-3 pb-2"
+                  descriptionText={{ size: "micro" }}
+                  description={t("No ACP registry entries found.")}
+                />
               ) : null}
             </div>
           </Disclosure>

@@ -81,10 +81,9 @@ export function seedProvidersFixture() {
     JSON.stringify({ global: { harness: "codex", model: "codex:gpt-5.3-codex" } }),
   );
   setHarnessAvailability(
-    Object.fromEntries(HARNESSES.map((id) => [id, id in versions])) as Record<
-      (typeof HARNESSES)[number],
-      boolean
-    >,
+    Object.fromEntries(
+      HARNESSES.map((id) => [id, id in versions || id === "antigravity"]),
+    ) as Record<(typeof HARNESSES)[number], boolean>,
   );
   markHarnessAvailabilityProbed();
   getHarnessUpdateSnapshot().checks = Object.entries(versions).map(([harness, installed]) => ({
@@ -137,7 +136,8 @@ export function providersFixtureCommand(command: string, args: Record<string, un
   if (command === "plugin:path|resolve_directory") return "/fixture/home";
   if (command.startsWith("harness_resolve_")) {
     const provider = command.slice("harness_resolve_".length);
-    if (!(provider in versions)) throw new Error("Fixture CLI not installed");
+    if (!(provider in versions) && provider !== "antigravity")
+      throw new Error("Fixture CLI not installed");
     return { path: `/fixture/bin/${provider}` };
   }
   return undefined;

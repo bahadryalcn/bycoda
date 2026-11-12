@@ -24,16 +24,16 @@ function permissionModeLabels(mode: DesktopPermissionMode) {
   if (mode === "full")
     return {
       label: t("Full access"),
-      description: t("No questions. Physical input still needs the switch below."),
+      description: t("No questions, on any app. Physical input still needs the switch below."),
     };
   if (mode === "auto")
     return {
       label: t("Auto"),
-      description: t("Asks only for launching apps, the clipboard and physical input."),
+      description: t("Asks once for each new app, and for the clipboard and physical input."),
     };
   return {
     label: t("Ask every time"),
-    description: t("Every action asks for your approval first."),
+    description: t("Asks once for each new app, then before every action."),
   };
 }
 
@@ -58,7 +58,6 @@ export function DesktopControlSettings({
   const [error, setError] = useState("");
   const [saveConfirmed, setSaveConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
-  const [app, setApp] = useState("");
   const [stopping, setStopping] = useState(false);
   const [helperPending, setHelperPending] = useState(false);
   const [helperReady, setHelperReady] = useState(false);
@@ -118,16 +117,14 @@ export function DesktopControlSettings({
     };
   }, []);
   const dirty =
-    !!app ||
-    (!!draft &&
-      !!saved &&
-      (draft.enabled !== saved.enabled ||
-        draft.binaryPath !== saved.binaryPath ||
-        draft.binarySha256 !== saved.binarySha256 ||
-        draft.allowPhysicalInput !== saved.allowPhysicalInput ||
-        draft.permissionMode !== saved.permissionMode ||
-        draft.allowAllApps !== saved.allowAllApps ||
-        JSON.stringify(draft.allowedApps) !== JSON.stringify(saved.allowedApps)));
+    !!draft &&
+    !!saved &&
+    (draft.enabled !== saved.enabled ||
+      draft.binaryPath !== saved.binaryPath ||
+      draft.binarySha256 !== saved.binarySha256 ||
+      draft.allowPhysicalInput !== saved.allowPhysicalInput ||
+      draft.permissionMode !== saved.permissionMode ||
+      JSON.stringify(draft.allowedApps) !== JSON.stringify(saved.allowedApps));
   // Helper preparation runs on the Host and survives closing, so it does not hold the dialog.
   useEffect(() => {
     onDraftStateChange?.({ dirty, pending: pending || stopping });
@@ -158,7 +155,6 @@ export function DesktopControlSettings({
                 allowedApps: draft.allowedApps,
                 allowPhysicalInput: draft.allowPhysicalInput,
                 permissionMode: draft.permissionMode,
-                allowAllApps: draft.permissionMode === "full" && draft.allowAllApps,
               },
             })
           : await desktopControlRequest({
@@ -306,42 +302,6 @@ export function DesktopControlSettings({
               onChange={(enabled) => setDraft({ ...draft, enabled })}
             />
           </Row>
-          <Row label={t("Allowed apps")} stacked>
-            <div className={styles.applicationEntry}>
-              <SearchableSelect
-                hideLabel
-                multiple
-                label={t("Allowed apps")}
-                value={draft.allowedApps}
-                options={draft.allowedApps.map((value) => ({
-                  value,
-                  label: value,
-                }))}
-                onChange={(allowedApps) => setDraft({ ...draft, allowedApps })}
-                disabled={pending}
-              />
-              <TextField
-                label={t("Application name")}
-                hideLabel
-                value={app}
-                onChange={(event) => setApp(event.target.value)}
-                maxLength={200}
-              />
-              <Button
-                type="button"
-                disabled={pending || !app.trim() || draft.allowedApps.length >= 50}
-                onClick={() => {
-                  setDraft({
-                    ...draft,
-                    allowedApps: [...new Set([...draft.allowedApps, app.trim()])],
-                  });
-                  setApp("");
-                }}
-              >
-                {t("Add application")}
-              </Button>
-            </div>
-          </Row>
           <Row
             label={t("Permission")}
             description={permissionModeLabels(draft.permissionMode).description}
@@ -357,36 +317,36 @@ export function DesktopControlSettings({
               }))}
               onChange={(value) => {
                 const permissionMode = DESKTOP_PERMISSION_MODES.find((mode) => mode === value);
-                if (permissionMode)
-                  setDraft({
-                    ...draft,
-                    permissionMode,
-                    allowAllApps: permissionMode === "full" && draft.allowAllApps,
-                  });
+                if (permissionMode) setDraft({ ...draft, permissionMode });
               }}
             />
           </Row>
-          {draft.permissionMode === "full" && (
-            <>
-              <Alert tone="warning" title={t("Full access asks nothing")}>
-                {t(
-                  "The assistant can launch apps, use the clipboard and use physical input on allowed apps without asking, even while you are away. Stop computer use and the emergency shortcut always work.",
-                )}
-              </Alert>
+          {draft.permissionMode === "full" ? (
+            <Alert tone="warning" title={t("Full access asks nothing")}>
+              {t(
+                "The assistant can use any app, launch apps, use the clipboard and use physical input without asking, even while you are away. Stop computer use and the emergency shortcut always work.",
+              )}
+            </Alert>
+          ) : (
+            !!saved?.allowedApps.length && (
               <Row
-                label={t("Allow all apps")}
+                label={t("Approved apps")}
                 description={t(
-                  "Any running app can be controlled, not only the allowed apps above.",
+                  "Apps you allowed when asked. Remove one to be asked again before it is used.",
                 )}
+                stacked
               >
-                <Toggle
-                  label={t("Allow all apps")}
-                  on={draft.allowAllApps}
+                <SearchableSelect
+                  hideLabel
+                  multiple
+                  label={t("Approved apps")}
+                  value={draft.allowedApps}
+                  options={saved.allowedApps.map((value) => ({ value, label: value }))}
+                  onChange={(allowedApps) => setDraft({ ...draft, allowedApps })}
                   disabled={pending}
-                  onChange={(allowAllApps) => setDraft({ ...draft, allowAllApps })}
                 />
               </Row>
-            </>
+            )
           )}
           <Row
             label={t("Physical input")}

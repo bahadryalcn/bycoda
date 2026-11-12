@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -139,9 +140,11 @@ export function GroupGitPopover({
                     …
                   </Text>
                 ) : detail.state === "error" ? (
-                  <Text size="micro" tone="muted" className="shrink-0" title={detail.message}>
-                    {t("no git info")}
-                  </Text>
+                  <Tooltip label={detail.message} asChild>
+                    <Text size="micro" tone="muted" className="shrink-0">
+                      {t("no git info")}
+                    </Text>
+                  </Tooltip>
                 ) : (
                   <Text
                     size="micro"
@@ -151,18 +154,23 @@ export function GroupGitPopover({
                     <Text size="inherit" tone="inherit" truncate className="max-w-[110px]">
                       {detail.branch ?? t("detached")}
                     </Text>
-                    <Text
-                      size="inherit"
-                      tone={detail.files > 0 ? "warning" : "inherit"}
-                      title={t(detail.files === 1 ? "{p0} changed file" : "{p0} changed files", {
+                    <Tooltip
+                      label={t(detail.files === 1 ? "{p0} changed file" : "{p0} changed files", {
                         p0: detail.files,
                       })}
+                      asChild
                     >
-                      {detail.files}
-                    </Text>
-                    <span title={t("Ahead / behind upstream")}>
-                      {detail.hasUpstream ? `↑${detail.ahead} ↓${detail.behind}` : t("no upstream")}
-                    </span>
+                      <Text size="inherit" tone={detail.files > 0 ? "warning" : "inherit"}>
+                        {detail.files}
+                      </Text>
+                    </Tooltip>
+                    <Tooltip label={t("Ahead / behind upstream")} asChild>
+                      <span>
+                        {detail.hasUpstream
+                          ? `↑${detail.ahead} ↓${detail.behind}`
+                          : t("no upstream")}
+                      </span>
+                    </Tooltip>
                   </Text>
                 )}
               </Button>

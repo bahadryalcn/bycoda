@@ -7,6 +7,12 @@ import { setLanguagePreference } from "../../../shared/i18n";
 import { InboxView as RawInboxView } from "./InboxView";
 import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import type { InboxItem } from "../model/githubTasks";
+import {
+  DEFAULT_INBOX_FILTERS,
+  saveInboxFilters,
+  saveInboxConnections,
+  saveInboxSource,
+} from "../model/inboxFilters";
 import type { LinkedWorkItem } from "../../sessions/model/session";
 
 const { read, invoke } = vi.hoisted(() => ({ read: vi.fn(), invoke: vi.fn() }));
@@ -23,6 +29,9 @@ vi.mock("@tauri-apps/api/window", () => ({
 vi.mock("./InboxDetail", () => ({
   InboxDetail: ({ item }: { item: InboxItem | null }) =>
     createElement("output", { "aria-label": "Selected inbox item" }, item?.title ?? ""),
+}));
+vi.mock("./JiraBoardView", () => ({
+  JiraBoardView: () => createElement("div", { "data-jira-board-fixture": "" }),
 }));
 vi.mock("../model/githubTasks", async (original) => ({
   ...(await original<typeof import("../model/githubTasks")>()),
@@ -89,6 +98,127 @@ beforeEach(async () => {
   document.body.append(container);
   root = createRoot(container);
 });
+
+it("groups Jira view and read/refresh icons beside search and retains the selected view", async () => {
+  read.mockResolvedValue({
+    items: [{ ...items("/work/project")[0], provider: "jira", kind: "jira", identifier: "ENG-1" }],
+    errors: {},
+  });
+  saveInboxSource("jira");
+  saveInboxConnections({
+    github: false,
+    jira: true,
+    linear: false,
+    gitlab: false,
+    azuredevops: false,
+  });
+  invoke.mockImplementation(async (command) =>
+    command.endsWith("_status") ? { connected: command === "jira_status" } : [],
+  );
+  await show();
+  const group = () =>
+    container.querySelector('[data-button-group="joined"][aria-label="Jira view"]')!;
+  const button = (label: string) =>
+    group().querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  expect(group().querySelectorAll("button")).toHaveLength(4);
+  expect(
+    group().parentElement?.querySelector('input[aria-label="Filter loaded items"]'),
+  ).not.toBeNull();
+  expect(button("List").getAttribute("aria-pressed")).toBe("true");
+  expect(button("Board").getAttribute("aria-pressed")).toBe("false");
+  for (const action of group().querySelectorAll("button")) {
+    expect(action.textContent?.trim()).toBe("");
+    expect(action.getAttribute("data-button-size")).toBe("sm");
+  }
+  await act(async () => button("Board").click());
+  expect(container.querySelector("[data-jira-board-fixture]")).not.toBeNull();
+  expect(group().querySelectorAll("button")).toHaveLength(4);
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await show();
+  expect(button("Board").getAttribute("aria-pressed")).toBe("true");
+  await act(async () => button("List").click());
+  expect(button("List").getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelector('input[aria-label="Filter loaded items"]')).not.toBeNull();
+  await act(async () =>
+    button("List").dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+  );
+  expect(button("Board").getAttribute("aria-pressed")).toBe("true");
+  await act(async () =>
+    button("Board").dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
+    ),
+  );
+  expect(button("List").getAttribute("aria-pressed")).toBe("true");
+});
+
+it("keeps active filters on an icon button and clears them through the menu", async () => {
+  saveInboxFilters({ ...DEFAULT_INBOX_FILTERS, assignedToMe: true });
+  await show();
+  const trigger = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Filter inbox (filters active)"]',
+  )!;
+  expect(trigger).not.toBeNull();
+  expect(trigger.textContent?.trim()).toBe("");
+  expect(trigger.querySelector("svg")).not.toBeNull();
+  expect(trigger.parentElement?.querySelector('[data-variant="count"]')?.textContent).toBe("1");
+  expect(trigger.parentElement?.querySelectorAll("button")).toHaveLength(1);
+  await act(async () => trigger.click());
+  const clear = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Clear filters",
+  )!;
+  expect(clear).not.toBeUndefined();
+  await act(async () => clear.click());
+  expect(container.querySelector('button[aria-label="Filter inbox"]')).not.toBeNull();
+  expect(container.querySelector('[data-filter-trigger] [data-variant="count"]')).toBeNull();
+});
+
+it.each([
+  ["indeterminate", "info"],
+  ["done", "success"],
+  ["new", "neutral"],
+])(
+  "presents Jira status category %s without cramped uppercase metadata",
+  async (stateType, tone) => {
+    const jira: InboxItem = {
+      ...items("/work/project")[0],
+      provider: "jira",
+      kind: "jira",
+      identifier: "PFDEV-1037",
+      state: "DEVELOPMENT IN PROGRESS",
+      stateType,
+      teamName: "Firisbe PF Dev Board",
+      labels: [
+        { name: "merchant", color: "" },
+        { name: "uiux-test", color: "" },
+      ],
+    };
+    read.mockResolvedValue({ items: [jira], errors: {} });
+    saveInboxSource("jira");
+    saveInboxConnections({
+      github: false,
+      jira: true,
+      linear: false,
+      gitlab: false,
+      azuredevops: false,
+    });
+    invoke.mockImplementation(async (command) =>
+      command.endsWith("_status") ? { connected: command === "jira_status" } : [],
+    );
+    await show();
+    const row = inboxRow(container, jira.title)!;
+    expect(row).not.toBeNull();
+    const metadata = row.querySelector("[data-inbox-row-metadata]")!;
+    expect(metadata.textContent).toContain("PFDEV-1037");
+    expect(metadata.textContent).toContain("Development in progress");
+    expect(metadata.textContent).not.toContain("Issue PFDEV");
+    expect(metadata.querySelector(`[data-tone="${tone}"]`)).not.toBeNull();
+    expect(row.parentElement?.textContent).toContain("Firisbe PF Dev Board");
+    expect(row.parentElement?.querySelector('[aria-label="Labels"]')).not.toBeNull();
+    await act(async () => row.click());
+    expect(row.getAttribute("aria-current")).toBe("true");
+  },
+);
 
 it("bounds loaded rows and restores a scrolled position beyond the initial window", async () => {
   const base = items("/work/project")[0];

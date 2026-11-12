@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
@@ -184,7 +185,11 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             ) : null;
           })}
           {!pending && !visible.length && !editor && !error ? (
-            <Text as="p">{t("No usage budgets. Add a project, session or workspace budget.")}</Text>
+            <EmptyState
+              size="inline"
+              kind="empty"
+              description={t("No usage budgets. Add a project, session or workspace budget.")}
+            />
           ) : null}
         </div>
         <Button
@@ -302,7 +307,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
               </Alert>
             )}
             {pending && known ? (
-              <LoadingText presentation="text" size="caption" tone="secondary">
+              <LoadingText size="caption" tone="secondary">
                 {t("Refreshing usage… Previous results remain visible.")}
               </LoadingText>
             ) : null}

@@ -17,7 +17,7 @@
   font-size: var(--text-sm);
   font-weight: 500;
 }
-/* The trigger anchors the floating menu. Radix opens on pointerdown and measures this box, so it never scales: press feedback is color only. */
+/* The trigger anchors the shared Popover; press feedback is color only. */
 .trigger {
   position: relative;
   box-sizing: border-box;
@@ -130,141 +130,9 @@
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
-/* Radix holds the animation until the menu is positioned, so it always grows from the trigger edge. */
-.content {
-  --menu-x: 0px;
-  --menu-y: -6px;
-  box-sizing: border-box;
-  z-index: 1000;
-  width: var(--radix-select-trigger-width);
-  min-width: var(--radix-select-trigger-width);
-  max-width: min(24rem, calc(100vw - 20px));
-  max-height: min(320px, var(--radix-select-content-available-height));
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--ui-radius-popup);
-  padding: 6px;
-  background: var(--surface-raised);
-  color: var(--foreground);
-  box-shadow: var(--ui-elevation-floating);
-  transform-origin: var(--radix-select-content-transform-origin);
-  animation: select-in var(--duration-standard) var(--ease-enter) both;
-}
-.content[data-side="top"] {
-  --menu-y: 6px;
-}
-.content[data-side="left"] {
-  --menu-x: 6px;
-  --menu-y: 0px;
-}
-.content[data-side="right"] {
-  --menu-x: -6px;
-  --menu-y: 0px;
-}
-.content[data-state="closed"] {
-  animation: select-out var(--duration-instant) var(--ease-standard) both;
-}
-.viewport {
-  padding: 2px 0;
-}
-.item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-height: var(--ui-field-height-md);
-  border-radius: calc(var(--ui-field-radius) - 2px);
-  padding: 0 11px;
-  color: var(--foreground);
-  font-size: var(--text-sm);
-  cursor: default;
-  outline: none;
-  user-select: none;
-  transition:
-    background-color var(--duration-instant) var(--ease-standard),
-    color var(--duration-instant) var(--ease-standard);
-}
-.item[data-highlighted] {
-  background: var(--ui-surface-hover);
-}
-.item[data-disabled] {
-  opacity: var(--ui-disabled-opacity, 0.5);
-}
-.indicator {
-  position: absolute;
-  right: 10px;
-  display: inline-flex;
-  align-items: center;
-  color: var(--foreground);
-  animation: indicator-in var(--duration-standard) var(--ease-enter) 40ms both;
-}
-.scrollButton {
-  display: grid;
-  height: 28px;
-  place-items: center;
-  color: var(--text-muted);
-}
-@keyframes select-in {
-  from {
-    opacity: 0;
-    transform: translate(var(--menu-x), var(--menu-y)) scale(0.97);
-  }
-}
-@keyframes select-out {
-  to {
-    opacity: 0;
-    transform: translate(calc(var(--menu-x) / 2), calc(var(--menu-y) / 2)) scale(0.98);
-  }
-}
-@keyframes indicator-in {
-  from {
-    opacity: 0;
-    transform: scale(0.6);
-  }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .content {
-    background: var(--surface-raised);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   .trigger,
-  .chevron,
-  .item {
+  .chevron {
     transition: none;
   }
-  .content {
-    animation: select-fade var(--duration-instant) var(--ease-standard) both;
-  }
-  .content[data-state="closed"] {
-    animation: select-fade-out var(--duration-instant) var(--ease-standard) both;
-  }
-  .indicator {
-    animation: none;
-  }
-}
-@keyframes select-fade {
-  from {
-    opacity: 0;
-  }
-}
-@keyframes select-fade-out {
-  to {
-    opacity: 0;
-  }
-}
-
-@media (forced-colors: active) {
-  .item[data-disabled] {
-    color: GrayText;
-    opacity: 1;
-  }
-}
-
-.indicator {
-  display: none;
-}
-.item:is([data-highlighted], [data-state="checked"], [aria-selected="true"]) {
-  background: var(--ui-surface-selected);
 }

@@ -29,12 +29,15 @@
   display: none;
 }
 
-/* `selection="plate"`: the one selected fill, behind the segment's content. It sits just
+/* `selection="plate"`: the one selected plate, behind the segment's content. It sits just
    inside the segment, so neighbouring segments need no divider to stay apart. */
 .selection {
   position: absolute;
   z-index: -1;
   inset: 2px;
+  /* The calm selected fill alone is one faint step above the group's ground; the group's
+     own hairline around the plate makes the current segment readable at a glance. */
+  border: 1px solid var(--ui-tone-neutral-border);
   border-radius: calc(var(--ui-control-radius) - 2px);
   background: var(--ui-surface-selected);
   pointer-events: none;

@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -16,15 +17,12 @@ export type CapabilityListProps = {
 export function CapabilityList({ capabilities, onConnect }: CapabilityListProps) {
   if (!capabilities.length)
     return (
-      <Text
-        as="p"
-        size="secondary"
-        tone="secondary"
-        leading="inherit"
+      <EmptyState
+        size="inline"
+        kind="empty"
         className="social-capability-empty"
-      >
-        {t("Nothing reported yet.")}
-      </Text>
+        description={t("Nothing reported yet.")}
+      />
     );
   return (
     <ul className="social-capability-list" aria-label={t("What this account can do")}>

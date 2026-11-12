@@ -8,7 +8,7 @@ import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SshJumpPolicyEditor } from "./SshJumpPolicyEditor";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Switch } from "../../../shared/ui/Switch";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import {
   emptySshJumpPolicyDraft,
   sshJumpPolicyDrafts,
@@ -312,7 +312,8 @@ export function SshServerEditor({
               {proxyEnabled ? (
                 <>
                   <FieldGroup variant="bare" disabled={saving}>
-                    <SegmentedControl
+                    <RadioGroup
+                      variant="inline"
                       label={t("Proxy transport")}
                       value={proxyScheme}
                       onValueChange={(value) => setProxyScheme(value as "http" | "https")}

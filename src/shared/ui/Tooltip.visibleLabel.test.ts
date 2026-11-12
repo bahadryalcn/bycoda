@@ -2,10 +2,49 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { useTooltip, type TooltipContent } from "./Tooltip";
+import { Tooltip, useTooltip, type TooltipContent } from "./Tooltip";
 import { Button } from "./Button";
 
 const roots: Root[] = [];
+
+it("adds shared hints to an existing element without a layout box or lost events", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  roots.push(root);
+  const onClick = vi.fn();
+  const onPointerEnter = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(Tooltip, {
+        label: "Opens details",
+        asChild: true,
+        delay: 0,
+        children: createElement(
+          "button",
+          { type: "button", onClick, onPointerEnter, "aria-describedby": "existing" },
+          "Open",
+        ),
+      }),
+    ),
+  );
+  expect(host.children).toHaveLength(1);
+  const button = host.firstElementChild as HTMLButtonElement;
+  expect(button.hasAttribute("title")).toBe(false);
+  await act(async () => {
+    button.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(onPointerEnter).toHaveBeenCalledOnce();
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Opens details");
+  expect(button.getAttribute("aria-describedby")).toContain("existing");
+  act(() => button.click());
+  expect(onClick).toHaveBeenCalledOnce();
+  act(() => button.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(button.getAttribute("aria-describedby")).toBe("existing");
+});
 
 afterEach(() => {
   act(() => roots.splice(0).forEach((root) => root.unmount()));

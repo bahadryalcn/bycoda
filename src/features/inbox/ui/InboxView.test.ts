@@ -16,6 +16,11 @@ import {
 } from "./InboxView";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null), isTauri: () => false }));
+// Static layout fixtures supply groups without subscribing to the client-only lock store.
+vi.mock("../../group-lock/hooks/useGroupLock", async (original) => ({
+  ...(await original<object>()),
+  useGroupLock: () => ({ groups: [] }),
+}));
 
 const InboxDetail = withQueryClient(RawInboxDetail);
 const LinkedWorkItemPanel = withQueryClient(RawLinkedWorkItemPanel);
@@ -53,6 +58,33 @@ function renderDetail(inboxItem: InboxItem, relatedSessions: SessionSummary[] = 
 }
 
 describe("InboxDetail layout", () => {
+  it("keeps labels alongside people and update metadata", () => {
+    const root = document.createElement("div");
+    root.innerHTML = renderDetail(item({ labels: [{ name: "merchant", color: "" }] }));
+    const labels = root.querySelector('[aria-label="Labels"]');
+    expect(labels?.parentElement?.parentElement?.tagName).toBe("DIV");
+    expect(labels?.parentElement?.parentElement?.textContent).toContain("Updated ");
+    expect(labels?.parentElement?.parentElement?.textContent).toContain("Unassigned");
+  });
+
+  it("aligns Jira actions with the working-folder picker", () => {
+    const root = document.createElement("div");
+    root.innerHTML = renderDetail(item({ provider: "jira", projectPath: "" }));
+    const actions = root.querySelector("[data-inbox-detail-actions]");
+    const buttons = Array.from(actions?.querySelectorAll("button") ?? []);
+    for (const label of ["Send to agent", "Ask", "Open in Jira"]) {
+      const button = buttons.find((candidate) => candidate.textContent?.includes(label));
+      expect(button?.getAttribute("data-button-size")).toBe("md");
+      expect(button?.getAttribute("data-button-variant")).toBe(
+        label === "Send to agent" ? "primary" : "secondary",
+      );
+    }
+    const send = buttons.find((button) => button.textContent?.includes("Send to agent"));
+    const launchGroup = send?.closest('[data-inbox-actions="agent"]')?.firstElementChild;
+    expect(launchGroup?.contains(send!)).toBe(true);
+    expect(launchGroup?.querySelector('[aria-label^="Choose project:"]')).toBeTruthy();
+  });
+
   it("marks issues closed as completed with the success check and a Completed label", () => {
     const completed = inboxStatusMark(item({ state: "closed", stateReason: "completed" }));
     expect(completed.Icon.displayName).toBe("CheckCircle");

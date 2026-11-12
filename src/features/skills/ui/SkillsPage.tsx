@@ -504,7 +504,6 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     .filter((group) => group.entries.length > 0);
   const machineNames = lists.map((list) => list.machine?.name ?? t("This PC"));
   const libraryLoading = skills === null && !error;
-
   const onToggle = async (
     skill: DiscoveredSkill,
     enabled: boolean,
@@ -894,8 +893,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           {skills === null && error ? (
             <CollectionFooter error={error} onRetry={() => requestRefresh("local")} />
           ) : null}
-          {!libraryLoading && shownEntries.length === 0 ? (
-            entries.length ? (
+          {!libraryLoading &&
+            shownEntries.length === 0 &&
+            (entries.length ? (
               <EmptyState
                 context="list"
                 kind="filtered"
@@ -908,11 +908,11 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                 resetLabel={t("Clear filters")}
               />
             ) : skills !== null ? (
-              <Text as="p" size="secondary" leading="relaxed" className={styles.message}>
-                {t("No skills yet. New skill creates a starter SKILL.md.")}
-              </Text>
-            ) : null
-          ) : null}
+              <EmptyState
+                size="inline"
+                description={t("No skills yet. New skill creates a starter SKILL.md.")}
+              />
+            ) : null)}
           {machines.length && groups.length ? <SkillMachineColumns names={machineNames} /> : null}
           {groups.map((group) => (
             <Disclosure

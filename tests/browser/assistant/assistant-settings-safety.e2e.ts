@@ -89,9 +89,6 @@ test("single save writes the profile and the computer draft together", async ({ 
     .getByRole("textbox", { name: tr("Assistant name"), exact: true })
     .fill("Saved profile");
   await dialog.getByRole("tab", { name: tr("Access"), exact: true }).click();
-  const application = dialog.getByRole("textbox", { name: tr("Application name"), exact: true });
-  await application.fill("Notepad");
-  await dialog.getByRole("button", { name: tr("Add application"), exact: true }).click();
   const toggle = dialog.getByRole("switch", { name: tr("Enable computer use"), exact: true });
   await toggle.click();
   // The switch edits a draft; the saved permission stays disabled until the footer saves it.
@@ -112,7 +109,7 @@ test("single save writes the profile and the computer draft together", async ({ 
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   expect(await page.evaluate(() => (window as any).__desktopFixtureConfiguration)).toMatchObject({
     enabled: true,
-    allowedApps: ["Notepad"],
+    allowedApps: [],
     allowPhysicalInput: false,
   });
   await expect(dialog.getByText(tr("Running"), { exact: true })).toHaveCount(0);

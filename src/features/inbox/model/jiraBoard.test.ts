@@ -35,7 +35,7 @@ it("scopes the board roster and its cards to selected projects and boards", asyn
   expect(await listJiraBoards()).toEqual([{ id: 7, name: "Engineering", kind: "scrum" }]);
   expect(invoke).toHaveBeenCalledWith("jira_list_boards", { projectIds: ["1"] });
   expect(await jiraBoardIssues(7, { scope: "board" })).toEqual({
-    issues: [{ teamId: "1" }],
+    issues: [{ teamId: "1", jiraBoardId: 7 }],
     nextPageToken: "next",
   });
   expect(invoke).toHaveBeenCalledWith(

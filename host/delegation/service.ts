@@ -1,3 +1,4 @@
+import { resolveSubagents, subagentTier } from "../../src/shared/model/automaticSubagents";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   HostModelCatalog,
@@ -14,12 +15,13 @@ import { CLAUDE_SUBAGENT_SETTINGS } from "../../src/features/sessions/model/clau
 import {
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
+  AUTOMATIC_SUBAGENTS,
   DELEGATION_LIMITS,
   DELEGATION_PARENT_KEY,
   EFFORT_LEVELS,
   decodeAdvisor,
   decodeDelegationParent,
-  decodeSubagents,
   delegateRefKey,
   type DelegateModelRef,
   type DelegationKind,
@@ -50,6 +52,7 @@ export type DelegationDependencies = {
   featureSession: (sessionId: string) => Promise<Pick<HostSession, "projectId" | "session">>;
   models: (projectId: string) => Promise<HostModelCatalog>;
   providers: readonly RemoteProvider[];
+  defaultAccounts?: () => Promise<Partial<Record<RemoteProvider, string>>>;
   authStatus: (
     provider: RemoteProvider,
     accountId?: string,
@@ -118,9 +121,33 @@ export class ConversationDelegation {
     return own;
   }
 
-  private selected(session: Session) {
+  private async selected(session: Session, catalog: HostModelCatalog) {
+    const signedOutAccounts = new Set<string>();
+    const defaultAccounts =
+      session.modelSettings[CROSS_SUBAGENTS_KEY] === AUTOMATIC_SUBAGENTS
+        ? ((await this.deps.defaultAccounts?.()) ?? {})
+        : {};
+    if (session.modelSettings[CROSS_SUBAGENTS_KEY] === AUTOMATIC_SUBAGENTS) {
+      await Promise.all(
+        this.deps.providers.map(async (provider) => {
+          const account =
+            provider === session.harness
+              ? (session.providerAccountId ?? "default")
+              : (defaultAccounts[provider] ?? "default");
+          if ((await this.deps.authStatus(provider, account)) === "signedOut")
+            signedOutAccounts.add(`${provider}:${account}`);
+        }),
+      );
+    }
     return {
-      subagents: decodeSubagents(session.modelSettings[CROSS_SUBAGENTS_KEY]),
+      subagents: resolveSubagents(session.modelSettings[CROSS_SUBAGENTS_KEY], {
+        harness: session.harness,
+        providerAccountId: session.providerAccountId,
+        models: Object.values(catalog.models).flat(),
+        providers: this.deps.providers,
+        signedOutAccounts,
+        defaultAccounts,
+      }),
       advisor: decodeAdvisor(session.modelSettings[CROSS_ADVISOR_KEY]),
     };
   }
@@ -145,7 +172,7 @@ export class ConversationDelegation {
   private async options(caller: AgentsCaller) {
     const own = await this.caller(caller);
     const catalog = await this.deps.models(caller.projectId);
-    const { subagents, advisor } = this.selected(own.session);
+    const { subagents, advisor } = await this.selected(own.session, catalog);
     const running = await this.runningCounts(caller.sessionId);
     const describe = (ref: DelegateModelRef) => {
       const model = this.resolve(ref, catalog);
@@ -161,7 +188,10 @@ export class ConversationDelegation {
       };
     };
     return {
-      subagents: subagents.map(describe),
+      subagents: subagents.map((ref) => ({ ...describe(ref), tier: subagentTier(ref.model) })),
+      ...(own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY]
+        ? { maxEffort: own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY] }
+        : {}),
       ...(advisor ? { advisor: describe(advisor) } : {}),
       running: { subagents: running.subagent, advisors: running.advisor },
       limits: {
@@ -204,7 +234,8 @@ export class ConversationDelegation {
           throw new Error("requestId was already used with a different payload.");
         return await this.describe(existing, locate);
       }
-      const { subagents, advisor } = this.selected(own.session);
+      const catalog = await this.deps.models(caller.projectId);
+      const { subagents, advisor } = await this.selected(own.session, catalog);
       const candidates = kind === "advisor" ? (advisor ? [advisor] : []) : subagents;
       if (!candidates.length)
         throw new Error(`No ${kind} model is selected for this conversation.`);
@@ -216,7 +247,6 @@ export class ConversationDelegation {
         if (!match) throw new Error("Field model is not one of the selected subagent models.");
         ref = match;
       }
-      const catalog = await this.deps.models(caller.projectId);
       const model = this.resolve(ref, catalog);
       if (!model) throw new Error("The selected model is unavailable. Choose another model.");
       await this.verifySignIn(ref);
@@ -243,6 +273,7 @@ export class ConversationDelegation {
         model,
         kind === "advisor" ? own.session.modelSettings : {},
         args.effort as string | undefined,
+        kind === "subagent" ? own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY] : undefined,
       );
       const started = await launchSessionRun(this.deps.engine.store, this.deps.engine, {
         requestId: `agents_${createHash("sha256").update(requestKey).digest("hex").slice(0, 40)}`,
@@ -303,7 +334,7 @@ export class ConversationDelegation {
   }
 
   private async reply(args: Record<string, unknown>, caller: AgentsCaller, locate: Locate) {
-    await this.caller(caller);
+    const own = await this.caller(caller);
     if (typeof args.requestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(args.requestId))
       throw new Error("Invalid requestId.");
     if (
@@ -349,6 +380,21 @@ export class ConversationDelegation {
       );
       try {
         const child = await this.deps.engine.store.session(record.childSessionId);
+        const catalog = await this.deps.models(caller.projectId);
+        const model = this.resolve(record.model, catalog);
+        const previousSettings = record.modelSettings ?? child.session.modelSettings;
+        const ceiling = own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY];
+        if (record.kind === "subagent" && ceiling && !model)
+          throw new Error("Cannot enforce the subagent ceiling while the model is unavailable.");
+        const effort = model && modelEffortSetting(model);
+        const clamped =
+          record.kind === "subagent" && model && ceiling
+            ? childModelSettings(model, previousSettings, undefined, ceiling)
+            : undefined;
+        const restoredSettings =
+          clamped && effort
+            ? { ...previousSettings, [effort.id]: clamped[effort.id]! }
+            : previousSettings;
         // Restore the recorded model/account if the owner changed this child's settings.
         await this.deps.engine.command({
           type: "configure",
@@ -359,7 +405,7 @@ export class ConversationDelegation {
           model: record.model.model,
           providerAccountId: record.model.providerAccountId ?? null,
           modelSettings: {
-            ...(record.modelSettings ?? child.session.modelSettings),
+            ...restoredSettings,
             [DELEGATION_PARENT_KEY]: child.session.modelSettings[DELEGATION_PARENT_KEY]!,
           },
           runtimeMode: child.session.runtimeMode,

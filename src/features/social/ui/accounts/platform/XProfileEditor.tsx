@@ -1,9 +1,10 @@
+import { InlineError } from "../../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Heading } from "../../../../../shared/ui/Heading";
-import { InlineMessage } from "../../../../../shared/ui/InlineError";
+
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
 import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
@@ -164,9 +165,7 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
         </Text>
       ) : null}
       {error ? (
-        <InlineMessage tone="danger" retry={{ onRetry: read, label: t("Read profile") }}>
-          {error}
-        </InlineMessage>
+        <InlineError retry={{ onRetry: read, label: t("Read profile") }}>{error}</InlineError>
       ) : null}
     </section>
   );

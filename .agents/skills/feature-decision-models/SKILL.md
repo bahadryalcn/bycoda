@@ -16,6 +16,7 @@ Owns the Host side of decision models in `host/decision-models/`: the `decide` g
 - `host/decision-models/catalog.ts` and `catalog.json`: the versioned catalog and its loader.
 - `host/decision-models/evaluation.ts`: the fixed evaluation set and accuracy.
 - `host/decision-models/fixtures/`: recorded Clef responses and contract-assumption fixtures.
+- UI owner entry points: `src/features/settings/ui/ProviderDecisionModels.tsx` hosts `src/features/decision-models/ui/DecisionModelsSettings.tsx`; `SourceRow.tsx`, `AddMenu.tsx` and `RoutingTable.tsx` own connected rows, add paths and the single routing table. Discovery remains collapsed until opened.
 
 ## Workflow
 

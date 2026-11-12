@@ -1,4 +1,5 @@
 import { killChild } from "../../core/child";
+import { humanizeModelId } from "../../../../shared/model/modelNameFromId";
 import {
   assertOptionalProviderProbeError,
   createProviderRetirementLedger,
@@ -172,7 +173,7 @@ function parseModel(raw: unknown): AgentModel | null {
   const nativeId = stringField(rec, "model") ?? stringField(rec, "slug") ?? stringField(rec, "id");
   if (!nativeId) return null;
   const name = formatDisplayName(
-    stringField(rec, "displayName") ?? stringField(rec, "name") ?? nativeId,
+    stringField(rec, "displayName") ?? stringField(rec, "name") ?? humanizeModelId(nativeId),
   );
   const settings = parseModelSettings(rec);
   const contextWindow = [rec.contextWindow, rec.context_window].find(

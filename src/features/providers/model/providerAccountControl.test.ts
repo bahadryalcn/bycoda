@@ -71,6 +71,11 @@ async function fixture() {
       accounts = accounts.map((a) => (a.id === id ? { ...a, label } : a));
       return accounts.find((a) => a.id === id)!;
     },
+    edit: (p, id, metadata) => {
+      writes.push(["accountKind", p, id, metadata.kind]);
+      accounts = accounts.map((a) => (a.id === id ? { ...a, ...metadata } : a));
+      return true;
+    },
     color: (p, id, color) => {
       writes.push(["color", p, id, color]);
       accounts = accounts.map((a) => (a.id === id ? { ...a, color } : a));
@@ -220,4 +225,38 @@ it("guards source after digest and preserves unknown after a setter exception", 
     default: () => {},
   });
   expect(await c(context, "providerManagement.patch", f.input)).toMatchObject({ state: "unknown" });
+});
+
+it("reviews kind edits and Automatic clearing with revision and receipt guards", async () => {
+  const f = await fixture();
+  const result = await f.control(context, "providerManagement.patch", {
+    ...f.input,
+    change: { kind: "accountKind", accountKind: "work" },
+  });
+  expect(result.state).toBe("applied");
+  expect(f.get().find((a) => a.id === "two")?.kind).toBe("work");
+  const stale = await f.control(context, "providerManagement.patch", {
+    ...f.input,
+    operationId: "stale",
+    change: { kind: "accountKind", accountKind: null },
+  });
+  expect(stale.state).toBe("failed");
+  expect(
+    (
+      await f.control(context, "providerManagement.patch", {
+        ...f.input,
+        operationId: "clear",
+        expectedAccountRevision: await accountMetadataRevision(f.get()),
+        change: { kind: "accountKind", accountKind: null },
+      })
+    ).state,
+  ).toBe("applied");
+  expect(f.get().find((a) => a.id === "two")?.kind).toBeUndefined();
+  await expect(
+    f.control(context, "providerManagement.patch", {
+      ...f.input,
+      operationId: "invalid",
+      change: { kind: "accountKind", accountKind: "admin" },
+    }),
+  ).rejects.toThrow("Invalid account kind");
 });

@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SettingsFeedback, Toggle } from "./settingsControls";
 import { InboxScopeCollection } from "./InboxScopeCollection";
+import { JiraDefaultProjectSettings } from "./JiraDefaultProjectSettings";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -404,6 +405,11 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       <InboxConnectionError error={error} />
       {status?.connected ? (
         <>
+          <JiraDefaultProjectSettings
+            projects={projects}
+            boards={boards}
+            disabled={busy || checking}
+          />
           <Row
             stacked
             label={t("Projects")}

@@ -94,3 +94,24 @@ it("does not reinterpret unknown service tiers as Standard", () => {
   expect(mapped.draft.providers.claude).toBeUndefined();
   expect(mapped.skipped).toEqual([{ harness: "claude", field: "serviceTier", value: "flex" }]);
 });
+
+it("copies Automatic and subagent ceiling independently of the main effort", () => {
+  const result = mapDefaultsToProviders(
+    {
+      accounts: {},
+      providers: {
+        claude: {
+          effort: "low",
+          extras: { crossSubagents: "auto", crossSubagentMaxEffort: "max" },
+        },
+      },
+    },
+    "claude",
+    [codex],
+  );
+  expect(result.draft.providers.codex).toEqual({
+    effort: "low",
+    extras: { crossSubagents: "auto", crossSubagentMaxEffort: "max" },
+  });
+  expect(result.skipped).toEqual([]);
+});

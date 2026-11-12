@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -118,9 +119,9 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
       style={state.status === "loading" ? { minHeight: knownHeights.get(image.path) } : undefined}
     >
       {state.status === "loading" ? (
-        <Text as="div" size="caption" tone="secondary" className="px-4 py-3" role="status">
+        <LoadingText delay={false} className="px-4 py-3">
           {t("Loading generated image…")}
-        </Text>
+        </LoadingText>
       ) : state.status === "error" ? (
         <Alert tone="danger">{t("Could not open generated image.")}</Alert>
       ) : (

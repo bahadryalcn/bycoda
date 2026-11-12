@@ -1,6 +1,8 @@
 import { Text } from "../../../shared/ui/Text";
 import { useState, useSyncExternalStore } from "react";
-import { RelativeSessionTime } from "../../../app/shell/RelativeSessionTime";
+import { DataTableRow } from "../../../shared/ui/SortableDataTable";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { formatRelativeTime } from "../../../shared/i18n/format";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
@@ -16,9 +18,10 @@ import {
 } from "../../../shared/ui/icons";
 import { hasProbedHarnessAvailability } from "../../../integrations/harness/core/availability";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { SettingsFeedback } from "../../settings/ui/settingsControls";
 import {
+  UPDATABLE_HARNESSES,
   checkHarnessVersions,
   fetchLatestHarnessVersion,
   type HarnessVersionCheck,
@@ -86,6 +89,7 @@ function updateNotice(
  * order a person checks them when something does not work.
  */
 export function ProviderStatusGroup({
+  id,
   harness,
   available,
   checkedAt,
@@ -93,6 +97,7 @@ export function ProviderStatusGroup({
   onRowCheck,
   onSetup: _onSetup,
 }: {
+  id?: string;
   harness: HarnessId;
   available: boolean;
   /** When this window last finished a version check, if it did. */
@@ -145,7 +150,8 @@ export function ProviderStatusGroup({
   const title = HARNESS_TITLE[harness];
   const notice = updateNotice(run, check);
   const notFound = hasProbedHarnessAvailability() && !available;
-  const busy = checking || rowChecking;
+  const canCheck = UPDATABLE_HARNESSES.has(harness);
+  const busy = canCheck && (checking || rowChecking);
   const version = check && check.status !== "unknown" ? check.installed : "—";
   const status =
     run.status === "updating"
@@ -160,7 +166,9 @@ export function ProviderStatusGroup({
               ? t("Update available")
               : check?.status === "current"
                 ? t("Up to date")
-                : t("Unknown");
+                : !canCheck
+                  ? t("Update check unavailable")
+                  : t("Unknown");
   const StatusIcon =
     busy || run.status === "updating"
       ? RefreshCw
@@ -171,10 +179,19 @@ export function ProviderStatusGroup({
           : check?.status === "current"
             ? Check
             : CircleHelp;
+  const hint =
+    !canCheck && !notFound
+      ? t("This CLI has no release feed. Update checks are not available.")
+      : lastChecked != null && lastChecked !== checkedAt && !notFound
+        ? t("Checked {p0}", { p0: formatRelativeTime(lastChecked) })
+        : undefined;
   return (
-    <div className="provider-inventory-entry">
-      <div className="provider-inventory-row" data-missing={notFound || undefined}>
-        <span className="provider-inventory-name">
+    <DataTableRow
+      id={id}
+      data-setting-id={`cli-path-${harness}`}
+      className="provider-inventory-row"
+      cells={[
+        <span key="name" className="provider-inventory-name">
           {harness === "acp" ? (
             <Bot className="icon-md shrink-0" aria-hidden />
           ) : (
@@ -183,42 +200,44 @@ export function ProviderStatusGroup({
           <Text size="secondary" tone={notFound ? "secondary" : "primary"} truncate>
             {title}
           </Text>
-        </span>
-        <Code size="caption" tone="secondary" className="provider-inventory-version">
+        </span>,
+        <Code key="version" size="caption" tone="secondary" className="tabular-nums">
           {version}
-        </Code>
-        <Badge
-          size="xs"
-          tone={
-            busy || notFound
-              ? "neutral"
-              : run.status === "failed"
-                ? "danger"
-                : check?.status === "behind"
-                  ? "accent"
-                  : check?.status === "current"
-                    ? "success"
-                    : "neutral"
-          }
-        >
-          <StatusIcon className="icon-xs shrink-0" aria-hidden />
-          {status}
-          {check?.status === "behind" ? (
-            <>
-              {" "}
-              · <Code size="inherit">{check.latest}</Code>
-            </>
-          ) : !notFound && version !== "—" ? (
-            <Code size="inherit" className="provider-inventory-inline-version">
-              {" "}
-              · {version}
-            </Code>
-          ) : null}
-        </Badge>
-        <Text size="caption" tone="secondary" className="provider-inventory-checked">
-          {notFound ? null : lastChecked != null ? <RelativeSessionTime at={lastChecked} /> : "—"}
-        </Text>
-        <div className="provider-inventory-actions">
+        </Code>,
+        <Tooltip key="status" label={hint}>
+          {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- passive status details must remain reachable by keyboard to open their tooltip */}
+          <span tabIndex={hint ? 0 : undefined}>
+            <Badge
+              size="xs"
+              tone={
+                busy || notFound
+                  ? "neutral"
+                  : run.status === "failed"
+                    ? "danger"
+                    : check?.status === "behind"
+                      ? "accent"
+                      : check?.status === "current"
+                        ? "success"
+                        : "neutral"
+              }
+            >
+              <StatusIcon className="icon-xs shrink-0" aria-hidden />
+              {status}
+              {check?.status === "behind" ? (
+                <>
+                  {" "}
+                  · <Code size="inherit">{check.latest}</Code>
+                </>
+              ) : !notFound && version !== "—" ? (
+                <Code size="inherit" className="provider-inventory-inline-version">
+                  {" "}
+                  · {version}
+                </Code>
+              ) : null}
+            </Badge>
+          </span>
+        </Tooltip>,
+        <div key="actions" className="provider-inventory-actions">
           {check?.status === "behind" ? (
             <Button
               size="sm"
@@ -232,7 +251,7 @@ export function ProviderStatusGroup({
               {t("Update")}
             </Button>
           ) : null}
-          {!notFound ? (
+          {!notFound && canCheck ? (
             <Button
               size="sm"
               variant="ghost"
@@ -252,14 +271,22 @@ export function ProviderStatusGroup({
             showLabel={notFound}
             triggerVariant="ghost"
           />
-        </div>
-      </div>
-      {notice ? <SettingsFeedback state={notice.state}>{notice.text}</SettingsFeedback> : null}
-      {check?.status === "unknown" && !notFound ? (
-        <SettingsFeedback state="warning">
-          {t("Could not check: {p0}", { p0: check.error })}
-        </SettingsFeedback>
-      ) : null}
-    </div>
+        </div>,
+      ]}
+      detail={
+        notice || (check?.status === "unknown" && !notFound && canCheck) ? (
+          <>
+            {notice ? (
+              <SettingsFeedback state={notice.state}>{notice.text}</SettingsFeedback>
+            ) : null}
+            {check?.status === "unknown" && !notFound && canCheck ? (
+              <SettingsFeedback state="warning">
+                {t("Could not check: {p0}", { p0: check.error })}
+              </SettingsFeedback>
+            ) : null}
+          </>
+        ) : null
+      }
+    />
   );
 }

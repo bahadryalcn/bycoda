@@ -342,6 +342,7 @@ export function SprintReports({
                 value={`${totals.points} / ${capacityPoints}`}
                 detail={totals.points > capacityPoints ? t("Capacity exceeded") : undefined}
                 meter={{
+                  kind: "capacity",
                   value: totals.points,
                   max: capacityPoints,
                   tone: totals.points > capacityPoints ? "danger" : "accent",

@@ -1,5 +1,12 @@
 # Integrations and messages
 
+Jira Inbox list filters support multiple assignees, **Assigned to me**, **Unassigned**,
+and multiple actual workflow statuses under **Board status**. Assignees and statuses
+come from loaded issues in visible projects. Assignment choices are combined with OR;
+workflow statuses are combined with the existing Open/Closed, Time and Projects filters.
+Assignment and workflow selections narrow Jira's server query before its result limit.
+Selections persist with Inbox filters and **Clear filters** resets them.
+
 Settings > **Integrations** holds every external service bycoda connects to. Each card
 shows what the service supplies: **Inbox** (work items) or **Messages** (conversations
 you can reply to).
@@ -12,6 +19,19 @@ you can reply to).
 
 Discord, Microsoft Teams and Outlook / Hotmail mail are temporarily unavailable for new
 connections. Accounts connected earlier keep appearing in Messages.
+
+## Jira working folders
+
+In the Jira integration, **Default bycoda project** chooses the working folder for
+issues. Set a global default, then optional defaults for individual Jira projects
+and boards. A board default takes precedence when opening an issue from that board;
+otherwise the Jira project default takes precedence over the global default.
+Without a default, Inbox keeps its current folder selection behavior.
+
+Change **Agent working folder** in an issue to save an explicit choice for that
+issue. It survives reopening and takes precedence over every default. These choices
+use the same local settings storage as Jira scope preferences and do not change Jira
+access or agent permissions.
 
 ## Email
 

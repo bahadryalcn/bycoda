@@ -6,8 +6,12 @@ import { optionalTextAttributes, type TextSize, type TextTone, type TextRoles } 
 import styles from "./LoadingText.module.css";
 
 export type LoadingTextProps = Omit<ComponentPropsWithoutRef<"div">, "children" | "role"> & {
+  /** Use span inside prose; the same pending glyph and text remain phrasing content. */
+  as?: "div" | "span";
   /** The status line. Defaults to "Loading…"; name what loads when it helps ("Loading branches…"). */
   children?: ReactNode;
+  /** Optional explanation below the status, announced in the same live region. */
+  description?: ReactNode;
   /**
    * `inline` (default): a compact start-aligned row inside a list, form or popover.
    * `fill`: centres the line in the region it replaces, for Suspense fallbacks and pane bodies.
@@ -20,8 +24,6 @@ export type LoadingTextProps = Omit<ComponentPropsWithoutRef<"div">, "children" 
    * where the wait is the direct result of a user action.
    */
   delay?: boolean;
-  /** Text-only status for surfaces whose existing layout owns its presentation. */
-  presentation?: "standard" | "text";
   /** Text roles; unset preserves existing styling. */
   size?: TextSize;
   tone?: TextTone;
@@ -35,14 +37,15 @@ export type LoadingTextProps = Omit<ComponentPropsWithoutRef<"div">, "children" 
  * Hidden for the first moments of a wait (and shown for a minimum time via `useDelayedVisible` when callers need it), so fast loads never flash.
  * `layout="fill"` centres it in the region it replaces.
  * @group feedback
- * @use A list, popover or pane body waiting for data; Suspense fallbacks (`layout="fill"`).
+ * @use Inline text loading in a list, popover or form. One standard spinner and caption; layout changes placement only.
  * @avoid Short action: the control's own pending state. Known final layout: Skeleton. Lazy editor/media region: SurfaceLoading. Bare glyph: Spinner. Agent run: WorkingIndicator.
  */
 export function LoadingText({
+  as: Component = "div",
   children,
+  description,
   layout = "inline",
   delay,
-  presentation = "standard",
   className,
   style,
   size,
@@ -55,24 +58,8 @@ export function LoadingText({
   const waiting = useDelayedVisible(true, delay === false ? { delay: 0 } : undefined);
   const held = !waiting;
   if (held && layout === "inline") return null;
-  if (presentation === "text") {
-    return (
-      <p
-        {...props}
-        role={held ? undefined : "status"}
-        aria-hidden={held || undefined}
-        style={style}
-        {...optionalTextAttributes(
-          { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading },
-          [held ? styles.held : "", className].filter(Boolean).join(" ") || undefined,
-        )}
-      >
-        {children ?? t("Loading…")}
-      </p>
-    );
-  }
   return (
-    <div
+    <Component
       {...props}
       role={held ? undefined : "status"}
       aria-hidden={held || undefined}
@@ -81,7 +68,7 @@ export function LoadingText({
       {...optionalTextAttributes(
         { size: size ?? (weight ? "inherit" : undefined), tone, weight, leading },
         [
-          "flex min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)",
+          `${Component === "span" ? "inline-flex" : "flex"} min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)`,
           layout === "fill" ? "h-full min-h-0 justify-center p-3" : "",
           held ? styles.held : "",
           className,
@@ -91,7 +78,10 @@ export function LoadingText({
       )}
     >
       <Spinner size="xs" />
-      <span className="min-w-0 truncate">{children ?? t("Loading…")}</span>
-    </div>
+      <span className={description ? "min-w-0" : "min-w-0 truncate"}>
+        {children ?? t("Loading…")}
+        {description ? <span className="block">{description}</span> : null}
+      </span>
+    </Component>
   );
 }

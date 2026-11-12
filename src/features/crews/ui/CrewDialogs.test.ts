@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { StartCrewDialog } from "./CrewDialogs";
+import { CrewDeleteDialog, StartCrewDialog } from "./CrewDialogs";
 
 vi.mock("./CrewEditor", () => ({ CrewEditDialog: () => null }));
 vi.mock("./CrewMachineScope", () => ({
@@ -107,4 +107,40 @@ it("a retry after an uncertain start neither saves the policy nor changes the re
   expect(methods).toEqual(["crews.save", "crews.start", "crews.start"]);
   const ids = call.mock.calls.filter(([m]) => m === "crews.start").map(([, p]) => p.requestId);
   expect(ids[0]).toBe(ids[1]);
+});
+
+it("keeps failed crew deletion open for retry and blocks deletion while work is active", async () => {
+  const call = vi.fn().mockRejectedValueOnce(new Error("Host unavailable")).mockResolvedValue({});
+  const onClose = vi.fn();
+  type DeleteProps = Parameters<typeof CrewDeleteDialog>[0];
+  const renderDelete = async (activeWork: number) =>
+    act(async () =>
+      root.render(
+        createElement(CrewDeleteDialog, {
+          crew: crew as DeleteProps["crew"],
+          state: { call } as unknown as DeleteProps["state"],
+          activeWork,
+          onClose,
+        }),
+      ),
+    );
+  const remove = () =>
+    [...document.querySelectorAll<HTMLButtonElement>("footer button")].find(
+      (button) => button.textContent === "Delete crew",
+    )!;
+  await renderDelete(1);
+  expect(remove().getAttribute("aria-disabled")).toBe("true");
+  await click(remove());
+  expect(call).not.toHaveBeenCalled();
+  await renderDelete(0);
+  await click(remove());
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Host unavailable");
+  expect(onClose).not.toHaveBeenCalled();
+  await click(remove());
+  expect(call).toHaveBeenCalledTimes(2);
+  expect(call).toHaveBeenLastCalledWith("crews.delete", {
+    definitionId: crew.id,
+    expectedUpdatedAt: 9,
+  });
+  expect(onClose).toHaveBeenCalledOnce();
 });

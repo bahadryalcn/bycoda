@@ -1,3 +1,4 @@
+/** Different job: Crew-stage preview renders a scene; its controls retain shared presentation. */
 import { Text } from "../../../../../shared/ui/Text";
 import { useSyncExternalStore } from "react";
 import { CrewScene } from "../../../../sessions/public/CrewScene";

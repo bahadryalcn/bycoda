@@ -5,7 +5,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { ChevronLeft, ChevronRight, X } from "../../../shared/ui/icons";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { TabStrip } from "../../../shared/ui/Tabs";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -207,10 +207,10 @@ export function GitGraphCommitInspector({
             : t("Parent → commit")}
         </span>
         {onMode ? (
-          <SegmentedControl
+          <TabStrip
             label={t("Commit view")}
             value={mode}
-            options={[
+            items={[
               { value: "changes", label: t("Changes") },
               { value: "blame", label: t("Blame") },
             ]}

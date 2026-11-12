@@ -183,6 +183,12 @@ fall. Suppress one line only, always with a reason.
   - raw base hue var in feature CSS (var(--color-accent…)); the text|bg|border-danger… utilities are semantic and allowed
 - `color-base-opacity` (`src/app, src/features, shared stylesheets`)
   - opacity-modified base token (bg-background-base/45, border-stroke/60…)
+- `component-family-choice` (`src/app, src/features, shared stylesheets`)
+  - @avoid or @replaces must name a sibling in @group (use the named shared owner)
+- `component-metadata` (`src/app, src/features, shared stylesheets`)
+  - shared component needs @group and @use JSDoc (select its owner in the shared catalog)
+- `component-orphan` (`src/app, src/features, shared stylesheets`)
+  - no product importer (remove component or add a reasoned runtime-entry exception in orphanAllowlist)
 - `deprecated-import` (`src/app, src/features, shared stylesheets`)
   - named import of a shared/ui export whose catalog status is deprecated (use its @instead)
 - `disabled-opacity` (`src/app, src/features, shared stylesheets`)
@@ -210,13 +216,13 @@ fall. Suppress one line only, always with a reason.
 - `inline-style-property` (`src/app, src/features, shared stylesheets`)
   - style={{ … }} sets a CSS property directly; an inline style may only carry custom properties (style={{ "--x": value }}) that a class reads
 - `interaction-state` (`src/app, src/features, shared stylesheets`)
-  - interaction state styled in feature code: :hover, :active, :focus*, [aria-selected] selectors or hover:/active:/focus*:/aria-selected: classes (use Button, Button variant=item, ActionHost, TreeRow, MenuRow, Tabs)
+  - interaction state or tab/segmented recipe in feature code (use Button, ActionHost, TreeRow, MenuRow, Tabs or SegmentedControl)
 - `layer` (`src/app, src/features, shared stylesheets`)
   - literal layer: z-[n], z-10..50, CSS z-index > 10 (use LAYER from shared/lib/layers.ts or var(--layer-*))
 - `loader-icon-spinner` (`src/app, src/features, shared stylesheets`)
   - Loader/Loader2/LoaderCircle icon used as a spinner (use Spinner from src/shared/ui)
 - `loading-motion` (`src/app, src/features, shared stylesheets`)
-  - animate-spin/pulse without motion-safe:/motion-reduce: on the element
+  - hand-written animate-spin/pulse/shimmer loading (use Spinner, LoadingText or Skeleton)
 - `lucide-import` (`src/app, src/features, shared stylesheets`)
   - direct lucide-react import outside src/shared/ui/icons.tsx
 - `modal-padded-child` (`src/app, src/features, shared stylesheets`)
@@ -226,11 +232,11 @@ fall. Suppress one line only, always with a reason.
 - `native-date-input` (`src/app, src/features, shared stylesheets`)
   - type="date|time|datetime-local" on inputs or field components (use TimePicker, DatePicker, DateTimePicker, DateRangePicker or DateTimeRangePicker from src/shared/ui)
 - `native-title` (`src/app, src/features, shared stylesheets`)
-  - title= on Button/InlineAction or interactive DOM (use tooltip=/Tooltip)
+  - title= tooltip (use tooltip=, Tooltip or OverflowTooltip)
 - `popover-menu` (`src/app, src/features, shared stylesheets`)
   - Popover with role=menu/listbox (use DropdownMenu/picker)
 - `portal-outside-shared` (`src/app, src/features, shared stylesheets`)
-  - createPortal outside src/shared/ui
+  - floating surface outside Popover or OS-window popup owners (use Popover, Modal, Sheet or Tooltip)
 - `radius-size` (`src/app, src/features, shared stylesheets`)
   - literal radius/size: rounded-[…], h-/w-/size-[Npx], CSS border-radius px
 - `raw-anchor` (`src/app, src/features, shared stylesheets`)
@@ -238,7 +244,7 @@ fall. Suppress one line only, always with a reason.
 - `raw-aria-live` (`src/app, src/features, shared stylesheets`)
   - aria-live= on a DOM element in feature code (use InlineMessage live=, LoadingText, Toast or Alert)
 - `raw-native-control` (`src/app, src/features, shared stylesheets`)
-  - raw \<button>/\<input>/\<select>/\<textarea> outside src/shared/ui (use Button, TextField, TextareaField, Select/SearchableSelect, Checkbox)
+  - raw \<button>/\<input>/\<select>/\<textarea> outside src/shared/ui (use Button, TextField, TextareaField, Select/SearchableSelect, Checkbox; ProgressBar for meters, Tabs/SegmentedControl for choices)
 - `role-alert-container` (`src/app, src/features, shared stylesheets`)
   - \<div>/\<small>/\<li>/\<section> role=alert (use the shared inline error)
 - `role-alert-text` (`src/app, src/features, shared stylesheets`)
@@ -248,7 +254,7 @@ fall. Suppress one line only, always with a reason.
 - `spacing-step` (`src/app, src/features, shared stylesheets`)
   - gap, padding or margin with a literal off the spacing scale: a bare px/rem value other than 0, 4, 6, 8, 10, 12, 14, 16, 20 or 24 px, or a Tailwind step other than 0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6 (var(--space-*) is always allowed)
 - `surface-style` (`src/app, src/features, shared stylesheets`)
-  - surface drawn in feature code: border, outline, border-radius, background or box-shadow, in CSS or as border/rounded/bg-*/shadow/ring/outline/divide classes (use Surface, Divider, FieldGroup)
+  - surface drawn in feature code, including badge/chip/progress recipes: border, outline, radius, background or shadow (use Surface, Divider, FieldGroup; Badge for chips, ProgressBar for meters)
 - `target-blank` (`src/app, src/features, shared stylesheets`)
   - target="_blank" (the desktop webview does not route it; use openExternal() from src/platform/tauri/openExternal.ts)
 - `text-truncation` (`src/app, src/features, shared stylesheets`)
@@ -257,6 +263,8 @@ fall. Suppress one line only, always with a reason.
   - themePalette.hex…/rgb…/hsl…/oklch… literal in feature or app code (use a semantic token: a --color-*/--ui-* CSS role or a semantic themePalette role)
 - `typography` (`src/app, src/features, shared stylesheets`)
   - literal font size: text-[Npx], text-xs..xl, text-[length:], CSS font-size px
+- `ui-wrapper-import` (`src/app, src/features, shared stylesheets`)
+  - primitive/internal import bypasses shared wrappers (use src/shared/ui/Select, DropdownMenu, Popover, Modal or Tooltip)
 - `undefined-var` (`src/app, src/features, shared stylesheets`)
   - var(--x) / Tailwind (--x) with no definition in src CSS or inline style
 - `untranslated-jsx-text` (`src/app, src/features, shared stylesheets`)

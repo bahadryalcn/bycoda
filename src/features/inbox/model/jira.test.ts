@@ -8,6 +8,8 @@ import {
   jiraIssueThread,
   jiraIssueComment,
   jiraProjectIdsForFetch,
+  knownJiraFilterIssues,
+  listJiraIssues,
   peekJiraIssueDetails,
   peekJiraIssueThread,
   readHiddenJiraProjectIds,
@@ -67,6 +69,71 @@ beforeEach(() => {
 });
 
 describe("Jira inbox", () => {
+  it("retains loaded filter choices across narrower reads and clears them with account caches", async () => {
+    await listJiraIssues({ assignedToMe: false, state: "all", projectIds: [] });
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+    await listJiraIssues({
+      assignedToMe: false,
+      state: "all",
+      projectIds: [],
+      statuses: ["Test approved"],
+    });
+    expect(knownJiraFilterIssues()).toEqual([issue]);
+    clearJiraCache();
+    expect(knownJiraFilterIssues()).toEqual([]);
+  });
+
+  it("preserves assignee, reporter and comment avatar URLs through the UI data path", async () => {
+    const avatarUrl = "https://acme.atlassian.net/secure/useravatar?avatarId=42";
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "jira_status") return { connected: true };
+      if (command.endsWith("_status")) return { connected: false };
+      if (command === "jira_list_projects") return projects;
+      if (command === "jira_list_issues")
+        return [{ ...issue, assignees: [{ login: "Ada", avatarUrl }] }];
+      if (command === "jira_issue_details")
+        return { body: "", author: "Ada", authorAvatarUrl: avatarUrl };
+      if (command === "jira_issue_thread")
+        return {
+          comments: [{ id: "1", author: "Ada", authorAvatarUrl: avatarUrl }],
+          truncated: false,
+        };
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    expect((await listInboxItems([], query)).items[0].assignees[0].avatarUrl).toBe(avatarUrl);
+    expect((await jiraIssueDetails("ENG-42")).authorAvatarUrl).toBe(avatarUrl);
+    expect((await jiraIssueThread("ENG-42")).comments[0].authorAvatarUrl).toBe(avatarUrl);
+  });
+
+  it("forwards workflow/assignee values before limiting and isolates filtered caches", async () => {
+    await listInboxItems([], {
+      ...query,
+      assignedToMe: false,
+      jiraAssignees: ["account-1"],
+      jiraUnassigned: true,
+      jiraStatuses: ["Development in progress", "Test approved"],
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      "jira_list_issues",
+      expect.objectContaining({
+        assignedToMe: false,
+        filters: {
+          assigneeIds: ["account-1"],
+          unassigned: true,
+          statuses: ["Development in progress", "Test approved"],
+        },
+      }),
+    );
+    vi.mocked(invoke).mockClear();
+    await listInboxItems([], { ...query, assignedToMe: false, jiraAssignees: ["account-2"] });
+    expect(invoke).toHaveBeenCalledWith(
+      "jira_list_issues",
+      expect.objectContaining({
+        filters: { assigneeIds: ["account-2"], unassigned: false, statuses: [] },
+      }),
+    );
+  });
+
   it("does not contact Jira during opted-out background reads and keeps manual caches separate", async () => {
     const background = await listInboxItems([], { ...query, jiraEnabled: false }, { force: true });
     expect(background).toEqual({ items: [], errors: {} });

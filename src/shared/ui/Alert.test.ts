@@ -3,6 +3,7 @@ import { act, createElement, createRef } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { Alert } from "./Alert";
+import { InlineMessage } from "./InlineError";
 
 it("forwards the actual error surface ref so recovery can focus it without replacing native attributes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -60,6 +61,26 @@ it("renders the inline form with its tone icon and message", async () => {
     act(() => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+  }
+});
+
+it("uses InlineMessage presentation for legacy inline alerts", async () => {
+  const { container, done } = await mount(
+    createElement(
+      "div",
+      null,
+      createElement(Alert, { tone: "warning", inline: true }, "Disk almost full"),
+      createElement(InlineMessage, { tone: "warning", children: "Disk almost full" }),
+    ),
+  );
+  try {
+    const inline = container.querySelector('[data-tone="warning"]')!;
+    const direct = container.querySelectorAll('[data-tone="warning"]')[1];
+    expect(inline.className).toBe(direct.className);
+    expect(inline.querySelector("svg")?.outerHTML).toBe(direct.querySelector("svg")?.outerHTML);
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(2);
+  } finally {
+    done();
   }
 });
 

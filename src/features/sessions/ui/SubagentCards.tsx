@@ -1,11 +1,12 @@
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { Text } from "../../../shared/ui/Text";
+import { ModelLabel } from "./ModelLabel";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { createContext, useContext, useEffect } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
 import { ChevronRight, ExternalLink, Square } from "../../../shared/ui/icons";
-import { Shimmer } from "../../../shared/ui/Shimmer";
 import { crewMemberOf } from "../model/delegatedAgents";
 import { delegatedChildIdOf } from "../model/delegatedBlockId";
 import type { Block } from "../model/session";
@@ -208,9 +209,14 @@ function SubagentPanel({
   const label = (
     <span className="flex min-w-0 flex-1 items-baseline gap-2">
       {active ? (
-        <Shimmer className={nameClass} truncate size="body" weight="medium" duration={1.6}>
+        <WorkingIndicator
+          glyph={false}
+          className={nameClass}
+          truncate
+          text={{ size: "body", weight: "medium" }}
+        >
           {name}
-        </Shimmer>
+        </WorkingIndicator>
       ) : (
         <Text
           size="body"
@@ -227,7 +233,9 @@ function SubagentPanel({
       )}
       {(delegated?.subtitle ?? model) ? (
         <Text size="caption" tone="muted" truncate className="max-w-[40%] shrink-0">
-          {delegated?.subtitle ?? model}
+          {delegated?.subtitle ?? (
+            <ModelLabel model={block.agentRun?.model ?? ""} name={model} size="xs" />
+          )}
         </Text>
       ) : null}
     </span>

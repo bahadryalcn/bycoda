@@ -43,7 +43,7 @@ it("flips the meter when another window turns off remaining usage", async () => 
       }),
     ),
   );
-  const bar = () => container.querySelector('[role="progressbar"]');
+  const bar = () => container.querySelector('[role="meter"]');
   expect(bar()?.getAttribute("aria-label")).toBe("5h limit remaining");
   expect(bar()?.getAttribute("aria-valuenow")).toBe("77");
   expect(container.textContent).toContain("77% left");
@@ -68,7 +68,7 @@ it("keeps exhausted quota dangerous even when showing zero remaining", async () 
       }),
     ),
   );
-  const bar = container.querySelector('[role="progressbar"]')!;
+  const bar = container.querySelector('[role="meter"]')!;
   expect(bar.getAttribute("aria-valuenow")).toBe("0");
   expect(bar.getAttribute("data-tone")).toBe("danger");
   expect(container.textContent).toContain("0% left");
@@ -78,7 +78,9 @@ it("exposes loading placeholders only while limits are unavailable", async () =>
   await act(async () =>
     root.render(createElement(AccountUsageMeters, { now: 0, limits: undefined })),
   );
-  expect(container.querySelectorAll('[role="status"]')).toHaveLength(2);
+  await vi.waitFor(() =>
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(2),
+  );
   await act(async () =>
     root.render(
       createElement(AccountUsageMeters, {

@@ -112,7 +112,7 @@ it("restores the board mode and search after leaving the board and returning", a
   expect(
     [...container.querySelectorAll("button")]
       .find((button) => button.textContent === "Backlog & sprints")!
-      .getAttribute("aria-pressed"),
+      .getAttribute("aria-selected"),
   ).toBe("true");
 });
 it("requires board permission and clears a revoked board without fetching it again", async () => {

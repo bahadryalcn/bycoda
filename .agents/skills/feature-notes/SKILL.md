@@ -16,7 +16,7 @@ Use for Notes library and session-note surfaces. Markdown rendering is shared se
 
 ## Preserve
 
-- Keep exact Markdown, unsupported syntax, selections and undo. Editable document is the fallback; retained Source/Split choices and explicit Save remain available.
+- Keep exact Markdown, unsupported syntax, selections and undo. Editable document is the fallback; retained Source/Split choices and explicit Save (Ctrl/Cmd+S) remain available; the library editor shows no Save button or routine save status, only errors. Deletion lives in the library menu, not the editor's Details popover.
 - Library grouping/search/paging and selected-note identity must survive filtering and asynchronous results; displayed counts describe their real scope.
 - Keep serialized autosave/explicit-save queues, CAS/expectedUpdatedAt bases, in-flight edits and conflict/new-copy recovery. Clear only submitted fields still unchanged after completion.
 - Images remain note-owned with partial-success and ambiguous-result recovery. Do not replay an uncertain image write or treat a published Markdown path as durability proof.

@@ -319,6 +319,8 @@ type Props = {
   hideProjectPicker?: boolean;
   hideBranchPicker?: boolean;
   hideTopBar?: boolean;
+  /** Keeps Orchestrator mode and /orchestrator out of conversations that cannot run it. */
+  hideOrchestrator?: boolean;
   /** Routes discovery to the host; local-only app modes remain unavailable. */
   remoteSession?: boolean;
   remoteFeatures?: {
@@ -528,6 +530,7 @@ export const Composer = memo(function Composer({
   hideProjectPicker = false,
   hideBranchPicker = false,
   hideTopBar = false,
+  hideOrchestrator = false,
   remoteSession = false,
   sendBlockedReason,
   sendHeldReason,
@@ -1013,7 +1016,7 @@ export const Composer = memo(function Composer({
       pickerOpen,
       remote,
       remotePlan: !!remoteFeatures?.plan,
-      hideTopBar,
+      hideOrchestrator: hideTopBar || hideOrchestrator,
       canStartNewSession: !!onNewSession,
       canSaveDraft: canSaveDraft && !!onSaveDraft,
       canResumeProviderSession: !!onResumeProviderSession,
@@ -2222,7 +2225,7 @@ export const Composer = memo(function Composer({
       return;
     }
     const orchestratorCommand =
-      !remote && !hideTopBar && !command.planning
+      !remote && !hideTopBar && !hideOrchestrator && !command.planning
         ? consumeOrchestratorCommand(command.text)
         : { text: command.text, matched: false };
     const text = isNativeCommandPrompt(orchestratorCommand.text, harness)
@@ -2856,7 +2859,7 @@ export const Composer = memo(function Composer({
           },
         ]
       : []),
-    ...(!remote && !hideTopBar
+    ...(!remote && !hideTopBar && !hideOrchestrator
       ? [
           {
             kind: "item" as const,
@@ -3063,7 +3066,18 @@ export const Composer = memo(function Composer({
       />
       <div className="relative overflow-visible">
         {mcpPickerOpen ? (
-          <ComposerSuggestions anchor={boxRef} below={shell}>
+          <ComposerSuggestions
+            anchor={boxRef}
+            below={shell}
+            dialog={{
+              label: t("Choose an MCP server"),
+              onDismiss: (reason) => {
+                mcpInsertAt.current = null;
+                setMcpPickerOpen(false);
+                if (reason === "escape") ref.current?.focus();
+              },
+            }}
+          >
             <McpServerPicker
               connections={mcpCatalog.connections}
               harness={harness}
@@ -3116,7 +3130,17 @@ export const Composer = memo(function Composer({
             />
           </ComposerSuggestions>
         ) : sessionFolderOpen ? (
-          <ComposerSuggestions anchor={boxRef} below={shell}>
+          <ComposerSuggestions
+            anchor={boxRef}
+            below={shell}
+            dialog={{
+              label: t("Choose a session folder"),
+              onDismiss: () => {
+                setSessionFolderOpen(false);
+                ref.current?.focus();
+              },
+            }}
+          >
             <SessionFolderPicker
               folders={sessionFolders}
               onPick={(target) => {

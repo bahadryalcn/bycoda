@@ -3,6 +3,7 @@ import {
   PROVIDER_ACCOUNT_PROVIDERS,
   PROVIDER_ACCOUNT_COLORS,
   renameProviderAccount,
+  editProviderAccount,
   setProviderAccountColor,
   setDefaultProviderAccount,
   type ProviderAccount,
@@ -28,6 +29,7 @@ type Deps = {
   read: typeof readProviderManagement;
   rename: typeof renameProviderAccount;
   color: typeof setProviderAccountColor;
+  edit?: typeof editProviderAccount;
   default: typeof setDefaultProviderAccount;
   quotaRefresh?: typeof refreshClaudeQuotaOnce;
 };
@@ -44,6 +46,7 @@ export function createProviderAccountControl(
     read: readProviderManagement,
     rename: renameProviderAccount,
     color: setProviderAccountColor,
+    edit: editProviderAccount,
     default: setDefaultProviderAccount,
     quotaRefresh: refreshClaudeQuotaOnce,
   },
@@ -143,6 +146,24 @@ export function createProviderAccountControl(
         throw Error("Invalid account color");
       const color = change.color as ProviderAccountColor | null;
       save = () => deps.color(provider, accountId, color ?? undefined);
+    } else if (change.kind === "accountKind") {
+      exact(change, ["kind", "accountKind"]);
+      if (
+        change.accountKind !== null &&
+        change.accountKind !== "personal" &&
+        change.accountKind !== "work"
+      )
+        throw Error("Invalid account kind");
+      const account = deps
+        .accounts()
+        .find((row) => row.provider === provider && row.id === accountId);
+      if (!account || !deps.edit) throw Error("Account metadata unavailable");
+      save = () =>
+        deps.edit!(provider, accountId, {
+          label: account.label,
+          color: account.color,
+          kind: (change.accountKind ?? undefined) as "personal" | "work" | undefined,
+        });
     } else if (change.kind === "default") {
       exact(change, ["kind", "confirm"]);
       if (change.confirm !== "DEFAULT_FOR_FUTURE_SESSIONS")
@@ -209,7 +230,9 @@ export function createProviderAccountControl(
             ? target.label === (change.label as string).replace(/\s+/g, " ").trim()
             : change.kind === "color"
               ? target.color === change.color
-              : target.isDefault));
+              : change.kind === "accountKind"
+                ? (target.kind ?? null) === change.accountKind
+                : target.isDefault));
       if (!verified) throw Error("Account change could not be verified");
       receipt.status = { state: "applied", operationId, atomic: false, snapshot };
     } catch {

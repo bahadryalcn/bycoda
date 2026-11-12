@@ -206,7 +206,7 @@ function WorkspaceModePicker({
   const anchor = useRef<HTMLDivElement>(null);
   const worktreeAnchor = useRef<HTMLElement | null>(null);
   const listId = useId();
-  const existingRowId = `${listId}-option-2`;
+  const existingRowId = `${listId}-option-${encodeURIComponent("existing")}`;
   const flyoutListId = `${listId}-worktrees`;
   const [flyoutFocus, setFlyoutFocus] = useState(false);
   const closeWorktreeTimer = useRef<number | null>(null);
@@ -601,7 +601,6 @@ export function WorktreeBasePicker({
           label={t("Base branches")}
           controller={picker}
           query={query}
-          checkPlacement="icon"
           emptyLabel={t("No matching branches")}
         />
       </PickerPopover>

@@ -1,4 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -135,9 +135,12 @@ export function MergeSection({
         </Button>
       </div>
       {suggestions?.length === 0 ? (
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
-          {t("No possible duplicates found.")}
-        </Text>
+        <EmptyState
+          size="inline"
+          kind="empty"
+          className="audience-muted"
+          description={t("No possible duplicates found.")}
+        />
       ) : null}
       {suggestions?.map((item) => (
         <div key={item.personIds.join(",")} className="audience-row">

@@ -1,5 +1,5 @@
 import { useT } from "../../../shared/i18n";
-import { useDelayedVisible } from "../../../shared/hooks/useDelayedVisible";
+import { Skeleton } from "../../../shared/ui/Skeleton";
 import { SettingsGroupsSkeleton } from "./SettingsSkeleton";
 import "./SettingsLoadingSurface.css";
 
@@ -11,17 +11,12 @@ import "./SettingsLoadingSurface.css";
  */
 export function SettingsPageLoading({ label, lines = 6 }: { label?: string; lines?: number }) {
   const t = useT();
-  const visible = useDelayedVisible(true);
   return (
-    <div
-      className="settings-page-loading"
-      data-settings-page-loading
-      data-held={visible ? undefined : "true"}
-      role={visible ? "status" : undefined}
-      aria-label={visible ? (label ?? t("Loading…")) : undefined}
-      aria-busy="true"
-    >
-      <SettingsGroupsSkeleton rows={lines} />
+    <div className="settings-page-loading" data-settings-page-loading>
+      <Skeleton
+        label={label ?? t("Loading…")}
+        placeholder={<SettingsGroupsSkeleton rows={lines} />}
+      />
     </div>
   );
 }

@@ -247,7 +247,7 @@ not a new product build or UI test suite.
 - `ControlSpecimen` renders real Button, fields, generic choices and a Popover
   with ephemeral local state. Appearance uses the same compact specimen and
   optional tone/state details; its storage keys and preference owners remain.
-- `ExpandingButtonGroup` reuses official free choreography with shared Button
+- `ButtonGroup variant="expanding"` reuses official free choreography with shared Button
   action nodes and guarded async results. Session Notes uses it for Copy,
   Add to chat and conditional Link; deletion and serialized saving retain their
   feature owners. A false/rejected operation never produces success feedback.
@@ -260,8 +260,8 @@ not a new product build or UI test suite.
   native events and loading/disabled guards remain with the existing owner.
 - ConfirmMorph action nodes delegate to Button with its own label motion off;
   the composite retains hold/countdown/arming, async retry, actual undo and focus.
-- `MorphSelect` handles small property lists and registers with the shared Escape
-  overlay stack. General settings uses it for the stay-awake duration.
+- `SearchableSelect variant="pill"` handles compact property lists through the shared
+  Popover overlay stack; Select handles ordinary form-value selection.
 - `Timeline` localizes day headings, counts and announcements. Task attempt history
   keeps worker/reviewer session actions visible outside collapsed review details.
 - `TextareaField` forwards native textarea props/ref and scopes the field theme.
@@ -489,15 +489,15 @@ sources own queued item/progress/retry/abort state and do not forward that nativ
 form contract. Those families remain conditional until a concrete consumer needs
 that lifecycle; no cancellation or upload authority is invented by UI migration.
 
-Stepper, ElasticSlider and SplitButton now have actual consumers: onboarding
-workflow state, Appearance opacity/blur, and Inbox PR merge method respectively.
+Stepper, Slider and SplitButton have consumers for onboarding workflow state,
+Appearance opacity/blur, and Inbox PR merge method respectively.
 SplitButton also owns the Commit action cluster: optional `menuDisabled` overrides
 only the menu half's native-disabled gate so Amend remains reachable when the
 primary Commit is invalid. Omission preserves the primary-disabled behavior.
 Loading and explicit group aria-disabled always gate both halves. Menu selection
 only calls its explicit onSelect; it never implicitly invokes the primary action.
-Stepper completion and navigation remain feature-owned; ElasticSlider is opt-in
-for approximate visual adjustments; SplitButton method selection never runs the
+Stepper completion and navigation remain feature-owned; Slider owns continuous
+range input; SplitButton method selection never runs the
 primary action. Native confirmation/approval stays with the feature.
 
 Confirmation rule: a row-level delete confirms in place with ConfirmMorph (danger).
@@ -508,12 +508,15 @@ automation removal) uses `useConfirm` / `ConfirmDialog` from
 is only for places a web overlay cannot render. Optional help uses the shared
 `InfoPopover` (`src/shared/ui/InfoPopover.tsx`), not feature-local copies.
 
-`MorphSelect` now accepts exported `MorphSelectItem` option/group records,
-`searchable` (default false), `onClose` and native `triggerProps` including ref
-and pointer events. Disabled/group keyboard navigation and IME guards remain in
-the shared owner. Sessions use it for bounded independent scalar model settings;
-service tier, effort and other settings retain their own values and callbacks.
+`SearchableSelect variant="pill"` owns compact searchable scalar selection.
+Disabled/group keyboard navigation and IME guards remain in the shared owner.
+Service tier, effort and other settings retain their own values and callbacks.
 Growing/custom model catalogs retain their search and free-entry controllers.
+
+UsageMeter owns quota, budget and rate-window bars, including compact rows without
+legends. Progress owns task completion; Meter owns generic bounded measures.
+PaneHeader and SectionLabel own pane and section headings. StatusDot owns static
+marks; TabDirtyDot supplies its localized unsaved-changes label.
 
 Pure placement classes (`absolute`, `fixed`, `sticky`, `static`, `relative`) on
 `Button` are honored through the shared components layer. Arc and adapter box

@@ -1,3 +1,4 @@
+import { FailureState } from "../../../shared/ui/FailureState";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -231,9 +232,9 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
   if (error) {
     return (
       <div className="grid h-full place-items-center p-6">
-        <EmptyState
+        <FailureState
           key="load-error"
-          kind="unavailable"
+
           context="panel"
           title={t("Couldn’t load session changes")}
           description={error}

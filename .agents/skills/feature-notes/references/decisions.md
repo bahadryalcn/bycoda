@@ -11,3 +11,12 @@ Source recorded in the previous card: owner conversation
 This superseded the earlier Split fallback, not existing retained Source/Split
 choices, explicit Save, canonical Markdown or selection/undo ownership. Inspect
 the current mode store before changing persistence or claiming restart retention.
+
+Owner request, 2026-11-12:
+
+> Remove delete from here, keep only the note details and show them properly. While
+> typing it shows "unsaved"; no need to say save or even show saved. (translated)
+
+The library editor autosaves silently: no Save button, no saved/unsaved/saving
+text; failures, conflicts and recovery still show. The header "..." popover shows
+details only; deletion stays in the library context menu and selection mode.

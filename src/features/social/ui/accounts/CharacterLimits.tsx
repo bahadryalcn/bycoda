@@ -1,8 +1,9 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Group, Row } from "../../../settings/public/settingsControls";
 import { Select } from "../../../../shared/ui/Select";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { TextField } from "../../../../shared/ui/TextField";
 import { DisabledReason } from "../common/DisabledReason";
 import {
@@ -161,9 +162,7 @@ function LimitFields({
       <DisabledReason type="submit" variant="secondary" size="sm" loading={is("policy.limits")}>
         {t("Save limits")}
       </DisabledReason>
-      {localError || error ? (
-        <InlineMessage tone="danger">{localError || error}</InlineMessage>
-      ) : null}
+      {localError || error ? <InlineError>{localError || error}</InlineError> : null}
     </form>
   );
 }

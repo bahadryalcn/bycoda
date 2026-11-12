@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Code } from "../../../shared/ui/Code";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
@@ -250,9 +251,12 @@ export function AssistantRemoteAccess({
             </div>
             {machinesError && <InlineError>{machinesError}</InlineError>}
             {!loading && !targets.length && (
-              <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.note}>
-                {t("No other paired Host is available.")}
-              </Text>
+              <EmptyState
+                size="inline"
+                kind="empty"
+                className={styles.note}
+                description={t("No other paired Host is available.")}
+              />
             )}
             <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.note}>
               {t(

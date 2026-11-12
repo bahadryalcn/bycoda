@@ -78,9 +78,7 @@ it("shows name color and kind fields for metadata edits without a sign-in action
     expect(container.textContent).toContain("Save");
     expect(container.textContent).not.toContain("Sign in and add");
     act(() =>
-      container
-        .querySelector<HTMLButtonElement>('button[role="radio"][aria-checked="false"]')!
-        .click(),
+      container.querySelector<HTMLInputElement>('input[type="radio"][value="personal"]')!.click(),
     );
     expect(onMetadata).toHaveBeenCalledWith({ kind: "personal" });
     const automatic = Array.from(container.querySelectorAll("button")).find(

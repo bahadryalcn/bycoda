@@ -182,6 +182,8 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
  * progress and dismiss, with auto-dismiss that pauses on hover, focus and an open stack.
  * `Toast` places it in a corner stack; TransientNotice can position it itself.
  * @group feedback
+ * @use Card content inside Toast stacks or caller-positioned TransientNotice.
+ * @avoid Queue placement: Toast. Inline feedback: InlineMessage.
  * @status internal
  * @arc toast-stack
  */
@@ -239,7 +241,7 @@ export function ToastCard({
         {actionButton}
       </div>
     ) : null;
-  const hasBody = Boolean(children || progress || actions);
+  const hasBody = Boolean(children || progress || (actions && actionsPlacement === "header"));
   // The card is the announced region and the hover/focus timer surface in one element.
   return (
     <ToastStackCard
@@ -251,6 +253,7 @@ export function ToastCard({
       title={title}
       description={message}
       action={actions ? null : actionButton}
+      footer={actionRow("footer")}
       close={
         onDismiss ? (
           <Button
@@ -280,7 +283,6 @@ export function ToastCard({
           {progress ? (
             <Progress compact value={progress.value * 100} max={100} label={progress.label} />
           ) : null}
-          {actionRow("footer")}
         </>
       ) : null}
     </ToastStackCard>

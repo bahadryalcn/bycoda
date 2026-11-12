@@ -4,11 +4,12 @@ import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
+import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Alert } from "../../../shared/ui/Alert";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { MessageSquare, Pencil, Play, Trash2 } from "../../../shared/ui/icons";
+import { MessageSquare, Pencil, Play } from "../../../shared/ui/icons";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { AccessPicker } from "../../sessions/public/AccessPicker";
 import type { RuntimeMode } from "../../sessions/public/session";
@@ -325,61 +326,26 @@ export function CrewDeleteDialog({
   onClose: () => void;
 }) {
   useLocale();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
   return (
-    <Modal
-      title={t("Delete {p0}?", { p0: crew.name })}
-      size="sm"
-      onClose={() => {
-        if (!pending) onClose();
+    <ConfirmDialog
+      request={{
+        title: t("Delete {p0}?", { p0: crew.name }),
+        message: t("The crew definition is removed. Library members are kept."),
+        confirmLabel: t("Delete crew"),
+        confirmDisabled: activeWork > 0,
+        body:
+          activeWork > 0 ? (
+            <Alert tone="warning">{t("Stop this crew's running work before deleting it.")}</Alert>
+          ) : undefined,
+        onConfirm: async () => {
+          await state.call("crews.delete", {
+            definitionId: crew.id,
+            expectedUpdatedAt: crew.updatedAt,
+          });
+          saveCrewAppearance(crew.id, { icon: undefined, color: undefined });
+        },
       }}
-      footer={
-        <>
-          <span className="min-w-0 flex-1" />
-          <Button variant="ghost" disabled={pending} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="danger"
-            startIcon={<Trash2 className="icon-sm" />}
-            loading={pending}
-            disabled={pending || activeWork > 0}
-            onClick={async () => {
-              setPending(true);
-              setError("");
-              try {
-                await state.call("crews.delete", {
-                  definitionId: crew.id,
-                  expectedUpdatedAt: crew.updatedAt,
-                });
-                saveCrewAppearance(crew.id, {
-                  icon: undefined,
-                  color: undefined,
-                });
-                onClose();
-              } catch (reason) {
-                setError(reason instanceof Error ? reason.message : String(reason));
-              } finally {
-                setPending(false);
-              }
-            }}
-          >
-            {t("Delete crew")}
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-3">
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        {activeWork > 0 ? (
-          <Alert tone="warning">{t("Stop this crew's running work before deleting it.")}</Alert>
-        ) : (
-          <Text as="p" size="body" tone="inherit">
-            {t("The crew definition is removed. Library members are kept.")}
-          </Text>
-        )}
-      </div>
-    </Modal>
+      onSettle={onClose}
+    />
   );
 }

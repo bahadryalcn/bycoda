@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { TabStrip } from "../../../shared/ui/Tabs";
 import { Button } from "../../../shared/ui/Button";
 import { CodeBlock, Eye, Minus, Plus } from "../../../shared/ui/icons";
 import styles from "./MarkdownModeToggle.module.css";
@@ -57,11 +57,11 @@ type ToggleProps = {
 export function MarkdownModeToggle({ mode, onChange }: ToggleProps) {
   const t = useT();
   return (
-    <SegmentedControl
+    <TabStrip
       label={t("Markdown view")}
       className="shrink-0"
       value={mode}
-      options={[
+      items={[
         {
           value: "preview",
           label: t("Preview"),

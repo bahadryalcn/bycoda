@@ -165,7 +165,7 @@ export function DeviceWaitingState({
         className="device-panel-waiting"
         role="status"
       >
-        <LoadingText presentation="text">{t("Loading devices…")}</LoadingText>
+        <LoadingText>{t("Loading devices…")}</LoadingText>
       </Text>
     );
   if (device && !device.booted)

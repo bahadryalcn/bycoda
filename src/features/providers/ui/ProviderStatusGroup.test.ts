@@ -51,3 +51,20 @@ it("offers setup without a meaningless update check for missing CLIs", () => {
   expect(html).toContain("Set up");
   expect(html).not.toContain("Check for updates");
 });
+
+it("omits repeated bulk-check times and explains unavailable release feeds", () => {
+  const html = renderToStaticMarkup(
+    createElement(ProviderStatusGroup, {
+      harness: "antigravity",
+      available: true,
+      checkedAt: Date.now(),
+      onCheck: vi.fn(),
+      onSetup: vi.fn(),
+    }),
+  );
+  expect(html).toContain("Update check unavailable");
+  expect(html).not.toContain("Unknown");
+  expect(html).not.toContain("Check for updates");
+  expect(html).not.toContain("now");
+  expect(html).toContain("<td");
+});

@@ -166,3 +166,44 @@ it("shows Fast as keyboard accessible scale and keeps explicit Off", () => {
   act(() => root.unmount());
   container.remove();
 });
+
+it("edits the subagent ceiling as a draft without changing the main effort", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const change = vi.fn();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  act(() =>
+    root.render(
+      createElement(ProviderDefaultExtras, {
+        harness: "claude",
+        scopeDefaults: { effort: "low" },
+        projectScope: false,
+        resetLabel: "Reset",
+        onSessionDefaultsChange: change,
+        extras: [
+          {
+            id: "crossSubagentMaxEffort",
+            label: "Subagent max effort",
+            kind: "select",
+            value: "",
+            options: [
+              { value: "", label: "Automatic" },
+              { value: "max", label: "Max" },
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+  const max = container.querySelector<HTMLButtonElement>('[role="radio"][aria-label="Max"]');
+  expect(max).not.toBeNull();
+  act(() => max!.click());
+  expect(change).toHaveBeenLastCalledWith({
+    effort: "low",
+    extras: { crossSubagentMaxEffort: "max" },
+  });
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});

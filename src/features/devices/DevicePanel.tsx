@@ -1,3 +1,5 @@
+import { EmptyState } from "../../shared/ui/EmptyState";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { OutputBlock } from "../../shared/ui/OutputBlock";
 import { Text } from "../../shared/ui/Text";
@@ -22,6 +24,7 @@ import { TextareaField } from "../../shared/ui/TextareaField";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as technicalI18n from "../../shared/i18n/technical";
 import { Alert } from "../../shared/ui/Alert";
+import { InlineMessage } from "../../shared/ui/InlineError";
 import { LoadingText } from "../../shared/ui/LoadingText";
 import { Button } from "../../shared/ui/Button";
 import { Disclosure } from "../../shared/ui/Disclosure";
@@ -1100,12 +1103,7 @@ function DevicePanelSurface({
         </Disclosure>
       )}
       {!status && !error && (
-        <LoadingText
-          presentation="text"
-          size="caption"
-          leading="inherit"
-          className="device-panel-state"
-        >
+        <LoadingText size="caption" leading="inherit" className="device-panel-state">
           {t("Checking device support…")}
         </LoadingText>
       )}
@@ -1207,24 +1205,22 @@ function DevicePanelSurface({
             <Progress compact tone="neutral" aria-label={t("Working on the host…")} />
           ) : null}
           {deviceNotice && (
-            <Text
-              as="p"
-              size="caption"
-              tone="inherit"
-              leading="inherit"
-              {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "device-panel-notice")}
-              role={deviceNotice.error ? "alert" : "status"}
+            <InlineMessage
+              tone={deviceNotice.error ? "danger" : "info"}
+              className="shrink-0"
+              action={
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={t("Dismiss")}
+                  onClick={() => setDeviceNotice(undefined)}
+                >
+                  <X className="icon-sm" aria-hidden />
+                </Button>
+              }
             >
               {readableDeviceError(deviceNotice.text) ?? deviceNotice.text}
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Dismiss")}
-                onClick={() => setDeviceNotice(undefined)}
-              >
-                <X className="icon-sm" aria-hidden />
-              </Button>
-            </Text>
+            </InlineMessage>
           )}
           <div
             {...surfaceAttributes({ variant: "canvas-surface" }, "device-panel-stage")}
@@ -1698,23 +1694,24 @@ function DevicePanelSurface({
               </ScrollArea>
             )}
             {frameStateVisible && (
-              <Text
-                truncate
-                size="micro"
-                tone="primary"
-                leading="inherit"
-                className="device-panel-frame-state"
-                title={shownFrame?.capturedAt}
-              >
-                {annotating
-                  ? t("Marking · Frozen frame")
-                  : captureFailed || connectionUnavailable || frameStale
-                    ? t("Last frame · Not live")
-                    : liveFrameDelayed
-                      ? t("Last frame · Refreshing")
-                      : t("Paused")}
-                {frameCaptured ? ` · ${frameCaptured}` : ""}
-              </Text>
+              <Tooltip label={shownFrame?.capturedAt} asChild>
+                <Text
+                  truncate
+                  size="micro"
+                  tone="primary"
+                  leading="inherit"
+                  className="device-panel-frame-state"
+                >
+                  {annotating
+                    ? t("Marking · Frozen frame")
+                    : captureFailed || connectionUnavailable || frameStale
+                      ? t("Last frame · Not live")
+                      : liveFrameDelayed
+                        ? t("Last frame · Refreshing")
+                        : t("Paused")}
+                  {frameCaptured ? ` · ${frameCaptured}` : ""}
+                </Text>
+              </Tooltip>
             )}
             {annotating && draft && (
               <div
@@ -2088,7 +2085,11 @@ function DevicePanelSurface({
                       </Button>
                     ))
                   ) : (
-                    <p>{t("No matching accessibility nodes")}</p>
+                    <EmptyState
+                      size="inline"
+                      kind="filtered"
+                      description={t("No matching accessibility nodes")}
+                    />
                   )}
                 </div>
               )}

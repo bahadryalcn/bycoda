@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -103,9 +104,13 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                 <GrokLimits refresh={refresh} />
               ) : null}
               {!accounts.length ? (
-                <Text as="p">
-                  {t("No accounts on this machine. Add an account in Providers settings.")}
-                </Text>
+                <EmptyState
+                  size="inline"
+                  kind="empty"
+                  description={t(
+                    "No accounts on this machine. Add an account in Providers settings.",
+                  )}
+                />
               ) : null}
             </Surface>
             <UsageBudgets refresh={refresh} />
@@ -306,7 +311,7 @@ function AccountLimits({
         </InlineError>
       ) : null}
       {windows.length > 0 && (limits.status === "fetching" || limits.status === "idle") ? (
-        <LoadingText presentation="text" size="caption" tone="secondary">
+        <LoadingText size="caption" tone="secondary">
           {t("Refreshing account limits… Previous limits remain visible.")}
         </LoadingText>
       ) : null}

@@ -1,6 +1,8 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Surface } from "../../../shared/ui/Surface";
@@ -117,9 +119,12 @@ function AssignmentModel({
           kind: "content",
           id: "empty",
           node: (
-            <Text as="p" size="caption" tone="secondary" className="px-2 py-3">
-              {t("No matching models")}
-            </Text>
+            <EmptyState
+              size="inline"
+              kind="filtered"
+              className="px-2 py-3"
+              description={t("No matching models")}
+            />
           ),
         },
       ];
@@ -146,7 +151,7 @@ function AssignmentModel({
       >
         <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
         <Text size="inherit" tone="inherit" truncate>
-          {selected?.name ?? task.model}
+          {selected?.name ?? modelDisplayName(task.model, task.harness)}
           {selectedEffortLabel ? ` · ${selectedEffortLabel}` : ""} · {HARNESS_TITLE[task.harness]}
         </Text>
         <ChevronDown className="icon-xs shrink-0" />
@@ -339,15 +344,12 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
             className="mt-1 flex items-center gap-1.5"
           >
             <HarnessIcon harness={proposal.author.harness} className="icon-xs shrink-0" />
-            <Text
-              size="inherit"
-              tone="inherit"
-              truncate
-              title={HARNESS_TITLE[proposal.author.harness]}
-            >
-              {t("Lead · ")}
-              {proposal.author.name}
-            </Text>
+            <Tooltip label={HARNESS_TITLE[proposal.author.harness]} asChild>
+              <Text size="inherit" tone="inherit" truncate>
+                {t("Lead · ")}
+                {proposal.author.name}
+              </Text>
+            </Tooltip>
             {!!proposal.tasks.length && (
               <span className="shrink-0">
                 · {proposal.tasks.length} {proposal.tasks.length === 1 ? t("task") : t("tasks")}
@@ -468,18 +470,19 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                         }
                       />
                     ) : (
-                      <Text
-                        size="micro"
-                        tone="secondary"
-                        className="flex min-w-0 items-center gap-1.5"
-                        title={HARNESS_TITLE[task.harness]}
-                      >
-                        <HarnessIcon harness={task.harness} className="icon-xs shrink-0" />
-                        <Text size="inherit" tone="inherit" truncate>
-                          {taskChoice?.name ?? task.model}
-                          {taskEffort ? ` · ${taskEffort}` : ""}
+                      <Tooltip label={HARNESS_TITLE[task.harness]} asChild>
+                        <Text
+                          size="micro"
+                          tone="secondary"
+                          className="flex min-w-0 items-center gap-1.5"
+                        >
+                          <HarnessIcon harness={task.harness} className="icon-xs shrink-0" />
+                          <Text size="inherit" tone="inherit" truncate>
+                            {taskChoice?.name ?? modelDisplayName(task.model, task.harness)}
+                            {taskEffort ? ` · ${taskEffort}` : ""}
+                          </Text>
                         </Text>
-                      </Text>
+                      </Tooltip>
                     )}
                   </div>
                 </ActionHost>

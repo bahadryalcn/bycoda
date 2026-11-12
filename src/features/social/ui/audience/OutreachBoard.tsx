@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Text } from "../../../../shared/ui/Text";
 import { useCallback, useEffect, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
@@ -113,9 +114,9 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
 
       {error ? <InlineError>{error}</InlineError> : null}
       {sequences === undefined && !error ? (
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
+        <LoadingText delay={false} className="audience-muted">
           {t("Loading sequences…")}
-        </Text>
+        </LoadingText>
       ) : null}
       {sequences && !sequences.length ? (
         <EmptyHint

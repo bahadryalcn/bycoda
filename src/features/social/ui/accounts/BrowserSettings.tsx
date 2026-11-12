@@ -1,10 +1,12 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { Select } from "../../../../shared/ui/Select";
 import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
 import { Switch } from "../../../../shared/ui/Switch";
@@ -75,11 +77,11 @@ export function BrowserSettings({
       >
         <Heading size="item">{t("Browser")}</Heading>
         {loadError ? (
-          <InlineMessage tone="danger">{loadError}</InlineMessage>
+          <InlineError>{loadError}</InlineError>
         ) : (
-          <Text as="p" tone="muted" leading="snug" className="social-muted">
+          <LoadingText delay={false} className="social-muted">
             {t("Loading…")}
-          </Text>
+          </LoadingText>
         )}
       </section>
     );
@@ -178,7 +180,7 @@ export function BrowserSettings({
           {t("Save browser settings")}
         </DisabledReason>
       </div>
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {live ? (
         <Surface
           variant="card"

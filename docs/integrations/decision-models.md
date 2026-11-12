@@ -57,9 +57,10 @@ layouts. Their tests state that they are assumptions.
 
 ## Owner surfaces
 
-- Settings, Providers: the decision-model group (`src/features/settings/ui/`) runs against the
-  local-sync machine, or the first connected machine when none is local. It renders nothing when no
-  machine is available.
+- Settings > Providers > Decision models: `ProviderDecisionModels.tsx` in
+  `src/features/settings/ui/` hosts `src/features/decision-models/ui/`. It runs against the
+  local-sync machine, or the first listed machine when none is local. With no
+  machine available, it shows guidance to connect this computer's Host.
 - Owner RPC (`host/server/rpc-decision-models.ts`): `decisionModels.catalog.get`,
   `routing.get`, `routing.set`, `local.status`, `decide`, `sources.add`, `sources.update`,
   `sources.remove`, `sources.test`, `sources.evaluate`, `discovery.scan`, `discovery.cancel`, `discovery.results`,

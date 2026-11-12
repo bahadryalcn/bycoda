@@ -45,6 +45,11 @@ the selection, the open editor and any name being typed. Creating is disabled, w
 the reason, while another file operation runs; a rejected name stays editable on
 its row. Showing excluded files uses the existing saved Workspace
 preference. Ignored files remain visually subordinate and retain their Git state.
+Search stays inside the Explorer pane. Match case, whole word and regular
+expression toggles sit inside the query field. The chevron and **Toggle Search
+Details** action show inline include/exclude fields; saved path filters reveal
+those fields when search reopens. Reset clears search options and keeps the query.
+
 Selection scope is shown when selected entries are hidden by the current filter.
 Review that scope before acting on multiple paths.
 

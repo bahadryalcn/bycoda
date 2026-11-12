@@ -13,7 +13,8 @@ import {
 vi.mock("./modelSource", () => ({
   useModelSource: () => ({ resolve: resolveModel, modelsFor, available: () => true }),
 }));
-vi.mock("../../../shared/ui/Popover", () => ({
+vi.mock("../../../shared/ui/Popover", async () => ({
+  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>("../../../shared/ui/Popover")),
   Popover: ({ children }: { children: ReactNode }) =>
     createElement("div", { role: "dialog" }, children),
 }));

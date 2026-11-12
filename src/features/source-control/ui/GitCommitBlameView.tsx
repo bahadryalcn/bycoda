@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { useCallback, useMemo } from "react";
 import { gitBlame } from "../../../platform/tauri/fs";
@@ -58,15 +59,16 @@ export function GitCommitBlameView({
               key={entry.line}
               className={`flex whitespace-pre ${first ? "border-t border-(--ui-pane-border)" : ""}`}
             >
-              <Text
-                title={`${entry.sha}\n${entry.author} · ${entry.summary}`}
-                size="micro"
-                tone="secondary"
-                truncate
-                className="sticky left-0 w-44 shrink-0 bg-(--color-background-base) px-2 font-sans"
-              >
-                {first ? `${entry.shortSha} ${entry.author}` : ""}
-              </Text>
+              <Tooltip label={`${entry.sha}\n${entry.author} · ${entry.summary}`} asChild>
+                <Text
+                  size="micro"
+                  tone="secondary"
+                  truncate
+                  className="sticky left-0 w-44 shrink-0 bg-(--color-background-base) px-2 font-sans"
+                >
+                  {first ? `${entry.shortSha} ${entry.author}` : ""}
+                </Text>
+              </Tooltip>
               <Text
                 size="inherit"
                 tone="muted"

@@ -477,7 +477,12 @@ describe("FileTree render isolation", () => {
     expect(container.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
     expect(container.querySelector('[data-remote-data-state="refreshing"]')).toBeNull();
     expect(row("second.ts")).not.toBeNull();
-    expect(container.querySelector('[title^="Last verified"]')?.getAttribute("title")).toBe(
+    const syncStatus = container.querySelector<HTMLElement>('[data-remote-data-state="ready"]')!;
+    await act(async () => {
+      syncStatus.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
       `Last verified ${new Date(verifiedDirAt(nextRoot)!).toLocaleString(getLocale())}`,
     );
 

@@ -1,3 +1,6 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
@@ -577,19 +580,20 @@ export function QuickComposer({
       }}
       className="relative flex max-h-[520px] flex-col overflow-clip rounded-(--ui-radius-popup) border border-stroke bg-[color-mix(in_oklab,var(--color-background-base)_45%,transparent)] text-content"
     >
-      <div
-        title={t("Drag to move")}
-        className="group absolute inset-x-0 top-0 z-(--layer-pane-sheet) flex h-3 cursor-grab items-start justify-center pt-1 active:cursor-grabbing"
-        onMouseDown={(event) => {
-          if (event.button !== 0) return;
-          event.preventDefault();
-          void getCurrentWindow()
-            .startDragging()
-            .catch(() => undefined);
-        }}
-      >
-        <span className="pointer-events-none h-0.5 w-6 rounded-full bg-(--ui-text-muted) opacity-50 transition-opacity group-hover:opacity-100" />
-      </div>
+      <Tooltip label={t("Drag to move")} asChild>
+        <div
+          className="group absolute inset-x-0 top-0 z-(--layer-pane-sheet) flex h-3 cursor-grab items-start justify-center pt-1 active:cursor-grabbing"
+          onMouseDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            void getCurrentWindow()
+              .startDragging()
+              .catch(() => undefined);
+          }}
+        >
+          <span className="pointer-events-none h-0.5 w-6 rounded-full bg-(--ui-text-muted) opacity-50 transition-opacity group-hover:opacity-100" />
+        </div>
+      </Tooltip>
       <Button
         iconOnly
         label={t("Close composer")}
@@ -836,7 +840,7 @@ export function QuickComposer({
         ) : null}
         <Text size="micro" tone="secondary" className="ml-auto flex shrink-0 items-center gap-3">
           {attachments.loading ? (
-            <span role="status">{t("Adding attachment…")}</span>
+            <LoadingText>{t("Adding attachment…")}</LoadingText>
           ) : (
             <>
               <span className="max-[600px]:hidden">
@@ -869,7 +873,7 @@ export function QuickComposer({
           anchor={plusRef}
           side="top"
           align="start"
-          width={220}
+          minWidth={220}
           gap={4}
           autoFocus
           tabIndex={-1}
@@ -919,9 +923,12 @@ export function QuickComposer({
               className="shrink-0 border-t border-stroke p-2"
             >
               {commandOptions.length === 0 ? (
-                <Text as="p" size="caption" tone="secondary" className="px-2 py-2">
-                  {t("No matching commands")}
-                </Text>
+                <EmptyState
+                  size="inline"
+                  kind="filtered"
+                  className="px-2 py-2"
+                  description={t("No matching commands")}
+                />
               ) : (
                 commandOptions.map((command, index) => (
                   <Button
@@ -1005,9 +1012,12 @@ export function QuickComposer({
                 className="min-h-0 max-h-64 overflow-y-auto overscroll-none px-2 pb-2"
               >
                 {optionCount === 0 ? (
-                  <Text as="p" size="caption" tone="secondary" className="px-2 py-2">
-                    {t("No matches")}
-                  </Text>
+                  <EmptyState
+                    size="inline"
+                    kind="filtered"
+                    className="px-2 py-2"
+                    description={t("No matches")}
+                  />
                 ) : (
                   projectOptions.map((path, index) => (
                     <Button

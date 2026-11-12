@@ -178,7 +178,9 @@ it("groups sessions under their job and keeps a skeleton while the first record 
   ]);
   expect(groups[0].textContent).toContain("Check recovery");
   const row = container.querySelector('[data-assistant-session="session-one"]');
-  expect(row?.querySelectorAll('[aria-busy="true"]').length).toBeGreaterThan(0);
+  await vi.waitFor(() =>
+    expect(row?.querySelectorAll('[aria-busy="true"]').length).toBeGreaterThan(0),
+  );
   expect(row?.textContent).not.toContain("Context usage unavailable");
 });
 

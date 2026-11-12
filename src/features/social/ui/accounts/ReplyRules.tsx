@@ -1,10 +1,12 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { Heading } from "../../../../shared/ui/Heading";
 import { Text } from "../../../../shared/ui/Text";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { Switch } from "../../../../shared/ui/Switch";
 import type { HostProject } from "../../../connections/public/protocol";
 import type { SocialAccount, SocialRule } from "../../model/social";
@@ -140,14 +142,15 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
         </DisabledReason>
       </div>
       {loadError ? (
-        <InlineMessage tone="danger" retry={{ onRetry: reload, label: t("Try again") }}>
-          {loadError}
-        </InlineMessage>
+        <InlineError retry={{ onRetry: reload, label: t("Try again") }}>{loadError}</InlineError>
       ) : null}
       {rules && !rules.length ? (
-        <Text as="p" tone="muted" leading="snug" className="social-muted">
-          {t("No reply rules for this account yet.")}
-        </Text>
+        <EmptyState
+          size="inline"
+          kind="empty"
+          className="social-muted"
+          description={t("No reply rules for this account yet.")}
+        />
       ) : null}
       {rules?.map((rule) => (
         <div key={rule.id} className="social-field-row">
@@ -181,9 +184,7 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
               ))}
             </ul>
           ) : (
-            <Text as="p" tone="muted" leading="snug" className="social-muted">
-              {t("No rule needs narrowing.")}
-            </Text>
+            <EmptyState size="inline" description={t("No rule needs narrowing.")} />
           )}
           {proposal.notes.map((note) => (
             <Text key={note} as="p" tone="muted" leading="snug" className="social-muted">
@@ -192,7 +193,7 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
           ))}
         </div>
       ) : null}
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {confirmation.dialog}
     </section>
   );

@@ -216,6 +216,9 @@ export function useInboxActivity(
       const filters = pruneInboxFilters(loadInboxFilters(), projectPaths);
       const query: InboxQuery = {
         assignedToMe: filters.assignedToMe,
+        jiraAssignees: filters.jiraAssignees,
+        jiraUnassigned: filters.jiraUnassigned,
+        jiraStatuses: filters.jiraStatuses,
         state: inboxFetchState(filters),
         search: "",
         // Unreadable scope stays undefined so the fetch fails closed instead of widening.

@@ -1,3 +1,4 @@
+/** Different job: Selection toolbar acts on editor ranges; it is not a value picker. */
 import { Button } from "../../../shared/ui/Button";
 import { ShortcutKeys } from "../../../shared/ui/ShortcutKbd";
 import { t, useLocale } from "../../../shared/i18n/technical";

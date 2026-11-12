@@ -101,7 +101,7 @@ it("exposes actual provider model and project on hour hover", async () => {
     },
   ]);
   expect(host.querySelectorAll('[role="gridcell"]')[14].getAttribute("data-details")).toContain(
-    "gpt-5",
+    "GPT-5",
   );
   expect(host.querySelectorAll('[role="gridcell"]')[14].getAttribute("data-details")).toContain(
     "Demo",

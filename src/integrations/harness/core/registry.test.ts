@@ -94,6 +94,39 @@ function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapte
 }
 
 describe("harness registry", () => {
+  it.each([true, false])(
+    "checks bridge readiness before finalizing Automatic input (ready=%s)",
+    async (ready) => {
+      nativeReceipts();
+      const invokeOriginal = nativeInvoke.getMockImplementation()!;
+      nativeInvoke.mockImplementation(async (command, args) =>
+        command === "harness_conversation_tools_bridge" ? { ready } : invokeOriginal(command, args),
+      );
+      const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+      registerHarness(stub("codex", { sendTurn }));
+      const onEvent = vi.fn();
+      const modelSettings = { crossSubagents: "auto" };
+      await sendHarnessTurn({
+        harness: "codex",
+        sessionId: `readiness-${ready}`,
+        cwd: "/tmp",
+        model: "codex:test",
+        modelSettings,
+        runtimeMode: "supervised",
+        text: "Keep my queued text.",
+        onEvent,
+      });
+      const sent = sendTurn.mock.calls[0][0];
+      expect(sent.text).toBe("Keep my queued text.");
+      expect(sent.modelSettings?.nativeSubagents).toBe(ready ? "off" : "on");
+      expect(sent.runtimeInstructions ?? "").toContain(ready ? "" : "use your built-in subagents");
+      expect(onEvent.mock.calls.some(([event]) => event.key === "delegation-unavailable")).toBe(
+        !ready,
+      );
+      expect(modelSettings).toEqual({ crossSubagents: "auto" });
+    },
+  );
+
   function nativeReceipts(
     skills: Array<{ name: string; path: string; installProvider: string }> = [],
   ) {

@@ -1,8 +1,9 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
-import { Text } from "../../../../shared/ui/Text";
 import { Sheet } from "../../../../shared/ui/Sheet";
 import { EmptyHint } from "../common/EmptyHint";
 import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
@@ -56,9 +57,9 @@ export function AccountsScreen({
         {t("Accounts")}
       </SectionLabel>
       {data.error ? (
-        <InlineMessage tone="danger" retry={{ onRetry: data.reload, label: t("Try again") }}>
+        <InlineError retry={{ onRetry: data.reload, label: t("Try again") }}>
           {data.error}
-        </InlineMessage>
+        </InlineError>
       ) : null}
       {snapshot && !hostOnline ? (
         <InlineMessage tone="warning" live="off">
@@ -67,9 +68,9 @@ export function AccountsScreen({
       ) : null}
       <section className="social-accounts-section" aria-label={t("Accounts")}>
         {!snapshot && data.loading ? (
-          <Text as="p" tone="muted" leading="snug" className="social-muted">
+          <LoadingText delay={false} className="social-muted">
             {t("Loading…")}
-          </Text>
+          </LoadingText>
         ) : null}
         {accounts.length ? (
           <ul className="social-account-list">

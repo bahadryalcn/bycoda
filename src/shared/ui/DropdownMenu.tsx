@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
-import { ContextMenuRow, contextMenuSlotClassName as slot } from "./arc/context-menu/context-menu";
+import { contextMenuSlotClassName as slot } from "./arc/context-menu/context-menu";
+import { MenuRow } from "./MenuRow";
 import { LAYER } from "../lib/layers";
-import { Popover, type PopoverAnchor } from "./Popover";
+import { Popover, popupListClassName, type PopoverAnchor } from "./Popover";
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
 import { Check, ChevronRight } from "./icons";
 import { Badge } from "./Badge";
@@ -124,7 +125,7 @@ type SurfaceProps = {
   items: DropdownMenuItem[];
   side: "top" | "bottom" | "left" | "right";
   align: "start" | "center" | "end";
-  width: number;
+  width: number | "content";
   gap?: number;
   maxHeight?: number;
   search?: DropdownMenuSearch;
@@ -358,7 +359,7 @@ function MenuSurface({
     const hasBranch = Boolean(item.submenu || item.panel);
     const isHighlighted = highlighted?.id === item.id;
     return (
-      <ContextMenuRow
+      <MenuRow
         key={item.id}
         id={search ? rowId(item.id) : undefined}
         type="button"
@@ -429,7 +430,7 @@ function MenuSurface({
             strokeWidth={1.75}
           />
         ) : null}
-      </ContextMenuRow>
+      </MenuRow>
     );
   };
   const open = branch ? actions.find((action) => action.id === branch.id) : undefined;
@@ -507,7 +508,16 @@ function MenuSurface({
       autoFocus={takesFocus}
       side={side}
       align={align}
-      width={width}
+      minWidth={
+        width === "content"
+          ? ((anchor instanceof HTMLElement
+              ? anchor
+              : anchor && "current" in anchor
+                ? anchor.current
+                : null
+            )?.getBoundingClientRect().width ?? 228)
+          : width
+      }
       gap={gap}
       maxHeight={maxHeight}
       layer={depth ? LAYER.submenu + depth - 1 : undefined}
@@ -524,7 +534,7 @@ function MenuSurface({
       onKeyDown={keyboard}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave ?? (branch ? scheduleClose : undefined)}
-      className={`bycoda-arc ${styles.menu} ${search ? styles.searchable : ""}`}
+      className={`bycoda-arc ${styles.menu} ${search ? styles.searchable : popupListClassName}`}
     >
       {search ? (
         <>
@@ -554,7 +564,7 @@ function MenuSurface({
               activate(highlighted, document.getElementById(rowId(highlighted.id)), true);
             }}
           />
-          <div id={`${uid}-rows`} className={styles.body}>
+          <div id={`${uid}-rows`} className={`${styles.body} ${popupListClassName}`}>
             {rowsMarkup}
           </div>
         </>

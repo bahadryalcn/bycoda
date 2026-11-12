@@ -9,6 +9,7 @@ import {
 import { hexToHsv, hsvToHex, normalizeHex, type Hsv } from "../lib/colorUtils";
 import { Check, Pipette } from "./icons";
 import { TextField } from "./TextField";
+import { Tooltip } from "./Tooltip";
 import { isImeComposition } from "../lib/keyboard";
 import styles from "./ColorPickerPopover.module.css";
 
@@ -62,49 +63,50 @@ export function ColorSwatchRow({
         const selected =
           customColor == null && (colorIndex === index || (colorIndex == null && index === 0));
         return (
+          <Tooltip key={color} label={label} asChild>
+            <button
+              type="button"
+              aria-label={label}
+              aria-pressed={selected}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onPickIndex(index)}
+              className={styles.swatch}
+            >
+              <span className={styles.dot} style={{ background: color }}>
+                {selected ? (
+                  <Check className={styles.glyph} strokeWidth={3} aria-hidden="true" />
+                ) : null}
+              </span>
+            </button>
+          </Tooltip>
+        );
+      })}
+      {onToggleCustom ? (
+        <Tooltip label={t("Custom color")} asChild>
           <button
-            key={color}
             type="button"
-            title={label}
-            aria-label={label}
-            aria-pressed={selected}
+            aria-label={t("Custom color")}
+            aria-expanded={customPickerOpen}
+            aria-pressed={customColor != null}
+            data-selected={pipetteActive || undefined}
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => onPickIndex(index)}
+            onClick={onToggleCustom}
             className={styles.swatch}
           >
-            <span className={styles.dot} style={{ background: color }}>
-              {selected ? (
+            <span
+              className={[styles.dot, customColor ? undefined : styles.spectrum]
+                .filter(Boolean)
+                .join(" ")}
+              style={customColor ? { background: customColor } : undefined}
+            >
+              {!customColor ? (
+                <Pipette className={styles.glyph} strokeWidth={2.25} aria-hidden="true" />
+              ) : pipetteActive ? (
                 <Check className={styles.glyph} strokeWidth={3} aria-hidden="true" />
               ) : null}
             </span>
           </button>
-        );
-      })}
-      {onToggleCustom ? (
-        <button
-          type="button"
-          title={t("Custom color")}
-          aria-label={t("Custom color")}
-          aria-expanded={customPickerOpen}
-          aria-pressed={customColor != null}
-          data-selected={pipetteActive || undefined}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={onToggleCustom}
-          className={styles.swatch}
-        >
-          <span
-            className={[styles.dot, customColor ? undefined : styles.spectrum]
-              .filter(Boolean)
-              .join(" ")}
-            style={customColor ? { background: customColor } : undefined}
-          >
-            {!customColor ? (
-              <Pipette className={styles.glyph} strokeWidth={2.25} aria-hidden="true" />
-            ) : pipetteActive ? (
-              <Check className={styles.glyph} strokeWidth={3} aria-hidden="true" />
-            ) : null}
-          </span>
-        </button>
+        </Tooltip>
       ) : null}
     </div>
   );

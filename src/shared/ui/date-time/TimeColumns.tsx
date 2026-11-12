@@ -22,7 +22,7 @@ function TimeColumn({
   disabled?: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);
-  // Center the selected option in its own rail without scrolling the popover or window.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- centers the selected DOM option in its own scroll rail without scrolling the popover or window
   useLayoutEffect(() => {
     const rail = root.current;
     const option = rail?.querySelector<HTMLElement>('[aria-selected="true"]');

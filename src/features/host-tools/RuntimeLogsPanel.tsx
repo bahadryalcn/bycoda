@@ -1,3 +1,4 @@
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { Text } from "../../shared/ui/Text";
 import { LEVEL_LABELS, RuntimeLogRow } from "./ui/RuntimeLogRow";
 import { useRuntimeTerminalMonitor } from "./hooks/useRuntimeTerminalMonitor";
@@ -837,55 +838,60 @@ function ScopedRuntimeLogsPanel({
           className="runtime-logs-monitors-popover"
         >
           <section className="runtime-logs-monitor-setup" aria-label={t("Capture website logs")}>
-            <form
-              className="runtime-logs-capture-form"
-              title={t(
+            <Tooltip
+              label={t(
                 "Opens a separate browser. Capture continues until you stop the website monitor.",
               )}
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (monitorUrl.trim()) void monitorAction("start", { url: monitorUrl.trim() });
-              }}
+              asChild
             >
-              <Globe className="icon-sm" />
-              <TextField
-                hideLabel
-                label={t("Website port or URL")}
-                aria-label={t("Website port or URL")}
-                value={monitorUrl}
-                onChange={(event) => setMonitorUrl(event.target.value)}
-                disabled={monitorBusy}
-                placeholder="3000 / http://localhost:5173"
-                maxLength={2048}
-                required
-              />
-              <Button
-                motion="none"
-                variant="ghost"
-                size="sm"
-                type="submit"
-                disabled={monitorBusy || !monitorUrl.trim()}
-                loading={monitorOperation?.method === "start"}
-                label={t("Open website and capture logs")}
-                tooltip={t("Open website and capture logs")}
+              <form
+                className="runtime-logs-capture-form"
+
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (monitorUrl.trim()) void monitorAction("start", { url: monitorUrl.trim() });
+                }}
               >
-                <Play className="icon-sm" />
-                <span className="runtime-logs-sr">{t("Capture website logs")}</span>
-              </Button>
-              <Button
-                motion="none"
-                variant="ghost"
-                size="sm"
-                type="button"
-                disabled={monitorBusy}
-                loading={monitorOperation?.method === "list"}
-                onClick={() => void monitorAction("list")}
-                label={t("Load monitors")}
-                tooltip={t("Load monitors")}
-              >
-                <RefreshCw className="icon-sm" />
-              </Button>
-            </form>
+                <Globe className="icon-sm" />
+                <TextField
+                  hideLabel
+                  label={t("Website port or URL")}
+                  aria-label={t("Website port or URL")}
+                  value={monitorUrl}
+                  onChange={(event) => setMonitorUrl(event.target.value)}
+                  disabled={monitorBusy}
+                  placeholder="3000 / http://localhost:5173"
+                  maxLength={2048}
+                  required
+                />
+                <Button
+                  motion="none"
+                  variant="ghost"
+                  size="sm"
+                  type="submit"
+                  disabled={monitorBusy || !monitorUrl.trim()}
+                  loading={monitorOperation?.method === "start"}
+                  label={t("Open website and capture logs")}
+                  tooltip={t("Open website and capture logs")}
+                >
+                  <Play className="icon-sm" />
+                  <span className="runtime-logs-sr">{t("Capture website logs")}</span>
+                </Button>
+                <Button
+                  motion="none"
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  disabled={monitorBusy}
+                  loading={monitorOperation?.method === "list"}
+                  onClick={() => void monitorAction("list")}
+                  label={t("Load monitors")}
+                  tooltip={t("Load monitors")}
+                >
+                  <RefreshCw className="icon-sm" />
+                </Button>
+              </form>
+            </Tooltip>
             {monitors.length ? (
               <ul className="runtime-logs-monitor-chips">
                 {monitors.map((monitor) => (
@@ -1035,25 +1041,26 @@ function ScopedRuntimeLogsPanel({
       </ScrollArea>
 
       <footer className="runtime-logs-footer">
-        <Badge
-          variant="dot"
-          size="sm"
-          tone={error ? "danger" : paused || !started ? "neutral" : loaded ? "success" : "info"}
-          role="status"
-          title={hostLabel}
-        >
-          {error
-            ? t("Disconnected")
-            : !started
-              ? t("Stopped")
-              : paused
-                ? t("Paused")
-                : loaded
-                  ? buffer.entries.length
-                    ? t("Live")
-                    : `${t("Live")} · ${t("Waiting for logs")}`
-                  : t("Connecting…")}
-        </Badge>
+        <Tooltip label={hostLabel} asChild>
+          <Badge
+            variant="dot"
+            size="sm"
+            tone={error ? "danger" : paused || !started ? "neutral" : loaded ? "success" : "info"}
+            role="status"
+          >
+            {error
+              ? t("Disconnected")
+              : !started
+                ? t("Stopped")
+                : paused
+                  ? t("Paused")
+                  : loaded
+                    ? buffer.entries.length
+                      ? t("Live")
+                      : `${t("Live")} · ${t("Waiting for logs")}`
+                    : t("Connecting…")}
+          </Badge>
+        </Tooltip>
         <Text
           size="micro"
           tone="inherit"

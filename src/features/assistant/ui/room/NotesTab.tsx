@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
@@ -150,7 +151,11 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                     </Text>
                   </>
                 ) : (
-                  <p>{t("Nothing new to report.")}</p>
+                  <EmptyState
+                    size="inline"
+                    kind="empty"
+                    description={t("Nothing new to report.")}
+                  />
                 )}
               </Surface>
             )}

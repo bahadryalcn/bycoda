@@ -55,17 +55,3 @@
   grid-column: 1 / -1;
   justify-self: start;
 }
-/* The single live signal while voice actions run: the icon breathes. */
-.trigger[data-running] :global(svg) {
-  animation: voice-action-working 1.6s var(--motion-ease-standard) infinite;
-}
-@keyframes voice-action-working {
-  50% {
-    opacity: 0.45;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .trigger[data-running] :global(svg) {
-    animation: none;
-  }
-}

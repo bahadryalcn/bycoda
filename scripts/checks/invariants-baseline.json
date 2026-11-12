@@ -2865,9 +2865,6 @@
     "src/shared/ui/LiveText.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/shared/ui/LoadingCard.tsx": {
-      "bycoda/effect-names-its-sync": 2
-    },
     "src/shared/ui/MiddleTruncate.tsx": {
       "bycoda/compiler-owns-memo": 1
     },
@@ -2917,9 +2914,6 @@
     },
     "src/shared/ui/Sheet.tsx": {
       "bycoda/effect-names-its-sync": 3
-    },
-    "src/shared/ui/Shimmer.tsx": {
-      "bycoda/compiler-owns-memo": 2
     },
     "src/shared/ui/SplitButton.tsx": {
       "bycoda/effect-names-its-sync": 2
@@ -3001,12 +2995,6 @@
       "bycoda/suppression-has-reason": 1,
       "jsx-a11y/no-static-element-interactions": 1
     },
-    "src/shared/ui/arc/elastic-slider/elastic-slider.tsx": {
-      "bycoda/effect-names-its-sync": 4,
-      "bycoda/shared-resize-observer": 1,
-      "jsx-a11y/click-events-have-key-events": 1,
-      "jsx-a11y/no-static-element-interactions": 2
-    },
     "src/shared/ui/arc/empty-state/empty-state.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
@@ -3045,12 +3033,6 @@
       "bycoda/effect-names-its-sync": 10,
       "bycoda/shared-resize-observer": 1,
       "bycoda/suppression-has-reason": 3
-    },
-    "src/shared/ui/arc/morph-select/morph-select.tsx": {
-      "bycoda/compiler-owns-memo": 8,
-      "bycoda/effect-names-its-sync": 6,
-      "bycoda/shared-resize-observer": 1,
-      "jsx-a11y/click-events-have-key-events": 1
     },
     "src/shared/ui/arc/progress/progress.tsx": {
       "bycoda/effect-names-its-sync": 1

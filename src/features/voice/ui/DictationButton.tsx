@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Mic } from "../../../shared/ui/icons";
@@ -123,7 +124,7 @@ export function DictationButton({
           ? t("Stop dictation")
           : t("Dictate");
   return (
-    <span className={styles.group}>
+    <ButtonGroup aria-label={t("Dictation")} surface="transparent">
       <Button
         variant="ghost"
         motion="none"
@@ -156,6 +157,6 @@ export function DictationButton({
       </Button>
       {/* Options apply to the next run, so they wait until this one ends. */}
       <DictationOptions settings={settings} disabled={disabled || state !== "idle"} />
-    </span>
+    </ButtonGroup>
   );
 }

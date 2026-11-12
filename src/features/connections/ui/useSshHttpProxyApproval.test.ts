@@ -43,9 +43,13 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const button = (name: string) => {
-  const found = [...document.querySelectorAll("button")].find(
-    (item) => item.textContent === name || item.getAttribute("aria-label") === name,
-  );
+  const found =
+    [...document.querySelectorAll("button")].find(
+      (item) => item.textContent === name || item.getAttribute("aria-label") === name,
+    ) ??
+    [...document.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find(
+      (item) => item.closest("label")?.textContent === name,
+    );
   if (!found)
     throw new Error(
       `Missing button ${name}: ${[...document.querySelectorAll("button")].map((item) => item.textContent).join(" | ")}`,

@@ -14,6 +14,7 @@ import {
   withRuntimeHint,
 } from "./runtimeGuidance";
 import { providerInput, providerInputCopy, providerTurnInput } from "./providerInput";
+import { conversationDelegationReady, delegationFallback } from "./delegationReadiness";
 import type { GeneratedSessionTitle } from "../../../features/sessions/model/sessionTitle";
 import type { PrContent } from "../../../features/source-control/model/gitText";
 import {
@@ -405,9 +406,13 @@ function operationContext(
   });
 }
 
-function operationInput<I extends HarnessSessionInput>(input: I, owner: AdapterOperation): I {
+function operationInput<I extends HarnessSessionInput>(
+  input: I,
+  owner: AdapterOperation,
+  delegationReady = true,
+): I {
   return {
-    ...providerTurnInput(input, nativeModelId),
+    ...providerTurnInput(input, nativeModelId, delegationReady),
     nativeControlTurn: owner.control,
     // This is the original operation identity, not a cleanup source cut. A
     // legitimate queued restart can select another construction after this call.
@@ -685,17 +690,32 @@ export function sendHarnessTurn(
       cancelIdlePark(input.sessionId);
       await drainRetirementsBestEffort(input.sessionId, input.harness);
       const guidance = Promise.allSettled([
-        harnessRuntimeHints(input.sessionId, input.modelSettings, input),
+        input.modelSettings?.crossSubagents || input.modelSettings?.crossSubagentMaxEffort
+          ? conversationDelegationReady(input.sessionId)
+          : Promise.resolve(true),
         operationSkillPolicy(input.cwd, input.harness),
       ]);
       const { control: controlTurn, processes } = await beginOperationControl(input, nativeClaim);
       submission.resolveControl(controlTurn);
       try {
-        const [runtime, policy] = await guidance;
-        if (runtime.status === "rejected") throw runtime.reason;
+        const [readiness, policy] = await guidance;
         if (policy.status === "rejected") throw policy.reason;
         const thread = { harness: input.harness, providerAccountId: input.providerAccountId };
-        const hint = pendingRuntimeHint(input.sessionId, thread, runtime.value);
+        const delegationReady = readiness.status === "fulfilled" && readiness.value;
+        const fallback = delegationFallback(input.modelSettings, delegationReady);
+        const runtime = await harnessRuntimeHints(
+          input.sessionId,
+          input.modelSettings,
+          input,
+          delegationReady,
+        );
+        const hint = pendingRuntimeHint(
+          input.sessionId,
+          thread,
+          [runtime, fallback].filter(Boolean).join("\n"),
+        );
+        if (fallback)
+          input.onEvent({ type: "status", key: "delegation-unavailable", text: fallback });
         const text =
           input.harness === "codex" ? input.text : withRuntimeHint(input.harness, input.text, hint);
         const deliversHint = turnCarriesRuntimeHint(input.harness, input.text, text, hint);
@@ -760,6 +780,7 @@ export function sendHarnessTurn(
                   onEvent: deliver,
                 },
                 owner,
+                delegationReady,
               ),
             );
           } finally {

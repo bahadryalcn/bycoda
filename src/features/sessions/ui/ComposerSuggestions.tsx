@@ -1,14 +1,23 @@
+/** Different job: Editor-attached suggestions preserve composer focus instead of becoming a standalone form field. */
 import { useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
 import { Popover } from "../../../shared/ui/Popover";
 
-/** Keep suggestions attached to the whole input, including after panel resizing. */
+/**
+ * Keep suggestions attached to the whole input, including after panel resizing.
+ * @use Editor-owned suggestions without moving focus away from the composer.
+ * @avoid Standalone searchable choices: PickerPopover and PickerList.
+ * @replaces An editor-owned overlay frame, not a standalone select controller.
+ */
 export function ComposerSuggestions({
   anchor,
   below,
+  dialog,
   children,
 }: {
   anchor: RefObject<HTMLDivElement | null>;
   below: boolean;
+  /** Optional dialog ownership for focused composer pickers; ordinary suggestions stay a list. */
+  dialog?: { label: string; onDismiss: (reason: "escape" | "outside") => void };
   children: ReactNode;
 }) {
   const [width, setWidth] = useState(anchor.current?.offsetWidth ?? 300);
@@ -25,10 +34,13 @@ export function ComposerSuggestions({
     <Popover
       anchor={anchor}
       side={below ? "bottom" : "top"}
-      width={width}
+      minWidth={width}
       gap={4}
+      kind={dialog ? "dialog" : undefined}
+      aria-label={dialog?.label}
+      onDismiss={dialog?.onDismiss}
       className="composer-suggestions overflow-y-auto overscroll-contain"
-      style={{ animation: "none" }}
+      motion="none"
     >
       {children}
     </Popover>

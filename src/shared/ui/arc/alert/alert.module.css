@@ -50,27 +50,6 @@
     gap: var(--space-2);
     margin-inline-start: auto;
   }
-  .inline {
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    padding: 0;
-    border-radius: 0;
-  }
-  .inline .icon {
-    inline-size: 0.875rem;
-    block-size: 0.875rem;
-    margin-block-start: 0;
-  }
-  .inline .body {
-    gap: var(--space-2);
-  }
-  .inline .copy {
-    flex: 0 1 auto;
-  }
-  .inline .action {
-    margin-inline-start: var(--space-1);
-  }
 }
 .icon svg {
   display: block;
@@ -145,16 +124,4 @@
 }
 .danger .icon {
   color: var(--ui-tone-danger-fg);
-}
-.inline {
-  border: 0;
-  background: transparent;
-  font-size: var(--ui-font-caption);
-}
-.inline .title {
-  font-size: var(--ui-font-caption);
-}
-.inline .copy > .content > .description:first-child {
-  font-size: var(--ui-font-caption);
-  line-height: var(--ui-leading-caption);
 }

@@ -1,3 +1,4 @@
+/** Different job: Appearance preview draws the chosen background; it is not an ordinary selection row. */
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";

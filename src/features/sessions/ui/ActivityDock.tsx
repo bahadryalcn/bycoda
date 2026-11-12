@@ -6,7 +6,6 @@ import { Button } from "../../../shared/ui/Button";
 import { useLocale, useT } from "../../../shared/i18n";
 import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { Shimmer } from "../../../shared/ui/Shimmer";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -276,9 +275,9 @@ function DockBody({
               truncate
             >
               {dock.state === "working" ? (
-                <Shimmer truncate duration={1.6}>
+                <WorkingIndicator truncate glyph={false}>
                   {label}
-                </Shimmer>
+                </WorkingIndicator>
               ) : (
                 label
               )}

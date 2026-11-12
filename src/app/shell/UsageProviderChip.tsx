@@ -7,7 +7,7 @@ import {
 import { UsageWindowStat } from "./UsageWindowStat";
 import { Text } from "../../shared/ui/Text";
 import { motionAttributes } from "../../shared/ui/Motion";
-import { Progress } from "../../shared/ui/Progress";
+import { UsageMeter as QuotaMeter } from "../../shared/ui/UsageMeter";
 import { TextField } from "../../shared/ui/TextField";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
 import { useFormat, useLocale, useT } from "../../shared/i18n";
@@ -873,14 +873,21 @@ function UsageWindowCard({
         <SectionLabel as="h3" size="micro">
           {t(title)}
         </SectionLabel>
+        <Text size="micro" tone="secondary">
+          {formatUsagePercent(shown)} {showRemaining ? t("remaining") : t("used")}
+        </Text>
       </div>
-      <Progress
-        showValue
-        valuePlacement="inside"
-        valueLabel={`${formatUsagePercent(shown)} ${showRemaining ? t("remaining") : t("used")}`}
+      <QuotaMeter
+        compact
+        showLegend={false}
+        showRemaining={showRemaining}
+        label={`${t(title)} ${showRemaining ? t("remaining") : t("used")}`}
+        valueText={`${formatUsagePercent(shown)} ${showRemaining ? t("remaining") : t("used")}`}
         className="mbs-1.5"
-        aria-label={`${title} ${showRemaining ? "remaining" : "used"}`}
-        value={Math.round(shown)}
+        segments={[{ id: "used", label: t("used"), value: pct }]}
+        limit={100}
+        unit="%"
+        decimals={0}
         tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
       />
       <Text

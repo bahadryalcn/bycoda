@@ -17,7 +17,8 @@ const native = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => native }));
 // Placement is tested by the shared Popover; keep its accessible surface here.
-vi.mock("../../shared/ui/Popover", () => ({
+vi.mock("../../shared/ui/Popover", async () => ({
+  ...(await vi.importActual<typeof import("../../shared/ui/Popover")>("../../shared/ui/Popover")),
   Popover: ({
     children,
     anchor: _anchor,

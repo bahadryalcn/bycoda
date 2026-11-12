@@ -1,10 +1,12 @@
+/** Different job: Account tiles combine live quota meters and account status; RadioGroup owns tile presentation. */
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { Meter } from "../../../shared/ui/Meter";
+import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { StatusDot } from "../../../shared/ui/StatusDot";
@@ -249,7 +251,12 @@ export function ModelAccountList({
         </div>
       ) : null}
       {shown.length === 0 ? (
-        <div className="px-2 py-3 ui-caption-text">{t("No matching accounts")}</div>
+        <EmptyState
+          size="inline"
+          kind="filtered"
+          className="px-2 py-3 ui-caption-text"
+          description={t("No matching accounts")}
+        />
       ) : (
         <RadioGroup
           variant="tiles"
@@ -308,12 +315,22 @@ export function ModelAccountList({
                   </span>
                   {account.usedPercent != null ? (
                     <span className="flex w-16 shrink-0 flex-col items-end gap-0.5">
-                      <Meter
+                      <UsageMeter
+                        compact
+                        showLegend={false}
+                        decimals={0}
                         className="w-full"
-                        value={account.usedPercent}
-                        warning={USAGE_WARNING}
-                        danger={USAGE_DANGER}
-                        tone="accent"
+                        segments={[
+                          { id: "usage", label: account.label, value: account.usedPercent },
+                        ]}
+                        limit={100}
+                        tone={
+                          account.usedPercent >= USAGE_DANGER
+                            ? "danger"
+                            : account.usedPercent >= USAGE_WARNING
+                              ? "warning"
+                              : "accent"
+                        }
                         label={t("Usage of {p0}", { p0: account.label })}
                       />
                       <Percent value={account.usedPercent} />

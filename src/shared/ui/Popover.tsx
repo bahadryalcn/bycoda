@@ -1,4 +1,4 @@
-import { NativePopupHost } from "./NativePopupHost";
+import { NativePopupHost, PopupBackdrop } from "./NativePopupHost";
 import {
   useCallback,
   useContext,
@@ -11,7 +11,6 @@ import {
   type Ref,
 } from "react";
 import { createPortal } from "react-dom";
-import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
 import { lockOverscroll } from "../hooks/useLockOverscroll";
 import { LAYER } from "../lib/layers";
 import { cumulativeCssZoom } from "../lib/cssZoom";
@@ -19,6 +18,9 @@ import { OverlayMenuLayer, OverlayParent, overlayContainsTarget, useOverlay } fr
 import styles from "./Popover.module.css";
 import {
   placePopover,
+  POPUP_MAX_WIDTH,
+  POPUP_VIEWPORT_PADDING,
+  popupListWidth,
   type AnchorRect,
   type PopoverAlign,
   type PopoverPosition,
@@ -94,7 +96,11 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   gap?: number;
   padding?: number;
   width?: number;
-  /** Intrinsic-width floor, still clamped to the viewport. Unlike `width`, content can grow wider. */
+  /**
+   * Marks a list popup (select, menu, picker): the width is the floor and the surface grows with its
+   * longest row up to `POPUP_MAX_WIDTH` (800px), always clamped to the viewport. Unlike `width`, content
+   * can grow wider than the trigger or the dialog it opened from. Rows stay one line until the cap.
+   */
   minWidth?: number;
   minHeight?: number;
   maxHeight?: number;
@@ -135,8 +141,10 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   ref?: Ref<HTMLDivElement>;
 };
 
-const FRAME =
-  "isolate overflow-hidden rounded-(--ui-radius-popup) border border-(color:--ui-pane-border) shadow-(--ui-elevation-floating)";
+/** Shared content inset for popup lists, including lists in native popup windows. */
+export const popupListClassName = styles.listContent;
+
+const FRAME = styles.frame;
 
 /** Inline so an opt-in scroll region wins over utility classes a consumer put on the content. */
 const SCROLL_STYLE: CSSProperties = { overflowY: "auto", overscrollBehavior: "contain" };
@@ -282,7 +290,7 @@ function NativePopover({
     gap: _gap,
     padding: _padding,
     width: _width,
-    minWidth: _minWidth,
+    minWidth,
     minHeight: _minHeight,
     constrainHeight: _constrainHeight,
     layer: _layer,
@@ -304,10 +312,11 @@ function NativePopover({
       data-popover-flow={flow}
       style={{
         maxHeight: maxHeight ?? 400,
+        ...(minWidth != null ? { "--popup-max-width": `${POPUP_MAX_WIDTH}px` } : null),
         ...(flow === "scroll" ? SCROLL_STYLE : null),
         ...style,
       }}
-      className={`${flow === "auto" ? `${styles.bounded} ` : ""}relative w-full outline-none ${className ?? ""}`}
+      className={`${minWidth != null ? `${styles.list} ` : ""}${flow === "auto" ? `${styles.bounded} ` : ""}relative w-full outline-none ${className ?? ""}`}
     >
       <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
     </div>,
@@ -409,7 +418,7 @@ function WebPopover({
         align,
         gap,
         padding,
-        width: width ?? Math.max(minWidth ?? 0, naturalWidth),
+        width: width ?? (minWidth == null ? naturalWidth : popupListWidth(naturalWidth, minWidth)),
         minHeight,
         maxHeight,
       },
@@ -511,7 +520,9 @@ function WebPopover({
         left: 0,
         top: 0,
         width: width ?? "max-content",
-        ...(constrainHeight ? { maxHeight: maxHeight ?? "calc(100vh - 16px)" } : {}),
+        ...(constrainHeight
+          ? { maxHeight: maxHeight ?? `calc(100vh - ${POPUP_VIEWPORT_PADDING * 2}px)` }
+          : {}),
         visibility: "hidden",
       };
 
@@ -524,24 +535,23 @@ function WebPopover({
       ? Math.max(0, position.maxHeight - frameInset)
       : maxHeight != null
         ? Math.max(0, maxHeight - frameInset)
-        : `calc(100vh - ${16 + frameInset}px)`
+        : `calc(100vh - ${POPUP_VIEWPORT_PADDING * 2 + frameInset}px)`
     : undefined;
 
   return createPortal(
     <div
       ref={frame}
       data-popover-side={position?.side ?? side}
-      style={{ ...placed, zIndex: effectiveLayer }}
-      className={bare ? undefined : FRAME}
+      style={
+        {
+          ...placed,
+          ...(minWidth != null ? { "--popup-max-width": `${POPUP_MAX_WIDTH}px` } : null),
+          zIndex: effectiveLayer,
+        } as CSSProperties
+      }
+      className={[!bare && FRAME, minWidth != null && styles.list].filter(Boolean).join(" ")}
     >
-      {bare ? null : solid ? (
-        <div
-          aria-hidden="true"
-          className="popover-solid pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
-        />
-      ) : (
-        <GlassBackdrop className={frosted ? "popover-backdrop popover-frosted" : undefined} />
-      )}
+      {bare ? null : <PopupBackdrop solid={solid} frosted={frosted} />}
       <div
         {...(dialog ? { role: "dialog", tabIndex: -1 } : null)}
         {...rest}

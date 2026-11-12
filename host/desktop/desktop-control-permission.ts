@@ -2,6 +2,7 @@ import {
   type DesktopControlConfiguration,
   type DesktopPermissionMode,
 } from "../../src/shared/model/host-contracts/desktop-control";
+import { hasControlCharacters } from "../../src/shared/lib/controlCharacters";
 
 export const EMPTY_DESKTOP_CONFIGURATION: DesktopControlConfiguration = {
   enabled: false,
@@ -14,7 +15,8 @@ export const EMPTY_DESKTOP_CONFIGURATION: DesktopControlConfiguration = {
   version: 0,
 };
 
-/** Old stored rows have no mode; they read as "ask". "Allow all apps" only exists in full access. */
+/** Old stored rows have no mode; they read as "ask". Full access always covers every app; the
+ * stored `allowAllApps` value is ignored. */
 export function normalizeDesktopConfiguration(
   raw: Partial<DesktopControlConfiguration>,
 ): DesktopControlConfiguration {
@@ -24,8 +26,15 @@ export function normalizeDesktopConfiguration(
     ...EMPTY_DESKTOP_CONFIGURATION,
     ...raw,
     permissionMode: mode,
-    allowAllApps: mode === "full" && raw.allowAllApps === true,
+    allowAllApps: mode === "full",
   };
+}
+
+/** A plain app name that is safe to pass to the helper and to show in an approval. */
+export function isPlainDesktopAppName(app: string) {
+  return (
+    !!app.trim() && app.length <= 200 && !app.startsWith("-") && !hasControlCharacters(app, false)
+  );
 }
 
 export function isDesktopAppAllowed(configuration: DesktopControlConfiguration, app: string) {
@@ -39,8 +48,9 @@ export type DesktopGate = {
   requirePresence: boolean;
 };
 
-/** One table for every owner-configurable mode. Locked/unknown desktop, Stop, disabled control
- * and non-allowed apps are blocked elsewhere in every mode. */
+/** One table for every owner-configurable mode. Locked/unknown desktop, Stop and disabled control
+ * are blocked elsewhere in every mode. An app the owner has not approved yet is asked for once
+ * by the conversation gate (ask and auto); auto then launches and acts on it without a dialog. */
 export function desktopGate(input: {
   mode: DesktopPermissionMode;
   kind: "act" | "launch" | "clipboard";
@@ -49,7 +59,7 @@ export function desktopGate(input: {
   if (input.mode === "full") return { ask: false, requirePresence: false };
   const physical = input.kind === "act" && input.headed;
   return {
-    ask: input.mode === "ask" || input.kind !== "act" || physical,
+    ask: input.mode === "ask" || input.kind === "clipboard" || physical,
     requirePresence: physical || input.kind === "clipboard",
   };
 }

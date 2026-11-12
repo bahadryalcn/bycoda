@@ -11,7 +11,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
@@ -349,7 +349,8 @@ export function TunnelControls({
         }}
       >
         <Field label={t("What to share")}>
-          <SegmentedControl
+          <RadioGroup
+            variant="inline"
             label={t("Tunnel target")}
             value={target}
             onValueChange={(value) => {
@@ -362,7 +363,8 @@ export function TunnelControls({
           />
         </Field>
         <Field label={t("Provider")}>
-          <SegmentedControl
+          <RadioGroup
+            variant="inline"
             label={t("Tunnel provider")}
             value={provider}
             onValueChange={(value) => {

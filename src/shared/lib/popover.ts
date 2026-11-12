@@ -46,8 +46,16 @@ export type PopoverPosition = {
   maxHeight: number;
 };
 
+/** Widest a list popup grows with its longest option; only an option past this wraps. */
+export const POPUP_MAX_WIDTH = 800;
+
 const DEFAULT_GAP = 6;
-const DEFAULT_PADDING = 8;
+export const POPUP_VIEWPORT_PADDING = 8;
+
+/** A list's floor and longest row share one hard cap, including native-window sizing. */
+export function popupListWidth(naturalWidth: number, minWidth = 0): number {
+  return Math.min(POPUP_MAX_WIDTH, Math.max(minWidth, naturalWidth));
+}
 
 const OPPOSITE: Record<PopoverSide, PopoverSide> = {
   top: "bottom",
@@ -87,7 +95,7 @@ export function placePopover(
   options: PopoverOptions = {},
 ): PopoverPosition {
   const gap = options.gap ?? DEFAULT_GAP;
-  const padding = options.padding ?? DEFAULT_PADDING;
+  const padding = options.padding ?? POPUP_VIEWPORT_PADDING;
   const align = options.align ?? "start";
   const preferred = options.side ?? "bottom";
 

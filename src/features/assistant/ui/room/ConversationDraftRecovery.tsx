@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
 import { formatBytes } from "../../../../shared/i18n/format";
@@ -115,7 +116,7 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
         {t("Refresh")}
       </Button>
       {!draftRecovery.loading && !draftRecovery.backups.length && !draftRecovery.error && (
-        <p>{t("No saved drafts found.")}</p>
+        <EmptyState size="inline" kind="empty" description={t("No saved drafts found.")} />
       )}
     </Modal>
   );

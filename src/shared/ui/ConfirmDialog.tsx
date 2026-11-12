@@ -214,10 +214,11 @@ async function attemptConfirm(
  * (danger) confirm button. Row-level deletes use ConfirmMorph instead; the Tauri
  * `ask` dialog is only for places a web overlay cannot render. Render it directly
  * with a request rebuilt from the owner's state, or through `useConfirm`. It brings its own body
- * layout, so it opts out of the default Modal padding.
+ * layout inside the standard Modal body padding.
+ * Hand-written blocking confirmation dialogs and native confirm prompts in React views.
  * @group overlay
- * @use Confirm a destructive or multi-consequence action with Cancel and a confirm button.
- * @avoid Row-level deletes: ConfirmMorph. Forms or choices: Modal.
+ * @use Blocking review of destructive consequences, typed confirmation or acknowledgement, with Cancel before confirm.
+ * @avoid In-place single-item removal without a review step: ConfirmMorph. Forms or choices: Modal.
  */
 export function ConfirmDialog({
   request,
@@ -282,7 +283,6 @@ export function ConfirmDialog({
   const acknowledgeId = `${uid}-acknowledge`;
   return (
     <Modal
-      padding="none"
       size="sm"
       title={request.title}
       context={request.context}
@@ -314,7 +314,7 @@ export function ConfirmDialog({
     >
       <div
         aria-busy={pending || undefined}
-        className="flex flex-col gap-3 px-4 py-3 text-ui-secondary break-words text-(--ui-text-secondary)"
+        className="flex flex-col gap-3 text-ui-secondary break-words text-(--ui-text-secondary)"
       >
         <p>{request.message}</p>
         {request.details ? <div className="min-w-0">{request.details}</div> : null}

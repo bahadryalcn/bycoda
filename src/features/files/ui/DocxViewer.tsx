@@ -1,3 +1,4 @@
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { loadDocx } from "../model/docxClient";
@@ -60,14 +61,7 @@ export default function DocxViewer({ bytes }: { bytes: Uint8Array }) {
   }, [bytes]);
 
   if (state.status === "loading") {
-    return (
-      <div
-        role="status"
-        className="grid h-full place-items-center p-3 text-ui-caption text-(--ui-text-muted)"
-      >
-        {t("Converting document…")}
-      </div>
-    );
+    return <SurfaceLoading label={t("Converting document…")} />;
   }
   if (state.status === "error") {
     return (

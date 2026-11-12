@@ -16,6 +16,7 @@ vi.mock("../../../integrations/harness/core/registry", () => ({
 }));
 
 vi.mock("../../../shared/ui/Popover", () => ({
+  popupListClassName: "shared-popup-list",
   Popover: ({ children, role, ...props }: { children: ReactNode; role?: string }) =>
     createElement(
       "div",

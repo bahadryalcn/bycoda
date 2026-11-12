@@ -1,3 +1,4 @@
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { pathKey, projectName } from "../../../shared/lib/paths";
 import {
   rowCost,
@@ -72,6 +73,8 @@ export type UsageBucket = UsageValues & {
 export type UsageBreakdown = UsageValues & {
   key: string;
   label: string;
+  /** Provider the first sample of a model row came from; the icon of the model. */
+  provider?: string;
   unpricedTokens: number;
   logSamples: number;
   timedSamples: number;
@@ -163,11 +166,14 @@ export function usageBreakdown(
         ? sample.accountLabel
         : dimension === "project"
           ? sample.projectLabel
-          : key;
+          : dimension === "model"
+            ? modelDisplayName(key, sample.provider)
+            : key;
     const row = rows.get(key) ?? {
       ...zeroUsage(),
       key,
       label,
+      ...(dimension === "model" ? { provider: sample.provider } : {}),
       unpricedTokens: 0,
       logSamples: 0,
       timedSamples: 0,

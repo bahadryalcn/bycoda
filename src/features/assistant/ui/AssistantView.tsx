@@ -1,3 +1,5 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { FailureState } from "../../../shared/ui/FailureState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import {
@@ -360,9 +362,17 @@ export function AssistantView(props: AssistantViewProps) {
           <InlineError className={shell.notice}>{error.text}</InlineError>
         )}
         {!snapshot ? (
-          <Text as="div" size="caption" tone="secondary" leading="inherit" className={shell.empty}>
-            {loading ? t("Loading...") : t("Connect to the local Host to open this room.")}
-          </Text>
+          loading ? (
+            <LoadingText className={shell.empty} delay={false}>
+              {t("Loading...")}
+            </LoadingText>
+          ) : (
+            <FailureState
+              context="panel"
+              className={shell.empty}
+              description={t("Connect to the local Host to open this room.")}
+            />
+          )
         ) : !snapshot.profile.setupComplete ? (
           <section className={shell.setupPrompt}>
             <Heading size="section">{t("Set up your personal assistant")}</Heading>

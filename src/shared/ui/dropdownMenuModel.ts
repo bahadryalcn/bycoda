@@ -60,7 +60,11 @@ export interface DropdownMenuProps {
   returnFocusRef?: RefObject<HTMLElement | null>;
   side?: "top" | "bottom" | "left" | "right";
   align?: "start" | "center" | "end";
-  width?: number;
+  /**
+   * Minimum width in px; the menu grows with its longest row up to 800px. `"content"` takes the
+   * trigger's width as the minimum.
+   */
+  width?: number | "content";
   gap?: number;
   maxHeight?: number;
   /**

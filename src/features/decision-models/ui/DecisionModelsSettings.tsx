@@ -1,4 +1,6 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import "./decisionModels.css";
+import { testedSources } from "../model/routingEditor";
 import { connectedCandidate } from "../model/presentation";
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
@@ -13,7 +15,7 @@ import { Switch } from "../../../shared/ui/Switch";
 import { Group } from "../../settings/public/settingsControls";
 import { useDecisionModels } from "../hooks/useDecisionModels";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
-import type { DecisionSource, DiscoveryCandidate } from "../model/decisionTypes";
+import type { DecisionSource, DiscoveryCandidate, SourceTestResult } from "../model/decisionTypes";
 import { candidateSourceInput } from "../model/decisionView";
 import { AddMenu, type AddPath } from "./AddMenu";
 import { ApiProviderDialog } from "./ApiProviderDialog";
@@ -41,7 +43,17 @@ type Dialog =
  */
 export function DecisionModelsSettings({ client }: { client: DecisionModelsClient }) {
   const model = useDecisionModels(client);
-  const { actions } = model;
+  const [testResults, setTestResults] = useState<Record<string, SourceTestResult>>({});
+  const [testingAll, setTestingAll] = useState(false);
+  const actions = {
+    ...model.actions,
+    testSource: async (id: string) => {
+      const result = await model.actions.testSource(id);
+      setTestResults((current) => ({ ...current, [id]: result }));
+      return result;
+    },
+  };
+  const sources = testedSources(model.sources, testResults);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [topError, setTopError] = useState<unknown>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
@@ -124,28 +136,41 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 py-2">
         <div className="flex items-center gap-2">
-          {model.sources === null ? (
-            <Text size="caption">{t("Loading…")}</Text>
+          {sources === null ? (
+            <LoadingText delay={false}>{t("Loading…")}</LoadingText>
           ) : (
             <>
               <Badge size="xs" icon={<Server />}>
-                {t("{p1} connected", { p1: formatNumber(model.sources.length) })}
+                {t("{p1} connected", { p1: formatNumber(sources.length) })}
               </Badge>
               <Badge size="xs" tone="success" icon={<Check />}>
                 {t("{p1} working", {
-                  p1: formatNumber(
-                    model.sources.filter((source) => source.status === "ready").length,
-                  ),
+                  p1: formatNumber(sources.filter((source) => source.status === "ready").length),
                 })}
               </Badge>
-              {model.sources.some((source) => source.status === "error") ? (
-                <Badge size="xs" tone="danger" icon={<CircleAlert />}>
-                  {t("{p1} failed", {
-                    p1: formatNumber(
-                      model.sources.filter((source) => source.status === "error").length,
-                    ),
-                  })}
-                </Badge>
+              {sources.some((source) => source.status === "error") ? (
+                <Tooltip
+                  label={t("Use Test to retry. Hover or focus a Failed badge for the reason.")}
+                >
+                  <Badge size="xs" tone="danger" icon={<CircleAlert />} tabIndex={0}>
+                    {t("{p1} failed", {
+                      p1: formatNumber(
+                        sources.filter((source) => source.status === "error").length,
+                      ),
+                    })}
+                  </Badge>
+                </Tooltip>
+              ) : null}
+              {sources.some((source) => source.status === "unknown") ? (
+                <Tooltip label={t("Use Test all to check models that have not been tested.")}>
+                  <Badge size="xs" tabIndex={0}>
+                    {t("{p1} not tested", {
+                      p1: formatNumber(
+                        sources.filter((source) => source.status === "unknown").length,
+                      ),
+                    })}
+                  </Badge>
+                </Tooltip>
               ) : null}
             </>
           )}
@@ -171,10 +196,42 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
       <Group
         title={t("Connected models")}
         description={t("Models and services the app can ask. Test a source before you rely on it.")}
-        action={<AddMenu onPick={pick} />}
+        action={
+          <div className="flex shrink-0 items-center justify-end gap-2">
+            {(sources?.length ?? 0) > 1 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={testingAll}
+                disabled={
+                  testingAll || sources?.some((source) => model.isPending(`test:${source.id}`))
+                }
+                onClick={() => {
+                  setTestingAll(true);
+                  void Promise.allSettled(
+                    (sources ?? []).map((source) => actions.testSource(source.id)),
+                  )
+                    .then((results) => {
+                      setTestingAll(false);
+                      const failed = results.find((result) => result.status === "rejected");
+                      if (failed?.status === "rejected") setTopError(failed.reason);
+                    })
+                    .catch((error: unknown) => {
+                      setTestingAll(false);
+                      setTopError(error);
+                    });
+                }}
+              >
+                {t("Test all")}
+              </Button>
+            ) : null}
+            <AddMenu onPick={pick} />
+          </div>
+        }
       >
         <SourcesList
           sources={model.sources}
+          testResults={testResults}
           sourcesError={model.sourcesError}
           onRetry={() => void actions.reloadSources().catch(() => undefined)}
           actions={actions}
@@ -196,9 +253,8 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
             ? t("Found on this computer")
             : t("Found on this computer: {p1} not added", {
                 p1: formatNumber(
-                  model.found.filter(
-                    (candidate) => !connectedCandidate(candidate, model.sources ?? []),
-                  ).length,
+                  model.found.filter((candidate) => !connectedCandidate(candidate, sources ?? []))
+                    .length,
                 ),
               })
         }
@@ -212,7 +268,7 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
           >
             <FoundList
               found={model.found}
-              sources={model.sources ?? []}
+              sources={sources ?? []}
               scanning={model.scanning}
               scanError={model.scanError}
               incomplete={model.scanIncomplete}
@@ -230,14 +286,14 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
         title={t("Task routing")}
         description={t("Which source answers each kind of question, in order.")}
       >
-        {model.sources?.length ? (
+        {sources?.length ? (
           <RoutingTable
             routing={model.routing}
-            sources={model.sources}
+            sources={sources}
             busy={model.isPending("routing")}
             onSave={(next) => actions.saveRouting(next)}
           />
-        ) : model.sources !== null ? (
+        ) : sources !== null ? (
           <Text as="p" size="body" tone="secondary" className="px-4 py-2.5">
             {t("Connect a model before customizing task routing.")}
           </Text>

@@ -11,6 +11,13 @@ import {
 import { OverlayMenuLayer } from "./overlay";
 import { ToastCard, type ToastContentProps } from "./ToastCard";
 
+/**
+ * Toast card re-export for consumers of the shared toast queue.
+ * @group feedback
+ * @use Render toast content through Toast or TransientNotice.
+ * @avoid Placement and expiry queue: Toast. Inline feedback: InlineMessage.
+ * @status internal
+ */
 export {
   ToastCard,
   TOAST_VISIBLE_MS,

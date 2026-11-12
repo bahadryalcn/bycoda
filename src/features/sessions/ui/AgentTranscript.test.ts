@@ -646,7 +646,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain("Correctness review");
     expect(markup).toContain("Quality review");
     expect(markup).toContain("Haiku 4.5");
-    expect(markup).toContain("custom-review-model");
+    expect(markup).toContain("Custom Review Model");
     // Static rendering has no client motion preference; keep mascots still.
     expect(markup).not.toContain("mascot-active");
     expect(markup).not.toContain('shape-rendering="crispEdges"');
@@ -657,9 +657,10 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain("1 step");
     expect(markup).not.toContain("Read src/App.tsx");
     expect(markup).not.toContain("starting up");
-    // The name carries the shimmer while the run is live, and each row opens
+    // Active work uses the shared indicator; each row opens
     // on its own.
-    expect(markup).toContain("shimmer-text");
+    expect(markup).not.toContain("shimmer-text");
+    expect(markup).toContain('data-size="xs"');
     expect(markup).toContain("Show Correctness review&#x27;s work");
     // The rows sit outside the fold, so they stay put as the work collapses.
     expect(markup).toContain("Both reviewers agree.");

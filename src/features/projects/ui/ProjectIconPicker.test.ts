@@ -37,7 +37,7 @@ it("shows all 32 choices and retains the selected icon", () => {
   ).toContain("#a855f7");
   expect(choices()).toHaveLength(32);
   expect(
-    container.querySelector('[aria-label="Project icon: Security"]')?.getAttribute("aria-pressed"),
+    container.querySelector('[aria-label="Project icon: Security"]')?.getAttribute("aria-checked"),
   ).toBe("true");
   act(() =>
     container

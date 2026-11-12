@@ -158,6 +158,7 @@ export type HoverCardProps = HoverCardOptions & {
  * Wraps one trigger with a rich, interactive preview card on hover or keyboard focus: opens after 300 ms rest,
  * the pointer can cross into the card, Escape closes, content mounts only while open. Adds no box.
  * Use `useHoverCard` when the trigger must stay a direct child.
+ * Hand-written interactive hover previews. Shared useHoverCard consumers include BadgeList, session previews and Git graph rows.
  * @group overlay
  * @use An optional preview of an object (row, chip, avatar) with links or actions. Everything in it needs a focus or tap route too.
  * @avoid Plain text hint on a control: Tooltip. Help behind an icon: InfoPopover. Click-opened panel or menu: Popover or DropdownMenu. Required actions or state never live only in a hover card.

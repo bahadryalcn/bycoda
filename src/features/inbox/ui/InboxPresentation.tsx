@@ -16,10 +16,17 @@ import {
   GitPullRequestDraft,
   type IconComponent,
 } from "../../../shared/ui/icons";
-import { useState } from "react";
-import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
-import { ProjectMascot } from "../../projects/ui/ProjectMascot";
+import { useEffect, useState, type CSSProperties } from "react";
+import { inboxAvatarColor, isJiraAvatarUrl } from "../model/inboxAvatar";
+import { fetchInboxMedia, sniffInboxMedia } from "../model/inboxMedia";
+import { ProjectLogoIcon } from "../../projects/public/ProjectLogoIcon";
+import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
+import { useGroupLock } from "../../group-lock/hooks/useGroupLock";
+import {
+  projectGroupIdForPath,
+  useProjectGroupAssignments,
+} from "../../projects/model/projectGroups";
 import { inboxItemStatus, type GithubLabel, type InboxItem } from "../model/githubTasks";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import { sameProjectPath, type RecentProject } from "../../projects/model/recents";
@@ -153,13 +160,53 @@ export function InboxAvatar({
   avatarUrl?: string;
   size?: number;
 }) {
+  return <InboxAvatarImage key={avatarUrl} name={name} avatarUrl={avatarUrl} size={size} />;
+}
+
+function InboxAvatarImage({
+  name,
+  avatarUrl,
+  size = 20,
+}: {
+  name: string;
+  avatarUrl?: string;
+  size?: number;
+}) {
   useLocale();
   const [failedUrl, setFailedUrl] = useState<string | undefined>();
+  const [loaded, setLoaded] = useState<{ source: string; url: string } | null>(null);
+  const authenticated = !!avatarUrl && isJiraAvatarUrl(avatarUrl);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Own the native avatar's blob URL while mounted; revoke it on source change or unmount.
+  useEffect(() => {
+    if (!avatarUrl || !authenticated) return;
+    let cancelled = false;
+    let objectUrl: string | undefined;
+    void fetchInboxMedia(avatarUrl)
+      .then((bytes) => {
+        const type = sniffInboxMedia(bytes);
+        if (type?.kind !== "image") throw new Error("Unsupported avatar image");
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(new Blob([bytes], { type: type.mime }));
+        setLoaded({ source: avatarUrl, url: objectUrl });
+      })
+      .catch(() => {
+        if (!cancelled) setFailedUrl(avatarUrl);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [avatarUrl, authenticated]);
+  const imageUrl = authenticated
+    ? loaded?.source === avatarUrl
+      ? loaded.url
+      : undefined
+    : avatarUrl;
   const initial = name.trim().charAt(0).toUpperCase() || "?";
 
-  return avatarUrl && failedUrl !== avatarUrl ? (
+  return imageUrl && failedUrl !== avatarUrl ? (
     <img
-      src={avatarUrl}
+      src={imageUrl}
       alt=""
       width={size}
       height={size}
@@ -172,18 +219,20 @@ export function InboxAvatar({
   ) : (
     <Text
       size="inherit"
-      tone="secondary"
+      tone="inherit"
       weight="medium"
       aria-hidden
       {...surfaceAttributes(
         { radius: "pill", variant: "raised" },
-        "grid shrink-0 place-items-center",
+        "inbox-avatar grid shrink-0 place-items-center",
       )}
-      style={{
-        width: size,
-        height: size,
-        fontSize: Math.max(9, Math.round(size * 0.45)),
-      }}
+      style={
+        {
+          "--inbox-avatar-size": `${size}px`,
+          "--inbox-avatar-font-size": `${Math.max(9, Math.round(size * 0.45))}px`,
+          "--inbox-avatar-color": inboxAvatarColor(name),
+        } as CSSProperties
+      }
     >
       {initial}
     </Text>
@@ -223,21 +272,35 @@ export function InboxProjectPicker({
   onChange: (path: string) => void;
 }) {
   useLocale();
+  const { groups } = useGroupLock();
+  const assignments = useProjectGroupAssignments();
+  const sections = new Map<string | undefined, InboxProjectOption[]>(
+    groups.map((group) => [group.id, []]),
+  );
+  sections.set(undefined, []);
+  for (const project of projects) {
+    const groupId = projectGroupIdForPath(project.path, assignments);
+    (sections.get(groupId) ?? sections.get(undefined))!.push(project);
+  }
+  const groupNames = new Map(groups.map((group) => [group.id, group.name]));
   const selected =
     projects.find((project) => sameProjectPath(project.path, value)) ?? projects[0] ?? null;
   return (
     <div className="flex min-w-0 items-center gap-1">
-      {selected ? <InboxProjectMark project={selected} /> : null}
       <SearchableSelect
         hideLabel
         label={t("Choose project")}
         disabled={!projects.length}
         value={selected?.path ?? ""}
-        options={projects.map((project) => ({
-          value: project.path,
-          label: project.name,
-          description: project.path,
-        }))}
+        options={Array.from(sections, ([groupId, members]) =>
+          members.map((project) => ({
+            value: project.path,
+            label: project.name,
+            description: project.path,
+            icon: <InboxProjectMark project={project} />,
+            group: groupId ? groupNames.get(groupId) : t("Ungrouped"),
+          })),
+        ).flat()}
         onChange={onChange}
       />
     </div>

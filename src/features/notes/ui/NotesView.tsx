@@ -1,3 +1,4 @@
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -21,8 +22,7 @@ import { motionAttributes } from "../../../shared/ui/Motion";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Sash } from "../../../shared/ui/Sash";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
+import { Tab, TabList, TabPanel, Tabs, TabStrip } from "../../../shared/ui/Tabs";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { NoteTagsEditor, sameTags } from "./NoteTagsEditor";
 import { NoteWordCount } from "./NoteWordCount";
@@ -32,18 +32,10 @@ import { bridgeQueryEvents } from "../../../shared/lib/queryClient";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
-import { t, useLocale } from "../../../shared/i18n";
-import {
-  Plus,
-  Search,
-  File,
-  Trash2,
-  SlidersHorizontal,
-  Check,
-  Save,
-} from "../../../shared/ui/icons";
+import { formatDate, t, useLocale } from "../../../shared/i18n";
+import { Plus, Search, File, Trash2, SlidersHorizontal, Check } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
-import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -172,7 +164,7 @@ let rememberedNoteId: string | null = null;
 type NoteFindRequest = { noteId: string; query: string; token: number } | null;
 /** A failed library mutation and, when it has one here, the action that repeats it. */
 type NotesActionFailure = {
-  kind: "create" | "delete" | "bulk" | "chat";
+  kind: "create" | "bulk" | "chat";
   message: string;
   retry?: () => void;
 };
@@ -628,31 +620,6 @@ export function NotesView({
       );
       return next;
     });
-  };
-
-  const onDelete = async (id: string, expectedUpdatedAt?: number, parent?: NoteInputWork) => {
-    try {
-      await deleteNote(id, expectedUpdatedAt, parent);
-      removeNoteDraft(id);
-      notifyDrafts();
-      setNotes((current) => current.filter((note) => note.id !== id));
-      setSelectedId((current) => {
-        if (current !== id) return current;
-        return notes.find((note) => note.id !== id)?.id ?? null;
-      });
-      setActionFailure((current) => (current?.kind === "delete" ? null : current));
-      // A list refresh failure must not turn a successful deletion into failure.
-      void refresh();
-      return true;
-    } catch (err: unknown) {
-      // The editor's Delete confirmation stays on this note and is its retry owner;
-      // the library only reports the failure.
-      setActionFailure({
-        kind: "delete",
-        message: err instanceof Error ? err.message : String(err),
-      });
-      return false;
-    }
   };
 
   const onAddToChat = (note: Note, targetCwd?: string) => {
@@ -1121,9 +1088,7 @@ export function NotesView({
             </Alert>
           ))}
         {loading && notes.length === 0 ? (
-          <LoadingText layout="fill" className="py-10">
-            {t("Loading notes…")}
-          </LoadingText>
+          <SurfaceLoading className="py-10" title={t("Loading notes…")} />
         ) : (
           <div data-note-library className="min-h-0 flex flex-1 flex-col">
             <ContinuousList
@@ -1285,12 +1250,11 @@ export function NotesView({
         </ToolHeader>
       </PaneHeader>
       <div className="note-mobile-navigation">
-        <SegmentedControl
+        <TabStrip
           label={t("Notes sections")}
-          selectionRole="pressed"
           value={mobileListVisible ? "list" : "editor"}
           onValueChange={(value) => setMobileListVisible(value === "list")}
-          options={[
+          items={[
             { value: "list", label: t("Notes") },
             { value: "editor", label: t("Editor") },
           ]}
@@ -1353,9 +1317,7 @@ export function NotesView({
             </Alert>
           ) : null}
           {detailLoading && !selected ? (
-            <LoadingText layout="fill" className="flex-1">
-              {t("Loading note…")}
-            </LoadingText>
+            <SurfaceLoading className="flex-1" title={t("Loading note…")} />
           ) : (
             <NoteDetail
               findRequest={findRequest}
@@ -1365,7 +1327,6 @@ export function NotesView({
               recents={recents}
               activeCwd={cwd}
               onSaved={onSaved}
-              onDelete={onDelete}
               onAddToChat={onAddToChat}
             />
           )}
@@ -1689,7 +1650,6 @@ function NoteDetail({
   recents,
   activeCwd,
   onSaved,
-  onDelete,
   onAddToChat,
   findRequest,
   onFindHandled,
@@ -1699,7 +1659,6 @@ function NoteDetail({
   recents: RecentProject[];
   activeCwd?: string;
   onSaved: (note: Note) => void;
-  onDelete: (id: string, expectedUpdatedAt?: number, parent?: NoteInputWork) => Promise<boolean>;
   onAddToChat: (note: Note, targetCwd?: string) => void;
   findRequest?: NoteFindRequest;
   onFindHandled?: (token: number) => void;
@@ -1718,7 +1677,6 @@ function NoteDetail({
       recents={recents}
       activeCwd={activeCwd}
       onSaved={onSaved}
-      onDelete={onDelete}
       onAddToChat={onAddToChat}
       findRequest={findRequest}
       onFindHandled={onFindHandled}
@@ -1732,7 +1690,6 @@ function NoteEditor({
   recents,
   activeCwd,
   onSaved,
-  onDelete,
   onAddToChat,
   findRequest,
   onFindHandled,
@@ -1742,7 +1699,6 @@ function NoteEditor({
   recents: RecentProject[];
   activeCwd?: string;
   onSaved: (note: Note) => void;
-  onDelete: (id: string, expectedUpdatedAt?: number, parent?: NoteInputWork) => Promise<boolean>;
   onAddToChat: (note: Note, targetCwd?: string) => void;
   findRequest?: NoteFindRequest;
   onFindHandled?: (token: number) => void;
@@ -1807,7 +1763,6 @@ function NoteEditor({
     setSaveErrorState(error);
     notifyDrafts();
   };
-  const [deleting, setDeleting] = useState(false);
   const editsRef = draftState.edits;
   const bodyRef = useRef(body);
   const projectChangeRef = draftState.project;
@@ -1818,8 +1773,6 @@ function NoteEditor({
   const previewViewRef = useRef<EditorView | null>(null);
   const previewRangeRef = useRef<{ from: number; to: number } | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
-  // While the delete question is open, Escape answers it instead of closing the menu.
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const actionsButton = useRef<HTMLButtonElement>(null);
   const [saving, setSaving] = useState(false);
   const [recovering, setRecovering] = useState(false);
@@ -1867,7 +1820,6 @@ function NoteEditor({
     previewRange: previewRangeRef.current,
     saving,
     recovering,
-    deleting,
     imageBusy,
     finalize: finalizeRef.current,
   });
@@ -2018,7 +1970,7 @@ function NoteEditor({
   );
 
   const saveFromAction = async (action: "save" | "retry") => {
-    if (saving || recovering || deleting || saveActionRef.current) return;
+    if (saving || recovering || saveActionRef.current) return;
     const work = inputOwner.operation(action);
     if (!work) {
       if (!inputOwner.closed()) setSaveError(noteInputWorkError(inputOwner).message);
@@ -2196,12 +2148,11 @@ function NoteEditor({
             />
             <div className="note-detail-actions">
               {preparing ? (
-                <span role="status">{t("Preparing checkpoint…")}</span>
+                <LoadingText>{t("Preparing checkpoint…")}</LoadingText>
               ) : (
                 <NoteSaveStatus
-                  compact
                   state={noteSaveState({
-                    deleting,
+                    deleting: false,
                     saveError,
                     titleError,
                     recovering,
@@ -2210,18 +2161,6 @@ function NoteEditor({
                   })}
                 />
               )}
-              <Button
-                variant={dirty || saveError ? "secondary" : "ghost"}
-                size="sm"
-                loading={saveAction === "save" || (saving && saveAction !== "retry")}
-                disabled={preparing || deleting || recovering || saveAction === "retry"}
-                iconOnly
-                label={t("Save")}
-                onClick={() => void saveFromAction("save")}
-              >
-                <Save className="icon-sm" />
-                <span className="sr-only">{t("Save")}</span>
-              </Button>
               <NoteChatAction
                 projectCwd={sourceCwd ?? activeCwd}
                 recents={recents}
@@ -2231,9 +2170,8 @@ function NoteEditor({
               <Button
                 variant="ghost"
                 iconOnly
-                label={t("Note actions")}
+                label={t("Details")}
                 ref={actionsButton}
-                disabled={deleting}
                 aria-haspopup="dialog"
                 aria-expanded={actionsOpen}
                 onClick={() => setActionsOpen((open) => !open)}
@@ -2244,76 +2182,36 @@ function NoteEditor({
                 <Popover
                   anchor={actionsButton}
                   align="end"
-                  width={320}
+                  width={340}
                   role="dialog"
-                  aria-label={t("Note actions")}
-                  onDismiss={deleting ? undefined : () => setActionsOpen(false)}
-                  dismissOnEscape={!confirmingDelete}
+                  aria-label={t("Details")}
+                  onDismiss={() => setActionsOpen(false)}
                   autoFocus
-                  className="p-3"
+                  className="note-details-popover"
                 >
-                  <Text
-                    as="div"
-                    size="caption"
-                    tone="secondary"
-                    className="flex min-w-0 flex-col gap-2"
-                  >
-                    <span className="wrap-anywhere">{note.title}</span>
-                    {note.slug ? (
-                      <span className="wrap-anywhere">
-                        {t("Note")}: {note.slug}
-                      </span>
-                    ) : null}
-                    {sourceCwd ? (
-                      <span className="wrap-anywhere">
-                        {t("Project")}: {sourceCwd}
-                      </span>
-                    ) : null}
-                    <span>
-                      {t("Created")}: {new Date(note.createdAt).toLocaleString()}
-                    </span>
-                    <span>
-                      {t("Updated")}: {new Date(note.updatedAt).toLocaleString()}
-                      {time ? ` · ${time}` : ""}
-                    </span>
-                    <span className="flex">
-                      <ConfirmMorph
-                        disabled={deleting}
-                        label={t("Delete")}
-                        icon={<Trash2 className="icon-sm" />}
-                        prompt={t("Delete note permanently?")}
-                        confirmTimeout={0}
-                        onStateChange={(state) => setConfirmingDelete(state === "confirming")}
-                        onConfirm={async () => {
-                          const work = inputOwner.operation("delete");
-                          if (!work) throw noteInputWorkError(inputOwner);
-                          setDeleting(true);
-                          skipSave.current = true;
-                          if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
-                          saveTimer.current = null;
-                          saveTimerWork.current?.();
-                          saveTimerWork.current = null;
-                          try {
-                            await enqueueNoteSave(
-                              note.id,
-                              async (_latest, queued) => {
-                                if (!(await onDelete(note.id, noteRef.current.updatedAt, queued)))
-                                  throw new Error(t("Delete failed"));
-                              },
-                              work,
-                            );
-                          } catch (reason) {
-                            skipSave.current = false;
-                            setDeleting(false);
-                            scheduleSave();
-                            throw reason;
-                          } finally {
-                            work();
-                          }
-                        }}
-                      />
-                    </span>
+                  <Text as="div" weight="medium" className="note-details-title wrap-anywhere">
+                    {title.trim() || note.title || t("Untitled")}
                   </Text>
+                  <DescriptionList size="sm">
+                    <DescriptionItem term={t("Project")} truncate tooltip={sourceCwd ?? undefined}>
+                      {sourceCwd ? projectDisplayName(sourceCwd) : t("No project")}
+                    </DescriptionItem>
+                    {note.slug ? (
+                      <DescriptionItem term={t("File")} truncate monospace>
+                        {`${note.slug}.md`}
+                      </DescriptionItem>
+                    ) : null}
+                    <DescriptionItem term={t("Tags")}>
+                      {tags.length ? tags.map((tag) => `#${tag}`).join(" ") : t("None")}
+                    </DescriptionItem>
+                    <DescriptionItem term={t("Created")}>
+                      {formatDate(note.createdAt, { dateStyle: "medium", timeStyle: "short" })}
+                    </DescriptionItem>
+                    <DescriptionItem term={t("Updated")}>
+                      {formatDate(note.updatedAt, { dateStyle: "medium", timeStyle: "short" })}
+                      {time ? ` · ${time}` : ""}
+                    </DescriptionItem>
+                  </DescriptionList>
                 </Popover>
               ) : null}
             </div>
@@ -2374,7 +2272,7 @@ function NoteEditor({
                 size="sm"
                 type="button"
                 loading={saveAction === "retry"}
-                disabled={recovering || deleting || (saving && saveAction !== "retry")}
+                disabled={recovering || (saving && saveAction !== "retry")}
                 onClick={() => void saveFromAction("retry")}
                 className="shrink-0 underline hover:no-underline"
               >
@@ -2384,7 +2282,7 @@ function NoteEditor({
                 variant="ghost"
                 size="sm"
                 loading={recovering}
-                disabled={saving || deleting}
+                disabled={saving}
                 onClick={async () => {
                   if (recoveringRef.current) return;
                   const work = inputOwner.operation("recovery-copy");

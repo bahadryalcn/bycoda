@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../../../shared/ui/LoadingText";
 import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
@@ -36,15 +37,9 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
   return (
     <FieldGroup legend={t("TikTok")} className="content-platform" disabled={locked}>
       {!creator ? (
-        <Text
-          as="p"
-          size="caption"
-          tone="muted"
-          leading="inherit"
-          className="content-platform-note"
-        >
+        <LoadingText delay={false} className="content-platform-note">
           {t("Loading your TikTok options…")}
-        </Text>
+        </LoadingText>
       ) : null}
       {duration ? (
         <Text

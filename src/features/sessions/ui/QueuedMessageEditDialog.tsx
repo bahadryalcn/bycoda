@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { PromptField } from "../../../shared/ui/PromptField";
@@ -534,7 +535,7 @@ function QueueEditContent({
           }
         />
 
-        {loadingAttachments > 0 ? <p role="status">{t("Loading…")}</p> : null}
+        {loadingAttachments > 0 ? <LoadingText delay={false}>{t("Loading…")}</LoadingText> : null}
 
         {draft.attachments.some((file) => file.missing) ? (
           <Text as="p" size="micro" tone="warning">

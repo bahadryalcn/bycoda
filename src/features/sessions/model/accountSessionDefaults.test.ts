@@ -81,7 +81,7 @@ it("rebinds product delegation when a blank session switches to an account witho
     "account-home",
   );
   expect(JSON.parse(moved.modelSettings.crossAdvisor).providerAccountId).toBe("account-home");
-  expect(JSON.parse(moved.modelSettings.crossSubagents)[0].providerAccountId).toBe("account-home");
+  expect(moved.modelSettings.crossSubagents).toBe("auto");
   expect(moved.model).toBe(blank.model);
 });
 

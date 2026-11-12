@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { formatDuration } from "../../../shared/i18n/format";
 import { t, useLocale } from "../../../shared/i18n";
@@ -49,9 +50,7 @@ export function CrewWorkSummary({ run }: { run: CrewRunView }) {
           </ul>
         </div>
       ) : (
-        <Text as="p" size="secondary">
-          {t("No task was accepted.")}
-        </Text>
+        <EmptyState size="inline" description={t("No task was accepted.")} />
       )}
       {summary.open.length ? (
         <div>

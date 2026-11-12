@@ -27,6 +27,7 @@ const SETTING_ORDER = [
   "subagentPolicy",
   "subagentModel",
   "advisor",
+  "crossSubagentMaxEffort",
   "crossSubagents",
   "crossAdvisor",
   "imageModels",
@@ -58,6 +59,7 @@ export function isSettingLocked(
     extrasDisabled ||
     (setting.id === "subagentPolicy" &&
       (!effectiveValue("subagentModel") || effectiveValue("subagentModel") === "default") &&
+      values.crossSubagents !== "auto" &&
       decodeSubagents(values.crossSubagents).length === 0) ||
     (setting.id === "autoCompactWindow" && effectiveValue("autoCompact") === "off")
   );
@@ -70,6 +72,7 @@ const DELEGATION_SETTINGS = new Set([
   "advisor",
   "subagentModel",
   "subagentPolicy",
+  "crossSubagentMaxEffort",
   "crossSubagents",
   "crossAdvisor",
   "imageModels",

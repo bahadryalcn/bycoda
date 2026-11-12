@@ -744,7 +744,7 @@ chords, hover, drag and window focus need the physical-input grant; scroll runs
 headless. All of them pass the same permission mode, presence and Stop checks. Alt+F4
 and Win+L stay blocked. Free mouse coordinates, held keys, resizing or moving windows,
 and system surfaces are not available. Physical input is available on
-Windows only. The owner configures the verified helper and app allowlist in
+Windows only. The owner configures the verified helper and the permission mode in
 **Computer use** settings. Observations and element refs belong to the captured
 conversation and expire after five minutes. App content remains untrusted data.
 
@@ -752,11 +752,14 @@ In the shared browser the assistant reads the page text and its buttons, links a
 with `browser.read`, then clicks or types into an element by its reference. This works
 without image support. References expire when the page changes.
 Only you choose the **Permission** mode in **Computer use** settings; voice and the
-assistant cannot change it. **Ask every time** (the default) shows the native approval
-dialog for every action, launch and clipboard use, whether you are present or away.
-**Auto** runs actions on allowed apps without a dialog and still asks for launching
-apps, the clipboard and physical input. **Full access** asks nothing, even while you
-are away; it can also **Allow all apps** instead of the allowlist. Each approval names
+assistant cannot change it. There is no app list to prepare: the first time the
+assistant wants to use an app, a dialog asks whether to allow that app. If you allow
+it, the app joins **Approved apps** in the settings and the assistant continues; remove
+it there to be asked again. **Ask every time** (the default) also shows the native
+approval dialog for every action, launch and clipboard use, whether you are present or
+away. **Auto** asks once for each new app, then launches and acts on it without a
+dialog; it still asks for the clipboard and physical input. **Full access** asks
+nothing and covers every app, even while you are away. Each action approval names
 the exact app, window, element, action and text, and identifies the real coding
 session or assistant thread; no artificial coding session is created for global voice.
 In every mode a locked or unknown desktop, a disabled helper and a Stop block input.

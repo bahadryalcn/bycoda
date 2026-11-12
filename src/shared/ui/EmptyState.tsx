@@ -1,10 +1,11 @@
+import { FailureState } from "./FailureState";
 import {
   EmptyState as ArcEmptyState,
   type EmptyStateProps as ArcEmptyStateProps,
 } from "./arc/empty-state/empty-state";
 import { optionalTextAttributes } from "./Text";
 import { Button } from "./Button";
-import { CircleAlert, Search } from "./icons";
+import { Search } from "./icons";
 import { useT } from "../i18n";
 
 export type { EmptyStateContext } from "./arc/empty-state/empty-state";
@@ -74,7 +75,7 @@ function InlineEmptyState({
       data-kind={kind}
       data-size="inline"
       className={[
-        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1.5 text-ui-caption text-(--ui-text-secondary)",
+        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary)",
         className,
       ]
         .filter(Boolean)
@@ -111,8 +112,8 @@ function InlineEmptyState({
  * with the one next step: `action`, `onReset` for a filter, `onRetry` for an unreadable source.
  * `kind` sets the glyph and live role (`unavailable` alerts, `filtered` is a status); the caller owns the copy.
  * @group feedback
- * @use A list, panel or picker that is empty, filtered to nothing, or whose source could not be read. `size="inline"` replaces a bare "No ..." paragraph.
- * @avoid Loading: Skeleton or Progress. A region that failed with diagnostics: FailureState. A one-line field or row message: InlineMessage. Boxed notice with a title: Alert.
+ * @use A list, panel or picker with no data or no filter matches. `size="inline"` replaces a bare "No ..." paragraph.
+ * @avoid Loading: LoadingText or Skeleton. Unavailable or failed region: FailureState. Inline failure: InlineError. A one-line field or row message: InlineMessage. Boxed notice with a title: Alert.
  * @arc empty-state
  */
 export function EmptyState({
@@ -130,6 +131,33 @@ export function EmptyState({
   ...props
 }: SharedEmptyStateProps) {
   const t = useT();
+  // Compatibility for existing specimens and dynamic callers: failures have one owner.
+  if (kind === "unavailable")
+    return (
+      <FailureState
+        {...props}
+        context={props.context ?? "page"}
+        size={size}
+        className={className}
+        role={role}
+        icon={icon}
+        onRetry={onRetry}
+        retryLabel={retryLabel}
+        retrying={retrying}
+        action={
+          action || onReset ? (
+            <>
+              {action}
+              {onReset ? (
+                <Button variant="link" layout="text" onClick={onReset}>
+                  {resetLabel ?? t("Reset filters")}
+                </Button>
+              ) : null}
+            </>
+          ) : undefined
+        }
+      />
+    );
   if (size === "inline")
     return (
       <InlineEmptyState
@@ -167,8 +195,6 @@ export function EmptyState({
   const glyph =
     icon !== undefined ? (
       icon
-    ) : kind === "unavailable" ? (
-      <CircleAlert width={24} height={24} strokeWidth={1.5} />
     ) : kind === "filtered" ? (
       <Search width={24} height={24} strokeWidth={1.5} />
     ) : undefined;

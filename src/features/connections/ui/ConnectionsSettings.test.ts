@@ -184,7 +184,7 @@ const chooseMethod = (label: string) =>
   act(async () =>
     container
       .querySelector<HTMLElement>(
-        `[role="radiogroup"][aria-label="Connection method"] [role="radio"][aria-label="${label}"], [aria-label="Connection method"] button[data-value="${label === "SSH" ? "ssh" : "url"}"]`,
+        `input[type="radio"][value="${label === "SSH" ? "ssh" : "url"}"]`,
       )!
       .click(),
   );

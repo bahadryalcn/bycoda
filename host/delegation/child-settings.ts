@@ -29,20 +29,33 @@ export function childModelSettings(
   model: AgentModel,
   parentSettings: Readonly<Record<string, string>> = {},
   explicitEffort?: string,
+  maxEffort?: string,
 ): Record<string, string> {
   const settings = providerModelSettings(defaultModelSettings(model));
   if (explicitEffort !== undefined && rank(explicitEffort) < 0)
     throw new Error("Unknown effort level.");
-  const wanted = explicitEffort ?? parentEffort(parentSettings);
+  const wanted =
+    explicitEffort ??
+    parentEffort(parentSettings) ??
+    (maxEffort ? parentEffort(settings) : undefined);
   const effort = modelEffortSetting(model);
   if (!wanted || !effort) return settings;
-  const target = rank(wanted);
+  const ceiling = maxEffort && rank(maxEffort) >= 0 ? rank(maxEffort) : Infinity;
+  const target = Math.min(rank(wanted), ceiling);
   let best: { value: string; distance: number } | undefined;
   for (const option of effort.options) {
     const level = rank(option.value);
-    if (level < 0) continue;
+    if (level < 0 || level > ceiling) continue;
     const distance = Math.abs(level - target);
     if (!best || distance < best.distance) best = { value: option.value, distance };
+  }
+  // A model whose every level is above the ceiling still runs, at its lowest level:
+  // refusing the run would leave the owner without that model at all.
+  if (!best && maxEffort) {
+    const lowest = effort.options
+      .filter((option) => rank(option.value) >= 0)
+      .sort((a, b) => rank(a.value) - rank(b.value))[0];
+    if (lowest) best = { value: lowest.value, distance: 0 };
   }
   return best ? { ...settings, [effort.id]: best.value } : settings;
 }

@@ -1,3 +1,4 @@
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { TranscriptVirtualRows, type TranscriptVirtualElement } from "./TranscriptVirtualRows";
 import { useTranscriptRevealTarget } from "./transcriptVirtualization";
@@ -48,7 +49,6 @@ import {
   stubFilePreview,
 } from "../../../integrations/harness/core/preview";
 import { useToolCallDisplay } from "../model/reactiveReads";
-import { Shimmer } from "../../../shared/ui/Shimmer";
 import {
   HARNESS_TITLE,
   type Block,
@@ -291,9 +291,9 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
   }
 
   const label = active ? (
-    <Shimmer className="min-w-0 flex-1 truncate font-sans text-ui-body" duration={1.6}>
+    <WorkingIndicator className="min-w-0 flex-1" text={{ size: "body" }} truncate glyph={false}>
       {title}
-    </Shimmer>
+    </WorkingIndicator>
   ) : (
     // Dimmed to sit with the icons: the work is chrome around the answer, and
     // only the answer reads at full strength.
@@ -1077,11 +1077,10 @@ function BycodaCallRow({
 function ActivityToolIcon({ state, live = false }: { state: ToolCallState; live?: boolean }) {
   useLocale();
   if (state === "pending") {
-    return (
-      <CircleDashed
-        className={`icon-sm shrink-0 text-(--ui-text-secondary) ${live ? "zen-tool-spin" : ""}`}
-        strokeWidth={1.75}
-      />
+    return live ? (
+      <Spinner size="sm" tone="secondary" />
+    ) : (
+      <CircleDashed className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
     );
   }
 
@@ -1525,8 +1524,7 @@ export function HandoffDivider({ block }: { block: Block }) {
         >
           {preparing ? (
             <>
-              <Spinner size="xs" className="shrink-0" />
-              <Shimmer duration={1.4}>{label}</Shimmer>
+              <WorkingIndicator>{label}</WorkingIndicator>
             </>
           ) : terminal ? (
             <>

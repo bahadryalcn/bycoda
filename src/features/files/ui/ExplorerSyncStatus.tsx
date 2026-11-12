@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -39,41 +40,43 @@ export function ExplorerSyncStatus({
     .filter(Boolean)
     .join("\n");
   return (
-    <Text
-      data-remote-data-state={state.phase}
-      aria-busy={busy}
-      title={title || undefined}
-      as="div"
-      size="micro"
-      tone="muted"
-      leading="none"
-      className="flex shrink-0 items-center gap-1 pr-1.5"
-    >
-      {state.phase === "error" && (
-        <LiveText className="sr-only" mode="assertive" text={state.error ?? ""} />
-      )}
-      {warn ? (
-        <span className="inline-flex items-center gap-1">
-          <CircleAlert aria-hidden tone="warning" className="icon-xs shrink-0" />
-          {time ? (
-            <span className="hidden tabular-nums @min-[200px]/explorer-root:inline">{time}</span>
-          ) : null}
-        </span>
-      ) : null}
-      <InlineAction
-        reveal="always"
-        label={
-          state.phase === "error"
-            ? t("Retry loading {p0}", { p0: "files" })
-            : t("Refresh {p0}", { p0: "files" })
-        }
-        motion="none"
-        type="button"
-        onClick={onRefresh}
-        loading={busy}
+    <Tooltip label={title || undefined} asChild>
+      <Text
+        data-remote-data-state={state.phase}
+        aria-busy={busy}
+
+        as="div"
+        size="micro"
+        tone="muted"
+        leading="none"
+        className="flex shrink-0 items-center gap-1 pr-1.5"
       >
-        {busy ? <Spinner size="sm" /> : <RefreshCw aria-hidden className="icon-sm" />}
-      </InlineAction>
-    </Text>
+        {state.phase === "error" && (
+          <LiveText className="sr-only" mode="assertive" text={state.error ?? ""} />
+        )}
+        {warn ? (
+          <span className="inline-flex items-center gap-1">
+            <CircleAlert aria-hidden tone="warning" className="icon-xs shrink-0" />
+            {time ? (
+              <span className="hidden tabular-nums @min-[200px]/explorer-root:inline">{time}</span>
+            ) : null}
+          </span>
+        ) : null}
+        <InlineAction
+          reveal="always"
+          label={
+            state.phase === "error"
+              ? t("Retry loading {p0}", { p0: "files" })
+              : t("Refresh {p0}", { p0: "files" })
+          }
+          motion="none"
+          type="button"
+          onClick={onRefresh}
+          loading={busy}
+        >
+          {busy ? <Spinner size="sm" /> : <RefreshCw aria-hidden className="icon-sm" />}
+        </InlineAction>
+      </Text>
+    </Tooltip>
   );
 }

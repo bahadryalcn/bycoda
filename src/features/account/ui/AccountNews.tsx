@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { t, useLocale } from "../../../shared/i18n";
@@ -19,9 +20,7 @@ export function AccountNews() {
     <section className={styles.section} aria-labelledby="account-news">
       <SectionLabel labelId="account-news">{t("News")}</SectionLabel>
       {recent.length === 0 ? (
-        <Text as="p" size="caption" tone="secondary" leading="inherit">
-          {t("No announcements right now.")}
-        </Text>
+        <EmptyState size="inline" kind="empty" description={t("No announcements right now.")} />
       ) : null}
       <ul className={styles.rows}>
         {recent.map((item) => (

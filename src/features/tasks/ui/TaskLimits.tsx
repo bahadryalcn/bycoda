@@ -2,7 +2,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Badge } from "../../../shared/ui/Badge";
-import { Meter } from "../../../shared/ui/Meter";
+import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { SettingFrame, SettingRow } from "./TaskLimitsRow";
 import "./task-ops.css";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -298,12 +298,22 @@ export function LimitsPanel({
             </div>
             {limited ? (
               // Incomplete usage is a lower bound, never a measured value.
-              <Meter
+              <UsageMeter
+                compact
+                showLegend={false}
+                unknown={entry.usageUncertain}
                 label={t("Agent time used today")}
-                value={entry.usageUncertain ? null : entry.usedMinutes}
-                max={entry.dailyAgentMinutes}
-                warning={entry.dailyAgentMinutes * 0.75}
-                danger={entry.dailyAgentMinutes}
+                segments={[
+                  { id: "time", label: t("Agent time used today"), value: entry.usedMinutes },
+                ]}
+                limit={entry.dailyAgentMinutes}
+                tone={
+                  entry.usedMinutes >= entry.dailyAgentMinutes
+                    ? "danger"
+                    : entry.usedMinutes >= entry.dailyAgentMinutes * 0.75
+                      ? "warning"
+                      : "neutral"
+                }
                 valueText={formatAgentMinutes(entry.usedMinutes)}
               />
             ) : null}

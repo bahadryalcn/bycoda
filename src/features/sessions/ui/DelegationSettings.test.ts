@@ -22,7 +22,8 @@ import type { AgentModel, ModelSetting } from "../model/models";
 import { DelegationSubagentsControl } from "./DelegationSettings";
 
 // A plain surface that keeps the menu's role, ref and key handling, and dismisses on Escape like the real popover.
-vi.mock("../../../shared/ui/Popover", () => ({
+vi.mock("../../../shared/ui/Popover", async () => ({
+  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>("../../../shared/ui/Popover")),
   Popover: ({
     children,
     ref,
@@ -133,7 +134,7 @@ function openMenu() {
 
 function rowFor(menu: HTMLElement, label: string) {
   return [...menu.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find(
-    (row) => row.textContent?.trim() === label,
+    (row) => row.getAttribute("aria-label") === label,
   )!;
 }
 
@@ -176,7 +177,7 @@ it("clears every subagent with Off", () => {
   const onChange = renderControl({ [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref(codex)])! });
   const menu = openMenu();
   act(() => rowFor(menu, "Off").click());
-  expect(onChange).toHaveBeenLastCalledWith("");
+  expect(onChange).toHaveBeenLastCalledWith("[]");
 });
 
 it("marks the checked rows as checkboxes", () => {
@@ -220,7 +221,10 @@ it("moves focus with the arrow keys and picks the focused row", () => {
   act(() => {
     menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
   });
-  // The first model row after Off is the current model: subagents may include it.
+  act(() => {
+    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  });
+  // The first model row after Automatic is the current model: subagents may include it.
   const claudeRow = rowFor(menu, "Claude Code · Sonnet 5");
   expect(document.activeElement).toBe(claudeRow);
   act(() => (document.activeElement as HTMLElement).click());
@@ -264,7 +268,7 @@ it("advisor: the current model is offered, and an unavailable saved advisor stay
   )!;
   expect(withGone.options.map((option) => option.value)).toContain(gone);
   expect(crossDelegationSummary(withGone, { [CROSS_ADVISOR_KEY]: gone })).toBe(
-    "Unavailable · Pi · pi:gone",
+    "Unavailable · Pi · Gone",
   );
 });
 
@@ -295,4 +299,21 @@ it("shows the automatic wand in an image-model field and its menu", () => {
 it("keeps explicit Off distinct from Automatic", () => {
   renderControl({});
   expect(rowFor(openMenu(), "Off").querySelector(".lucide-wand-sparkles")).toBeNull();
+});
+
+it("distinguishes Automatic, Off and explicit lists and switches modes without storing a snapshot", () => {
+  const automatic = { crossSubagents: "auto" };
+  const row = setting(CROSS_SUBAGENTS_KEY, automatic);
+  expect(crossDelegationSummary(row, automatic)).toBe("Automatic");
+  expect(delegationOptionSelected(row, automatic, "")).toBe(false);
+  expect(delegationOptionSelected(row, automatic, "auto")).toBe(true);
+  const explicit = delegationNextValue(row, automatic, encodeAdvisor(ref(codex))!);
+  expect(decodeSubagents(explicit)).toEqual([ref(codex)]);
+  expect(delegationNextValue(row, { crossSubagents: explicit }, "auto")).toBe("auto");
+  expect(delegationNextValue(row, automatic, "")).toBe("[]");
+  expect(crossDelegationSummary(row, { crossSubagents: "[]" })).toBe("Off");
+  renderControl(automatic);
+  expect(container.textContent).toContain("Automatic");
+  expect(container.querySelector('[data-tone="accent"]')).not.toBeNull();
+  expect(container.textContent).toContain("Strong");
 });

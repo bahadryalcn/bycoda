@@ -1,3 +1,5 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
@@ -241,21 +243,17 @@ export function ManualSessionSupervision({
             text={chiefNotice}
           />
           {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
-          <LiveText
-            size="micro"
-            tone="secondary"
-            leading="inherit"
-            className={styles.muted}
-            text={
-              !data
-                ? t(
-                    pending
-                      ? "Loading…"
-                      : "Manual supervision state is unavailable. Refresh to retry.",
-                  )
-                : ""
-            }
-          />
+          {!data ? (
+            pending ? (
+              <LoadingText size="micro" delay={false} className={styles.muted}>
+                {t("Loading…")}
+              </LoadingText>
+            ) : (
+              <InlineError text={{ size: "micro" }}>
+                {t("Manual supervision state is unavailable. Refresh to retry.")}
+              </InlineError>
+            )
+          ) : null}
           <LiveText
             size="micro"
             tone="secondary"
@@ -389,17 +387,17 @@ export function ManualSessionSupervision({
         text={chiefNotice}
       />
       {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
-      <LiveText
-        size="micro"
-        tone="secondary"
-        leading="inherit"
-        className={styles.muted}
-        text={
-          !data
-            ? t(pending ? "Loading…" : "Manual supervision state is unavailable. Refresh to retry.")
-            : ""
-        }
-      />
+      {!data ? (
+        pending ? (
+          <LoadingText size="micro" delay={false} className={styles.muted}>
+            {t("Loading…")}
+          </LoadingText>
+        ) : (
+          <InlineError text={{ size: "micro" }}>
+            {t("Manual supervision state is unavailable. Refresh to retry.")}
+          </InlineError>
+        )
+      ) : null}
       <LiveText
         size="micro"
         tone="secondary"
@@ -548,9 +546,12 @@ export function ManualSessionSupervision({
           );
         })}
       {data && !grants.length && !candidates.length && (
-        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.empty}>
-          {t("No visible conversations are available for enrollment.")}
-        </Text>
+        <EmptyState
+          size="inline"
+          kind="empty"
+          className={styles.empty}
+          description={t("No visible conversations are available for enrollment.")}
+        />
       )}
       {openError && <InlineError className={styles.error}>{t(openError)}</InlineError>}
     </Surface>

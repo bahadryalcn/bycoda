@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -6,7 +7,7 @@ import { InlineMessage } from "../../../shared/ui/InlineError";
 import { RotateCcw } from "../../../shared/ui/icons";
 import { Select } from "../../../shared/ui/Select";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import type { CrewRunView } from "../model/crewClient";
 import { composerCanAssign, composerTitle } from "../model/crewComposer";
 import {
@@ -120,7 +121,8 @@ function Composer({
           />
         </div>
         {composerCanAssign(run, member) ? (
-          <SegmentedControl
+          <RadioGroup
+            variant="inline"
             label={t("Message type")}
             value={mode}
             options={[
@@ -142,7 +144,7 @@ function Composer({
           setSent(false);
         }}
       />
-      {action.error ? <InlineMessage tone="danger">{action.error}</InlineMessage> : null}
+      {action.error ? <InlineError>{action.error}</InlineError> : null}
       {sent ? <InlineMessage tone="success">{t("Note sent to the lead.")}</InlineMessage> : null}
       <div>
         <Button
@@ -190,7 +192,7 @@ function RetryList({ run, tools }: { run: CrewRunView; tools: CrewOwnerTools }) 
           </Button>
         </div>
       ))}
-      {action.error ? <InlineMessage tone="danger">{action.error}</InlineMessage> : null}
+      {action.error ? <InlineError>{action.error}</InlineError> : null}
     </div>
   );
 }

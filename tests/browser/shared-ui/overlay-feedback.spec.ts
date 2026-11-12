@@ -20,6 +20,43 @@ async function open(page: Page, query = "") {
 const counter = (page: Page, name: string) =>
   page.evaluate((key) => window.__counters[key] ?? 0, name);
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800, 320]) {
+    test(`consent toast footer ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await open(page, `?theme=${theme}`);
+      await page.getByRole("button", { name: "Show consent toast", exact: true }).click();
+      const card = page.locator("[data-toast-stack] [data-toast-tone]");
+      await expect(card).toBeVisible();
+      await page.waitForTimeout(500);
+      if (process.env.TOAST_CAPTURE) {
+        await card.screenshot({
+          path: `temp/verification/2026-11-12-toast-footer/${process.env.TOAST_CAPTURE}-${theme}-${width}.png`,
+        });
+      }
+      const buttons = card.getByRole("button").filter({ hasNot: page.locator("svg") });
+      const boxes = await buttons.evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const { x, y, width, height } = node.getBoundingClientRect();
+          return { x, y, width, height };
+        }),
+      );
+      expect(boxes).toHaveLength(3);
+      if (width >= 800) expect(new Set(boxes.map((box) => box.y)).size).toBe(1);
+      const bounds = (await card.boundingBox())!;
+      for (const box of boxes) {
+        expect(box.x).toBeGreaterThanOrEqual(bounds.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+        expect(box.y + box.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+      }
+      await card.getByRole("button", { name: "Gönderme", exact: true }).click();
+      expect(await counter(page, "Gönderme")).toBe(1);
+      await card.getByRole("button", { name: "Dismiss notice" }).click();
+      await expect(card).toHaveCount(0);
+    });
+  }
+}
+
 test.describe("evidence captures", () => {
   test.skip(prefix === undefined, "set FEEDBACK_CAPTURE to write screenshots");
   const sections = ["status", "notices", "empty", "failure", "progress"];
@@ -231,7 +268,10 @@ test.describe("feedback behavior", () => {
     await expect(bar("Almost there").locator("svg")).toHaveCount(0);
     await expect(bar("Finished")).toHaveAttribute("aria-valuenow", "100");
     await expect(bar("Finished").locator("svg")).toHaveCount(1);
-    await expect(bar("Quota remaining")).toHaveAttribute("aria-valuetext", "18% remaining");
+    await expect(page.getByRole("meter", { name: "Quota remaining" })).toHaveAttribute(
+      "aria-valuetext",
+      "18% remaining",
+    );
   });
 
   test("skeleton and unknown progress stop moving for reduced motion and decorative off", async ({

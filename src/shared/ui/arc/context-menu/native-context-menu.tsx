@@ -1,4 +1,6 @@
-import { TextField } from "../../TextField";
+import { MenuRow } from "../../MenuRow";
+import { PopoverSearchHeader } from "../../PopoverSearchHeader";
+import { ComboboxStatus } from "../combobox/combobox";
 import {
   useEffect,
   useId,
@@ -10,12 +12,8 @@ import {
 } from "react";
 import { LAYER } from "../../../lib/layers";
 import { Check, ChevronRight } from "../../icons";
-import { Popover } from "../../Popover";
-import {
-  contextMenuDestructiveClassName,
-  contextMenuRowClassName,
-  contextMenuSlotClassName as slot,
-} from "./context-menu";
+import { Popover, popupListClassName } from "../../Popover";
+import { contextMenuSlotClassName as slot } from "./context-menu";
 
 type MenuAction = {
   icon?: ReactNode;
@@ -49,6 +47,7 @@ export type ContextMenuProps = (
   items: ContextMenuItem[];
   ariaLabel?: string;
   header?: ReactNode;
+  /** Minimum width; the menu grows with its longest row up to 800px. */
   width?: number;
   /** Placement and styling overrides for compact tool menus. */
   side?: "top" | "bottom" | "left" | "right";
@@ -292,7 +291,7 @@ export function NativeContextMenu({
     const highlighted = index === (inSubmenu ? submenuActive : active);
     const hasSubmenu = !!item.submenu?.length;
     return (
-      <button
+      <MenuRow
         key={item.id}
         id={`${menuId}-${inSubmenu ? "sub-" : ""}${index}`}
         data-menu-index={index}
@@ -340,14 +339,8 @@ export function NativeContextMenu({
             onPick(item.id);
           }
         }}
-        className={[
-          "bycoda-arc",
-          contextMenuRowClassName,
-          item.danger ? contextMenuDestructiveClassName : "",
-          rowClassName ?? "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        destructive={item.danger}
+        className={["bycoda-arc", rowClassName ?? ""].filter(Boolean).join(" ")}
       >
         {item.icon || reserveIcon ? (
           <span className={slot.icon} aria-hidden="true">
@@ -371,7 +364,7 @@ export function NativeContextMenu({
             {item.shortcut}
           </span>
         ) : null}
-      </button>
+      </MenuRow>
     );
   };
 
@@ -385,7 +378,7 @@ export function NativeContextMenu({
         gap={anchor ? 4 : 0}
         layer={anchor ? LAYER.submenu : undefined}
         data-menu-owner={ownerId}
-        width={width}
+        minWidth={width}
         autoFocus
         onDismiss={(reason) => {
           if (reason === "escape" && submenu) closeSubmenu();
@@ -407,11 +400,11 @@ export function NativeContextMenu({
           if (submenu) scheduleClose();
           onMouseLeave?.();
         }}
-        className={`overflow-y-auto overscroll-none p-1 ${className ?? ""}`}
+        className={`${popupListClassName} overflow-y-auto overscroll-none ${className ?? ""}`}
       >
         {header ? (
           <>
-            {header}
+            <div className={slot.header}>{header}</div>
             <div role="separator" className={slot.separator} />
           </>
         ) : null}
@@ -429,7 +422,7 @@ export function NativeContextMenu({
           anchor={submenu.anchor}
           side="right"
           gap={4}
-          width={MENU_WIDTH}
+          minWidth={MENU_WIDTH}
           layer={LAYER.submenu}
           autoFocus
           onFocus={(event) => {
@@ -456,36 +449,34 @@ export function NativeContextMenu({
             scheduleClose();
             onMouseLeave?.();
           }}
-          className="overflow-y-auto overscroll-none p-1"
+          className={`overflow-y-auto overscroll-none ${submenuSearch ? "" : popupListClassName}`}
         >
           {submenuSearch ? (
             <div className="sticky top-0 z-10 bg-(--ui-surface-floating) pb-1">
-              <TextField
+              <PopoverSearchHeader
                 ref={searchRef}
                 label={submenuSearch.placeholder}
-                hideLabel
                 value={submenuQuery}
                 placeholder={submenuSearch.placeholder}
-                aria-label={submenuSearch.placeholder}
-                onChange={(event) => {
-                  setSubmenuQuery(event.target.value);
+                onValueChange={(value) => {
+                  setSubmenuQuery(value);
                   setSubmenuActive(-1);
                 }}
               />
             </div>
           ) : null}
-          {submenuItems.length === 0 && submenuSearch ? (
-            <div role="status" className="p-2 text-[var(--ui-text-secondary)]">
-              {submenuSearch.emptyLabel}
-            </div>
-          ) : null}
-          {submenuItems.map((item, index) =>
-            item.kind === "sep" ? (
-              <div key={`sep-${index}`} role="separator" className={slot.separator} />
-            ) : (
-              renderItem(item, index, true, submenuHasIcons)
-            ),
-          )}
+          <div className={submenuSearch ? popupListClassName : undefined}>
+            {submenuItems.length === 0 && submenuSearch ? (
+              <ComboboxStatus empty>{submenuSearch.emptyLabel}</ComboboxStatus>
+            ) : null}
+            {submenuItems.map((item, index) =>
+              item.kind === "sep" ? (
+                <div key={`sep-${index}`} role="separator" className={slot.separator} />
+              ) : (
+                renderItem(item, index, true, submenuHasIcons)
+              ),
+            )}
+          </div>
         </Popover>
       ) : null}
     </>

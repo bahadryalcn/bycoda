@@ -1,4 +1,5 @@
 import { useMemo, useRef, type ReactNode } from "react";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { useQuery } from "@tanstack/react-query";
 import { machineProjects } from "../../automations/model/machineSnapshot";
 import { pathKey } from "../../../shared/lib/paths";
@@ -43,7 +44,7 @@ export function hostModelSource(
         ...(controls.model ?? {
           id: model,
           harness,
-          name: model || "Loading models…",
+          name: model ? modelDisplayName(model, harness) : "Loading models…",
           nativeId: model.replace(/^[a-z]+:/, ""),
         }),
         settings: controls.settings,

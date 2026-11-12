@@ -1,4 +1,3 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -65,15 +64,7 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
   });
 
   return (
-    <div
-      data-session-folder-picker
-      role="dialog"
-      aria-label={t("Choose a session folder")}
-      {...surfaceAttributes(
-        { radius: "card", frame: "neutral", edge: "all" },
-        "overflow-hidden   border-(--ui-tone-neutral-border) bg-(--ui-surface-floating)",
-      )}
-    >
+    <div data-session-folder-picker className="overflow-hidden">
       <PopoverSearchHeader
         label={t("Session folder")}
         placeholder={t("Choose or name a session folder…")}

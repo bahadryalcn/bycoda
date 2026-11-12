@@ -1,3 +1,5 @@
+import { Badge } from "../../../shared/ui/Badge";
+import { AutomaticSubagentModels } from "./AutomaticSubagentModels";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useState, type FocusEvent, type MouseEvent, type ReactNode } from "react";
@@ -9,7 +11,7 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Switch } from "../../../shared/ui/Switch";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
-import { ChevronDown, CircleHelp, Plus, X } from "../../../shared/ui/icons";
+import { ChevronDown, CircleHelp, Plus, X, WandSparkles, Zap } from "../../../shared/ui/icons";
 import {
   delegationOptionSelected,
   delegationShortLabel,
@@ -118,7 +120,10 @@ export function ModelSettingsColumn({
     .filter(isSubagentSetting)
     .flatMap((setting) =>
       setting.options.filter(
-        (option) => option.value && delegationOptionSelected(setting, values, option.value),
+        (option) =>
+          option.value &&
+          option.value !== "auto" &&
+          delegationOptionSelected(setting, values, option.value),
       ),
     ).length;
 
@@ -245,7 +250,12 @@ function SettingRow({
   if (kind === "toggle") {
     return (
       <div data-setting-id={setting.id} className={row}>
-        {name}
+        <span className="flex min-w-0 items-center gap-1.5">
+          {setting.id === "fast" ? (
+            <Zap className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} aria-hidden />
+          ) : null}
+          {name}
+        </span>
         <Switch
           aria-label={label}
           aria-describedby={describedBy}
@@ -313,7 +323,10 @@ function SettingRow({
 
   if (kind === "choices") {
     const picked = setting.options.filter(
-      (option) => option.value && delegationOptionSelected(setting, values, option.value),
+      (option) =>
+        option.value &&
+        option.value !== "auto" &&
+        delegationOptionSelected(setting, values, option.value),
     );
     if (isMultiSetting(setting)) {
       // Picked subagents read as chips; the full list opens only to add more.
@@ -321,18 +334,42 @@ function SettingRow({
       return (
         <div data-setting-id={setting.id} className="flex min-h-0 shrink-0 flex-col pb-1">
           {heading(
-            <span className="ui-caption-text">
-              {/* No image model picked means every available one may be used. */}
-              {picked.length || isSubagentSetting(setting)
-                ? formatNumber(picked.length)
-                : t("Automatic")}
-            </span>,
+            isSubagentSetting(setting) && value === "auto" ? (
+              <Badge size="xs" tone="accent" icon={<WandSparkles className="icon-xs" />}>
+                {t("Automatic")}
+              </Badge>
+            ) : (
+              <Text size="caption" tone="secondary">
+                {picked.length
+                  ? formatNumber(picked.length)
+                  : t(isSubagentSetting(setting) ? "Off" : "Automatic")}
+              </Text>
+            ),
           )}
+          {isSubagentSetting(setting) && value === "auto" ? (
+            <AutomaticSubagentModels setting={setting} />
+          ) : null}
           <div
             className="flex min-h-0 flex-wrap content-start gap-1 overflow-y-auto overscroll-none px-1.5"
             role="group"
             aria-label={label}
           >
+            {isSubagentSetting(setting) ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={disabled}
+                  onClick={() => onChoose("auto")}
+                >
+                  <WandSparkles className="icon-xs" />
+                  {t("Automatic")}
+                </Button>
+                <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onChoose("")}>
+                  {t("Off")}
+                </Button>
+              </>
+            ) : null}
             {picked.map((option) => (
               <Text
                 as="span"
@@ -437,7 +474,26 @@ function SettingRow({
     );
   }
 
-  // Grids and long lists collapse to their value and open in place under the row.
+  if (kind === "grid") {
+    // A handful of choices stay visible under the setting's name, like Reasoning: nothing to open.
+    return (
+      <div data-setting-id={setting.id} className="pb-1">
+        {heading(null)}
+        <OptionGrid
+          setting={setting}
+          labels={labels}
+          value={value}
+          label={label}
+          columns={GRID_COLUMNS[settingGridColumns(labels)]}
+          disabled={disabled}
+          onChoose={onChoose}
+        />
+        {hiddenHelp}
+      </div>
+    );
+  }
+
+  // A long list collapses to its value and opens in place under the row.
   return (
     <div data-setting-id={setting.id}>
       <div className={row}>
@@ -460,13 +516,7 @@ function SettingRow({
           labels={labels}
           value={value}
           label={label}
-          columns={
-            kind === "list"
-              ? "grid-cols-1"
-              : settingGridColumns(labels) === 3
-                ? "grid-cols-3"
-                : "grid-cols-2"
-          }
+          columns="grid-cols-1"
           disabled={disabled}
           onChoose={(next) => {
             onChoose(next);
@@ -482,6 +532,13 @@ function SettingRow({
 /** Choices few enough to list inline instead of opening the column-wide picker. */
 const SHORT_LIST_MAX = 3;
 
+/** Content-sized columns: a long label takes the room it needs and the row still fills the column. */
+const GRID_COLUMNS = {
+  2: "grid-cols-[repeat(2,minmax(0,auto))]",
+  3: "grid-cols-[repeat(3,minmax(0,auto))]",
+  4: "grid-cols-[repeat(4,minmax(0,auto))]",
+} as const;
+
 function OptionGrid({
   setting,
   labels,
@@ -495,7 +552,7 @@ function OptionGrid({
   labels: string[];
   value: string;
   label: string;
-  columns: "grid-cols-1" | "grid-cols-2" | "grid-cols-3";
+  columns: "grid-cols-1" | (typeof GRID_COLUMNS)[keyof typeof GRID_COLUMNS];
   disabled: boolean;
   onChoose: (value: string) => void;
 }) {

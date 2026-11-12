@@ -1,3 +1,5 @@
+import { FailureState } from "../../../../shared/ui/FailureState";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Text } from "../../../../shared/ui/Text";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
@@ -87,9 +89,13 @@ export function NeedsHumanList({ client, active = true, onCountChange }: NeedsHu
 
   if (items === null)
     return failed ? (
-      <EmptyHint message={t("Waiting items could not be loaded.")} />
+      <FailureState
+        context="list"
+        description={t("Waiting items could not be loaded.")}
+        onRetry={refresh}
+      />
     ) : (
-      <p>{t("Loading…")}</p>
+      <LoadingText delay={false}>{t("Loading…")}</LoadingText>
     );
 
   if (items.length === 0) return <EmptyHint message={t("Nothing is waiting for you.")} />;

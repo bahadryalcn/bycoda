@@ -22,6 +22,7 @@ const isComponentInit = (init) =>
   Boolean(init) &&
   (ts.isArrowFunction(init) ||
     ts.isFunctionExpression(init) ||
+    (ts.isIdentifier(init) && isComponentName(init.text)) ||
     ts.isCallExpression(init) ||
     ((ts.isParenthesizedExpression(init) || ts.isAsExpression(init)) &&
       isComponentInit(init.expression)));
@@ -60,13 +61,72 @@ export function readUiCatalogSource(file, source) {
     ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
   const entries = [];
   for (const statement of ast.statements) {
+    if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+      const name = ts.isIdentifier(statement.expression)
+        ? statement.expression.text
+        : path.posix.basename(file, ".tsx");
+      if (isComponentName(name) && isComponentInit(statement.expression)) {
+        const local = ast.statements.find(
+          (node) => ts.isFunctionDeclaration(node) && node.name?.text === name,
+        );
+        if (!entries.some((entry) => entry.name === name))
+          entries.push(
+            entryFrom(name, file, statement.jsDoc?.length ? statement : (local ?? statement)),
+          );
+      }
+      continue;
+    }
+    if (
+      ts.isExportDeclaration(statement) &&
+      !statement.isTypeOnly &&
+      statement.exportClause &&
+      ts.isNamedExports(statement.exportClause)
+    ) {
+      for (const item of statement.exportClause.elements) {
+        if (item.isTypeOnly || !isComponentName(item.name.text)) continue;
+        const original = (item.propertyName ?? item.name).text;
+        const local = ast.statements.find(
+          (node) =>
+            (ts.isFunctionDeclaration(node) && node.name?.text === original) ||
+            (ts.isVariableStatement(node) &&
+              node.declarationList.declarations.some(
+                (declaration) =>
+                  ts.isIdentifier(declaration.name) &&
+                  declaration.name.text === original &&
+                  isComponentInit(declaration.initializer),
+              )),
+        );
+        const typeOnly = ast.statements.some(
+          (node) =>
+            ((ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) &&
+              node.name.text === original) ||
+            (ts.isImportDeclaration(node) &&
+              node.importClause?.isTypeOnly &&
+              node.importClause.namedBindings &&
+              ts.isNamedImports(node.importClause.namedBindings) &&
+              node.importClause.namedBindings.elements.some(
+                (binding) => binding.name.text === original,
+              )),
+        );
+        if (!typeOnly)
+          entries.push(
+            entryFrom(
+              item.name.text,
+              file,
+              statement.jsDoc?.length ? statement : (local ?? statement),
+            ),
+          );
+      }
+      continue;
+    }
     if (!exported(statement)) continue;
     if (
       ts.isFunctionDeclaration(statement) &&
-      statement.name &&
-      isComponentName(statement.name.text)
+      (!statement.name || isComponentName(statement.name.text))
     )
-      entries.push(entryFrom(statement.name.text, file, statement));
+      entries.push(
+        entryFrom(statement.name?.text ?? path.posix.basename(file, ".tsx"), file, statement),
+      );
     else if (ts.isVariableStatement(statement))
       for (const declaration of statement.declarationList.declarations)
         if (
@@ -100,11 +160,27 @@ export function validateUiCatalog(entries) {
     if (!entry.summary) problem("missing summary (leading JSDoc text)");
     if (!["stable", "deprecated", "internal"].includes(entry.status))
       problem(`unknown @status "${entry.status}"`);
+    if (!entry.group) problem("missing @group");
+    if (!entry.use) problem("missing @use");
     if (entry.status !== "internal") {
-      if (!entry.group) problem("missing @group");
-      if (!entry.use) problem("missing @use");
       if (!entry.avoid) problem("missing @avoid");
     }
+    const siblings = entries.filter(
+      (other) => other.name !== entry.name && other.group === entry.group,
+    );
+    if (
+      entry.group &&
+      siblings.length &&
+      !siblings.some((other) =>
+        new RegExp(`\\b${other.name}\\b`).test(`${entry.avoid} ${entry.replaces.join(" ")}`),
+      )
+    )
+      problems.push({
+        file: entry.file,
+        name: entry.name,
+        rule: "component-family-choice",
+        problem: `@avoid or @replaces must name a sibling in @group ${entry.group}; choose between ${siblings.map((other) => other.name).join(", ")}`,
+      });
     if (entry.group && !UI_CATALOG_GROUPS.includes(entry.group))
       problem(`unknown @group "${entry.group}"`);
     if (entry.status === "deprecated" && !entry.instead) problem("deprecated without @instead");
@@ -114,9 +190,11 @@ export function validateUiCatalog(entries) {
       if (
         !/^[a-z][a-z0-9]*$/.test(token) &&
         !/^role=[a-z]+$/.test(token) &&
-        !/^input\[type=(?:date|time|datetime-local)\]$/.test(token)
+        !/^input\[type=(?:date|time|datetime-local)\]$/.test(token) &&
+        !names.has(token)
       )
         problem(`invalid @replaces token "${token}"`);
+      if (names.has(token)) continue;
       const owner = claimed.get(token);
       if (owner && owner !== entry.name)
         problem(`@replaces "${token}" is also claimed by ${owner}`);
@@ -124,6 +202,89 @@ export function validateUiCatalog(entries) {
     }
   }
   return problems;
+}
+
+/** Runtime entry points with no static consumer. Every exception must explain its owner. */
+export const orphanAllowlist = {};
+
+/** Static module edges, including aliases, namespaces, re-exports and lazy imports. */
+export function findOrphanComponents(entries, sources, allowlist = orphanAllowlist) {
+  const used = new Set();
+  for (const [file, source] of sources) {
+    if (
+      /(?:^|\/)(?:__tests__|__fixtures__|fixtures|test-support)\/|\.(?:test|spec|stories|fixture|test-support)\.|Specimen|ControlBehaviorMatrix/.test(
+        file,
+      )
+    )
+      continue;
+    const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const visit = (node) => {
+      let specifier;
+      let names = null;
+      if (
+        (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+        node.moduleSpecifier &&
+        ts.isStringLiteral(node.moduleSpecifier)
+      ) {
+        if (node.isTypeOnly || (ts.isImportDeclaration(node) && node.importClause?.isTypeOnly))
+          return;
+        specifier = node.moduleSpecifier.text;
+        const bindings = ts.isImportDeclaration(node)
+          ? node.importClause?.namedBindings
+          : node.exportClause;
+        if (bindings && (ts.isNamedImports(bindings) || ts.isNamedExports(bindings)))
+          names = bindings.elements
+            .filter((item) => !item.isTypeOnly)
+            .map((item) => (item.propertyName ?? item.name).text);
+      } else if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        node.arguments[0] &&
+        ts.isStringLiteral(node.arguments[0])
+      )
+        specifier = node.arguments[0].text;
+      if (specifier) {
+        const target = (
+          specifier.startsWith(".")
+            ? path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier))
+            : specifier.replace(/^@\//, "src/")
+        ).replace(/\.(?:[cm]?[jt]sx?)$/, "");
+        for (const entry of entries)
+          if (
+            entry.file !== file &&
+            entry.file.replace(/\.tsx$/, "") === target &&
+            (!names || names.includes(entry.name))
+          )
+            used.add(`${entry.file}#${entry.name}`);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+  }
+  return entries
+    .filter((entry) => {
+      const key = `${entry.file}#${entry.name}`;
+      if (key in allowlist && !allowlist[key]?.trim())
+        throw new Error(`Orphan exception ${key} needs a reason`);
+      return !used.has(key) && !allowlist[key];
+    })
+    .map((entry) => ({
+      file: entry.file,
+      name: entry.name,
+      rule: "component-orphan",
+      problem: `No product importer for ${entry.name}; remove it, use the owning shared component, or add a reason to orphanAllowlist for a runtime entry point`,
+    }));
+}
+
+/** Catalog debt shares the UI drift ratchet; new metadata and orphan regressions fail both checks. */
+export function catalogFindings(entries, sources) {
+  return [
+    ...validateUiCatalog(entries).map((problem) => ({
+      ...problem,
+      rule: problem.rule ?? "component-metadata",
+    })),
+    ...findOrphanComponents(entries, sources),
+  ].map((problem) => ({ ...problem, line: 1, text: `${problem.name}: ${problem.problem}` }));
 }
 
 const cell = (value) => value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
@@ -173,7 +334,35 @@ export function renderUiCatalog(entries) {
 
 export function runUiCatalog({ root = process.cwd(), write = false } = {}) {
   const entries = readUiCatalog(root);
-  const problems = validateUiCatalog(entries);
+  const sources = new Map();
+  const walk = (directory) => {
+    if (!fs.existsSync(path.join(root, directory))) return;
+    for (const item of fs.readdirSync(path.join(root, directory), { withFileTypes: true })) {
+      const file = `${directory}/${item.name}`;
+      if (item.isDirectory() && item.name !== "node_modules") walk(file);
+      else if (/\.[cm]?[jt]sx?$/.test(item.name))
+        sources.set(file, fs.readFileSync(path.join(root, file), "utf8"));
+    }
+  };
+  walk("src");
+  const allProblems = catalogFindings(entries, sources);
+  const baselinePath = path.join(root, "scripts/checks/ui-drift-baseline.json");
+  const baseline = fs.existsSync(baselinePath)
+    ? JSON.parse(fs.readFileSync(baselinePath, "utf8")).counts
+    : {};
+  const seen = new Map();
+  const problems = allProblems.filter((problem) => {
+    const key = `${problem.file}#${problem.rule}`;
+    const count = (seen.get(key) ?? 0) + 1;
+    seen.set(key, count);
+    // Existing structural metadata errors remain hard failures; only family migration debt ratchets.
+    if (
+      problem.rule === "component-metadata" &&
+      !/^missing @(?:group|use|avoid)$/.test(problem.problem)
+    )
+      return true;
+    return count > (baseline[problem.file]?.[problem.rule] ?? 0);
+  });
   const rendered = renderUiCatalog(entries);
   const docFile = path.join(root, UI_CATALOG_DOC);
   const current = fs.existsSync(docFile)
@@ -184,7 +373,7 @@ export function runUiCatalog({ root = process.cwd(), write = false } = {}) {
     fs.mkdirSync(path.dirname(docFile), { recursive: true });
     fs.writeFileSync(docFile, rendered);
   }
-  return { entries, problems, stale };
+  return { entries, problems, allProblems, stale };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

@@ -9,6 +9,17 @@ export function BootFailure({ error, onRetry }: { error: unknown; onRetry: () =>
     <main>
       <FailureState
         fullScreen
+        brand={
+          <div className="bycoda-wordmark bycoda-boot-brand">
+            <img src={PRODUCT_IDENTITY.logoSrc} alt="" draggable={false} />
+            <img
+              className="bycoda-brand-lettering"
+              src={PRODUCT_IDENTITY.wordmarkSrc}
+              alt=""
+              draggable={false}
+            />
+          </div>
+        }
         title={PRODUCT_IDENTITY.displayName + t(" couldn’t start")}
         description={
           isModuleLoadError(error)

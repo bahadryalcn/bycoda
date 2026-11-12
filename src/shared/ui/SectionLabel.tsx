@@ -1,3 +1,4 @@
+import { Badge } from "./Badge";
 import type { ComponentPropsWithRef, ReactNode } from "react";
 import { optionalTextAttributes, type TextTone } from "./Text";
 import { ActionHost } from "./ActionHost";
@@ -27,7 +28,7 @@ export type SectionLabelClassNames = {
 export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> & {
   /** Standalone menu caption or inline group label; section actions and disclosure do not apply. */
   variant?: "section" | "menu" | "inline";
-  /** Type size: `caption` (12px, default), `micro` (11px), or `secondary` (13px). */
+  /** Compatibility names; group captions share the smallest existing type role (micro). */
   size?: "caption" | "micro" | "secondary";
   /**
    * One line with an ellipsis, for the `inline` and `menu` variants (the section row always
@@ -151,10 +152,11 @@ export function SectionLabel({
       <div
         {...props}
         {...optionalTextAttributes({ tone })}
+        data-truncate={truncate || undefined}
         className={[
           optionalTextAttributes({ tone }).className,
-          "px-2 pb-0.5 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)",
-          truncate && "min-w-0 truncate",
+          styles.inline,
+          styles.menu,
           className,
         ]
           .filter(Boolean)
@@ -204,16 +206,14 @@ export function SectionLabel({
         {children}
       </span>
       {hasCount ? (
-        <span className={[styles.count, classNames?.count].filter(Boolean).join(" ")}>
-          {countLabel ? (
-            <>
-              <span aria-hidden="true">{count}</span>
-              <span className="sr-only">{countLabel}</span>
-            </>
-          ) : (
-            count
-          )}
-        </span>
+        <Badge
+          variant="count"
+          size="xs"
+          label={countLabel}
+          className={[styles.count, classNames?.count].filter(Boolean).join(" ")}
+        >
+          {count}
+        </Badge>
       ) : null}
     </>
   );

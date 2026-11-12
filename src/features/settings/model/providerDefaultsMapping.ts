@@ -32,9 +32,13 @@ export function mapDefaultsToProviders(
     copy("effort", support.effort);
     copy("runtimeMode", support.permissions);
     for (const [field, value] of Object.entries(own.extras ?? {})) {
+      if (field === "crossSubagentMaxEffort") {
+        change.extras = { ...change.extras, [field]: value };
+        continue;
+      }
       // Delegate references and image/model lists carry provider/account identity.
       if (field === "crossSubagents" || field === "crossAdvisor") {
-        if (value === null || value === "null" || value === "[]")
+        if (value === null || value === "null" || value === "[]" || value === "auto")
           change.extras = { ...change.extras, [field]: value };
         else skipped.push({ harness: support.harness, field, value });
         continue;

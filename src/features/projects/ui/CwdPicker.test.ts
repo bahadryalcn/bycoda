@@ -3,7 +3,8 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { CwdPicker } from "./CwdPicker";
-vi.mock("../../../shared/ui/Popover", () => ({
+vi.mock("../../../shared/ui/Popover", async () => ({
+  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>("../../../shared/ui/Popover")),
   Popover: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
 }));
 it("searches beyond the recent preview by path, chooses the filtered keyboard target, and retains new-terminal action", async () => {

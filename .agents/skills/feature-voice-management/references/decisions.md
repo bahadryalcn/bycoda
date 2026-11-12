@@ -45,3 +45,9 @@ Voice may request Git push and merge (never force push or history rewrite) and d
 The global Room reads and changes files only inside owner-added folders (reads unapproved, writes with exact native approval). `commands.run` asks for exact native approval per run unless the owner enabled the default-off "Run commands without asking" setting, which applies to the global and project Room. Folders and the setting are owner-only; no tool writes them.
 
 2026-11-10 (translated): the owner approved moving PR/CI watching to the Host so the assistant can follow pull requests without an open session; the watcher only reads and notifies.
+
+2026-11-12, owner request for computer use permissions (translated):
+
+> I do not want an allowed-apps list; it should follow the permission. Full access allows everything, Auto asks. For example it wants to use Chrome: show "do you allow this?" on screen. If allowed, add it to the list directly and continue. Or full manual, approving one by one. Nobody will use it this way, because everyone wants autonomy.
+
+Computer use needs no prepared app list. A tool call naming an app the owner has not approved asks once in the native dialog; approval adds the app to the owner's approved apps and the call continues. Ask mode still asks before every action; Auto launches and acts on approved apps without a dialog and still asks for the clipboard and physical input; Full access covers every app and asks nothing. Only the owner removes approved apps or changes the mode.

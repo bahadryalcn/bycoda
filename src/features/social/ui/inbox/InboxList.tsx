@@ -1,3 +1,4 @@
+import { StatusDot } from "../../../../shared/ui/StatusDot";
 import { Text } from "../../../../shared/ui/Text";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { t } from "../../../../shared/i18n";
@@ -47,7 +48,7 @@ export function InboxList({
                 <SocialAvatar name={name} platform={item.platform} size="md" />
                 <span className="inbox-row-body">
                   <span className="inbox-row-top">
-                    {unread ? <span className="inbox-unread-dot" aria-hidden /> : null}
+                    {unread ? <StatusDot /> : null}
                     <Text
                       as="span"
                       size="secondary"

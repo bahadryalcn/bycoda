@@ -1,9 +1,11 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { DeliveryReviewChoice, type DeliveryReviewOutcome } from "./DeliveryReviewChoice";
 import { useT } from "../../../shared/i18n";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { Check, CircleDashed } from "../../../shared/ui/icons";
+import { Check } from "../../../shared/ui/icons";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { nextQueueStatus } from "../../connections/public/queueState";
 import {
@@ -54,24 +56,18 @@ export function DeliveryProgressIndicator({ sessionId = "" }: { sessionId?: stri
   const pending = deliveryIsPending(progress.stage);
   const label = t(labels[progress.stage]);
   return (
-    <Text
-      size="inherit"
-      tone={pending ? "muted" : "success"}
-      data-delivery-accepted={pending ? undefined : ""}
-      data-delivery-pending={pending ? "" : undefined}
-      className={pending ? undefined : "delivery-accepted"}
-      title={label}
-    >
-      {pending ? (
-        <CircleDashed
-          className="icon-sm animate-spin motion-reduce:animate-none"
-          aria-hidden="true"
-        />
-      ) : (
-        <Check className="icon-sm" aria-hidden="true" />
-      )}
-      <LiveText className="sr-only" text={label} />
-    </Text>
+    <Tooltip label={label} asChild>
+      <Text
+        size="inherit"
+        tone={pending ? "muted" : "success"}
+        data-delivery-accepted={pending ? undefined : ""}
+        data-delivery-pending={pending ? "" : undefined}
+        className={pending ? undefined : "delivery-accepted"}
+      >
+        {pending ? <Spinner size="sm" /> : <Check className="icon-sm" aria-hidden="true" />}
+        <LiveText className="sr-only" text={label} />
+      </Text>
+    </Tooltip>
   );
 }
 

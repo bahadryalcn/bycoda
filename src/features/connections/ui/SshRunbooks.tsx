@@ -17,7 +17,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import type { ServerRecord } from "../model/serverInventory";
 import { sshEndpointPreview, validSshEndpointPreview } from "../model/sshEndpointReview";
@@ -560,7 +560,8 @@ export function SshRunbooks({
                   description: sshEndpointPreview(item.effectiveSshEndpoint ?? item.sshEndpoint!),
                 }))}
               />
-              <SegmentedControl
+              <RadioGroup
+                variant="inline"
                 label={t("Runbook shell")}
                 value={draft.shell}
                 onValueChange={(shell) => change({ shell: shell as "posix" | "powershell" })}

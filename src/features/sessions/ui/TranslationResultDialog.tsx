@@ -1,3 +1,4 @@
+import { SkeletonBar } from "../../../shared/ui/Skeleton";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
@@ -318,9 +319,9 @@ export function TranslationResultDialog({
                   className={styles.placeholder}
                 >
                   <div aria-hidden="true" className={styles.skeleton}>
-                    <span />
-                    <span />
-                    <span />
+                    <SkeletonBar height="8px" />
+                    <SkeletonBar height="8px" index={1} />
+                    <SkeletonBar height="8px" width="65%" index={2} />
                   </div>
                 </Text>
               ) : error ? (

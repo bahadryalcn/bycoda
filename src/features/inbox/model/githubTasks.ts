@@ -66,6 +66,8 @@ export type GithubLabel = {
 
 export type GithubAssignee = {
   login: string;
+  /** Stable Jira identity; display names are not unique. */
+  accountId?: string;
   avatarUrl?: string;
 };
 
@@ -93,6 +95,8 @@ export type GithubWorkItem = {
 export type InboxProvider = "github" | "linear" | "jira" | "gitlab" | "azuredevops";
 
 export type InboxItem = Omit<GithubWorkItem, "kind"> & {
+  /** Board context when this Jira issue was opened from a board. */
+  jiraBoardId?: number;
   kind: InboxKind;
   projectPath: string;
   provider: InboxProvider;
@@ -177,6 +181,9 @@ export type InboxQuery = Omit<GithubWorkItemQuery, "kind"> & {
   githubKinds?: GithubTaskKind[];
   linearHiddenTeamIds?: string[];
   jiraHiddenProjectIds?: string[];
+  jiraAssignees?: string[];
+  jiraUnassigned?: boolean;
+  jiraStatuses?: string[];
   /** Background callers explicitly opt out of Jira network reads. */
   jiraEnabled?: boolean;
 };
@@ -383,7 +390,7 @@ export function inboxListCacheKey(
   // it never serves or overwrites the unscoped list.
   const teams = scopeKey(query.linearHiddenTeamIds ?? readHiddenLinearTeamIds());
   const jiraProjects = scopeKey(query.jiraHiddenProjectIds ?? readHiddenJiraProjectIds());
-  return `${query.assignedToMe ? 1 : 0}:${query.state}:${paths}:${teams}:${jiraProjects}:${query.search.trim()}:${[...(query.githubKinds ?? ["issue", "pr"])].sort().join(",")}:${query.jiraEnabled === false ? "no-jira" : "jira"}`;
+  return `${query.assignedToMe ? 1 : 0}:${query.state}:${paths}:${teams}:${jiraProjects}:${query.search.trim()}:${[...(query.githubKinds ?? ["issue", "pr"])].sort().join(",")}:${query.jiraEnabled === false ? "no-jira" : "jira"}:${JSON.stringify([query.jiraAssignees ?? [], query.jiraUnassigned ?? false, query.jiraStatuses ?? []])}`;
 }
 
 function scopeKey(ids: readonly string[] | null): string {
@@ -1322,6 +1329,9 @@ async function fetchJiraInboxItems(
   }
   const issues = await listJiraIssues({
     assignedToMe: query.assignedToMe,
+    assigneeIds: query.jiraAssignees,
+    unassigned: query.jiraUnassigned,
+    statuses: query.jiraStatuses,
     state: query.state,
     projectIds: projectIds ?? [],
     limit: query.state === "all" ? INBOX_ALL_LIMIT : undefined,

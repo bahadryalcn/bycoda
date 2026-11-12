@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
@@ -95,10 +96,9 @@ function TokenPill({ token, label, attachment }: PillProps) {
         {body}
       </Button>
       {loading ? (
-        <Text role="status" size="caption" tone="secondary">
-          {" "}
+        <LoadingText as="span" delay={false}>
           {t("Loading…")}
-        </Text>
+        </LoadingText>
       ) : null}
       {error ? (
         // Phrasing-only: this renders inside <pre>/<p> prose, where the block InlineMessage (a div) is invalid.

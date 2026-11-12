@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useState } from "react";
@@ -119,9 +120,9 @@ export function PersonPanel({
       size="380px"
     >
       {loading && !detail ? (
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
+        <LoadingText delay={false} className="audience-muted">
           {t("Loading person…")}
-        </Text>
+        </LoadingText>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
       {person && detail ? (

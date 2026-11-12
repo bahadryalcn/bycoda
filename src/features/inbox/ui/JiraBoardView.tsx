@@ -3,6 +3,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
+import { InboxAvatar } from "./InboxPresentation";
 import { Badge } from "../../../shared/ui/Badge";
 import { CollectionFooter, ContinuousList } from "../../../shared/ui/ContinuousList";
 import { Button } from "../../../shared/ui/Button";
@@ -11,7 +12,7 @@ import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/Dropdown
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { GripVertical } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { TabStrip } from "../../../shared/ui/Tabs";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Heading } from "../../../shared/ui/Heading";
 import { Surface } from "../../../shared/ui/Surface";
@@ -771,6 +772,9 @@ export function JiraBoardView({
               items={issue.assignees.map((assignee, index) => ({
                 id: `${index}:${assignee.login}`,
                 label: assignee.login,
+                icon: (
+                  <InboxAvatar name={assignee.login} avatarUrl={assignee.avatarUrl} size={16} />
+                ),
               }))}
               className="min-w-0"
             />
@@ -946,15 +950,14 @@ export function JiraBoardView({
           disabled={locked}
           className="jira-board-mode"
         >
-          <SegmentedControl
-            selectionRole="pressed"
+          <TabStrip
             label={t("Board view")}
             value={mode}
             onValueChange={(value) => {
               setMode(value as "kanban" | "planning");
               setError(null);
             }}
-            options={[
+            items={[
               { value: "kanban", label: t("Kanban") },
               { value: "planning", label: t("Backlog & sprints") },
             ]}

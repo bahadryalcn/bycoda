@@ -1,6 +1,8 @@
+import { runtimeAutomaticSubagents } from "./automaticSubagents";
 import {
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
   decodeAdvisor,
   decodeSubagents,
   providerModelSettings,
@@ -33,25 +35,52 @@ export function providerTurnInput<
     providerAccountId?: string;
     modelSettings?: Record<string, string>;
   },
->(input: T, nativeModelId: (model: string) => string): T {
+>(input: T, nativeModelId: (model: string) => string, delegationReady = true): T {
   const clean = providerInput(input);
+  if (
+    !delegationReady &&
+    input.modelSettings?.[CROSS_SUBAGENTS_KEY] === "auto" &&
+    !input.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY]
+  ) {
+    const settings = { ...input.modelSettings };
+    delete settings[CROSS_SUBAGENTS_KEY];
+    // Preserve advisor enforcement and all provider settings; only Automatic permits widening.
+    const fallback = providerTurnInput({ ...input, modelSettings: settings }, nativeModelId);
+    return input.harness === "codex"
+      ? { ...fallback, modelSettings: { ...fallback.modelSettings, nativeSubagents: "on" } }
+      : fallback;
+  }
   // Other providers' native subagents cannot be held to the selection (they
   // inherit the main model or their own agent definitions); selected models then
   // run through the Host agents tools, which accept only the selection.
-  if (input.harness !== "claude" && input.modelSettings?.[CROSS_SUBAGENTS_KEY] !== undefined)
+  if (
+    input.harness !== "claude" &&
+    (input.modelSettings?.[CROSS_SUBAGENTS_KEY] !== undefined ||
+      input.modelSettings?.[CROSS_SUBAGENT_MAX_EFFORT_KEY])
+  )
     return { ...clean, modelSettings: { ...clean.modelSettings, nativeSubagents: "off" } };
   if (input.harness !== "claude" || !input.modelSettings) return clean;
   const sameAccount = (ref: { harness: string; providerAccountId?: string }) =>
     ref.harness === "claude" &&
     (ref.providerAccountId ?? "default") === (input.providerAccountId ?? "default");
   const settings = { ...clean.modelSettings };
-  const refs = decodeSubagents(input.modelSettings[CROSS_SUBAGENTS_KEY]);
+  const refs =
+    input.modelSettings[CROSS_SUBAGENTS_KEY] === "auto"
+      ? runtimeAutomaticSubagents(input)
+      : decodeSubagents(input.modelSettings[CROSS_SUBAGENTS_KEY]);
   const advisor = decodeAdvisor(input.modelSettings[CROSS_ADVISOR_KEY]);
-  if (input.modelSettings[CROSS_SUBAGENTS_KEY] !== undefined) {
+  if (
+    input.modelSettings[CROSS_SUBAGENTS_KEY] !== undefined ||
+    input.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY]
+  ) {
     // Native subagents stay inside the owner's selection: forced onto its one
     // same-account Claude model, otherwise off (other picks run through the Host).
     const native = refs.filter(sameAccount);
-    if (native.length === 1) {
+    if (
+      !input.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY] &&
+      native.length === 1 &&
+      (input.modelSettings[CROSS_SUBAGENTS_KEY] !== "auto" || refs.length === 1)
+    ) {
       settings.subagentModel = nativeModelId(native[0]!.model);
       settings.subagentPolicy = "force";
     } else {

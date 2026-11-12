@@ -1,4 +1,6 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
@@ -9,7 +11,6 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { LiveText } from "../../../shared/ui/LiveText";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Progress } from "../../../shared/ui/Progress";
 import { Sparkles } from "../../../shared/ui/icons";
@@ -182,7 +183,8 @@ export function AssistantSetup({
   const workerModel = patch.execution
     ? (modelSource
         .modelsFor(patch.execution.harness)
-        .find((model) => model.id === patch.execution?.model)?.name ?? patch.execution.model)
+        .find((model) => model.id === patch.execution?.model)?.name ??
+      modelDisplayName(patch.execution.model, patch.execution.harness))
     : defaultWorkerAvailable
       ? proposedWorker.name
       : undefined;
@@ -410,14 +412,11 @@ export function AssistantSetup({
             {loadError}
           </InlineError>
         )}
-        {/* Always mounted so the loading message is announced when it first appears. */}
-        <LiveText
-          className={styles.muted}
-          size="caption"
-          tone="secondary"
-          leading="normal"
-          text={draft ? "" : t("Loading...")}
-        />
+        {!draft ? (
+          <LoadingText delay={false} className={styles.muted}>
+            {t("Loading...")}
+          </LoadingText>
+        ) : null}
         {!draft ? null : (
           <>
             <Progress

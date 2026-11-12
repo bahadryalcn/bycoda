@@ -1,4 +1,7 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
+import { HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { Surface } from "../../../shared/ui/Surface";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -43,7 +46,9 @@ export function MemberCandidateList({
   const options = catalogModels(catalog).map((model) => ({
     value: `${model.harness}/${model.id}`,
     label: model.name,
-    description: model.harness,
+    description: HARNESS_TITLE[model.harness],
+    icon: <ModelLabel model={model.id} harness={model.harness} iconOnly />,
+    keywords: model.id,
   }));
   const update = (id: string, patch: Partial<CrewCandidate>) =>
     onChange(candidates.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -83,20 +88,18 @@ export function MemberCandidateList({
             return (
               <li key={c.id} className="flex min-w-0 flex-col gap-2 px-3 py-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Text
-                    size="body"
-                    tone="inherit"
-                    weight="medium"
-                    className="min-w-0 flex-1"
-                    title={name}
-                  >
-                    <Text size="inherit" tone="inherit" truncate className="block">
-                      {candidateLabel(catalog, c)}
+                  <Tooltip label={name} asChild>
+                    <Text size="body" tone="inherit" weight="medium" className="min-w-0 flex-1">
+                      <ModelLabel
+                        model={c.model}
+                        harness={c.harness}
+                        name={candidateLabel(catalog, c)}
+                      />
+                      <Text weight="regular" truncate className="block">
+                        {HARNESS_TITLE[c.harness]}
+                      </Text>
                     </Text>
-                    <Text weight="regular" truncate className="block">
-                      {c.harness}
-                    </Text>
-                  </Text>
+                  </Tooltip>
                   <Text>{t("Cost")}</Text>
                   <Select
                     hideLabel

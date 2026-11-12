@@ -1,5 +1,12 @@
-import { useId, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { useKeyedActiveIndex } from "../../hooks/useKeyedActiveIndex";
+import {
+  useId,
+  useRef,
+  useState,
+  type RefObject,
+  type MouseEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 import { isImeComposition } from "../../lib/keyboard";
 import type { PopoverSearchMove } from "../PopoverSearchHeader";
 
@@ -25,6 +32,8 @@ export type PickerOption = {
   disabledReason?: string;
   /** Action row ("New terminal", "Manage servers…"): runs this instead of changing the selection, no check mark. */
   onAction?: () => void;
+  /** Pointer context menu and Shift+F10/ContextMenu key on the active option. */
+  onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
 };
 
 type SingleSelection = {
@@ -40,6 +49,13 @@ type MultiSelection = {
 
 export type PickerListOptions = {
   options: readonly PickerOption[];
+  /** Controlled highlight independent of committed value. Null means no active row.
+   * Missing values stay pending during async refresh and resume when they return. */
+  activeValue?: string | null;
+  /** Called for user navigation, never for an options refresh. */
+  onActiveValueChange?: (value: string | null) => void;
+  /** External editor/search owns focus; spread searchProps on PopoverSearchHeader or forward keys yourself. */
+  inputRef?: RefObject<HTMLInputElement | null>;
   /** Wrap ArrowUp/ArrowDown at the ends. Defaults to false (stay at the end). */
   loop?: boolean;
   /** When this changes the active row restarts at the committed option (e.g. `${open}:${query}`). */
@@ -89,15 +105,29 @@ export function usePickerList(props: PickerListOptions) {
     props.multiple ? props.value : props.value != null ? [props.value] : [],
   );
   const firstChoosable = () => options.findIndex(choosable);
-  const [active, setActive] = useKeyedActiveIndex(resetKey, options.length, () => {
-    const committed = options.findIndex(
-      (option) => selected.has(option.value) && choosable(option),
-    );
-    return committed >= 0 ? committed : firstChoosable();
-  });
-  // Disabled rows are shown but never active.
-  const activeIndex = choosable(options[active]) ? active : firstChoosable();
-  const optionId = (index: number) => `${listId}-option-${index}`;
+  const initialValue = () => {
+    const committed = options.find((option) => selected.has(option.value) && choosable(option));
+    return committed?.value ?? options.find(choosable)?.value ?? null;
+  };
+  const [chosen, setChosen] = useState<{ key: string; value: string | null } | null>(null);
+  // Reset during render so keyboard events never see a stale query's active row.
+  if (chosen && chosen.key !== resetKey) setChosen(null);
+  const requested =
+    props.activeValue !== undefined
+      ? props.activeValue
+      : chosen?.key === resetKey
+        ? chosen.value
+        : initialValue();
+  const found = options.findIndex((option) => option.value === requested && choosable(option));
+  const activeIndex = found >= 0 ? found : props.activeValue !== undefined ? -1 : firstChoosable();
+  const activeValue = options[activeIndex]?.value ?? null;
+  const setActive = (index: number) => {
+    const value = choosable(options[index]) ? options[index]!.value : null;
+    if (props.activeValue === undefined) setChosen({ key: resetKey, value });
+    if (value !== activeValue) props.onActiveValueChange?.(value);
+  };
+  const optionId = (index: number) =>
+    `${listId}-option-${encodeURIComponent(options[index]?.value ?? "")}`;
   const activeOptionId = activeIndex >= 0 ? optionId(activeIndex) : undefined;
   const typeahead = useRef({ text: "", at: 0 });
 
@@ -141,9 +171,38 @@ export function usePickerList(props: PickerListOptions) {
     } else props.onChange(option!.value, option!);
   };
 
+  const onContextKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (
+      isImeComposition(event.nativeEvent) ||
+      !(event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))
+    )
+      return;
+    const focusedRow =
+      event.target instanceof Element ? event.target.closest('[role="option"]') : null;
+    const focusedIndex = focusedRow
+      ? options.findIndex((_, index) => optionId(index) === focusedRow.id)
+      : -1;
+    const index = focusedIndex >= 0 ? focusedIndex : activeIndex;
+    if (!options[index]?.onContextMenu) return;
+    const row = document.getElementById(optionId(index));
+    if (!row) return;
+    event.preventDefault();
+    const bounds = row.getBoundingClientRect();
+    row.dispatchEvent(
+      new window.MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: bounds.left,
+        clientY: bounds.bottom,
+      }),
+    );
+  };
+
   /** List-focus keys: arrows, Home/End, Enter/Space and typeahead. */
   const onListKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (isImeComposition(event.nativeEvent)) return;
+    onContextKeyDown(event);
+    if (event.defaultPrevented) return;
     const key = event.key;
     if (key === "ArrowDown" || key === "ArrowUp" || key === "Home" || key === "End") {
       event.preventDefault();
@@ -187,6 +246,8 @@ export function usePickerList(props: PickerListOptions) {
     options,
     multiple: !!props.multiple,
     activeIndex,
+    activeValue,
+    inputRef: props.inputRef,
     activeOptionId,
     setActive,
     optionId,
@@ -196,6 +257,8 @@ export function usePickerList(props: PickerListOptions) {
     onListKeyDown,
     /** Spread on PopoverSearchHeader: combobox wiring and key forwarding. */
     searchProps: {
+      ...(props.inputRef ? { ref: props.inputRef } : {}),
+      onKeyDown: onContextKeyDown,
       listId,
       activeOptionId,
       onMove: move,

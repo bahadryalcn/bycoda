@@ -89,9 +89,11 @@ const render = async () => {
   await act(async () => root.render(createElement(ServerForwards, { server })));
 };
 const click = async (label: string) => {
-  const button = [...container.querySelectorAll("button")].find((item) =>
-    item.textContent?.includes(label),
-  );
+  const button =
+    [...container.querySelectorAll("button")].find((item) => item.textContent?.includes(label)) ??
+    [...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((item) =>
+      item.closest("label")?.textContent?.includes(label),
+    );
   expect(button).toBeTruthy();
   await act(async () => button!.click());
 };

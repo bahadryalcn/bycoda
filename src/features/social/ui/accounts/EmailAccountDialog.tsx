@@ -1,8 +1,9 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { useId, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { Select } from "../../../../shared/ui/Select";
@@ -158,7 +159,7 @@ export function EmailAccountDialog({ client, onClose, onCreated }: EmailAccountD
           description={t("Stored on this computer. It is not shown again.")}
           onChange={(event) => update({ secret: event.currentTarget.value })}
         />
-        {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+        {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>
   );

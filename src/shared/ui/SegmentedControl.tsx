@@ -8,8 +8,8 @@ export type { SegmentedControlProps, Segment } from "./arc/segmented-control/seg
  * Compact joined buttons for one exclusive choice, with radio semantics and arrow-key navigation.
  * The caller owns the value and search/navigation IDs.
  * @group choice
- * @use Pick a mode, filter or display option that changes one content area (list/grid, scope).
- * @avoid Form choice with descriptions: RadioGroup. Switching between views or panels: Tabs. Many options: Select.
+ * @use Adjust one content area's filter, presentation (list/grid) or short immediate setting; options change the same content or value.
+ * @avoid Navigate to a different tool, section or editor (including Preview/Source): Tabs or TabStrip. Named form submission, required validation or described choices: RadioGroup. Many options: Select.
  * @arc segmented-control
  */
 export function SegmentedControl({

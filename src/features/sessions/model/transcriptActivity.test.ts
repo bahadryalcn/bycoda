@@ -1391,8 +1391,8 @@ describe("subagent model labels", () => {
       text: "Review",
       agentRun: { name: "Review", model, steps: [] },
     });
-    expect(subagentModelName(row("claude-haiku-4-5"))).toBe("Haiku 4.5");
-    expect(subagentModelName(row("custom-model-v2"))).toBe("custom-model-v2");
+    expect(subagentModelName(row("claude-haiku-4-5"))).toBe("Claude Haiku 4.5");
+    expect(subagentModelName(row("custom-model-v2"))).toBe("Custom Model V2");
     for (const model of [undefined, "", "auto", "inherit", "default"])
       expect(subagentModelName(row(model))).toBeUndefined();
   });

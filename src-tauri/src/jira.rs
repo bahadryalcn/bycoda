@@ -1,5 +1,7 @@
 use crate::integrations::http::string_field;
 pub mod board;
+pub mod comments;
+pub mod filters;
 pub(crate) mod room_inbox;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -50,6 +52,8 @@ pub struct JiraLabel {
 #[serde(rename_all = "camelCase")]
 pub struct JiraAssignee {
     pub login: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub account_id: String,
     pub avatar_url: String,
 }
 
@@ -175,13 +179,14 @@ pub async fn jira_list_issues(
     state: String,
     project_ids: Vec<String>,
     limit: Option<u32>,
+    filters: Option<filters::JiraIssueFilters>,
 ) -> Result<Vec<JiraIssue>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let Some(config) = read_config(&app)? else {
             return Ok(Vec::new());
         };
         let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 100);
-        let jql = issue_jql(assigned_to_me, &state, &project_ids);
+        let jql = filters.unwrap_or_default().jql(assigned_to_me, &state, &project_ids)?;
         let data = jira_post(
             &config,
             "/rest/api/3/search/jql",
@@ -229,18 +234,26 @@ pub async fn jira_issue_comment(
     app: AppHandle,
     key: String,
     body: String,
+    document: Option<Value>,
 ) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let config = require_config(&app)?;
         let key = require_issue_key(&key)?;
         let body = body.trim();
-        if body.is_empty() {
+        if body.is_empty() && document.is_none() {
             return Err("Comment cannot be empty".into());
         }
+        let document = match document {
+            Some(document) => {
+                comments::validate_document(&document)?;
+                document
+            }
+            None => text_to_adf(body),
+        };
         let data = jira_post(
             &config,
             &format!("/rest/api/3/issue/{key}/comment"),
-            &json!({ "body": text_to_adf(body) }),
+            &json!({ "body": document }),
         )?;
         let id = string_field(&data, "id").unwrap_or_default();
         if id.is_empty() {
@@ -501,7 +514,16 @@ fn parse_jira_issue(node: &Value, site: &str) -> Option<JiraIssue> {
         updated_at: normalize_jira_time(&string_field(&fields, "updated").unwrap_or_default()),
         labels,
         assignees: assignee
-            .map(|login| vec![JiraAssignee { login, avatar_url }])
+            .map(|login| {
+                vec![JiraAssignee {
+                    login,
+                    avatar_url,
+                    account_id: fields
+                        .get("assignee")
+                        .and_then(|person| string_field(person, "accountId"))
+                        .unwrap_or_default(),
+                }]
+            })
             .unwrap_or_default(),
         draft: false,
         repo: project
@@ -621,9 +643,18 @@ fn person_fields(node: Option<&Value>) -> (Option<String>, String) {
         return (None, String::new());
     };
     (
-        string_field(node, "displayName").filter(|name| !name.is_empty()),
-        node.pointer("/avatarUrls/48x48")
-            .and_then(Value::as_str)
+        ["displayName", "name", "accountId"]
+            .iter()
+            .find_map(|key| string_field(node, key).filter(|name| !name.trim().is_empty())),
+        ["48x48", "32x32", "24x24", "16x16"]
+            .iter()
+            .find_map(|size| {
+                node.get("avatarUrls")?
+                    .get(*size)?
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|url| !url.is_empty())
+            })
             .unwrap_or_default()
             .to_string(),
     )
@@ -941,6 +972,38 @@ fn require_config(app: &AppHandle) -> Result<JiraConfig, String> {
     read_config(app)?.ok_or_else(|| "Connect Jira in Settings".to_string())
 }
 
+/// Credentials stay on the configured Jira origin and avatar endpoints only.
+pub(crate) fn avatar_media_authorization(
+    app: &AppHandle,
+    raw: &str,
+) -> Result<Option<String>, String> {
+    let url = url::Url::parse(raw).map_err(|_| "Invalid Jira avatar URL".to_string())?;
+    if !is_avatar_path(url.path()) {
+        return Ok(None);
+    }
+    let Some(config) = read_config(app)? else {
+        return Ok(None);
+    };
+    let site = url::Url::parse(&config.site).map_err(|_| "Invalid Jira site".to_string())?;
+    if avatar_matches_site(&url, &site) {
+        Ok(Some(jira_authorization(&config)))
+    } else {
+        Ok(None)
+    }
+}
+
+fn avatar_matches_site(url: &url::Url, site: &url::Url) -> bool {
+    url.scheme() == "https" && url.origin() == site.origin() && is_avatar_path(url.path())
+}
+
+fn is_avatar_path(path: &str) -> bool {
+    path == "/secure/useravatar"
+        || path == "/rest/api/2/user/avatar"
+        || path == "/rest/api/3/user/avatar"
+        || path.starts_with("/rest/api/2/user/avatar/")
+        || path.starts_with("/rest/api/3/user/avatar/")
+}
+
 fn write_config(app: &AppHandle, config: &JiraConfig) -> Result<(), String> {
     let path = config_path(app)?;
     if let Some(parent) = path.parent() {
@@ -1127,6 +1190,35 @@ mod tests {
         assert_eq!(item.repo, "ENG");
         assert_eq!(item.team_id, "10000");
         assert_eq!(item.team_name, "Engineering");
+    }
+
+    #[test]
+    fn avatar_credentials_require_the_configured_origin_and_avatar_path() {
+        let site = url::Url::parse("https://acme.atlassian.net").unwrap();
+        assert!(avatar_matches_site(
+            &site.join("/secure/useravatar?avatarId=42").unwrap(),
+            &site
+        ));
+        for raw in [
+            "https://other.atlassian.net/secure/useravatar",
+            "https://acme.atlassian.net.evil.test/secure/useravatar",
+            "http://acme.atlassian.net/secure/useravatar",
+            "https://acme.atlassian.net:444/secure/useravatar",
+            "https://acme.atlassian.net/rest/api/3/issue/ENG-42",
+        ] {
+            assert!(!avatar_matches_site(&url::Url::parse(raw).unwrap(), &site));
+        }
+    }
+
+    #[test]
+    fn person_fields_falls_back_to_available_name_and_picture_size() {
+        let person = json!({ "displayName": "", "accountId": "account-42",
+            "avatarUrls": { "48x48": " ", "32x32": " https://avatar.example/ada.png " } });
+        assert_eq!(
+            person_fields(Some(&person)),
+            (Some("account-42".into()), "https://avatar.example/ada.png".into())
+        );
+        assert_eq!(person_fields(None), (None, String::new()));
     }
 
     #[test]

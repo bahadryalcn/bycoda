@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
@@ -55,9 +56,12 @@ export function AssistantFoldersSettings({
       >
         <div className={styles.list}>
           {draft.paths.length === 0 && (
-            <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.empty}>
-              {t("No folders added yet.")}
-            </Text>
+            <EmptyState
+              size="inline"
+              kind="empty"
+              className={styles.empty}
+              description={t("No folders added yet.")}
+            />
           )}
           {draft.paths.map((path) => (
             <div

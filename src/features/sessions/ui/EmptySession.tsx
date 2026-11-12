@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Heading } from "../../../shared/ui/Heading";
 import { useT } from "../../../shared/i18n";
 import { type ReactNode, useSyncExternalStore } from "react";
@@ -62,9 +63,9 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
               <img className="bycoda-brand-lettering" src={PRODUCT_IDENTITY.wordmarkSrc} alt="" />
             </div>
             <div className="bycoda-task-brief pointer-events-auto">
-              <Heading size="page" title={project ? cwd : undefined}>
-                {title}
-              </Heading>
+              <Tooltip label={project ? cwd : undefined} asChild>
+                <Heading size="page">{title}</Heading>
+              </Tooltip>
               {project ? null : (
                 <div className="bycoda-entry-actions bycoda-arc">
                   <Button

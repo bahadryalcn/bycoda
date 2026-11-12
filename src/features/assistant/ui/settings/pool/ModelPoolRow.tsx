@@ -1,3 +1,4 @@
+/** Different job: draggable model-pool editor contains weight and role controls; drag feedback is not a popup choice state. */
 import { Text } from "../../../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t } from "../../../../../shared/i18n";

@@ -1,4 +1,5 @@
 import { connectedCandidate } from "../model/presentation";
+import { Badge } from "../../../shared/ui/Badge";
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -72,17 +73,13 @@ export function FoundList({
                     {candidate.label}
                   </Text>
                   <Text size="caption" tone="secondary" truncate>
-                    {connectedCandidate(candidate, sources)
-                      ? t("Already connected")
-                      : candidateKindLabel(candidate.kind)}
+                    {candidateKindLabel(candidate.kind)}
                     {candidate.detail ? ` · ${candidate.detail}` : ""}
                   </Text>
                 </div>
               </div>
               {connectedCandidate(candidate, sources) ? (
-                <Text size="caption" tone="secondary">
-                  {t("Connected")}
-                </Text>
+                <Badge size="sm">{t("Connected")}</Badge>
               ) : (
                 <Button
                   variant="secondary"

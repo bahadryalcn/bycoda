@@ -114,14 +114,6 @@
   min-width: 0;
 }
 
-.inbox-unread-dot {
-  flex: none;
-  inline-size: 0.5rem;
-  block-size: 0.5rem;
-  border-radius: 50%;
-  background: var(--ui-tone-accent-fg);
-}
-
 .inbox-row-time,
 .inbox-line-time {
   flex: none;

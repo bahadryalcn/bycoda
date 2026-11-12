@@ -162,7 +162,19 @@ export type HostDirectory = {
   entries: { name: string; path: string }[];
 };
 export type HostModelCatalog = {
-  accounts?: Partial<Record<"codex" | "claude", { id: string; label: string; color?: string }[]>>;
+  accounts?: Partial<
+    Record<
+      "codex" | "claude",
+      {
+        isDefault?: boolean;
+        id: string;
+        label: string;
+        color?: string;
+        kind?: "personal" | "work";
+        derivedKind?: "personal" | "work";
+      }[]
+    >
+  >;
   models: Partial<Record<RemoteProvider, AgentModel[]>>;
   errors: Partial<Record<RemoteProvider, string>>;
   /** Providers still being discovered; available models remain usable. */

@@ -40,7 +40,7 @@ export function useComposerSlashInventory(input: {
   pickerOpen: boolean;
   remote: boolean;
   remotePlan: boolean;
-  hideTopBar: boolean;
+  hideOrchestrator: boolean;
   canStartNewSession: boolean;
   canSaveDraft: boolean;
   canResumeProviderSession: boolean;
@@ -54,7 +54,7 @@ export function useComposerSlashInventory(input: {
     pickerOpen,
     remote,
     remotePlan,
-    hideTopBar,
+    hideOrchestrator,
     canStartNewSession,
     canSaveDraft,
     canResumeProviderSession,
@@ -121,7 +121,7 @@ export function useComposerSlashInventory(input: {
         : [
             SESSION_FOLDER_COMMAND,
             MCP_COMMAND,
-            ...(hideTopBar ? [] : [ORCHESTRATOR_COMMAND]),
+            ...(hideOrchestrator ? [] : [ORCHESTRATOR_COMMAND]),
             PLAN_COMMAND,
             SUBAGENTS_COMMAND,
             TASK_COMMAND,
@@ -166,7 +166,7 @@ export function useComposerSlashInventory(input: {
       cliCommands.slashCommands,
       remote,
       remotePlan,
-      hideTopBar,
+      hideOrchestrator,
       canSaveDraft,
       canResumeProviderSession,
       canStartNewSession,

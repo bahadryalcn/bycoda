@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { terminalText } from "../../../shared/lib/terminalText";
@@ -670,9 +671,9 @@ export function SearchView({
         }
       >
         {!empty && loading && rowCount === 0 ? (
-          <Text as="p" size="caption" tone="secondary" role="status" className="px-2 py-1.5">
+          <LoadingText delay={false} className="px-2 py-1.5">
             {t("Searching…")}
-          </Text>
+          </LoadingText>
         ) : null}
         {empty ? (
           <EmptyState
@@ -682,9 +683,12 @@ export function SearchView({
           />
         ) : noResults ? (
           <>
-            <Text as="p" size="caption" tone="muted" role="status" className="px-2 py-1.5">
-              {t(indexing ? "No indexed matches yet" : "No results")}
-            </Text>
+            <EmptyState
+              size="inline"
+              kind="filtered"
+              className="px-2 py-1.5"
+              description={t(indexing ? "No indexed matches yet" : "No results")}
+            />
             {indexNotice}
           </>
         ) : chatMode ? (

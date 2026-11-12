@@ -1,3 +1,5 @@
+import { LoadingText } from "../../../../shared/ui/LoadingText";
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import {
@@ -7,12 +9,11 @@ import {
   type SocialPolicies,
 } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
-import { Text } from "../../../../shared/ui/Text";
 import { isRemoteProvider, REMOTE_PROVIDERS } from "../../../connections/public/protocol";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
 import { Group, Row } from "../../../settings/public/settingsControls";
 import { Select } from "../../../../shared/ui/Select";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { effectiveForScope, readScope, withAgent, type PolicyScope } from "./policyScope";
 import { savePolicyScope } from "./savePolicy";
 import { useAccountWrite } from "./useAccountWrite";
@@ -60,11 +61,9 @@ export function AiModelSettings({ client, policies, onChanged }: AiModelSettings
       }
       feedback={
         error ? (
-          <InlineMessage tone="danger">{error}</InlineMessage>
+          <InlineError>{error}</InlineError>
         ) : is("ai.model") ? (
-          <Text as="span" tone="muted" leading="snug" className="social-muted">
-            {t("Saving…")}
-          </Text>
+          <LoadingText delay={false}>{t("Saving…")}</LoadingText>
         ) : null
       }
     >

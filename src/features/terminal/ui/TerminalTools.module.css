@@ -35,16 +35,7 @@
   max-block-size: 160px;
   overflow: auto;
 }
-.option {
-  min-inline-size: 0;
-  justify-content: start;
-  text-align: start;
-}
-.text {
-  font-family: var(--font-mono);
-}
-.match {
-}
+
 .hint {
   padding: 4px;
 }

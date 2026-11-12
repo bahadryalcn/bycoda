@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   canvasWorkerEnabled,
   subscribeCanvasWorkerEnabled,
@@ -491,49 +492,55 @@ function CrewStage({
             const displayName =
               crew[label.id]?.name || (character ? character.name : roleText(label.role, t));
             return (
-              <span
+              <Tooltip
                 key={label.id}
-                className="crew-scene__label"
-                data-role={label.role}
-                data-working={label.working ? "true" : "false"}
-                data-age={ageOf(crew[label.id]).stage}
-                data-character={character?.id}
-                data-charge={rigged && growthEnabled ? (percent ?? "unknown") : undefined}
-                title={
+                label={
                   character
                     ? `${displayName} · ${character.name} · ${roleText(label.role, t)}${growthEnabled ? ` · ${percent === undefined ? t("Context unknown") : t("Context: {p0}%", { p0: percent })}` : ""}`
                     : displayName
                 }
-                style={{
-                  insetInlineStart: `${(label.x / CODE_WIDTH) * 100}%`,
-                  insetBlockStart: `${((label.y + CREW_TOP) / CODE_HEIGHT) * 100}%`,
-                  // Only the classic crew hangs the bycoda sign above the labels.
-                  transform: `translate(-50%, ${labelLift(label.y + CREW_TOP, !character)})`,
-                  inlineSize: `${(label.width / CODE_WIDTH) * 100}%`,
-                }}
+                asChild
               >
-                {character ? (
-                  <>
-                    <span className="crew-scene__name">{displayName}</span>
-                    <span className="crew-scene__detail">
-                      {roleText(label.role, t)}
-                      {growthEnabled ? ` · ${percent === undefined ? "—" : `${percent}%`}` : ""}
-                    </span>
-                    {growthEnabled && (
-                      <span className="crew-scene__meter">
-                        <span
-                          style={{
-                            inlineSize: `${percent ?? 0}%`,
-                            backgroundColor: character.accent,
-                          }}
-                        />
+                <span
+                  key={label.id}
+                  className="crew-scene__label"
+                  data-role={label.role}
+                  data-working={label.working ? "true" : "false"}
+                  data-age={ageOf(crew[label.id]).stage}
+                  data-character={character?.id}
+                  data-charge={rigged && growthEnabled ? (percent ?? "unknown") : undefined}
+
+                  style={{
+                    insetInlineStart: `${(label.x / CODE_WIDTH) * 100}%`,
+                    insetBlockStart: `${((label.y + CREW_TOP) / CODE_HEIGHT) * 100}%`,
+                    // Only the classic crew hangs the bycoda sign above the labels.
+                    transform: `translate(-50%, ${labelLift(label.y + CREW_TOP, !character)})`,
+                    inlineSize: `${(label.width / CODE_WIDTH) * 100}%`,
+                  }}
+                >
+                  {character ? (
+                    <>
+                      <span className="crew-scene__name">{displayName}</span>
+                      <span className="crew-scene__detail">
+                        {roleText(label.role, t)}
+                        {growthEnabled ? ` · ${percent === undefined ? "—" : `${percent}%`}` : ""}
                       </span>
-                    )}
-                  </>
-                ) : (
-                  displayName
-                )}
-              </span>
+                      {growthEnabled && (
+                        <span className="crew-scene__meter">
+                          <span
+                            style={{
+                              inlineSize: `${percent ?? 0}%`,
+                              backgroundColor: character.accent,
+                            }}
+                          />
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    displayName
+                  )}
+                </span>
+              </Tooltip>
             );
           })}
         </div>

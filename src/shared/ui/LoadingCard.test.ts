@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { LOADING_DELAY_MS } from "../hooks/useDelayedVisible";
-import { LoadingCard, SLOW_LOAD_MS } from "./LoadingCard";
+import { SurfaceLoading, SLOW_LOAD_MS } from "./SurfaceLoading";
 
 let node: HTMLDivElement;
 let root: Root;
@@ -25,7 +25,7 @@ const render = (onBack = vi.fn()) =>
   act(async () =>
     root.render(
       createElement(
-        LoadingCard,
+        SurfaceLoading,
         {
           heading: "General",
           title: "Loading Settings…",
@@ -72,4 +72,20 @@ it("stops its timers when the load finishes", async () => {
   await act(async () => vi.advanceTimersByTime(SLOW_LOAD_MS));
   await act(async () => root.render(createElement("div")));
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("uses the same loading line for a lazy region without a card title", async () => {
+  await act(async () => root.render(createElement(SurfaceLoading, { label: "Loading editor…" })));
+  expect(node.querySelector('[role="status"]')).toBeNull();
+  await act(async () => vi.advanceTimersByTime(LOADING_DELAY_MS));
+  expect(node.querySelectorAll('[role="status"]')).toHaveLength(1);
+  expect(node.querySelector('[role="status"]')?.textContent).toBe("Loading editor…");
+  expect(node.querySelector('[data-size="xs"]')).not.toBeNull();
+});
+
+it("shows a user-started refresh immediately when delay is disabled", async () => {
+  await act(async () =>
+    root.render(createElement(SurfaceLoading, { label: "Loading changes…", delay: false })),
+  );
+  expect(node.querySelector('[role="status"]')?.textContent).toBe("Loading changes…");
 });

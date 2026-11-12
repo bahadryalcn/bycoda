@@ -78,7 +78,7 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
   desktop: {
     tools: ["desktop.status", "desktop.act"],
     remaining:
-      "Exact native approval and owner control allowlist retained. Human input (key chords via press, scroll, hover, drag, window focus) uses the same gate; Alt+F4 and Win+L, free mouse coordinates, held keys, window resize/move/minimize, system surfaces and notifications are unavailable.",
+      "Exact native approval and the owner's per-app approval retained. Human input (key chords via press, scroll, hover, drag, window focus) uses the same gate; Alt+F4 and Win+L, free mouse coordinates, held keys, window resize/move/minimize, system surfaces and notifications are unavailable.",
   },
   devices: {
     tools: ["devices.list"],

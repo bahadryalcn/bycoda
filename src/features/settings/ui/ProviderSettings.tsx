@@ -17,7 +17,7 @@ import {
 import { t, useLocale } from "../../../shared/i18n";
 import { ArrowDownCircle, RefreshCw } from "../../../shared/ui/icons";
 import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { RelativeSessionTime } from "../../../app/shell/RelativeSessionTime";
+import { formatRelativeTime } from "../../../shared/i18n/format";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import "./ProviderSettings.css";
 import { Button } from "../../../shared/ui/Button";
@@ -61,7 +61,7 @@ import {
   providerMetaLine,
   type ProviderListEntry,
 } from "../../providers/ui/ProviderList";
-import { ProviderDetailHeader } from "../../providers/ui/ProviderStatusGroup";
+import { ProviderDetailHeader } from "../../providers/public/ProviderStatusGroup";
 import { providerAuthState } from "../../providers/ui/providerStatus";
 import {
   checkInstalledHarnessVersions,
@@ -467,7 +467,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                       leading="inherit"
                       className="provider-status-checked"
                     >
-                      {t("Checked")} <RelativeSessionTime at={checkedAt} />
+                      {t("Checked {p0}", { p0: formatRelativeTime(checkedAt) })}
                     </Text>
                   ) : null}
                   <Button
@@ -501,8 +501,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
               feedback={
                 checkError ? (
                   <SettingsFeedback state="error">
-                    {t("Could not check CLI updates: ")}
-                    {checkError}
+                    {t("Could not check CLI updates: {p0}", { p0: checkError })}
                   </SettingsFeedback>
                 ) : undefined
               }

@@ -1,5 +1,6 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import type { ReactNode } from "react";
-import { useDelayedVisible } from "../../../shared/hooks/useDelayedVisible";
 import { Alert } from "../../../shared/ui/Alert";
 import "./BycodaSettings.css";
 
@@ -25,9 +26,14 @@ export function SettingsOperationFeedback({
   presentation = "quiet",
   immediate = false,
 }: SettingsFeedbackProps) {
-  const passive = state === "loading" && !immediate;
-  const waited = useDelayedVisible(passive);
-  if (passive && !waited) return null;
+  if (state === "loading")
+    return (
+      <LoadingText delay={!immediate}>
+        {children}
+        {action}
+      </LoadingText>
+    );
+  if (state === "empty") return <EmptyState size="inline" description={children} action={action} />;
   return (
     <div className="settings-feedback" data-state={state} data-presentation={presentation}>
       <Alert

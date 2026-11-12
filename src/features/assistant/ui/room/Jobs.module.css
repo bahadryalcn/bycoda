@@ -41,9 +41,7 @@
   grid-template-columns: auto 1rem minmax(0, 1fr) auto;
   align-items: start;
   column-gap: 8px;
-  padding: 10px 4px;
-  border-block-end: 1px solid var(--ui-pane-border);
-  border-radius: var(--radius-control);
+
   min-inline-size: 0;
 }
 .check {
@@ -90,7 +88,7 @@
   min-inline-size: 0;
   font-variant-numeric: tabular-nums;
 }
-.progressLine > [role="meter"] {
+.progressLine > [role="progressbar"] {
   flex: none;
   inline-size: 6rem;
 }

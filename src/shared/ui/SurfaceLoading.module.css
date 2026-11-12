@@ -1,14 +1,75 @@
-/* Placeholder for a lazily loaded region. It fills the region's own box so the content does not
-   move the surrounding layout when it arrives; the indeterminate bar itself only mounts after the
-   shared loading delay (useDelayedVisible), so a chunk that is already warm never flashes it. */
-.root {
+/* Fills the loading region and centres one surface: status line on top, the content's skeleton below. */
+.layer {
   display: grid;
+  flex: 1 1 auto;
   place-items: center;
   block-size: 100%;
   min-block-size: 0;
-  padding: 0.75rem;
+  min-inline-size: 0;
+  padding: var(--space-3);
+  overflow: auto;
 }
-/* The indeterminate bar is a small cue, not a full-width rule across the region. */
-.root > * {
-  inline-size: min(100%, 14rem);
+/* Inside the shared loading delay the card keeps its box but shows and announces nothing. */
+.layer[data-held] > .card {
+  visibility: hidden;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  inline-size: min(100%, 32rem);
+  color: var(--color-content);
+}
+.card:not([data-content]) {
+  inline-size: auto;
+  max-inline-size: 100%;
+}
+.heading {
+  margin: 0;
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+  line-height: var(--ui-leading-body);
+  overflow-wrap: anywhere;
+}
+.status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+}
+.elapsed {
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-secondary);
+}
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-inline-size: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@keyframes loading-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .layer:not([data-held]) > .card {
+    animation: loading-card-enter 220ms var(--ease-in-out) both;
+  }
+  .actions {
+    animation: loading-card-enter 220ms var(--ease-in-out) both;
+  }
+  :global(html[data-decorative-motion="off"]) :is(.card, .actions) {
+    animation: none;
+  }
 }

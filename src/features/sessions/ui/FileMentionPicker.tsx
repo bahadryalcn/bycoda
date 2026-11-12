@@ -1,17 +1,13 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
-import { Button } from "../../../shared/ui/Button";
+import { Surface } from "../../../shared/ui/Surface";
+import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { useT } from "../../../shared/i18n";
 import { StickyNote } from "../../../shared/ui/icons";
-import { Fragment, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import type { RankedFile } from "../../files";
 import { isNoteMentionPath } from "../../notes";
-import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { MatchText } from "../../../shared/ui/MatchText";
 import { crewMentionOf } from "../model/crewMentions";
 import { CrewMentionIcon, CrewMentionText } from "./ComposerCrewMentionRow";
-
 type Props = {
   files: RankedFile[];
   query: string;
@@ -25,6 +21,7 @@ type Props = {
   onPick: (file: RankedFile) => void;
 };
 
+/** Editor suggestions preserve composer focus; the shared list owns row appearance. */
 export function FileMentionPicker({
   files,
   query,
@@ -37,168 +34,86 @@ export function FileMentionPicker({
   onPick,
 }: Props) {
   const t = useT();
-  const lockOverscroll = useLockOverscroll<HTMLDivElement>();
-  const activeRef = useRef<HTMLButtonElement>(null);
-  const pointer = useRef({ x: Number.NaN, y: Number.NaN, allow: false });
-  const fromPointer = useRef(false);
-
-  useEffect(() => {
-    pointer.current.allow = false;
-  }, [files]);
-
-  useEffect(() => {
-    if (fromPointer.current) {
-      fromPointer.current = false;
-      return;
-    }
-    pointer.current.allow = false;
-    activeRef.current?.scrollIntoView({ block: "nearest" });
-  }, [active]);
-
-  const onListMouseMove = (e: ReactMouseEvent<HTMLDivElement>) => {
-    if (e.clientX === pointer.current.x && e.clientY === pointer.current.y) {
-      return;
-    }
-    pointer.current = { x: e.clientX, y: e.clientY, allow: true };
-  };
-
-  const onRowEnter = (index: number) => {
-    if (!pointer.current.allow) return;
-    fromPointer.current = true;
-    onActive(index);
-  };
-
+  const list = usePickerList({
+    options: files.map((file) => {
+      const crew = crewMentionOf(file);
+      const note = isNoteMentionPath(file.path);
+      const slash = file.relative.lastIndexOf("/");
+      return {
+        value: file.path,
+        textValue: file.name,
+        title: crew ? (
+          <CrewMentionText target={crew} positions={file.positions} query={query} />
+        ) : (
+          <>
+            <MatchText
+              text={file.name}
+              positions={
+                note
+                  ? file.positions
+                  : file.positions.filter((pos) => pos > slash).map((pos) => pos - slash - 1)
+              }
+              active={Boolean(query.trim())}
+            />
+            {file.isDir ? "/" : null}
+          </>
+        ),
+        icon: crew ? (
+          <CrewMentionIcon target={crew} />
+        ) : note ? (
+          <StickyNote className="icon-sm" />
+        ) : (
+          <FileTypeIcon name={file.name} isDir={Boolean(file.isDir)} size="md" />
+        ),
+        group: crew ? (crew.kind === "member" ? t("Members") : t("Crews")) : undefined,
+        meta: note ? (
+          t("Note")
+        ) : slash < 0 ? undefined : (
+          <MatchText
+            text={file.relative.slice(0, slash)}
+            positions={file.positions.filter((pos) => pos < slash)}
+            active={Boolean(query.trim())}
+          />
+        ),
+      };
+    }),
+    value: files[active]?.path ?? null,
+    activeValue: files[active]?.path ?? null,
+    onActiveValueChange: (value) => onActive(files.findIndex((file) => file.path === value)),
+    onChange: (value) => {
+      const file = files.find((file) => file.path === value);
+      if (file) onPick(file);
+    },
+  });
   return (
-    <div
+    <Surface
+      padding="none"
       data-mention-picker
-      {...surfaceAttributes(
-        { radius: "card", frame: "neutral", edge: "all" },
-        "overflow-hidden   border-(--ui-tone-neutral-border) bg-(--ui-surface-floating)",
-      )}
+      radius="card"
+      frame="neutral"
+      edge="all"
+      className="overflow-hidden"
     >
-      {files.length === 0 && failed && loading ? (
-        <div className="flex items-center justify-between gap-2 px-3 py-2">
-          <Text as="p" size="caption" tone="secondary">
-            {t("Could not index files.")}
-          </Text>
-          <Button onClick={onRetry}>{t("Retry")}</Button>
-        </div>
-      ) : files.length === 0 ? (
-        <Text as="p" size="caption" tone="secondary" className="px-3 py-2.5">
-          {loading
-            ? t("Indexing files…")
-            : query.trim()
-              ? includeNotes
-                ? t("No matching files or notes")
-                : t("No matching files or folders")
-              : includeNotes
-                ? t("No files or notes found")
-                : t("No files or folders found")}
-        </Text>
-      ) : (
-        <div
-          ref={lockOverscroll}
-          role="listbox"
-          aria-label={includeNotes ? t("Files and notes") : t("Files and folders")}
-          onMouseMove={onListMouseMove}
-          className="max-h-[min(240px,40vh)] overflow-y-auto overscroll-none px-1 py-1"
-        >
-          {files.map((file, index) => {
-            const highlighted = index === active;
-            const crew = crewMentionOf(file);
-            const heading =
-              crew && crew.kind !== (index > 0 ? crewMentionOf(files[index - 1]!)?.kind : undefined)
-                ? crew.kind === "member"
-                  ? t("Members")
-                  : t("Crews")
-                : null;
-            const note = isNoteMentionPath(file.path);
-            const slash = file.relative.lastIndexOf("/");
-            const dir = note ? "" : slash === -1 ? "" : file.relative.slice(0, slash);
-            const nameOffset = slash === -1 ? 0 : slash + 1;
-            const namePositions = note
-              ? file.positions
-              : file.positions.filter((pos) => pos >= nameOffset).map((pos) => pos - nameOffset);
-            return (
-              <Fragment key={file.path}>
-                {heading ? (
-                  <Text
-                    as="div"
-                    role="presentation"
-                    size="micro"
-                    tone="secondary"
-                    className="px-2 pb-0.5 pt-1.5"
-                  >
-                    {heading}
-                  </Text>
-                ) : null}
-                <Button
-                  className="w-full text-left"
-                  fullWidth
-                  selected={highlighted}
-                  variant="item"
-                  ref={highlighted ? activeRef : undefined}
-                  type="button"
-                  role="option"
-                  aria-selected={highlighted}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => onRowEnter(index)}
-                  onClick={() => onPick(file)}
-                >
-                  <span className="shrink-0">
-                    {crew ? (
-                      <CrewMentionIcon target={crew} />
-                    ) : isNoteMentionPath(file.path) ? (
-                      <StickyNote className="icon-sm" strokeWidth={1.75} />
-                    ) : (
-                      <FileTypeIcon name={file.name} isDir={Boolean(file.isDir)} size="md" />
-                    )}
-                  </span>
-                  {crew ? (
-                    <CrewMentionText target={crew} positions={file.positions} query={query} />
-                  ) : (
-                    <>
-                      <Text
-                        as="span"
-                        size="inherit"
-                        tone="inherit"
-                        truncate
-                        className={`min-w-0 flex-1 ${highlighted ? "text-mention" : ""}`}
-                      >
-                        <MatchText
-                          text={file.name}
-                          positions={namePositions}
-                          active={Boolean(query.trim())}
-                        />
-                        {file.isDir ? "/" : null}
-                      </Text>
-                      {note ? (
-                        <Text size="micro" tone="secondary" className="shrink-0 font-mono">
-                          {t("Note")}
-                        </Text>
-                      ) : dir ? (
-                        <Text
-                          as="span"
-                          size="micro"
-                          tone="secondary"
-                          truncate
-                          className="min-w-0 max-w-[45%] font-mono"
-                        >
-                          <MatchText
-                            text={dir}
-                            positions={file.positions.filter((pos) => pos < slash)}
-                            active={Boolean(query.trim())}
-                          />
-                        </Text>
-                      ) : null}
-                    </>
-                  )}
-                </Button>
-              </Fragment>
-            );
-          })}
-        </div>
-      )}
-    </div>
+      <PickerList
+        label={includeNotes ? t("Files and notes") : t("Files and folders")}
+        controller={list}
+        checkPlacement="none"
+        pointerHighlight="movement"
+        loading={files.length === 0 && loading && !failed}
+        loadingLabel={t("Indexing files…")}
+        error={files.length === 0 && failed ? t("Could not index files.") : undefined}
+        onRetry={onRetry}
+        emptyLabel={
+          query.trim()
+            ? includeNotes
+              ? t("No matching files or notes")
+              : t("No matching files or folders")
+            : includeNotes
+              ? t("No files or notes found")
+              : t("No files or folders found")
+        }
+        className="max-h-[min(240px,40vh)] overflow-y-auto overscroll-none"
+      />
+    </Surface>
   );
 }

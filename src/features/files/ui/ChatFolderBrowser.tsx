@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
@@ -364,15 +365,11 @@ export function ChatFolderBrowser({
                       ) : (
                         <FileTypeIcon name={entry.name} isDir={false} size="md" />
                       )}
-                      <Text
-                        truncate
-                        size="body"
-                        tone="inherit"
-                        className="min-w-0"
-                        title={displayPath(entry.path, directory)}
-                      >
-                        {entry.name}
-                      </Text>
+                      <Tooltip label={displayPath(entry.path, directory)} asChild>
+                        <Text truncate size="body" tone="inherit" className="min-w-0">
+                          {entry.name}
+                        </Text>
+                      </Tooltip>
                     </Button>
                     {!entry.isDir && listing?.canOpenFiles ? (
                       <Button

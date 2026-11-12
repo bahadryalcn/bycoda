@@ -1,19 +1,27 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
-import { Popover } from "../../../shared/ui/Popover";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useLocale, useT } from "../../../shared/i18n";
-import { CaseSensitive, ListFilter, ChevronLeft, Regex, WholeWord } from "../../../shared/ui/icons";
+import {
+  CaseSensitive,
+  ChevronDown,
+  ChevronRight,
+  MoreHorizontal,
+  ChevronLeft,
+  Regex,
+  WholeWord,
+} from "../../../shared/ui/icons";
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -73,7 +81,6 @@ function ProjectSearchContent({
 }: Props) {
   const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [filtersAnchor, setFiltersAnchor] = useState<HTMLButtonElement | null>(null);
   const closeLatest = useStableCallback(onClose);
   const stateKey = `find-in-files:${pathKey(cwd)}`;
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
@@ -82,6 +89,9 @@ function ProjectSearchContent({
   const [caseSensitive, setCaseSensitive] = useRetainedState(`${stateKey}:case`, false);
   const [wholeWord, setWholeWord] = useRetainedState(`${stateKey}:word`, false);
   const [regex, setRegex] = useRetainedState(`${stateKey}:regex`, false);
+  const [detailsExpanded, setDetailsExpanded] = useState(() => !!include || !!exclude);
+  const detailsId = useId();
+  const toggleDetails = () => setDetailsExpanded((expanded) => !expanded);
   const request = useMemo(
     () => ({
       cwd,
@@ -117,7 +127,7 @@ function ProjectSearchContent({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // Child popups (filters, field menus) and IME composition own Escape first;
+      // Child popups (field menus) and IME composition own Escape first;
       // Project Search closes only when nothing else claims the key.
       if (
         event.key !== "Escape" ||
@@ -208,99 +218,112 @@ function ProjectSearchContent({
           </Text>
         </div>
       ) : null}
-      <div className="flex shrink-0 items-center gap-1 border-b border-stroke p-2">
-        <SearchInput
-          standalone
-          ref={inputRef}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={onQueryKeyDown}
-          placeholder={t("Search")}
-          aria-label={t("Search")}
-          spellCheck={false}
-          textSize="caption"
-          containerClassName="min-w-0 flex-1"
-        />
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Filters")}
-          selected={!!include || !!exclude || caseSensitive || wholeWord || regex}
-          aria-haspopup="dialog"
-          aria-expanded={!!filtersAnchor}
-          onClick={(event) => setFiltersAnchor(filtersAnchor ? null : event.currentTarget)}
-        >
-          <ListFilter className="icon-md" />
-        </Button>
-      </div>
-      {filtersAnchor ? (
-        <Popover
-          anchor={filtersAnchor}
-          role="dialog"
-          aria-label={t("Filters")}
-          width={280}
-          onDismiss={() => setFiltersAnchor(null)}
-          className="space-y-2 p-2"
-        >
-          <div className="flex items-center gap-1">
-            {" "}
-            <Toggle
-              label={t("Match case")}
-              active={caseSensitive}
-              onClick={() => setCaseSensitive((value) => !value)}
-            >
-              <CaseSensitive className="icon-sm" strokeWidth={1.75} />
-            </Toggle>
-            <Toggle
-              label={t("Match whole word")}
-              active={wholeWord}
-              onClick={() => setWholeWord((value) => !value)}
-            >
-              <WholeWord className="icon-sm" strokeWidth={1.75} />
-            </Toggle>
-            <Toggle
-              label={t("Use regular expression")}
-              active={regex}
-              onClick={() => setRegex((value) => !value)}
-            >
-              <Regex className="icon-sm" strokeWidth={1.75} />
-            </Toggle>
-          </div>
-          <TextField
-            hideLabel
-            label=""
-            value={include}
-            onChange={(event) => setInclude(event.target.value)}
-            placeholder={t("files to include")}
-            aria-label={t("files to include")}
-            spellCheck={false}
-            className="w-full"
-          />
-          <TextField
-            hideLabel
-            label=""
-            value={exclude}
-            onChange={(event) => setExclude(event.target.value)}
-            placeholder={t("files to exclude")}
-            aria-label={t("files to exclude")}
-            spellCheck={false}
-            className="w-full"
-          />
-
+      <div className="min-w-0 shrink-0 space-y-1 border-b border-stroke p-2">
+        <div className="flex min-w-0 items-center gap-1">
           <Button
-            variant="secondary"
-            onClick={() => {
-              setInclude("");
-              setExclude("");
-              setCaseSensitive(false);
-              setWholeWord(false);
-              setRegex(false);
-            }}
+            variant="ghost"
+            iconOnly
+            inset
+            label={t("Toggle Search Details")}
+            aria-expanded={detailsExpanded}
+            aria-controls={detailsId}
+            onClick={toggleDetails}
           >
-            {t("Reset")}
+            {detailsExpanded ? (
+              <ChevronDown className="icon-sm" />
+            ) : (
+              <ChevronRight className="icon-sm" />
+            )}
           </Button>
-        </Popover>
-      ) : null}
+          <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+            <SearchInput
+              ref={inputRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={onQueryKeyDown}
+              placeholder={t("Search")}
+              aria-label={t("Search")}
+              spellCheck={false}
+              textSize="caption"
+              focusOwner="group"
+            />
+            <div className="flex shrink-0 items-center">
+              <Toggle
+                label={t("Match case")}
+                active={caseSensitive}
+                onClick={() => setCaseSensitive((value) => !value)}
+              >
+                <CaseSensitive className="icon-sm" strokeWidth={1.75} />
+              </Toggle>
+              <Toggle
+                label={t("Match whole word")}
+                active={wholeWord}
+                onClick={() => setWholeWord((value) => !value)}
+              >
+                <WholeWord className="icon-sm" strokeWidth={1.75} />
+              </Toggle>
+              <Toggle
+                label={t("Use regular expression")}
+                active={regex}
+                onClick={() => setRegex((value) => !value)}
+              >
+                <Regex className="icon-sm" strokeWidth={1.75} />
+              </Toggle>
+            </div>
+          </SearchInputGroup>
+        </div>
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            iconOnly
+            inset
+            label={t("Toggle Search Details")}
+            aria-expanded={detailsExpanded}
+            aria-controls={detailsId}
+            onClick={toggleDetails}
+          >
+            <MoreHorizontal className="icon-sm" />
+          </Button>
+        </div>
+        <div id={detailsId} hidden={!detailsExpanded}>
+          <div className="min-w-0 space-y-2">
+            <TextField
+              label={t("files to include")}
+              aria-label={t("files to include")}
+              value={include}
+              onChange={(event) => setInclude(event.target.value)}
+              spellCheck={false}
+              fieldSize="sm"
+              fieldVariant="compact"
+              textSize="caption"
+              fieldClassName="min-w-0 w-full"
+            />
+            <TextField
+              label={t("files to exclude")}
+              aria-label={t("files to exclude")}
+              value={exclude}
+              onChange={(event) => setExclude(event.target.value)}
+              spellCheck={false}
+              fieldSize="sm"
+              fieldVariant="compact"
+              textSize="caption"
+              fieldClassName="min-w-0 w-full"
+            />
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setInclude("");
+                setExclude("");
+                setCaseSensitive(false);
+                setWholeWord(false);
+                setRegex(false);
+              }}
+            >
+              {t("Reset")}
+            </Button>
+          </div>
+        </div>
+      </div>
       <Text
         as="div"
         size="micro"
@@ -413,7 +436,7 @@ function Toggle({
 }) {
   useLocale();
   return (
-    <Button variant="ghost" iconOnly label={label} aria-pressed={active} onClick={onClick}>
+    <Button variant="ghost" iconOnly inset label={label} pressed={active} onClick={onClick}>
       {children}
     </Button>
   );

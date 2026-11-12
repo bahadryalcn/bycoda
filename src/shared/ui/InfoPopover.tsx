@@ -52,7 +52,7 @@ export function InfoPopover({
           id={contentId}
           anchor={anchor}
           width={width}
-          role="dialog"
+          kind="dialog"
           aria-label={name}
           tabIndex={-1}
           autoFocus

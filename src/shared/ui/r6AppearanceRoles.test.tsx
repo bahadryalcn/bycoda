@@ -27,6 +27,7 @@ const cases: [string, ReactNode, string, string, string][] = [
   [
     "ContinuousList gutter",
     <ContinuousList
+      key="specimen"
       items={[]}
       itemKey={(item: string) => item}
       renderItem={(item) => item}
@@ -37,42 +38,120 @@ const cases: [string, ReactNode, string, string, string][] = [
     "data-gutter",
     "stable",
   ],
-  ["Button textSize", <Button textSize="body">Open</Button>, "button", "data-size", "body"],
+  [
+    "Button textSize",
+    <Button key="specimen" textSize="body">
+      Open
+    </Button>,
+    "button",
+    "data-size",
+    "body",
+  ],
   [
     "Button textTone",
-    <Button textTone="secondary">Open</Button>,
+    <Button key="specimen" textTone="secondary">
+      Open
+    </Button>,
     "button",
     "data-tone",
     "secondary",
   ],
-  ["Button weight", <Button weight="medium">Open</Button>, "button", "data-weight", "medium"],
-  ["Button lines", <Button lines={2}>Open</Button>, "button", "data-lines", "2"],
-  ["LiveText lines", <LiveText text="Sending" lines={2} />, '[role="status"]', "data-lines", "2"],
-  ["NativeSelect truncate", <NativeSelect truncate />, "select", "data-truncate", "true"],
-  ["Text lines", <Text lines={2}>Copy</Text>, "span", "data-lines", "2"],
-  ["Text as kbd", <Text as="kbd">Esc</Text>, "kbd", "data-size", "caption"],
-  ["Text on-solid ink", <Text tone="on-solid">Copy</Text>, "span", "data-tone", "on-solid"],
+  [
+    "Button weight",
+    <Button key="specimen" weight="medium">
+      Open
+    </Button>,
+    "button",
+    "data-weight",
+    "medium",
+  ],
+  [
+    "Button lines",
+    <Button key="specimen" lines={2}>
+      Open
+    </Button>,
+    "button",
+    "data-lines",
+    "2",
+  ],
+  [
+    "LiveText lines",
+    <LiveText key="specimen" text="Sending" lines={2} />,
+    '[role="status"]',
+    "data-lines",
+    "2",
+  ],
+  [
+    "NativeSelect truncate",
+    <NativeSelect key="specimen" truncate />,
+    "select",
+    "data-truncate",
+    "true",
+  ],
+  [
+    "Text lines",
+    <Text key="specimen" lines={2}>
+      Copy
+    </Text>,
+    "span",
+    "data-lines",
+    "2",
+  ],
+  [
+    "Text as kbd",
+    <Text key="specimen" as="kbd">
+      Esc
+    </Text>,
+    "kbd",
+    "data-size",
+    "caption",
+  ],
+  [
+    "Text on-solid ink",
+    <Text key="specimen" tone="on-solid">
+      Copy
+    </Text>,
+    "span",
+    "data-tone",
+    "on-solid",
+  ],
   [
     "Text accent-on-solid ink",
-    <Text tone="accent-on-solid">Copy</Text>,
+    <Text key="specimen" tone="accent-on-solid">
+      Copy
+    </Text>,
     "span",
     "data-tone",
     "accent-on-solid",
   ],
-  ["Text normal tracking", <Text tracking="normal">Copy</Text>, "span", "data-tracking", "normal"],
-  ["Motion linear", <Motion easing="linear" />, "div", "data-easing", "linear"],
-  ["ScrollArea form", <ScrollArea as="form" gutter="stable" />, "form", "data-gutter", "stable"],
-  ["ScrollArea aside", <ScrollArea as="aside" />, "aside", "data-axis", "y"],
+  [
+    "Text normal tracking",
+    <Text key="specimen" tracking="normal">
+      Copy
+    </Text>,
+    "span",
+    "data-tracking",
+    "normal",
+  ],
+  ["Motion linear", <Motion key="specimen" easing="linear" />, "div", "data-easing", "linear"],
+  [
+    "ScrollArea form",
+    <ScrollArea key="specimen" as="form" gutter="stable" />,
+    "form",
+    "data-gutter",
+    "stable",
+  ],
+  ["ScrollArea aside", <ScrollArea key="specimen" as="aside" />, "aside", "data-axis", "y"],
   [
     "Switch labelText",
-    <Switch label="Enabled" labelText={{ size: "secondary", tone: "primary" }} />,
+    <Switch key="specimen" label="Enabled" labelText={{ size: "secondary", tone: "primary" }} />,
     "span[data-size]",
     "data-size",
     "secondary",
   ],
   [
     "RadioGroup legendText",
-    <RadioGroup label="Choice" options={[]} legendText={{ size: "body" }} />,
+    <RadioGroup key="specimen" label="Choice" options={[]} legendText={{ size: "body" }} />,
     "legend",
     "data-size",
     "body",
@@ -80,6 +159,7 @@ const cases: [string, ReactNode, string, string, string][] = [
   [
     "RadioGroup descriptionText",
     <RadioGroup
+      key="specimen"
       label="Choice"
       options={[{ value: "one", label: "One", description: "Help" }]}
       descriptionText={{ tone: "muted" }}
@@ -90,67 +170,114 @@ const cases: [string, ReactNode, string, string, string][] = [
   ],
   [
     "EmptyState descriptionText block",
-    <EmptyState description="Empty" descriptionText={{ size: "caption" }} />,
+    <EmptyState key="specimen" description="Empty" descriptionText={{ size: "caption" }} />,
     "p",
     "data-size",
     "caption",
   ],
   [
     "EmptyState descriptionText inline",
-    <EmptyState size="inline" description="Empty" descriptionText={{ size: "caption" }} />,
+    <EmptyState
+      key="specimen"
+      size="inline"
+      description="Empty"
+      descriptionText={{ size: "caption" }}
+    />,
     "span[data-size]",
     "data-size",
     "caption",
   ],
   [
     "ShortcutKbd tone",
-    <ShortcutKbd tone="primary">Esc</ShortcutKbd>,
+    <ShortcutKbd key="specimen" tone="primary">
+      Esc
+    </ShortcutKbd>,
     "kbd",
     "data-tone",
     "primary",
   ],
   [
     "FieldLabel weight",
-    <FieldLabel weight="regular">Name</FieldLabel>,
+    <FieldLabel key="specimen" weight="regular">
+      Name
+    </FieldLabel>,
     "label",
     "data-weight",
     "regular",
   ],
   [
     "FieldLabel leading",
-    <FieldLabel leading="normal">Name</FieldLabel>,
+    <FieldLabel key="specimen" leading="normal">
+      Name
+    </FieldLabel>,
     "label",
     "data-leading",
     "normal",
   ],
-  ["Code weight", <Code weight="medium">1234</Code>, "code", "data-weight", "medium"],
-  ["Code tracking", <Code tracking="wider">1234</Code>, "code", "data-tracking", "wider"],
-  ["Heading leading", <Heading leading="normal">Title</Heading>, "h2", "data-leading", "normal"],
-  ["Heading size", <Heading size="heading">Title</Heading>, "h1", "data-size", "heading"],
+  [
+    "Code weight",
+    <Code key="specimen" weight="medium">
+      1234
+    </Code>,
+    "code",
+    "data-weight",
+    "medium",
+  ],
+  [
+    "Code tracking",
+    <Code key="specimen" tracking="wider">
+      1234
+    </Code>,
+    "code",
+    "data-tracking",
+    "wider",
+  ],
+  [
+    "Heading leading",
+    <Heading key="specimen" leading="normal">
+      Title
+    </Heading>,
+    "h2",
+    "data-leading",
+    "normal",
+  ],
+  [
+    "Heading size",
+    <Heading key="specimen" size="heading">
+      Title
+    </Heading>,
+    "h1",
+    "data-size",
+    "heading",
+  ],
   [
     "SectionLabel tone",
-    <SectionLabel tone="muted">Group</SectionLabel>,
+    <SectionLabel key="specimen" tone="muted">
+      Group
+    </SectionLabel>,
     "span[data-tone]",
     "data-tone",
     "muted",
   ],
   [
     "TextField weight",
-    <TextField label="Title" weight="medium" />,
+    <TextField key="specimen" label="Title" weight="medium" />,
     "input",
     "data-weight",
     "medium",
   ],
   [
     "InlineError text",
-    <InlineError text={{ tone: "secondary", leading: "snug" }}>Failed</InlineError>,
+    <InlineError key="specimen" text={{ tone: "secondary", leading: "snug" }}>
+      Failed
+    </InlineError>,
     "span[data-tone]",
     "data-tone",
     "secondary",
   ],
   [
     "ClampText expandable roles",
-    <ClampText size="secondary" leading="normal">
+    <ClampText key="specimen" size="secondary" leading="normal">
       Copy
     </ClampText>,
     "div[data-size]",
@@ -160,6 +287,7 @@ const cases: [string, ReactNode, string, string, string][] = [
   [
     "Sheet bodyText",
     <Sheet
+      key="specimen"
       modal={false}
       anchor="container"
       title="Detail"
@@ -174,7 +302,7 @@ const cases: [string, ReactNode, string, string, string][] = [
   ],
   [
     "Modal bodyText",
-    <Modal title="Detail" onClose={() => {}} bodyText={{ size: "secondary" }}>
+    <Modal key="specimen" title="Detail" onClose={() => {}} bodyText={{ size: "secondary" }}>
       Copy
     </Modal>,
     "[data-modal-scroll]",

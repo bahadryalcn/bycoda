@@ -335,12 +335,7 @@
 }
 
 .runtime-log-count {
-  font-variant-numeric: tabular-nums;
-  padding-block: 1px;
-  padding-inline: 5px;
-  border-radius: var(--ui-control-radius);
-  color: var(--color-content);
-  background: var(--ui-surface-selected);
+  flex: none;
 }
 
 .runtime-log-details-trigger {

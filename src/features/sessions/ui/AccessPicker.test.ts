@@ -71,7 +71,7 @@ describe("AccessPicker unavailable modes", () => {
     );
     expect(option("Auto-accept edits")?.getAttribute("aria-selected")).toBe("true");
     expect(menu.getAttribute("aria-activedescendant")).toBe(option("An AI reviewer")?.id);
-    expect(option("An AI reviewer")?.getAttribute("data-highlighted")).toBe("true");
+    expect(option("An AI reviewer")?.hasAttribute("data-highlighted")).toBe(true);
     expect(option("Auto-accept edits")?.hasAttribute("data-highlighted")).toBe(false);
     act(() => menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
     act(() => menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));

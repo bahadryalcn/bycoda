@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { boundedSet } from "../../../shared/lib/store";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
+import { jiraCommentDocument, type JiraCommentImage } from "./jiraCommentDocument";
 
 export type JiraProject = {
   id: string;
@@ -9,6 +10,8 @@ export type JiraProject = {
 };
 
 export type JiraIssue = {
+  /** Client-side context for board-specific working folder defaults. */
+  jiraBoardId?: number;
   provider: "jira";
   kind: "jira";
   id: string;
@@ -21,7 +24,7 @@ export type JiraIssue = {
   stateType: string;
   updatedAt: string;
   labels: { name: string; color: string }[];
-  assignees: { login: string; avatarUrl?: string }[];
+  assignees: { login: string; accountId?: string; avatarUrl?: string }[];
   draft: boolean;
   repo: string;
   teamId: string;
@@ -97,6 +100,12 @@ export function saveAllowedJiraBoardIds(ids: number[]) {
 const detailsByKey = new Map<string, JiraIssueDetails>();
 const threadByKey = new Map<string, JiraIssueThread>();
 const threadInflight = new Map<string, Promise<JiraIssueThread>>();
+// Keep discovered filter choices when a narrowed result no longer contains them.
+const knownFilterIssues = new Map<string, JiraIssue>();
+
+export function knownJiraFilterIssues(): JiraIssue[] {
+  return [...knownFilterIssues.values()];
+}
 
 let cacheGeneration = 0;
 
@@ -105,6 +114,7 @@ export function clearJiraCache() {
   detailsByKey.clear();
   threadByKey.clear();
   threadInflight.clear();
+  knownFilterIssues.clear();
 }
 
 export function jiraConnected(): Promise<JiraStatus> {
@@ -153,18 +163,35 @@ export function jiraProjectIdsForFetch(
   return visible;
 }
 
-export function listJiraIssues(query: {
+export async function listJiraIssues(query: {
   assignedToMe: boolean;
+  assigneeIds?: string[];
+  unassigned?: boolean;
+  statuses?: string[];
   state: "open" | "all";
   projectIds: string[];
   limit?: number;
 }): Promise<JiraIssue[]> {
-  return invoke<JiraIssue[]>("jira_list_issues", {
+  const generation = cacheGeneration;
+  const issues = await invoke<JiraIssue[]>("jira_list_issues", {
     assignedToMe: query.assignedToMe,
     state: query.state,
     projectIds: query.projectIds,
     limit: query.limit,
+    ...(query.assigneeIds?.length || query.unassigned || query.statuses?.length
+      ? {
+          filters: {
+            assigneeIds: query.assigneeIds ?? [],
+            unassigned: query.unassigned ?? false,
+            statuses: query.statuses ?? [],
+          },
+        }
+      : {}),
   });
+  if (generation === cacheGeneration) {
+    for (const issue of issues) boundedSet(knownFilterIssues, issue.id, issue, 512);
+  }
+  return issues;
 }
 
 /** Detail payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
@@ -222,10 +249,24 @@ export async function jiraIssueThread(
 export async function jiraIssueComment(
   issue: { id: string; key: string },
   body: string,
+  images?: JiraCommentImage[],
 ): Promise<string> {
+  for (const image of images ?? []) {
+    if (image.uploaded?.key === issue.key) continue;
+    const uploaded = await invoke<{ id: string; url: string }>("jira_issue_attachment", {
+      key: issue.key,
+      name: image.name,
+      mimeType: image.type,
+      dataBase64: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1),
+    });
+    // Receipt belongs to the retained image draft. Keep successful uploads if
+    // another upload or the comment fails, including across composer remounts.
+    image.uploaded = { ...uploaded, key: issue.key };
+  }
   const url = await invoke<string>("jira_issue_comment", {
     key: issue.key,
     body: body.trim(),
+    ...(images ? { document: jiraCommentDocument(body.trim(), images) } : {}),
   });
   threadByKey.delete(issue.key);
   threadInflight.delete(issue.key);

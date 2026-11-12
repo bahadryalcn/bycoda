@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
-import type { ExpandingButtonGroupTriggerProps } from "../../../shared/ui/ExpandingButtonGroup";
+import type { ExpandingButtonGroupTriggerProps } from "../../../shared/ui/ButtonGroup";
 import { useT } from "../../../shared/i18n";
 import {
   ChevronDown,

@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
@@ -5,7 +6,8 @@ import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { useContext, useRef, useState, useSyncExternalStore } from "react";
-import { findModel } from "../../sessions/model/models";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { orchestrator } from "../model/orchestration";
 import { orchestrationTaskLabel, type OrchestrationSummary } from "../model/orchestrationSummary";
 import { HARNESS_TITLE } from "../../sessions/model/session";
@@ -115,7 +117,7 @@ export function OrchestrationSidebarAgents({
           const working = summary.live && task.status === "running" && !task.needsInput;
           // A saved provider model may not be in this window's catalog yet.
           // Keep its identity instead of substituting the harness default.
-          const model = findModel(task.model)?.name ?? task.model;
+          const model = modelDisplayName(task.model, task.harness);
           return (
             <div
               key={task.sessionId}
@@ -188,18 +190,16 @@ export function OrchestrationSidebarAgents({
               {/* Indented to the title's column: the icon slot and its gap. */}
               {open && (
                 <div className="space-y-2 pb-3 pl-6.5 pr-2">
-                  <Text
-                    as="p"
-                    size="micro"
-                    tone="secondary"
-                    className="flex min-w-0 items-center gap-1.5"
-                    title={`${model} · ${HARNESS_TITLE[task.harness]}`}
-                  >
-                    <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
-                    <Text size="inherit" tone="inherit" truncate className="min-w-0">
-                      {model}
+                  <Tooltip label={`${model} · ${HARNESS_TITLE[task.harness]}`} asChild>
+                    <Text
+                      as="p"
+                      size="micro"
+                      tone="secondary"
+                      className="flex min-w-0 items-center gap-1.5"
+                    >
+                      <ModelLabel model={task.model} harness={task.harness} name={model} />
                     </Text>
-                  </Text>
+                  </Tooltip>
                   {live?.error && (
                     <Text as="p" size="micro" tone="danger">
                       {live.error}

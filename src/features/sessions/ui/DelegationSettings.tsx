@@ -1,3 +1,5 @@
+import { Badge } from "../../../shared/ui/Badge";
+import { AutomaticSubagentModels } from "./AutomaticSubagentModels";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
@@ -5,11 +7,12 @@ import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SelectTrigger } from "../../../shared/ui/Select";
-import { ChevronDown, WandSparkles } from "../../../shared/ui/icons";
+import { ChevronDown, WandSparkles, X } from "../../../shared/ui/icons";
 import {
   delegationNextValue,
   isDelegationSetting,
   isImageModelsSetting,
+  isSubagentSetting,
   delegationOptionSelected,
   crossDelegationSummary,
   delegationShortLabel,
@@ -17,6 +20,8 @@ import {
 import type { ModelSetting } from "../model/models";
 import type { HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
+import { HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+import type { DropdownMenuItem, DropdownMenuAction } from "../../../shared/ui/DropdownMenu";
 import { decodeAdvisor } from "../../../shared/model/host-contracts/delegation";
 import {
   IMAGE_MODEL_INFO,
@@ -49,11 +54,19 @@ export function DelegationSubagentsControl({
   const t = useT();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const automatic = isSubagentSetting(setting) && (values[setting.id] ?? setting.value) === "auto";
+  const summary = automatic ? (
+    <Badge size="xs" tone="accent" icon={<WandSparkles className="icon-xs" />}>
+      {t("Automatic")}
+    </Badge>
+  ) : (
+    t(crossDelegationSummary(setting, values))
+  );
   const firstPicked = setting.options.find(
     (option) => option.value && delegationOptionSelected(setting, values, option.value),
   )?.value;
   return (
-    <>
+    <div className="flex min-w-0 flex-col items-end gap-1">
       {appearance === "field" ? (
         <SelectTrigger
           ref={anchor}
@@ -74,7 +87,7 @@ export function DelegationSubagentsControl({
               </span>
             ) : null}
             <Text size="inherit" tone="inherit" truncate className="min-w-0">
-              {t(crossDelegationSummary(setting, values))}
+              {summary}
             </Text>
           </span>
           <ChevronDown
@@ -95,32 +108,27 @@ export function DelegationSubagentsControl({
           className="w-[52%] max-w-[11.5rem] min-w-0 shrink-0"
         >
           <Text size="inherit" tone="inherit" truncate className="min-w-0">
-            {t(crossDelegationSummary(setting, values))}
+            {summary}
           </Text>
           <ChevronDown className="icon-xs shrink-0" />
         </Button>
       )}
+      {automatic ? <AutomaticSubagentModels setting={setting} /> : null}
       {open ? (
         <DropdownMenu
           anchor={anchor}
           label={label}
-          items={setting.options.map((option) => ({
-            kind: "item" as const,
-            id: option.value,
-            label: t(option.label),
-            checked: delegationOptionSelected(setting, values, option.value),
-            icon: <DelegationOptionIcon setting={setting} value={option.value} />,
-            selectionRole: "checkbox" as const,
-          }))}
+          items={delegationMenuItems(setting, values, t)}
           onPick={(id) => onChange(delegationNextValue(setting, values, id))}
           onClose={() => setOpen(false)}
           returnFocusRef={anchor}
           side="bottom"
           align="end"
-          width={228}
+          width="content"
+          maxHeight={360}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -188,6 +196,9 @@ export function DelegationField({
 
 /** The provider icon of one any-provider delegation option; nothing for Off. */
 export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting; value: string }) {
+  if (value === "auto") return <WandSparkles className="icon-sm shrink-0" />;
+  if (value === "" && setting.options.find((option) => option.value === "")?.label === "Off")
+    return <X className="icon-sm shrink-0" />;
   if (value === "" && setting.options.find((option) => option.value === "")?.label !== "Off")
     return <WandSparkles className="icon-sm shrink-0" />;
   if (isImageModelsSetting(setting)) {
@@ -229,4 +240,70 @@ export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting
 /** Any-provider model lists need room for "Provider · Model" labels. */
 export function settingMenuWidth(setting: ModelSetting, base: number): number {
   return isDelegationSetting(setting) ? Math.max(base, 320) : base;
+}
+
+/** Shared single-line delegation rows; source label remains accessible. */
+function delegationMenuItems(
+  setting: ModelSetting,
+  values: Record<string, string>,
+  t: (text: string) => string,
+): DropdownMenuItem[] {
+  const groups = new Map<string, DropdownMenuAction[]>();
+  const leading: DropdownMenuAction[] = [];
+  for (const option of setting.options) {
+    const ref = isDelegationSetting(setting) ? decodeAdvisor(option.value) : undefined;
+    const provider = ref ? HARNESS_TITLE[ref.harness] : "";
+    const parts = option.label.split(" · ");
+    const primary = provider && parts.length > 1 ? parts[1] : t(option.label);
+    const secondary = provider ? [provider, ...parts.slice(2)].join(" · ") : "";
+    const item: DropdownMenuAction = {
+      kind: "item",
+      id: option.value,
+      label: t(option.label),
+      title: t(option.label),
+      checked: delegationOptionSelected(setting, values, option.value),
+      selectionRole: "checkbox",
+      icon: <DelegationOptionIcon setting={setting} value={option.value} />,
+      content: (
+        <span className="flex min-w-0 flex-1 items-center gap-3">
+          <Text size="inherit" tone="inherit" truncate>
+            {primary}
+          </Text>
+          {secondary ? (
+            <Text size="caption" tone="muted" truncate>
+              {secondary}
+            </Text>
+          ) : null}
+        </span>
+      ),
+    };
+    if (!provider) leading.push(item);
+    else groups.set(provider, [...(groups.get(provider) ?? []), item]);
+  }
+  return [
+    ...leading,
+    ...Array.from(groups, ([provider, items]) =>
+      groups.size > 1 ? [{ kind: "group" as const, id: provider, label: provider, items }] : items,
+    ).flat(),
+  ];
+}
+
+/** Model as primary text, provider/account as quiet same-line metadata. */
+export function delegationSelectChoice(
+  setting: ModelSetting,
+  option: ModelSetting["options"][number],
+  t: (text: string) => string,
+) {
+  const ref = isDelegationSetting(setting) ? decodeAdvisor(option.value) : undefined;
+  const parts = option.label.split(" · ");
+  return {
+    label: ref && parts.length > 1 ? parts[1] : t(option.label),
+    meta: ref ? [HARNESS_TITLE[ref.harness], ...parts.slice(2)].join(" · ") : undefined,
+    group:
+      ref &&
+      new Set(setting.options.map((item) => decodeAdvisor(item.value)?.harness).filter(Boolean))
+        .size > 1
+        ? HARNESS_TITLE[ref.harness]
+        : undefined,
+  };
 }

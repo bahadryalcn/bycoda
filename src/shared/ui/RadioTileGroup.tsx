@@ -16,6 +16,8 @@ export interface RadioTileOption {
   id?: string;
   /** Accessible name when the content is a picture or a glyph. */
   ariaLabel?: string;
+  /** Square icon action; ariaLabel supplies its accessible name. */
+  iconOnly?: boolean;
   tooltip?: string;
   disabled?: boolean;
   className?: string;
@@ -30,6 +32,8 @@ export interface RadioTileGroupProps {
   options: readonly RadioTileOption[];
   value: string;
   onValueChange: (value: string) => void;
+  /** Preview an option on pointer enter or focus without changing the selected value. */
+  onOptionIntent?: (value: string) => void;
   disabled?: boolean;
   "aria-describedby"?: string;
   /** Layout of the group (grid, columns, scroll area). */
@@ -53,6 +57,7 @@ export function RadioTileGroup({
   options,
   value,
   onValueChange,
+  onOptionIntent,
   disabled,
   className,
   tileClassName,
@@ -96,6 +101,9 @@ export function RadioTileGroup({
             role="radio"
             aria-checked={on}
             aria-label={option.ariaLabel}
+            {...(option.iconOnly
+              ? { iconOnly: true, label: option.ariaLabel ?? option.tooltip ?? option.value }
+              : { iconOnly: false })}
             selected={on}
             tabIndex={index === tabStop ? 0 : -1}
             disabled={!isEnabled(index)}
@@ -103,6 +111,8 @@ export function RadioTileGroup({
             className={[tileClassName, option.className].filter(Boolean).join(" ") || undefined}
             onMouseDown={keepFocus ? (event) => event.preventDefault() : undefined}
             onClick={() => onValueChange(option.value)}
+            onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
+            onFocus={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
             onKeyDown={(event) => onKeyDown(event, index)}
           >
             {option.content}

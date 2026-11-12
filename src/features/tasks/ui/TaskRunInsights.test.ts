@@ -187,7 +187,7 @@ it("compares only completed accepted results and labels incomplete billing", asy
       createElement(TaskMetricsComparison, { tasks: [accepted, task({ id: "unrated" })] }),
     ),
   );
-  expect(container.textContent).toContain("codex · model");
+  expect(container.textContent).toContain("Model");
   expect(container.textContent).toContain("not a controlled model benchmark");
   expect(container.textContent).toContain("Partial readings are not shown as complete totals");
   expect(container.textContent).toContain("Unknown");

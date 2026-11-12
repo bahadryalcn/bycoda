@@ -1,3 +1,4 @@
+import { FailureState } from "../../../shared/ui/FailureState";
 import { Text } from "../../../shared/ui/Text";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -770,8 +771,7 @@ function AutomationsContent({
               />
             </HostModelSource>
           ) : readFailed && !hasAutomations ? (
-            <EmptyState
-              kind="unavailable"
+            <FailureState
               title={t("Automations unavailable")}
               description={
                 host.error?.message ??
@@ -1197,9 +1197,9 @@ function RunRow({
         <span>
           {/* Still running, but stuck until the owner answers. */}
           {run.status === "running" && run.needsInput ? (
-            <Badge tone="warning" title={t("The session is waiting on an approval or a question")}>
-              {t("Needs input")}
-            </Badge>
+            <Tooltip label={t("The session is waiting on an approval or a question")} asChild>
+              <Badge tone="warning">{t("Needs input")}</Badge>
+            </Tooltip>
           ) : (
             <RunStatusPill status={run.status} />
           )}

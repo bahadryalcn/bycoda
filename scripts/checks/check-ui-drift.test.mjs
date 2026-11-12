@@ -87,6 +87,7 @@ test("JSX attribute rules read the whole opening tag", () => {
   ].join("\n");
   assert.deepEqual(rulesOf("src/app/shell/C.tsx", tsx).sort(), [
     "fixed-control-size",
+    "loading-motion",
     "native-title",
     "popover-menu",
     "raw-native-control",
@@ -242,13 +243,14 @@ test("catalog tokens become raw-tag and raw-role rules in app scope only", () =>
     '<details><summary>x</summary></details>\n<div role="switch" />\n<dl />\n<span role="tab" />';
   assert.deepEqual(catalogRulesOf("src/features/demo/F.tsx", tsx).sort(), [
     "raw-details",
+    "raw-native-control",
     "raw-role-switch",
     "raw-summary",
   ]);
   assert.deepEqual(catalogRulesOf("src/shared/ui/F.tsx", tsx), []);
   assert.match(rules["raw-details"], /use Disclosure/);
   assert.match(rules["raw-role-switch"], /use Switch/);
-  assert.deepEqual(catalogRulesOf("src/features/demo/F.tsx", tsx, []), []);
+  assert.deepEqual(catalogRulesOf("src/features/demo/F.tsx", tsx, []), ["raw-native-control"]);
 });
 
 test("deprecated catalog exports flag named imports from their shared/ui module", () => {
@@ -341,4 +343,84 @@ test("themePalette literals are flagged in feature and app code only", () => {
   ]);
   assert.deepEqual(rulesOf("src/shared/theme/P.tsx", code), []);
   assert.deepEqual(rulesOf("src/features/demo/P.tsx", "const c = themePalette.dangerDark;"), []);
+});
+
+test("component families enforce wrapper imports including aliases and lazy modules", () => {
+  for (const text of [
+    'import { X as Choice } from "@/shared/ui/arc/select";',
+    'export { X } from "../../shared/ui/arc/menu";',
+    'const module = import("@/shared/ui/arc/menu");',
+    'import { NativePopupHost } from "../../shared/ui/NativePopupHost";',
+    'import { openNativeContextMenu } from "../../shared/lib/nativeContextMenu";',
+  ])
+    assert.ok(rulesOf("src/features/demo/View.tsx", text).includes("ui-wrapper-import"), text);
+  assert.ok(
+    !rulesOf("src/shared/ui/Select.tsx", 'import { X } from "./arc/select";').includes(
+      "ui-wrapper-import",
+    ),
+  );
+  assert.ok(
+    !rulesOf("src/features/demo/View.tsx", 'import { Select } from "@/shared/ui/Select";').includes(
+      "ui-wrapper-import",
+    ),
+  );
+});
+
+test("floating surfaces have one placement owner and semantic popups use wrappers", () => {
+  for (const role of ["menu", "listbox", "dialog", "tooltip"])
+    assert.ok(
+      rulesOf("src/features/demo/View.tsx", `<div role={"${role}"} />`).includes(
+        "portal-outside-shared",
+      ),
+    );
+  for (const file of ["src/features/demo/View.tsx", "src/shared/ui/Other.tsx"])
+    assert.ok(
+      rulesOf(file, 'ReactDOM.createPortal(<div className="fixed" />, document.body)').includes(
+        "portal-outside-shared",
+      ),
+    );
+  assert.ok(
+    !rulesOf(
+      "src/shared/ui/Popover.tsx",
+      'createPortal(<div className="fixed" />, document.body)',
+    ).includes("portal-outside-shared"),
+  );
+  assert.ok(
+    !rulesOf("src/shared/ui/Portal.tsx", "createPortal(children, target)").includes(
+      "portal-outside-shared",
+    ),
+  );
+});
+
+test("hand-written loading and native tooltips name shared replacements", () => {
+  for (const animation of [
+    "animate-spin",
+    "motion-safe:animate-spin",
+    "animate-pulse",
+    "animate-shimmer",
+  ])
+    assert.ok(
+      rulesOf("src/features/demo/View.tsx", `<div className="${animation}" />`).includes(
+        "loading-motion",
+      ),
+    );
+  for (const tag of ["span", "div", "Badge", "Text"])
+    assert.ok(
+      rulesOf("src/features/demo/View.tsx", `<${tag} title={name} />`).includes("native-title"),
+    );
+  assert.ok(!rulesOf("src/features/demo/View.tsx", '<span title="" />').includes("native-title"));
+  assert.ok(
+    !rulesOf("src/features/demo/View.tsx", '<SectionHeader title="Settings" />').includes(
+      "native-title",
+    ),
+  );
+  assert.ok(!rulesOf("src/features/demo/View.tsx", '<span title = "" />').includes("native-title"));
+  for (const role of ["progressbar", "tab", "tablist"])
+    assert.ok(
+      rulesOf("src/features/demo/View.tsx", `<div role="${role}" />`).includes(
+        "raw-native-control",
+      ),
+    );
+  assert.match(rules["loading-motion"], /Spinner.*Skeleton/);
+  assert.match(rules["raw-native-control"], /ProgressBar.*SegmentedControl/);
 });

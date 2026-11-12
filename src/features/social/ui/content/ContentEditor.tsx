@@ -1,3 +1,4 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
 import { wallClockNow } from "../../../../shared/lib/time/wallClock";
@@ -195,15 +196,15 @@ export function ContentEditor(props: ContentEditorProps) {
       footer={footer}
     >
       {locked ? <InlineMessage tone="info">{locked}</InlineMessage> : null}
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {blocked.length ? (
-        <InlineMessage tone="danger">
+        <InlineError>
           <ul className="content-blocked">
             {blocked.map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
-        </InlineMessage>
+        </InlineError>
       ) : null}
       <ContentEditorFields
         client={client}

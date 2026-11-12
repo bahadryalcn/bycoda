@@ -7,7 +7,19 @@ import type { HostStore } from "../store";
 type Provider = "codex" | "claude";
 /** What the owner named and coloured in the desktop; colour is a palette id. */
 export type ProviderAccountStyles = Partial<
-  Record<Provider, Record<string, { label?: string; color?: string }>>
+  Record<
+    Provider,
+    Record<
+      string,
+      {
+        isDefault?: boolean;
+        label?: string;
+        color?: string;
+        kind?: "personal" | "work";
+        derivedKind?: "personal" | "work";
+      }
+    >
+  >
 >;
 
 const KEY = "providerAccountStyles";
@@ -21,16 +33,36 @@ export function parseProviderAccountStyles(raw: unknown): ProviderAccountStyles 
   for (const provider of ["codex", "claude"] as const) {
     const entries = (raw as Record<string, unknown>)[provider];
     if (!entries || typeof entries !== "object" || Array.isArray(entries)) continue;
-    const styles: Record<string, { label?: string; color?: string }> = {};
+    const styles: Record<
+      string,
+      {
+        isDefault?: boolean;
+        label?: string;
+        color?: string;
+        kind?: "personal" | "work";
+        derivedKind?: "personal" | "work";
+      }
+    > = {};
     for (const [id, value] of Object.entries(entries).slice(0, MAX_ACCOUNTS)) {
       if (!ACCOUNT_ID.test(id) || !value || typeof value !== "object") continue;
-      const { label, color } = value as Record<string, unknown>;
+      const { label, color, kind, derivedKind, isDefault } = value as Record<string, unknown>;
       const cleaned =
         typeof label === "string" ? label.replace(/\s+/g, " ").trim().slice(0, 48) : "";
       const palette = PROVIDER_ACCOUNT_COLORS.some((entry) => entry.id === color);
-      if (cleaned || palette)
+      if (
+        typeof isDefault === "boolean" ||
+        cleaned ||
+        palette ||
+        kind === "personal" ||
+        kind === "work" ||
+        derivedKind === "personal" ||
+        derivedKind === "work"
+      )
         styles[id] = {
+          ...(typeof isDefault === "boolean" ? { isDefault } : {}),
           ...(cleaned ? { label: cleaned } : {}),
+          ...(kind === "personal" || kind === "work" ? { kind } : {}),
+          ...(derivedKind === "personal" || derivedKind === "work" ? { derivedKind } : {}),
           ...(palette ? { color: color as string } : {}),
         };
     }
@@ -75,7 +107,18 @@ export async function saveProviderAccountStyles(
 
 /** The catalog with the owner's names and colours applied; unstyled accounts keep the Host's. */
 export function applyProviderAccountStyles<
-  T extends Partial<Record<Provider, { id: string; label: string; color?: string }[]>>,
+  T extends Partial<
+    Record<
+      Provider,
+      {
+        id: string;
+        label: string;
+        color?: string;
+        kind?: "personal" | "work";
+        derivedKind?: "personal" | "work";
+      }[]
+    >
+  >,
 >(catalog: T, styles: ProviderAccountStyles): T {
   const result: T = { ...catalog };
   for (const provider of ["codex", "claude"] as const) {
@@ -86,6 +129,9 @@ export function applyProviderAccountStyles<
       if (!style) return account;
       return {
         ...account,
+        ...(style.isDefault !== undefined ? { isDefault: style.isDefault } : {}),
+        kind: style.kind,
+        derivedKind: style.derivedKind,
         ...(style.label && account.id !== "default" ? { label: style.label } : {}),
         ...(style.color
           ? {
@@ -100,4 +146,16 @@ export function applyProviderAccountStyles<
     }) as never;
   }
   return result;
+}
+
+/** Explicit desktop default; legacy Hosts retain the fixed default profile. */
+export function providerDefaultAccounts(styles: ProviderAccountStyles) {
+  return Object.fromEntries(
+    (["claude", "codex"] as const).map((provider) => [
+      provider,
+      Object.entries(styles[provider] ?? {})
+        .sort(([a], [b]) => a.localeCompare(b, "en"))
+        .find(([, style]) => style.isDefault)?.[0] ?? "default",
+    ]),
+  );
 }

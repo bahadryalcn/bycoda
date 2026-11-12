@@ -75,26 +75,25 @@ export function WorktreeRow({
             </Badge>
           )}
           {!!tree.unpushed && (
-            <Badge
-              size="sm"
-              tone="info"
-              title={t("Counted against remote branches already fetched locally.")}
-            >
-              {tree.unpushed}
-              {t(" unpublished commit")}
-              {tree.unpushed === 1 ? "" : "s"}
-            </Badge>
+            <Tooltip label={t("Counted against remote branches already fetched locally.")} asChild>
+              <Badge size="sm" tone="info">
+                {tree.unpushed}
+                {t(" unpublished commit")}
+                {tree.unpushed === 1 ? "" : "s"}
+              </Badge>
+            </Tooltip>
           )}
           {tree.unpushed == null && !tree.missing && (
-            <Badge
-              size="sm"
-              tone="neutral"
-              title={t(
+            <Tooltip
+              label={t(
                 "Commits not on a remote could not be counted. Nothing was fetched or checked remotely.",
               )}
+              asChild
             >
-              {t("Publication unknown")}
-            </Badge>
+              <Badge size="sm" tone="neutral">
+                {t("Publication unknown")}
+              </Badge>
+            </Tooltip>
           )}
           {removing && <Badge size="sm">{t("Removing directory…")}</Badge>}
           {tree.locked && (

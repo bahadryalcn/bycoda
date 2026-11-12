@@ -50,6 +50,7 @@ describe("delegationGuidance", () => {
     expect(text).not.toContain("Consult the advisor");
     // Owner decision: splittable work is delegated unasked, with no routing between models.
     expect(text).toContain("Delegate without being asked when a request splits");
+    expect(text).toContain("Set agents.delegate effort to what each part needs");
     expect(text).toContain("Do small, sequential or single-file work yourself");
     expect(text).toContain("usefulness first, then cost");
     expect(text).not.toContain("always use it");
@@ -135,4 +136,17 @@ describe("delegationGuidance", () => {
       delegationGuidance({ [CROSS_ADVISOR_KEY]: advisor }, { harness: "claude" }),
     ).not.toContain("disabled");
   });
+});
+
+it("Automatic lists tier groups within ten lines and names a ceiling only when set", () => {
+  const text = delegationGuidance(
+    { crossSubagents: "auto", crossSubagentMaxEffort: "max" },
+    { harness: "claude" },
+  );
+  expect(text).toContain("best:");
+  expect(text).toContain("unranked:");
+  expect(text).toContain("lowest tier");
+  expect(text).toContain("ceiling: max");
+  expect(text.split("\n").length).toBeLessThanOrEqual(10);
+  expect(delegationGuidance({ crossSubagents: "auto" })).not.toContain("ceiling:");
 });

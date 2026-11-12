@@ -88,7 +88,7 @@
   flex-direction: column;
   min-inline-size: 0;
   overflow-wrap: anywhere;
-  white-space: normal;
+  white-space: nowrap;
 }
 .copy > span {
   display: block;
@@ -108,7 +108,11 @@
 .item[data-described] .label {
   font-weight: 500;
 }
+/* Secondary text never sets the menu width: it fills the width the label chose and wraps there. */
 .description {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  contain: inline-size;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-micro);
   line-height: var(--ui-leading-micro);
@@ -142,12 +146,16 @@
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: normal;
+  white-space: nowrap;
 }
 .item[data-branch-side="left"] > [data-branch-indicator] {
   transform: rotate(180deg);
 }
 
+/* A menu header (a commit title, a path) is context, not an option: it never sets the menu width. */
+.header {
+  contain: inline-size;
+}
 /* Quiet structure: a hairline between sections and a muted label that aligns with row text. */
 .separator {
   block-size: 1px;
@@ -202,48 +210,16 @@ button.item.item:focus-visible {
   cursor: default;
 }
 
-/* Standalone Arc ContextMenu: the gliding highlight is its pointer and keyboard indicator. */
+/* Standalone Arc ContextMenu uses the same row states as every command menu. */
 .target {
   display: block;
   outline: none;
 }
-/* Motion scales the menu from the pointer (transform-origin is set inline) and fades it out faster than it arrives. */
 .menu {
-  position: fixed;
-  z-index: 100;
-  min-width: min(13rem, calc(100vw - 16px));
-  max-width: calc(100vw - 16px);
-  max-height: min(300px, calc(100vh - 16px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 0.25rem;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-popup);
-  background: var(--ui-surface-floating);
   color: var(--color-content);
-  box-shadow: var(--ui-elevation-floating);
-  outline: none;
-}
-.highlight {
-  position: absolute;
-  top: 0;
-  right: 0.25rem;
-  left: 0.25rem;
-  border-radius: var(--menu-row-radius, calc(var(--ui-radius-popup) - 0.25rem - 1px));
-  background: var(--ui-surface-hover);
-  opacity: 0;
-  pointer-events: none;
-  transition: background-color var(--motion-feedback-duration) var(--motion-ease-out);
-}
-.menu .item:is(:hover, [data-highlighted="true"]):not(:disabled, :active),
-.menu button.item.item:focus-visible:not(:active) {
-  background: transparent;
-  outline: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .item,
-  .highlight {
-    animation: none;
+  .item {
     transition: none;
   }
 }

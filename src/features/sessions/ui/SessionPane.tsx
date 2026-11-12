@@ -1,3 +1,4 @@
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
@@ -5,7 +6,6 @@ import { CrewManagedBar, useCrewManagedSession } from "../../crews/public/manage
 import { AssistantManagedBadge } from "./AssistantManagedBadge";
 import { AssistantSessionControl } from "./AssistantSessionControl";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -41,7 +41,7 @@ import {
 import type { NewSessionOptions } from "../model/newSessionCommand";
 import "./session-notes-layout.css";
 import { ProjectQuickActions } from "../../projects/public/ProjectQuickActions";
-import type { ExpandingButtonGroupItem } from "../../../shared/ui/ExpandingButtonGroup";
+import type { ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
 import type { ProjectAction } from "../../projects";
 import type { OpenFileFn } from "../../search/model/search";
 import {
@@ -1310,8 +1310,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
       compactSupported={canCompactHarnessContext(session.harness)}
       recents={recents}
       hideProjectPicker={!!session.inboxAsk || (hideProjectPicker ? !showDeckProjectPicker : false)}
-      hideBranchPicker={!!session.inboxAsk || managed}
-      hideTopBar={!!session.inboxAsk}
+      hideBranchPicker={managed}
+      // An inbox Ask keeps the standard composer layout; its folder comes from the
+      // inbox working-folder picker and the host refuses app control for it.
+      hideOrchestrator={!!session.inboxAsk}
       context={session.context}
       contextBlocks={stableBlocks}
       contextEmpty={
@@ -1728,7 +1730,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             />
           ) : null}
           {remoteSessionLoading ? (
-            <LoadingText layout="fill">{t("Loading conversation…")}</LoadingText>
+            <SurfaceLoading title={t("Loading conversation…")} />
           ) : isEmpty ? (
             session.inboxAsk ? (
               <ScrollArea scrollbar="hidden" className="h-full min-h-0">

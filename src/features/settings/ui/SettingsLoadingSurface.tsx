@@ -1,6 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
-import { LoadingCard } from "../../../shared/ui/LoadingCard";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { settingsSectionLabel, type SettingsSectionId } from "../model/settings";
 import { SettingsRowsSkeleton } from "./SettingsSkeleton";
 import "./SettingsLoadingSurface.css";
@@ -14,7 +14,7 @@ export function SettingsLoadingSurface({ section }: { section: SettingsSectionId
   useLocale();
   return (
     <div {...surfaceAttributes({ variant: "canvas" }, "settings-loading")} data-settings-loading>
-      <LoadingCard
+      <SurfaceLoading
         heading={settingsSectionLabel(section)}
         title={t("Loading Settings…")}
         slowDescription={t("{p0} is taking longer to load. You can return to the workspace.", {
@@ -22,7 +22,7 @@ export function SettingsLoadingSurface({ section }: { section: SettingsSectionId
         })}
       >
         <SettingsRowsSkeleton rows={4} />
-      </LoadingCard>
+      </SurfaceLoading>
     </div>
   );
 }

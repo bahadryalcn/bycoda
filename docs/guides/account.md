@@ -145,6 +145,7 @@ the server, never include your conversations, prompts or code, and are kept 90 d
 - After bycoda closed unexpectedly, **Ask me** shows a notice with **Send**, **Always send**
   (switches to automatic) and **Don't send**. **Send automatically** uploads the crash report
   silently and **Off** discards it.
+  Notice answers use the full card width below the message and wrap on narrow windows.
 - In automatic mode bycoda also sends a report at most once every seven days.
 - Logs of connected remote computers (their bycoda Host) are included, redacted the same way.
 - **Send logs now** uploads a report once, with an optional note, whatever the choice is.

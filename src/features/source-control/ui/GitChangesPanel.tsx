@@ -1,3 +1,5 @@
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { GitCommitActions } from "./GitCommitActions";
 import { Text } from "../../../shared/ui/Text";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -123,7 +125,6 @@ import { ACTIVE_PROJECT_REFRESH_MS } from "../model/gitRefreshPolicy";
 import { GitGenerationSettings } from "./GitGenerationSettings";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import type { Worktree } from "../model/worktrees";
@@ -307,9 +308,12 @@ export function GitChangesPanel({
 
   if (!cwd || cwd === "~") {
     return (
-      <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
-        {t("No project folder")}
-      </Text>
+      <EmptyState
+        size="inline"
+        kind="empty"
+        className="px-3 py-2"
+        description={t("No project folder")}
+      />
     );
   }
 
@@ -462,41 +466,24 @@ export function GitChangesPanel({
         ) : null}
         <div className={repository ? styles.actions : "ms-auto flex min-w-0 items-center gap-1"}>
           {repository && index ? (
-            <Text
-              size="caption"
-              leading="inherit"
-              tone="secondary"
-              className={styles.summary}
-              title={`${t("Changes")}: ${files.length}; ${t("Merge Conflicts")}: ${conflicts.length}`}
+            <Tooltip
+              label={`${t("Changes")}: ${files.length}; ${t("Merge Conflicts")}: ${conflicts.length}`}
+              asChild
             >
-              <FileDiff aria-hidden className="icon-xs" />
-              <span aria-label={`${t("Changes")}: ${files.length + conflicts.length}`}>
-                {files.length + conflicts.length}
-              </span>
-              {conflicts.length > 0 ? (
-                <Text size="inherit" tone="warning" className={styles.conflicts}>
-                  {t("Merge Conflicts")}: {conflicts.length}
-                </Text>
-              ) : null}
-              {!detailsOpen && (index.ahead ?? 0) > 0 ? (
-                <span
-                  title={t(index.ahead === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", {
-                    p0: index.ahead,
-                  })}
-                >
-                  ↑{index.ahead}
+              <Text size="caption" leading="inherit" tone="secondary" className={styles.summary}>
+                <FileDiff aria-hidden className="icon-xs" />
+                <span aria-label={`${t("Changes")}: ${files.length + conflicts.length}`}>
+                  {files.length + conflicts.length}
                 </span>
-              ) : null}
-              {!detailsOpen && (index.behind ?? 0) > 0 ? (
-                <span
-                  title={t(index.behind === 1 ? "{p0} incoming commit" : "{p0} incoming commits", {
-                    p0: index.behind,
-                  })}
-                >
-                  ↓{index.behind}
-                </span>
-              ) : null}
-            </Text>
+                {conflicts.length > 0 ? (
+                  <Text size="inherit" tone="warning" className={styles.conflicts}>
+                    {t("Merge Conflicts")}: {conflicts.length}
+                  </Text>
+                ) : null}
+                {!detailsOpen && (index.ahead ?? 0) > 0 ? <span>↑{index.ahead}</span> : null}
+                {!detailsOpen && (index.behind ?? 0) > 0 ? <span>↓{index.behind}</span> : null}
+              </Text>
+            </Tooltip>
           ) : null}
           {repository ? branchControl : null}
           {/* Fixed icon columns keep these actions aligned with the section
@@ -1484,9 +1471,11 @@ function ChangedFiles({
         !loadError &&
         (!index || checking) ? (
           // A cached empty list may be stale until the entry read answers.
-          <LoadingText layout="fill" style={fill ? undefined : { minBlockSize: "6rem" }}>
-            {t("Loading changes…")}
-          </LoadingText>
+          <SurfaceLoading
+            delay={!index}
+            style={fill ? undefined : { minBlockSize: "6rem" }}
+            title={t("Loading changes…")}
+          />
         ) : files.length === 0 && conflicts.length === 0 ? (
           <Text as="p" size="caption" tone="muted" className="px-3 py-2">
             {index?.repository === false

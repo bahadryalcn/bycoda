@@ -7,7 +7,7 @@ import { MiddleTruncate } from "../../../src/shared/ui/MiddleTruncate";
 import { ShortcutKeys } from "../../../src/shared/ui/ShortcutKbd";
 import { DateRangePicker } from "../../../src/shared/ui/DateRangePicker";
 import { FloatingButtonGroup } from "../../../src/shared/ui/FloatingButtonGroup";
-import { ExpandingButtonGroup } from "../../../src/shared/ui/ExpandingButtonGroup";
+import { ButtonGroup } from "../../../src/shared/ui/ButtonGroup";
 import { ActivityPhases } from "../../../src/features/sessions/ui/AgentTranscriptActivity";
 import type { Block } from "../../../src/features/sessions/model/session";
 import { Copy, Search } from "../../../src/shared/ui/icons";
@@ -182,11 +182,13 @@ function Fixture() {
               label="Floating icon actions"
               items={[{ id: "search", label: "Find fixture", icon: <Search />, iconOnly: true }]}
             />
-            <ExpandingButtonGroup
+            <ButtonGroup
+              variant="expanding"
               label="Expanding actions"
               items={[{ id: "expand", label: "Copy expanded fixture", icon: <Copy /> }]}
             />
-            <ExpandingButtonGroup
+            <ButtonGroup
+              variant="expanding"
               label="Project shortcut actions"
               items={[
                 { id: "notes", label: "Notes", icon: <Copy />, shortcut: "Ctrl+Shift+L" },

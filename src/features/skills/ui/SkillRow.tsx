@@ -3,7 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Check, CloudUpload, MoreHorizontal } from "../../../shared/ui/icons";
 import type { SkillEntry, SkillMachine, SkillPresence } from "../model/skillLibrary";
 import styles from "./SkillsPage.module.css";
@@ -109,7 +109,11 @@ export function SkillRow({
         >
           {entry.name}
         </Text>
-        {modified ? <span title={t("Draft")}>·</span> : null}
+        {modified ? (
+          <Tooltip label={t("Draft")} asChild>
+            <span>·</span>
+          </Tooltip>
+        ) : null}
       </Button>
       {off ? (
         <Text size="caption" tone="secondary" leading="inherit" className={styles.offLabel}>
@@ -144,19 +148,20 @@ export function SkillRow({
               ? t("Missing on {p0}", { p0: cell.name })
               : t("Checking {p0}", { p0: cell.name });
         return (
-          <Text
-            as="span"
-            size="inherit"
-            tone={cell.state === "missing" || cell.state === "unknown" ? "secondary" : "inherit"}
-            key={key}
-            className={styles.cell}
-            data-state={cell.state}
-            role="img"
-            aria-label={label}
-            title={label}
-          >
-            {cell.state === "present" ? <Check className="icon-sm" aria-hidden="true" /> : "–"}
-          </Text>
+          <Tooltip key={key} label={label} asChild>
+            <Text
+              as="span"
+              size="inherit"
+              tone={cell.state === "missing" || cell.state === "unknown" ? "secondary" : "inherit"}
+              key={key}
+              className={styles.cell}
+              data-state={cell.state}
+              role="img"
+              aria-label={label}
+            >
+              {cell.state === "present" ? <Check className="icon-sm" aria-hidden="true" /> : "–"}
+            </Text>
+          </Tooltip>
         );
       })}
       <Button

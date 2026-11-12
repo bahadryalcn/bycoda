@@ -4,7 +4,7 @@ import { t } from "../../../../shared/i18n";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Select } from "../../../../shared/ui/Select";
-import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../../shared/ui/RadioGroup";
 import { ProfileRow, useProfileRows } from "./SettingsProfileRow";
 import styles from "../AssistantProfileFields.module.css";
 import workStyles from "./work.module.css";
@@ -63,7 +63,8 @@ export function ProfileSegmented({
   onValueChange: (next: string) => void;
 }) {
   const segmented = (
-    <SegmentedControl
+    <RadioGroup
+      variant="inline"
       label={t(label)}
       value={value}
       options={options.map(([value, label]) => ({ value, label: t(label) }))}

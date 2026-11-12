@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { TabStrip } from "../../../shared/ui/Tabs";
 import { useCallback, useState, type ComponentProps } from "react";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -42,14 +42,14 @@ export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center border-b border-stroke px-3 py-1.5">
-        <SegmentedControl
+        <TabStrip
           label={t("Table view")}
           value={mode}
           onValueChange={(value) => {
             if (value === "source") setSourceMounted(true);
             setMode(value as "preview" | "source");
           }}
-          options={[
+          items={[
             { value: "preview", label: t("Preview") },
             { value: "source", label: t("Source") },
           ]}

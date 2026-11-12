@@ -385,7 +385,12 @@ it("shows pressed keys without an error and Escape cancels recording", async () 
   )!;
   await act(async () => input.click());
   expect(input.querySelector("[data-shortcut-display]")!.textContent).toBe("Record shortcut");
-  expect(container.querySelector('[title="Del disables · Esc cancels"]')).not.toBeNull();
+  const hint = input.closest("[data-tooltip-owner]")!;
+  await act(async () => {
+    hint.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Del disables · Esc cancels");
   await act(async () =>
     document.body.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -409,7 +414,7 @@ it("shows pressed keys without an error and Escape cancels recording", async () 
     ),
   );
   expect(input.querySelector("[data-shortcut-display]")!.textContent).toBe("⌘⇧Space");
-  expect(container.querySelector('[title="Del disables · Esc cancels"]')).toBeNull();
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
   expect(invoke).not.toHaveBeenCalledWith("quick_composer_set_enabled", expect.anything());
 });
 

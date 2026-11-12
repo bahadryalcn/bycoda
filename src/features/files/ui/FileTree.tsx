@@ -1,3 +1,5 @@
+/** Different job: Explorer hierarchy owns rename, drag/drop and range selection; TreeRow owns each interactive row. */
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { MoveRecoveryNotice, type CopyNotice } from "./MoveRecoveryNotice";
 import { TextField } from "../../../shared/ui/TextField";
@@ -995,7 +997,7 @@ function FileTreeInner({
           <ActionHost
             ref={headerRef}
             selected={dragOverPath === cwd}
-            className="@container/explorer-root min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 gap-0.5 rounded-none px-1"
+            className="@container/explorer-root shrink-0 gap-0.5"
           >
             <Button
               size="sm"
@@ -1547,14 +1549,11 @@ const TreeNode = memo(function TreeNode({
           </TreeRowLabel>
           {gitMark ? (
             <TreeRowTrailing>
-              <Text
-                size="inherit"
-                tone={gitTone ?? "inherit"}
-                weight="medium"
-                title={entry.isDir ? t("Contains changes") : t(gitMark.label)}
-              >
-                {entry.isDir ? "•" : gitMark.mark}
-              </Text>
+              <Tooltip label={entry.isDir ? t("Contains changes") : t(gitMark.label)} asChild>
+                <Text size="inherit" tone={gitTone ?? "inherit"} weight="medium">
+                  {entry.isDir ? "•" : gitMark.mark}
+                </Text>
+              </Tooltip>
             </TreeRowTrailing>
           ) : null}
         </TreeRow>
@@ -1666,7 +1665,7 @@ export function NameRow({
       {/* Same grid as TreeRow: depth indent, toggle slot, icon slot, then the field. */}
       <div
         style={{ paddingInlineStart: `calc(8px + ${depth} * 12px)` }}
-        className="flex h-[var(--ui-control-height-compact)] w-full min-w-0 items-center gap-2 pe-2"
+        className="flex w-full min-w-0 items-center gap-2"
       >
         <TreeRowToggle>
           {isDir ? <ChevronRight className="icon-sm" strokeWidth={1.75} /> : null}

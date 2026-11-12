@@ -1,4 +1,5 @@
 import { Timestamp } from "../../../shared/ui/Timestamp";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { formatNumber, t } from "../../../shared/i18n";
@@ -38,6 +39,7 @@ type Note =
  */
 export function SourceRow({
   source,
+  testResult,
   usedFirst = false,
   duplicate,
   actions,
@@ -46,6 +48,7 @@ export function SourceRow({
   onRemove,
 }: {
   source: DecisionSource;
+  testResult?: SourceTestResult;
   usedFirst?: boolean;
   duplicate?: string;
   actions: Actions;
@@ -122,9 +125,11 @@ export function SourceRow({
       : source.kind === "local"
         ? t("Local service")
         : sourceKindLabel(source.kind),
-    source.local?.modelPath ?? source.endpoint ?? source.model,
+    source.local?.modelPath ??
+      source.endpoint ??
+      (source.model ? modelDisplayName(source.model) : undefined),
   ].filter(Boolean);
-  const tested = note?.kind === "test" ? note.result : null;
+  const tested = testResult ?? (note?.kind === "test" ? note.result : undefined);
   const status = testing
     ? t("Testing…")
     : tested
@@ -136,7 +141,7 @@ export function SourceRow({
         : source.status === "error"
           ? t("Failed")
           : sourceStatusLabel(source.status);
-  const latency = formatLatency(source.avgMs);
+  const latency = formatLatency(tested?.durationMs ?? source.avgMs);
   const accuracy = formatAccuracy(source.lastAccuracy);
   const cost = formatCost(source.costPerMTokens);
   const failedReason =
@@ -165,6 +170,7 @@ export function SourceRow({
               <Tooltip label={failedReason ?? undefined}>
                 <Badge
                   className="shrink-0"
+                  tabIndex={failedReason ? 0 : undefined}
                   tone={
                     testing
                       ? "neutral"
@@ -185,9 +191,15 @@ export function SourceRow({
                 </Badge>
               ) : null}
               {duplicate ? (
-                <Tooltip label={t("Same model or endpoint as {p1}", { p1: duplicate })}>
+                <Tooltip
+                  label={t(
+                    "Same model or endpoint as {p1}. Use More actions > Remove source to remove this copy.",
+                    { p1: duplicate },
+                  )}
+                >
                   <Badge
                     className="decision-source-duplicate"
+                    tabIndex={0}
                     size="xs"
                     tone="warning"
                     truncate
@@ -205,17 +217,11 @@ export function SourceRow({
               className="flex min-w-0 items-center gap-1"
             >
               <span className="shrink-0">{details[0]} ·</span>
-              <MiddleTruncate className="min-w-0 flex-1">{String(details[1] ?? "")}</MiddleTruncate>
+              <MiddleTruncate className="min-w-0 shrink">{String(details[1] ?? "")}</MiddleTruncate>
               {latency ? (
-                <span className="shrink-0">· {t("Average {p1}", { p1: latency })}</span>
-              ) : null}
-              {testedAt !== null ? (
-                <Timestamp
-                  className="shrink-0"
-                  size="caption"
-                  value={testedAt}
-                  prefix={`· ${t("Last tested")}`}
-                />
+                <span className="shrink-0">
+                  · {tested ? t("Test: {p1}", { p1: latency }) : t("Average {p1}", { p1: latency })}
+                </span>
               ) : null}
             </Text>
           </div>
@@ -248,10 +254,18 @@ export function SourceRow({
         </div>
       </div>
       {showDetails ? (
-        <Text size="caption" tone="secondary">
+        <Text
+          as="div"
+          size="caption"
+          tone="secondary"
+          className="flex flex-wrap items-center gap-2"
+        >
           {[failedReason, accuracy ? t("Last accuracy {p1}", { p1: accuracy }) : null, cost]
             .filter(Boolean)
             .join(" · ")}
+          {testedAt !== null ? (
+            <Timestamp size="caption" value={testedAt} prefix={t("Last tested")} />
+          ) : null}
         </Text>
       ) : null}
       {note?.kind === "evaluate" ? (

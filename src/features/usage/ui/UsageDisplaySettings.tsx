@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { saveShowRemainingUsage, useShowRemainingUsage } from "../../settings/model/displayPrefs";
@@ -8,22 +9,26 @@ export function UsageDisplaySettings() {
   useLocale();
   const showRemainingUsage = useShowRemainingUsage();
   return (
-    <Text
-      as="div"
-      size="caption"
-      tone="secondary"
-      leading="inherit"
-      id={settingDomId("show-remaining-usage")}
-      data-setting-id="show-remaining-usage"
-      className="usage-display-toggle"
-      title={t("Fill usage meters with what is left in each limit instead of what has been used.")}
+    <Tooltip
+      label={t("Fill usage meters with what is left in each limit instead of what has been used.")}
+      asChild
     >
-      <span>{t("Show remaining usage")}</span>
-      <Toggle
-        label={t("Show remaining usage")}
-        on={showRemainingUsage}
-        onChange={saveShowRemainingUsage}
-      />
-    </Text>
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        id={settingDomId("show-remaining-usage")}
+        data-setting-id="show-remaining-usage"
+        className="usage-display-toggle"
+      >
+        <span>{t("Show remaining usage")}</span>
+        <Toggle
+          label={t("Show remaining usage")}
+          on={showRemainingUsage}
+          onChange={saveShowRemainingUsage}
+        />
+      </Text>
+    </Tooltip>
   );
 }

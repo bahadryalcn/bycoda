@@ -118,10 +118,12 @@ browser workflow methods.
 
 ## Optional desktop control
 
-`desktop.status` reports readiness and the owner's allowlisted app names.
+`desktop.status` reports readiness and the app names the owner already approved.
 `desktop.windows.list`, `desktop.snapshot`, `desktop.find` and `desktop.screenshot`
-observe only an allowed app; window-specific reads bind its actual process and
-window. Search returns at most 50 matches. `desktop.wait` observes a current
+observe only an approved app. A tool call that names another app asks the owner once
+in the native dialog; an approved app is remembered and the call continues, a refused
+one dispatches nothing. Full access covers every app without asking. Window-specific
+reads bind the app's actual process and window. Search returns at most 50 matches. `desktop.wait` observes a current
 same-conversation ref for at most 10 seconds. Screenshot bytes are MCP image
 content, with only metadata duplicated into text.
 
@@ -129,7 +131,7 @@ content, with only metadata duplicated into text.
 entry points share snapshot ownership, exact-operation approvals and durable
 request identities. Physical shortcuts retain their separate grant. A stopped,
 locked, revoked or stale target cannot be bypassed by a model argument.
-`desktop.launch` accepts only an allowlisted app, without arbitrary command-line
+`desktop.launch` accepts only an approved app name, without arbitrary command-line
 arguments, environment, working directory, activation or debugging options.
 `desktop.clipboard` supports bounded plain-text get/set/clear; every clipboard
 operation requires actual focused native owner approval and current presence.
@@ -154,7 +156,7 @@ contract is in `src/shared/model/host-contracts/delegation.ts`, and the service 
   `advisor` refs with `available`, `effortLevels` and `defaultEffort` when offered, the current `running` counts and `limits`.
 - `agents.delegate` takes `requestId`, `title` and `prompt`, plus `model` (a ref
   key from `agents.options`). `model` is required when more than one subagent model
-  is selected. Optional `effort` selects the closest offered level; omitted uses the model default. It returns at once with the run.
+  is selected. The assistant chooses `effort` by the task's difficulty; the closest offered level is used, and omitted uses the model default. It returns at once with the run.
 - `agents.consult` takes `requestId`, `question` and optional `context`. It starts
   the advisor with an `intent` of `plan`, so it cannot edit files.
 - `agents.reply` takes `requestId`, `runId` and `message` (1 to 16,000 characters).
@@ -218,3 +220,35 @@ Registry tests check coverage, bounded continuation, scope preservation and meta
 Domain tests check actual execution/recovery; UI tests check mounting and targeting.
 Offline eval fixtures do not prove model tool selection. Native/live acceptance,
 build inclusion, installation and release must be reported independently.
+
+## Automatic subagents and effort ceiling
+
+`crossSubagents: "auto"` is a live selection mode, never a persisted expanded list.
+`"[]"` is explicit Off and JSON reference lists retain their existing meaning.
+Undefined remains inherited/legacy; the product default for new conversations is
+Automatic. `decodeSubagentSelection` distinguishes modes; `resolveSubagents` is the
+shared UI/Host resolver, capped at 24 deterministic, ranked references. It keeps
+provider/tier representatives before additional versions, with unknown families last.
+The tier anchors are defined once in `src/shared/model/automaticSubagents.ts`.
+`agents.options` returns each ref's tier and remains authoritative at delegation time.
+
+`crossSubagentMaxEffort` is reserved and stripped from provider settings. Unset means
+no ceiling; otherwise it accepts `EFFORT_LEVELS`. The Host caps explicitly requested
+and default effort at start and rechecks the parent's current ceiling on reply.
+A model offering no level within the ceiling cannot start. Advisor effort is unchanged.
+The ceiling is portable through provider defaults; model identities are not.
+
+Native delegation under Automatic requires exactly one resolved, same-account
+Claude reference; otherwise Host delegation is used. Runtime previews can become
+stale: always refresh `agents.options` before choosing a ref that is unavailable.
+Bridge metadata confirms configuration only, not a completed provider MCP handshake.
+There is currently no per-provider-operation handshake result available before native
+subagent launch flags are chosen. A failed `bycoda-conversation` initialization can
+therefore leave Host delegation unavailable; automatic native recovery requires
+handshake feedback tied to the operation and safe provider reconfiguration/restart.
+
+Provider account metadata carries `isDefault` through the existing owner settings
+sync and catalog schema. Automatic uses the published provider default for other
+providers, falling back to the legacy default profile until a desktop publishes it.
+A set effort ceiling uses Host child sessions because native Claude delegation has
+no independently enforceable child-effort ceiling.

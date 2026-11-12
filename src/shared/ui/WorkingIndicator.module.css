@@ -103,3 +103,12 @@
     opacity: 1;
   }
 }
+
+/* Visible work labels share the same mark; text never runs a second animation. */
+.labeled {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  vertical-align: baseline;
+}

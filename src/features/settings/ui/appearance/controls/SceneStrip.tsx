@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocale } from "../../../../../shared/i18n";
-import { Button } from "../../../../../shared/ui/Button";
+import { RadioGroup } from "../../../../../shared/ui/RadioGroup";
 import { useDecorativeMotionEnabled } from "../../../model/decorativeMotion";
 import {
   LIVE_BACKGROUNDS,
@@ -8,7 +8,6 @@ import {
   type LiveBackground,
 } from "../../../model/liveBackground";
 import { LiveBackgroundCanvas } from "../../LiveBackgroundCanvas";
-import { liveBackgroundKeyTarget } from "../../LiveBackgroundPicker";
 import styles from "./SceneStrip.module.css";
 
 const PREVIEW_MS = 4000;
@@ -29,7 +28,6 @@ export function SceneStrip({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [playing, setPlaying] = useState<LiveBackground | null>(null);
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
-  const selectedIndex = Math.max(0, LIVE_BACKGROUNDS.indexOf(value));
 
   useEffect(() => {
     const element = groupRef.current;
@@ -75,59 +73,44 @@ export function SceneStrip({
     }, PREVIEW_MS);
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const target = liveBackgroundKeyTarget(event.key, index, LIVE_BACKGROUNDS.length);
-    const next = target === null ? undefined : LIVE_BACKGROUNDS[target];
-    if (target === null || next === undefined) return;
-    event.preventDefault();
-    onChange(next);
-    groupRef.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[target]?.focus({
-      preventScroll: true,
-    });
-  };
-
   return (
-    <div className={styles.wrap}>
-      {/* ui-drift-ignore: raw-role-radiogroup -- bespoke scene tiles preview on pointer enter and focus, which RadioTileGroup does not forward; arrows, Home and End move the choice via liveBackgroundKeyTarget */}
-      <div ref={groupRef} role="radiogroup" aria-label={label} className={styles.grid}>
-        {LIVE_BACKGROUNDS.map((scene, index) => {
+    <div ref={groupRef} className={styles.wrap}>
+      <RadioGroup
+        variant="tiles"
+        label={label}
+        value={value}
+        onValueChange={(scene) => onChange(scene as LiveBackground)}
+        onOptionIntent={(scene) => preview(scene as LiveBackground)}
+        className={styles.grid}
+        tileClassName={styles.tile}
+        tile={{ motion: "none", tooltipWhen: "overflow" }}
+        options={LIVE_BACKGROUNDS.map((scene) => {
           const name = liveBackgroundLabel(scene);
-          return (
-            <Button
-              key={scene}
-              variant="item"
-              motion="none"
-              selected={index === selectedIndex}
-              type="button"
-              role="radio"
-              aria-checked={index === selectedIndex}
-              tabIndex={index === selectedIndex ? 0 : -1}
-              tooltip={name}
-              tooltipWhen="overflow"
-              onClick={() => onChange(scene)}
-              onKeyDown={(event) => onKeyDown(event, index)}
-              onPointerEnter={() => preview(scene)}
-              onFocus={() => preview(scene)}
-              className={styles.tile}
-            >
-              <span className={styles.thumb}>
-                {visible && scene !== "none" ? (
-                  <LiveBackgroundCanvas
-                    effect={scene}
-                    intensity={1}
-                    still={!motionEnabled || playing !== scene}
-                    demoSpeech
-                    className="absolute inset-0"
-                  />
-                ) : null}
-              </span>
-              <span className="w-full line-clamp-2 whitespace-normal px-0.5 text-ui-micro leading-4">
-                {name}
-              </span>
-            </Button>
-          );
+          return {
+            value: scene,
+            ariaLabel: name,
+            tooltip: name,
+            content: (
+              <>
+                <span className={styles.thumb}>
+                  {visible && scene !== "none" ? (
+                    <LiveBackgroundCanvas
+                      effect={scene}
+                      intensity={1}
+                      still={!motionEnabled || playing !== scene}
+                      demoSpeech
+                      className="absolute inset-0"
+                    />
+                  ) : null}
+                </span>
+                <span className="w-full line-clamp-2 whitespace-normal px-0.5 text-ui-micro leading-4">
+                  {name}
+                </span>
+              </>
+            ),
+          };
         })}
-      </div>
+      />
     </div>
   );
 }

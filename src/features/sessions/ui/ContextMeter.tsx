@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text, textAttributes } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
@@ -74,14 +75,16 @@ export function ContextMeter({
   const agents = subagentReadings(contextBlocks);
   if ((!usage || ratio === null) && agents.size === 0 && !speed) {
     return empty && !usage && !sessionUsage ? (
-      <Text
-        tone="disabled"
-        leading="inherit"
-        title={`0% · ${t("No context used yet")}`}
-        className="context-meter-summary context-meter-empty"
-      >
-        <ContextSignal ratio={0} label={`0% · ${t("No context used yet")}`} />
-      </Text>
+      <Tooltip label={`0% · ${t("No context used yet")}`} asChild>
+        <Text
+          tone="disabled"
+          leading="inherit"
+
+          className="context-meter-summary context-meter-empty"
+        >
+          <ContextSignal ratio={0} label={`0% · ${t("No context used yet")}`} />
+        </Text>
+      </Tooltip>
     ) : null;
   }
 

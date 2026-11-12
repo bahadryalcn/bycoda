@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { useT } from "../../../shared/i18n";
@@ -26,20 +27,21 @@ export function SessionAgentIdentity({
   const resolved = source.resolve(harness, model);
   const label = `${HARNESS_TITLE[harness]} · ${showAccount ? modelAccountLabelWith(resolved, accountId, accounts, t) : resolved.name}`;
   return (
-    <Text
-      as="span"
-      size="caption"
-      tone="secondary"
-      leading="normal"
-      data-session-agent
-      aria-label={`${t(running ? "Running agent" : "Session agent")}: ${label}`}
-      className="flex min-w-0 items-center gap-1.5"
-      title={`${t(running ? "Running agent" : "Session agent")}: ${label}`}
-    >
-      {running ? <StatusDot label={t("Running agent")} aria-hidden /> : null}
-      <Text size="inherit" tone="inherit" truncate>
-        {label}
+    <Tooltip label={`${t(running ? "Running agent" : "Session agent")}: ${label}`} asChild>
+      <Text
+        as="span"
+        size="caption"
+        tone="secondary"
+        leading="normal"
+        data-session-agent
+        aria-label={`${t(running ? "Running agent" : "Session agent")}: ${label}`}
+        className="flex min-w-0 items-center gap-1.5"
+      >
+        {running ? <StatusDot label={t("Running agent")} aria-hidden /> : null}
+        <Text size="inherit" tone="inherit" truncate>
+          {label}
+        </Text>
       </Text>
-    </Text>
+    </Tooltip>
   );
 }

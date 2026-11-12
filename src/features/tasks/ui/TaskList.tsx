@@ -6,7 +6,7 @@ import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Timestamp } from "../../../shared/ui/Timestamp";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { bulkTaskKey } from "../model/taskBulkActions";
 import type { BoardTask } from "../model/taskClient";
 import { taskInstructionsSummary } from "../model/taskInstructions";
@@ -156,17 +156,18 @@ export function TaskList({
                 ) : null}
                 <AssistantTaskBadge task={task} />
                 {status.detail ? (
-                  <Text
-                    as="p"
-                    size="caption"
-                    tone={STATUS_DETAIL_TONE[status.tone]}
-                    leading="inherit"
-                    truncate
-                    data-task-status-detail
-                    title={task.error ?? task.mergeError ?? status.detail}
-                  >
-                    {status.detail}
-                  </Text>
+                  <Tooltip label={task.error ?? task.mergeError ?? status.detail} asChild>
+                    <Text
+                      as="p"
+                      size="caption"
+                      tone={STATUS_DETAIL_TONE[status.tone]}
+                      leading="inherit"
+                      truncate
+                      data-task-status-detail
+                    >
+                      {status.detail}
+                    </Text>
+                  </Tooltip>
                 ) : null}
               </div>
               {model ? (

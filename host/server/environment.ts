@@ -239,6 +239,7 @@ export function createEnvironmentRuntime(
         "providers.center.read",
         "providers.desktop.v1",
         "providers.desktop.metadata.v1",
+        "providers.desktop.accountKind.v1",
         "ssh.workspace.desktop.v1",
         "terminals.pty.desktop.v1",
         "providers.desktop.quotaRefresh.v1",

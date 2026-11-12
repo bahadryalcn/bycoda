@@ -47,6 +47,7 @@ export function AccountRow({
         variant="item"
         className="social-account-row"
         aria-current={selected || undefined}
+        selected={selected}
         onClick={onOpen}
       >
         <span className="social-account-row-head">

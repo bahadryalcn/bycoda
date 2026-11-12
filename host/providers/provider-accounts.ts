@@ -32,7 +32,16 @@ export type ProviderAccountEnvironment = {
   remove: string[];
 };
 export type HostProviderAccountCatalog = Partial<
-  Record<"codex" | "claude", { id: string; label: string; color: string }[]>
+  Record<
+    "codex" | "claude",
+    {
+      id: string;
+      label: string;
+      color: string;
+      kind?: "personal" | "work";
+      derivedKind?: "personal" | "work";
+    }[]
+  >
 >;
 const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 const MAX_CATALOG_ACCOUNTS = 128;

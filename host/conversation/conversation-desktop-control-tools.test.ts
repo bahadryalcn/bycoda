@@ -40,6 +40,10 @@ function fixture() {
   let now = 0;
   let mode: DesktopPermissionMode = "ask";
   const permission = vi.fn(async () => ({ mode }));
+  // The Host's approved apps; full access covers every app there.
+  const apps = new Set(["Editor", "Notepad"]);
+  const appAllowed = vi.fn(async (app: string) => mode === "full" || apps.has(app));
+  const allowApp = vi.fn(async (app: string) => void apps.add(app));
   const presence = vi
     .fn<ConversationDesktopControlPorts["presence"]>()
     .mockResolvedValue({ supported: true, locked: false, ownerPresent: true });
@@ -97,7 +101,7 @@ function fixture() {
   );
   const tools = new ConversationDesktopControlTools({
     environmentId: "host",
-    desktop: { request, permission },
+    desktop: { request, permission, appAllowed, allowApp },
     presence,
     approveOperation: approved,
     now: () => now,
@@ -117,6 +121,7 @@ function fixture() {
     presence,
     approved,
     permission,
+    allowApp,
     setMode(value: DesktopPermissionMode) {
       mode = value;
     },
@@ -196,13 +201,14 @@ describe("desktop conversation tool authority", () => {
       ),
     ).toBe(true);
   });
-  it("asks for launch in ask and auto mode even when the owner is away, and never in full access", async () => {
+  it("asks for each launch of an approved app only in ask mode, even when the owner is away", async () => {
     for (const mode of ["ask", "auto"] as const) {
       const f = fixture();
       f.setMode(mode);
       f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
       await f.call("desktop.launch", { requestId: "away", app: "Editor" }, thread);
-      expect(f.approved).toHaveBeenCalledOnce();
+      expect(f.approved).toHaveBeenCalledTimes(mode === "ask" ? 1 : 0);
+      expect(f.request).toHaveBeenCalledOnce();
     }
     const full = fixture();
     full.setMode("full");
@@ -210,6 +216,71 @@ describe("desktop conversation tool authority", () => {
     await full.call("desktop.launch", { requestId: "away", app: "Editor" }, thread);
     expect(full.approved).not.toHaveBeenCalled();
     expect(await full.request.mock.calls[0][2]!()).toBe(true);
+  });
+  it.each(["ask", "auto"] as const)(
+    "asks once for a new app in %s mode, remembers it and continues",
+    async (mode) => {
+      const f = fixture();
+      f.setMode(mode);
+      f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
+      await f.call("desktop.windows.list", { app: "Chrome" }, thread);
+      expect(f.approved).toHaveBeenCalledOnce();
+      expect(f.approved.mock.calls[0][0]).toMatchObject({
+        operation: { kind: "app", app: "Chrome" },
+        operationHash: "8f81a60c784c9df5cffff8f4a63f5cb216ad79c2065cfcfe383b3fc95d9d1655",
+        principal: thread,
+      });
+      expect(f.allowApp).toHaveBeenCalledExactlyOnceWith("Chrome");
+      expect(f.request).toHaveBeenCalledOnce();
+      await f.call("desktop.windows.list", { app: "Chrome" }, thread);
+      expect(f.approved).toHaveBeenCalledOnce();
+      expect(f.request).toHaveBeenCalledTimes(2);
+    },
+  );
+  it("lets one new-app approval cover that launch, and shares one dialog between parallel calls", async () => {
+    const f = fixture();
+    await f.call("desktop.launch", { requestId: "new", app: "Chrome" }, thread);
+    expect(f.approved).toHaveBeenCalledOnce();
+    expect(f.approved.mock.calls[0][0].operation).toEqual({ kind: "app", app: "Chrome" });
+    expect(await f.request.mock.calls[0][2]!()).toBe(true);
+    const parallel = fixture();
+    parallel.setMode("auto");
+    await Promise.all([
+      parallel.call("desktop.windows.list", { app: "Mail" }, thread),
+      parallel.call("desktop.windows.list", { app: "Mail" }, thread),
+    ]);
+    expect(parallel.approved).toHaveBeenCalledOnce();
+    expect(parallel.request).toHaveBeenCalledTimes(2);
+  });
+  it("uses any app in full access without asking or remembering it", async () => {
+    const f = fixture();
+    f.setMode("full");
+    await f.call("desktop.windows.list", { app: "Chrome" }, thread);
+    expect(f.approved).not.toHaveBeenCalled();
+    expect(f.allowApp).not.toHaveBeenCalled();
+    expect(f.request).toHaveBeenCalledOnce();
+  });
+  it("dispatches nothing for a new app the owner refused, a locked desktop or an option-like name", async () => {
+    const denied = fixture();
+    denied.approved.mockResolvedValue({ approved: false });
+    await expect(denied.call("desktop.windows.list", { app: "Chrome" }, thread)).rejects.toThrow(
+      "did not approve",
+    );
+    const locked = fixture();
+    locked.presence.mockResolvedValue({ supported: true, locked: true, ownerPresent: false });
+    await expect(locked.call("desktop.windows.list", { app: "Chrome" }, thread)).rejects.toThrow(
+      "locked or unknown",
+    );
+    const option = fixture();
+    await expect(option.call("desktop.windows.list", { app: "-flag" }, thread)).rejects.toThrow(
+      "plain",
+    );
+    for (const f of [denied, locked, option]) {
+      expect(f.allowApp).not.toHaveBeenCalled();
+      expect(f.request).not.toHaveBeenCalled();
+    }
+    expect(locked.approved).not.toHaveBeenCalled();
+    expect(option.approved).not.toHaveBeenCalled();
   });
   it.each(["get", "set", "clear"])(
     "requires present owner and exact native review for thread clipboard %s",
@@ -428,7 +499,7 @@ describe("desktop conversation tool authority", () => {
     await expect(f.call("desktop.status", { permissionMode: "full" }, thread)).rejects.toThrow();
     expect(f.request).not.toHaveBeenCalled();
   });
-  it("returns readiness and allowlist without leaking owner configuration", async () => {
+  it("returns readiness and approved apps without leaking owner configuration", async () => {
     const f = fixture();
     const result = await f.call("desktop.status", {}, thread);
     expect(result).toMatchObject({ allowedApps: ["Editor"], status: { verified: true } });

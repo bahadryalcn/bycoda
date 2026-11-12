@@ -3,7 +3,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Progress } from "../../../shared/ui/Progress";
+import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { Group, SettingsFeedback } from "../../settings/public/settingsControls";
@@ -106,10 +106,17 @@ export function WorkspaceStorageSummary({
               {t("Free on disk {p0}", { p0: measure(storage.freeBytes) })}
             </Text>
           </div>
-          <Progress
-            aria-label={t("Directory budget")}
-            value={storage.materializedBytes ?? 0}
-            max={storage.budgetBytes}
+          <UsageMeter
+            label={t("Directory budget")}
+            segments={[
+              {
+                id: "storage",
+                label: t("Directory budget"),
+                value: storage.materializedBytes ?? 0,
+              },
+            ]}
+            limit={storage.budgetBytes}
+            showLegend={false}
             compact
             tone={warning ? "warning" : "neutral"}
           />

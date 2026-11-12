@@ -1,3 +1,4 @@
+import { FailureState } from "../../../../shared/ui/FailureState";
 import { useState } from "react";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { ScrollArea } from "../../../../shared/ui/ScrollArea";
@@ -171,7 +172,7 @@ export function CrewsModelPools({ data }: { data: ProjectCrews }) {
         {hostPools.loading ? (
           <LoadingText>{t("Loading…")}</LoadingText>
         ) : hostPools.error ? (
-          <EmptyState size="inline" kind="unavailable" description={hostPools.error} />
+          <FailureState size="inline" description={hostPools.error} />
         ) : !pools.length ? (
           <EmptyState size="inline" kind="empty" description={t("No model pools yet.")} />
         ) : (

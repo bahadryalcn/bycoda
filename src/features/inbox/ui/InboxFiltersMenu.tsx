@@ -8,17 +8,18 @@ import type { CodeHostScope } from "../model/codeHostScopes";
 import { t, useLocale } from "../../../shared/i18n";
 import { CircleDot, GitPullRequest } from "../../../shared/ui/icons";
 import { type ReactNode } from "react";
-import type { InboxKind } from "../model/githubTasks";
+import type { InboxItem, InboxKind } from "../model/githubTasks";
 import {
   DEFAULT_INBOX_FILTERS,
   hasActiveInboxFilters,
   isTrackerSource,
+  jiraFilterOptions,
   type InboxFilters,
   type InboxSource,
   type InboxTimeFilter,
   type LinearProjectOption,
 } from "../model/inboxFilters";
-import type { JiraProject } from "../model/jira";
+import { knownJiraFilterIssues, type JiraProject } from "../model/jira";
 import type { LinearTeam } from "../model/linear";
 import { Popover } from "../../../shared/ui/Popover";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -37,6 +38,7 @@ type ProjectOption = {
 };
 
 type Props = {
+  items?: readonly InboxItem[];
   codeHostProjects?: CodeHostScope[];
   hiddenCodeHostProjects?: string[];
   codeHostError?: string | null;
@@ -108,6 +110,7 @@ const KIND_OPTIONS: {
 ];
 
 export function InboxFiltersMenu({
+  items = [],
   codeHostProjects = [],
   hiddenCodeHostProjects = [],
   codeHostError,
@@ -134,6 +137,10 @@ export function InboxFiltersMenu({
 
   const jiraProjectsActive = source === "jira" && hiddenJiraProjectIds.length > 0;
   const tracker = isTrackerSource(source);
+  const jiraOptions = jiraFilterOptions(
+    [...knownJiraFilterIssues(), ...items],
+    hiddenJiraProjectIds,
+  );
   const codeHostProjectsActive =
     (source === "gitlab" || source === "azuredevops") && hiddenCodeHostProjects.length > 0;
 
@@ -203,6 +210,48 @@ export function InboxFiltersMenu({
         onClick={toggleAssigned}
       />
 
+      {source === "jira" ? (
+        <>
+          <SectionLabel variant="menu">{t("Assignee")}</SectionLabel>
+          <FilterItem
+            label={t("Unassigned")}
+            checked={filters.jiraUnassigned === true}
+            onClick={() => onChange({ ...filters, jiraUnassigned: !filters.jiraUnassigned })}
+          />
+          <SearchableSelect
+            hideLabel
+            side="right"
+            multiple
+            label={t("Assignee")}
+            options={[
+              ...jiraOptions.assignees.map((option) => ({
+                ...option,
+                label: t("Assigned to {name}", { name: option.label }),
+              })),
+              ...(filters.jiraAssignees ?? [])
+                .filter((id) => !jiraOptions.assignees.some((option) => option.value === id))
+                .map((value) => ({ value, label: t("Assigned to {name}", { name: value }) })),
+            ]}
+            value={filters.jiraAssignees ?? []}
+            onChange={(jiraAssignees) => onChange({ ...filters, jiraAssignees })}
+          />
+          <SectionLabel variant="menu">{t("Board status")}</SectionLabel>
+          <SearchableSelect
+            hideLabel
+            side="right"
+            multiple
+            label={t("Board status")}
+            options={[
+              ...jiraOptions.statuses,
+              ...(filters.jiraStatuses ?? [])
+                .filter((value) => !jiraOptions.statuses.some((option) => option.value === value))
+                .map((value) => ({ value, label: value })),
+            ]}
+            value={filters.jiraStatuses ?? []}
+            onChange={(jiraStatuses) => onChange({ ...filters, jiraStatuses })}
+          />
+        </>
+      ) : null}
       <SectionLabel variant="menu">{t("Status")}</SectionLabel>
       <FilterItem
         label={t("Open")}
@@ -417,7 +466,7 @@ function FilterItem({
       }
       size="caption"
       tone="neutral"
-      className="flex min-w-0 items-center gap-2 px-2 py-1"
+      className="flex min-w-0 items-center gap-2"
     />
   );
 }

@@ -7,8 +7,7 @@
   gap: var(--space-4);
 }
 /* A calm, finite pulse: each block dims a beat after the one above it, then rests after about 20 seconds. */
-.avatar,
-.line {
+.shape {
   display: block;
   flex: 0 0 auto;
   border-radius: var(--radius-control);
@@ -51,11 +50,15 @@
 }
 /* The shapes stay visible and still under reduced motion or with decorative motion off. */
 @media (prefers-reduced-motion: no-preference) {
-  .avatar,
-  .line {
+  .shape {
     animation: skeleton-pulse 1.8s var(--ease-in-out) calc(var(--index, 0) * 90ms) 11 both;
   }
-  :global(html[data-decorative-motion="off"]) :is(.avatar, .line) {
+  :global(html[data-decorative-motion="off"]) .shape {
     animation: none;
   }
+}
+
+.custom {
+  inline-size: 100%;
+  min-inline-size: 0;
 }

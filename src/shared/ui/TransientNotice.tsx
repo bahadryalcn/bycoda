@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../lib/layers";
+import { observeResize } from "../lib/observeResize";
 import type { AlertTone } from "./Alert";
 import { ToastCard } from "./ToastCard";
 import { Toast } from "./ToastRegion";
@@ -54,8 +55,9 @@ export interface TransientNoticeProps {
  * A corner notice with tone, optional action, progress and dismiss. Expires after
  * `durationMs` unless it is `null`. The card is the shared `ToastCard`; a viewport notice
  * stacks in its corner with every other toast.
+ * Hand-positioned transient notice cards; the shared ToastCard owns their appearance.
  * @group feedback
- * @use Existing corner notice that needs `anchor="container"` placement or one secondary action.
+ * @use Compatibility placement adapter for a ToastCard inside a positioned container or a legacy measured corner offset.
  * @avoid New background feedback: Toast or useToast. Inline result near a control: InlineMessage. Persistent page notice: Alert.
  */
 export function TransientNotice({
@@ -87,16 +89,15 @@ function PositionedNotice({
   ...props
 }: TransientNoticeProps) {
   const frame = useRef<HTMLDivElement>(null);
+  // Keep the legacy offset owner's measured height in sync without a separate observer.
   useLayoutEffect(() => {
     const node = frame.current;
     if (!node || !onHeightChange) return;
     const measure = () => onHeightChange(node.offsetHeight);
     measure();
-    if (typeof ResizeObserver === "undefined") return () => onHeightChange(0);
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
+    const unsubscribe = observeResize(node, measure);
     return () => {
-      observer.disconnect();
+      unsubscribe();
       onHeightChange(0);
     };
   }, [onHeightChange]);

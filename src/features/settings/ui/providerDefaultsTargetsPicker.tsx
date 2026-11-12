@@ -1,20 +1,23 @@
+import {
+  PickerList,
+  PickerFooter,
+  usePickerList,
+  type PickerOption,
+} from "../../../shared/ui/picker";
+import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { useRef, useState } from "react";
 
 import { t } from "../../../shared/i18n";
 
 import { Button } from "../../../shared/ui/Button";
 
-import { Checkbox } from "../../../shared/ui/Checkbox";
-
 import { Popover } from "../../../shared/ui/Popover";
-
-import { SearchInput } from "../../../shared/ui/SearchInput";
 
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 
 import { Badge } from "../../../shared/ui/Badge";
 
-import { ChevronDown, Globe, Search } from "../../../shared/ui/icons";
+import { ChevronDown, Globe } from "../../../shared/ui/icons";
 
 import { Text } from "../../../shared/ui/Text";
 
@@ -57,6 +60,7 @@ export function DefaultsTargetsPicker({
   onChange: (values: string[]) => void;
 }) {
   const anchor = useRef<HTMLButtonElement>(null);
+  const search = useRef<HTMLInputElement>(null);
 
   const [open, setOpen] = useState(false);
 
@@ -76,6 +80,46 @@ export function DefaultsTargetsPicker({
         ? [...new Set([...values, ...entries])]
         : values.filter((value) => !entries.includes(value)),
     );
+
+  const pickerOptions: PickerOption[] = sections
+    .filter((section) => !group || section === group)
+    .flatMap((section) => {
+      const entries = available.filter(
+        (option) =>
+          (option.group ?? "") === section &&
+          `${option.label} ${option.keywords ?? ""} ${option.meta ?? ""}`
+            .toLocaleLowerCase()
+            .includes(query.toLocaleLowerCase()),
+      );
+      const keys = entries.map((option) => option.value);
+      return [
+        ...(section && entries.length
+          ? [
+              {
+                value: `section:${section}`,
+                title: t("Select all: {p0}", { p0: section }),
+                group: section,
+                onAction: () => toggle(keys, !keys.every((value) => values.includes(value))),
+              },
+            ]
+          : []),
+        ...entries.map((option) => ({
+          value: option.value,
+          title: option.label,
+          icon: option.icon,
+          meta: option.meta,
+          group: section || undefined,
+        })),
+      ];
+    });
+  const list = usePickerList({
+    options: pickerOptions,
+    multiple: true,
+    value: values,
+    onChange: change,
+    inputRef: search,
+    resetKey: `${open}:${query}:${group}`,
+  });
 
   return (
     <>
@@ -105,43 +149,14 @@ export function DefaultsTargetsPicker({
           aria-label={t("Apply defaults to")}
           onDismiss={() => setOpen(false)}
           className="provider-targets-popover"
-          onKeyDown={(event) => {
-            if (event.defaultPrevented) return;
-            if (
-              event.key === "ArrowDown" &&
-              event.target instanceof HTMLInputElement &&
-              event.target.type !== "checkbox"
-            ) {
-              event.preventDefault();
-              event.currentTarget
-                .querySelector<HTMLInputElement>(".provider-targets-list input")
-                ?.focus();
-            } else if (
-              event.key.length === 1 &&
-              event.key !== " " &&
-              !event.ctrlKey &&
-              !event.metaKey &&
-              !(event.target instanceof HTMLInputElement && event.target.type !== "checkbox")
-            ) {
-              event.preventDefault();
-              setQuery((current) => current + event.key);
-              event.currentTarget
-                .querySelector<HTMLInputElement>(".provider-target-search input")
-                ?.focus();
-            }
-          }}
         >
-          <div className="provider-targets-tools">
-            <div className="provider-target-search">
-              <Search className="icon-sm" />
-              <SearchInput
-                appearance="field"
-                placeholder={t("Search projects, groups and workspaces")}
-                aria-label={t("Search projects, groups and workspaces")}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </div>
+          <div className="grid shrink-0 gap-3">
+            <PopoverSearchHeader
+              {...list.searchProps}
+              label={t("Search projects, groups and workspaces")}
+              value={query}
+              onValueChange={setQuery}
+            />
 
             <SegmentedControl
               label={t("Target categories")}
@@ -198,87 +213,13 @@ export function DefaultsTargetsPicker({
             </div>
           </div>
 
-          {/* oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Delegates arrow keys between native checkboxes; this wrapper is not a focus target. */}
-          <div
-            className="provider-targets-list"
-            onKeyDown={(event) => {
-              if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          <PickerList
+            label={t("Apply defaults to")}
+            controller={list}
+            className="min-h-0 overflow-y-auto"
+          />
 
-              const inputs = [
-                ...event.currentTarget.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
-              ];
-
-              const current = inputs.indexOf(document.activeElement as HTMLInputElement);
-
-              const next =
-                inputs[
-                  (current + (event.key === "ArrowDown" ? 1 : -1) + inputs.length) % inputs.length
-                ];
-
-              if (next) {
-                event.preventDefault();
-                next.focus();
-              }
-            }}
-          >
-            {sections
-              .filter((section) => !group || section === group)
-              .map((section) => {
-                const entries = available.filter(
-                  (option) =>
-                    (option.group ?? "") === section &&
-                    `${option.label} ${option.keywords ?? ""} ${option.meta ?? ""}`
-                      .toLocaleLowerCase()
-                      .includes(query.toLocaleLowerCase()),
-                );
-
-                if (!entries.length) return null;
-
-                const keys = entries.map((option) => option.value);
-
-                const selected = keys.filter((value) => values.includes(value)).length;
-
-                return (
-                  <div key={section} className="provider-targets-section">
-                    {section ? (
-                      <Checkbox
-                        className="provider-target-row"
-                        size="caption"
-                        tone="muted"
-                        aria-label={t("Select all: {p0}", { p0: section })}
-                        label={`${section} · ${keys.length}`}
-                        checked={selected === keys.length}
-                        indeterminate={selected > 0 && selected < keys.length}
-                        onChange={(event) => toggle(keys, event.target.checked)}
-                      />
-                    ) : null}
-
-                    {entries.map((option) => (
-                      <Checkbox
-                        className="provider-target-row"
-                        size="secondary"
-                        key={option.value}
-                        label={
-                          <span className="provider-target-label">
-                            {option.icon}
-                            <Text as="span" size="secondary">
-                              {option.label}
-                            </Text>
-                            <Text size="caption" tone="muted">
-                              {option.meta}
-                            </Text>
-                          </span>
-                        }
-                        checked={values.includes(option.value)}
-                        onChange={(event) => toggle([option.value], event.target.checked)}
-                      />
-                    ))}
-                  </div>
-                );
-              })}
-          </div>
-
-          <div className="provider-targets-footer">
+          <PickerFooter align="between">
             <Text size="caption" tone="secondary">
               {t("{p0} selected", { p0: values.length })}
             </Text>
@@ -286,7 +227,7 @@ export function DefaultsTargetsPicker({
               {t("Clear")}
             </Button>
             <Button onClick={() => setOpen(false)}>{t("Done")}</Button>
-          </div>
+          </PickerFooter>
 
           {values.length > 1 ? (
             <Text size="caption" tone="muted">

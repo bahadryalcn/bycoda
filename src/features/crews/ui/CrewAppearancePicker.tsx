@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../shared/ui/Popover";
 import { TAB_GROUP_COLORS } from "../../workspace/model/tabGroups";
@@ -51,7 +52,7 @@ export function CrewAppearancePicker({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
-        className="size-9 shrink-0"
+        className="shrink-0"
       >
         <CrewAvatar crew={{ id: crewId }} look={look} className="icon-lg" />
       </Button>
@@ -68,21 +69,23 @@ export function CrewAppearancePicker({
           className="bycoda-arc overflow-y-auto overscroll-contain"
         >
           <div className="flex flex-col gap-2 p-2">
-            <div role="group" aria-label={t("Crew icon")} className="flex flex-wrap gap-0.5">
-              {QUICK_ICONS.map((icon) => (
-                <Button
-                  key={icon}
-                  variant="item"
-                  motion="none"
-                  iconOnly
-                  label={projectMascot(crewId, icon).label}
-                  aria-pressed={look.icon === icon}
-                  selected={look.icon === icon}
-                  onClick={() => onChange({ icon })}
-                >
-                  <ProjectMascot project={crewId} name={icon} color={color} className="icon-md" />
-                </Button>
-              ))}
+            <div className="flex flex-wrap gap-[calc(var(--space-1)/2)]">
+              <RadioGroup
+                variant="tiles"
+                label={t("Crew icon")}
+                value={look.icon ?? ""}
+                onValueChange={(icon) => onChange({ icon })}
+                tile={{ motion: "none" }}
+                className="flex flex-wrap gap-[calc(var(--space-1)/2)]"
+                options={QUICK_ICONS.map((icon) => ({
+                  value: icon,
+                  iconOnly: true,
+                  ariaLabel: projectMascot(crewId, icon).label,
+                  content: (
+                    <ProjectMascot project={crewId} name={icon} color={color} className="icon-md" />
+                  ),
+                }))}
+              />
               <Button
                 variant="ghost"
                 motion="none"

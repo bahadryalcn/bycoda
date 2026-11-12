@@ -1,3 +1,5 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { FailureState } from "../../../shared/ui/FailureState";
 import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -56,16 +58,11 @@ function MessageItem({
   return (
     <li className={styles.message} data-outbound={message.outbound ? "true" : undefined}>
       <Text size="micro" tone="secondary" leading="inherit" className={styles.meta}>
-        <Text
-          size="inherit"
-          tone="inherit"
-          truncate
-          weight="medium"
-          className="min-w-0"
-          title={message.authorAddress || undefined}
-        >
-          {author}
-        </Text>
+        <Tooltip label={message.authorAddress || undefined} asChild>
+          <Text size="inherit" tone="inherit" truncate weight="medium" className="min-w-0">
+            {author}
+          </Text>
+        </Tooltip>
         {Number.isFinite(message.at) && message.at > 0 ? (
           <Timestamp value={message.at} className="shrink-0" />
         ) : null}
@@ -76,17 +73,18 @@ function MessageItem({
           {message.attachments.map((attachment, index) => {
             const size = attachment.size ? formatAttachmentSize(attachment.size) : null;
             return (
-              <Text
-                as="li"
-                size="micro"
-                tone="secondary"
-                truncate
-                key={`${attachment.name}:${index}`}
-                className="max-w-full rounded-(--ui-radius-control) border border-(--ui-tone-neutral-border) px-1.5"
-                title={attachment.name}
-              >
-                {size ? t("{p0} ({p1})", { p0: attachment.name, p1: size }) : attachment.name}
-              </Text>
+              <Tooltip key={`${attachment.name}:${index}`} label={attachment.name} asChild>
+                <Text
+                  as="li"
+                  size="micro"
+                  tone="secondary"
+                  truncate
+                  key={`${attachment.name}:${index}`}
+                  className="max-w-full rounded-(--ui-radius-control) border border-(--ui-tone-neutral-border) px-1.5"
+                >
+                  {size ? t("{p0} ({p1})", { p0: attachment.name, p1: size }) : attachment.name}
+                </Text>
+              </Tooltip>
             );
           })}
         </ul>
@@ -139,21 +137,18 @@ export function MessageThreadView({
           className="mt-0.5 block icon-sm shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <Heading size="section" level={2} truncate title={thread.title} dir="auto">
-            {thread.title || t("(No subject)")}
-          </Heading>
-          <Text
-            as="p"
-            size="micro"
-            tone="secondary"
-            truncate
-
-            title={thread.participants.join(", ")}
-          >
-            {thread.participants.length > 0
-              ? t("{p0} · {p1}", { p0: thread.participants.join(", "), p1: accountLine })
-              : accountLine}
-          </Text>
+          <Tooltip label={thread.title} asChild>
+            <Heading size="section" level={2} truncate dir="auto">
+              {thread.title || t("(No subject)")}
+            </Heading>
+          </Tooltip>
+          <Tooltip label={thread.participants.join(", ")} asChild>
+            <Text as="p" size="micro" tone="secondary" truncate>
+              {thread.participants.length > 0
+                ? t("{p0} · {p1}", { p0: thread.participants.join(", "), p1: accountLine })
+                : accountLine}
+            </Text>
+          </Tooltip>
         </div>
         <Button
           iconOnly
@@ -181,8 +176,7 @@ export function MessageThreadView({
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {messages == null ? (
           error ? (
-            <EmptyState
-              kind="unavailable"
+            <FailureState
               icon={<MessageMultiple aria-hidden="true" />}
               title={t("Could not load this conversation.")}
               description={error}

@@ -1,4 +1,8 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { useState } from "react";
 import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -57,10 +61,10 @@ export function MemberPerformance({
       }}
     >
       {status === "loading" || status === "idle" ? (
-        <Text as="p">{t("Loading performance…")}</Text>
+        <LoadingText delay={false}>{t("Loading performance…")}</LoadingText>
       ) : status === "error" ? (
         <Alert tone="danger">
-          <p>{t("Could not load performance")}</p>
+          <InlineError>{t("Could not load performance")}</InlineError>
           <Button variant="secondary" onClick={load}>
             {t("Retry")}
           </Button>
@@ -84,7 +88,7 @@ export function MemberPerformance({
                 className="flex min-w-0 flex-wrap justify-between gap-x-3"
               >
                 <span className="min-w-0 break-all">
-                  {model.model} <Text size="inherit">{model.harness}</Text>
+                  <ModelLabel model={model.model} harness={model.harness} />
                 </span>
                 <Text size="inherit">
                   {model.firstPassRate !== undefined
@@ -99,7 +103,7 @@ export function MemberPerformance({
           </ul>
         </div>
       ) : (
-        <Text as="p">{t("No reviewed work yet")}</Text>
+        <EmptyState size="inline" kind="empty" description={t("No reviewed work yet")} />
       )}
     </Disclosure>
   );

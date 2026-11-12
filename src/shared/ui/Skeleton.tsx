@@ -5,6 +5,7 @@ import {
   Skeleton as ArcSkeleton,
   type SkeletonProps as ArcSkeletonProps,
 } from "./arc/skeleton/skeleton";
+import shapeStyles from "./arc/skeleton/skeleton.module.css";
 import styles from "./Skeleton.module.css";
 
 export type SkeletonProps = ArcSkeletonProps & {
@@ -41,6 +42,7 @@ export function Skeleton({
   lines,
   avatar,
   children,
+  placeholder,
   loading,
   delay = true,
   "aria-hidden": ariaHidden,
@@ -57,7 +59,13 @@ export function Skeleton({
     const hidden = ariaHidden === true || ariaHidden === "true";
     return (
       <span
-        className={["bycoda-arc", styles.inline, held ? styles.held : "", className]
+        className={[
+          "bycoda-arc",
+          shapeStyles.shape,
+          styles.inline,
+          held ? styles.held : "",
+          className,
+        ]
           .filter(Boolean)
           .join(" ")}
         role={hidden || held ? undefined : "status"}
@@ -73,7 +81,8 @@ export function Skeleton({
       lines={lines}
       avatar={avatar}
       loading={loading}
-      aria-hidden={ariaHidden}
+      placeholder={placeholder}
+      aria-hidden={held ? true : ariaHidden}
       label={resolvedLabel}
       className={["bycoda-arc", held ? styles.held : "", className].filter(Boolean).join(" ")}
     >
@@ -113,7 +122,7 @@ export function SkeletonBar({
     <span
       aria-hidden="true"
       data-shape={shape}
-      className={[styles.bar, className].filter(Boolean).join(" ")}
+      className={[shapeStyles.shape, styles.bar, className].filter(Boolean).join(" ")}
       style={
         {
           "--skeleton-bar-width": width,

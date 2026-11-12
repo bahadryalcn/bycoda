@@ -13,6 +13,7 @@ import {
   providerSessionDefaults,
 } from "./providerSessionDefaults";
 import {
+  AUTOMATIC_SUBAGENTS,
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
   decodeAdvisor,
@@ -46,6 +47,12 @@ export function withAccountDefaults(
     const settings = { ...session.modelSettings };
     for (const key of [CROSS_SUBAGENTS_KEY, CROSS_ADVISOR_KEY]) {
       if (explicit[key] != null || !product?.[key]) continue;
+      // Automatic resolves the new account at use time; never rewrite its sentinel.
+      if (
+        key === CROSS_SUBAGENTS_KEY &&
+        (settings[key] === AUTOMATIC_SUBAGENTS || product[key] === AUTOMATIC_SUBAGENTS)
+      )
+        continue;
       const current =
         key === CROSS_ADVISOR_KEY ? [decodeAdvisor(settings[key])] : decodeSubagents(settings[key]);
       const target =

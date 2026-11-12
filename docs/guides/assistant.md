@@ -144,7 +144,7 @@ Global voice can discover displayed project names and historical session
 metadata, then use exact project/session identities for navigation and lifecycle
 actions. Partial or duplicate project names need clarification. Desktop operations
 can use a real assistant conversation without opening a coding session, while
-retaining the configured app allowlist and the owner's computer use permission mode
+retaining the owner's per-app approval and computer use permission mode
 (Ask every time, Auto or Full access, set only in **Access > Computer use** settings). A tool's
 authentic response can be usable even when its contents cannot be attributed to a
 project; that content does not become a saved personal rule or trusted memory.

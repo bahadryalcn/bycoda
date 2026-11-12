@@ -9,6 +9,8 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { surfaceAttributes, Surface } from "../../../shared/ui/Surface";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { JiraCommentEditor } from "./JiraCommentEditor";
+import type { JiraCommentImage } from "../model/jiraCommentDocument";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { providerLabel } from "../../../shared/lib/providerLabel";
 import { t, useLocale } from "../../../shared/i18n";
@@ -260,21 +262,28 @@ export function InboxCommentForm({
   posting: boolean;
   error: string | null;
   onCancelReply: () => void;
-  onSubmit: (body: string) => Promise<void>;
+  onSubmit: (body: string, images?: JiraCommentImage[]) => Promise<void>;
 }) {
   useLocale();
   const localDraftId = useId();
   const draftIdentity = `inbox:comment:${draftKey ?? localDraftId}`;
   const [draft, setDraft, retireDraft] = useRetainedState(draftIdentity, "");
+  const [imageDraft, setImageDraft, retireImages] = useRetainedState<JiraCommentImage[] | null>(
+    `${draftIdentity}:images`,
+    null,
+  );
+  const images = imageDraft ?? [];
+  const [readingImages] = useRetainedState(`${draftIdentity}:image-reading`, false);
+  const jiraEditor = target === "Jira";
   const pending = useSyncExternalStore(
     subscribePendingComments,
     () => pendingCommentDrafts.has(draftIdentity),
     () => false,
   );
-  const busy = posting || pending;
+  const busy = posting || pending || readingImages;
   const submitting = useRef(false);
   const field = useRef<HTMLTextAreaElement>(null);
-  const canPost = draft.trim().length > 0 && !busy;
+  const canPost = (draft.trim().length > 0 || (jiraEditor && images.length > 0)) && !busy;
 
   useEffect(() => {
     if (!replyTo) return;
@@ -290,12 +299,20 @@ export function InboxCommentForm({
 
   const submit = async () => {
     const body = draft.trim();
-    if (!body || busy || submitting.current || pendingCommentDrafts.has(draftIdentity)) return;
+    if (
+      (!body && !(jiraEditor && images.length)) ||
+      busy ||
+      submitting.current ||
+      pendingCommentDrafts.has(draftIdentity)
+    )
+      return;
     submitting.current = true;
     setCommentPending(draftIdentity, true);
     try {
-      await onSubmit(body);
+      if (jiraEditor) await onSubmit(body, images);
+      else await onSubmit(body);
       retireDraft(draft, "");
+      if (jiraEditor) retireImages(imageDraft, null);
     } catch {
       // Parent keeps the error next to the button.
     } finally {
@@ -340,23 +357,36 @@ export function InboxCommentForm({
         </Text>
       ) : null}
       <div className="space-y-1">
-        <TextareaField
-          hideLabel
-          label={replyTo ? t("Reply") : t("Comment")}
-          ref={field}
-          rows={2}
-          value={draft}
-          disabled={busy}
-          placeholder={
-            replyTo
-              ? t("Write a reply ({p0}↩)", { p0: MOD })
-              : t("Leave a comment ({p0}↩)", { p0: MOD })
-          }
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-          fieldClassName="w-full"
-          className="resize-none"
-        />
+        {jiraEditor ? (
+          <JiraCommentEditor
+            key={draftIdentity}
+            draftIdentity={draftIdentity}
+            value={draft}
+            onChange={setDraft}
+            images={images}
+            onImages={(next) => setImageDraft(next.length ? next : null)}
+            disabled={busy}
+            onSubmit={submit}
+          />
+        ) : (
+          <TextareaField
+            hideLabel
+            label={replyTo ? t("Reply") : t("Comment")}
+            ref={field}
+            rows={2}
+            value={draft}
+            disabled={busy}
+            placeholder={
+              replyTo
+                ? t("Write a reply ({p0}↩)", { p0: MOD })
+                : t("Leave a comment ({p0}↩)", { p0: MOD })
+            }
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            fieldClassName="w-full"
+            className="resize-none"
+          />
+        )}
         <div className="flex items-center justify-end gap-2">
           {target ? (
             <Text size="caption" tone="secondary" truncate className="min-w-0">

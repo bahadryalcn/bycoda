@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -33,7 +34,11 @@ import {
 import type { AgentModel, ModelSetting } from "../model/models";
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
 import { useModelSource, type ModelSource } from "./modelSource";
-import { DelegationOptionIcon, DelegationSubagentsControl } from "./DelegationSettings";
+import {
+  delegationSelectChoice,
+  DelegationOptionIcon,
+  DelegationSubagentsControl,
+} from "./DelegationSettings";
 import { subscribeProviderAccounts } from "../../providers/public/providerAccounts";
 import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/rateLimitsCache";
 import { signedOutAccountKeys } from "../model/accountModelChoices";
@@ -103,6 +108,7 @@ function useModelExtras(harness: HarnessId, model: string, values: Record<string
   const isInactive = (id: string) =>
     id === "subagentPolicy"
       ? (!effective.subagentModel || effective.subagentModel === "default") &&
+        effective.crossSubagents !== "auto" &&
         decodeSubagents(effective.crossSubagents).length === 0
       : id === "autoCompactWindow" && effective.autoCompact === "off";
   const active = settings.filter(
@@ -194,10 +200,14 @@ export function ModelExtrasPanel({
               {label}
             </Text>
             {modified && (
-              <span
-                {...surfaceAttributes({ radius: "pill" }, "size-1.5 shrink-0  bg-(--color-accent)")}
-                title={t("Changed from default")}
-              />
+              <Tooltip label={t("Changed from default")} asChild>
+                <span
+                  {...surfaceAttributes(
+                    { radius: "pill" },
+                    "size-1.5 shrink-0  bg-(--color-accent)",
+                  )}
+                />
+              </Tooltip>
             )}
           </Text>
           {setting.kind === "toggle" ? (
@@ -229,7 +239,7 @@ export function ModelExtrasPanel({
               onChange={update}
               options={setting.options.map((option) => ({
                 value: option.value,
-                label: t(option.label),
+                ...delegationSelectChoice(setting, option, t),
                 icon: isDelegationSetting(setting) ? (
                   <DelegationOptionIcon setting={setting} value={option.value} />
                 ) : undefined,

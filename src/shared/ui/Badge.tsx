@@ -4,6 +4,7 @@ import {
   Badge as ArcBadge,
   type BadgeProps as ArcBadgeProps,
   type BadgeTone,
+  BADGE_COUNT_MAX,
 } from "./arc/badge/badge";
 import { Check, CircleAlert, CircleX, Clock, RotateCcw } from "./icons";
 import { Spinner } from "./Spinner";
@@ -30,7 +31,7 @@ export type BadgeProps = Omit<ArcBadgeProps, "size"> & {
 };
 
 /** Default cap of a `count`: larger numbers render as `99+` and keep the real number as the accessible name. */
-export const BADGE_COUNT_MAX = 99;
+export { BADGE_COUNT_MAX };
 
 /**
  * Small pill for a short label, status or count with tone, appearance and optional icon. Sizes `xs` (inline metadata in triggers, rows, tabs), `sm`, `md`. `variant="count"` caps at 99+ and keeps the real number as the accessible name.

@@ -17,7 +17,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { TabStrip } from "../../../shared/ui/Tabs";
 import { Select } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Heading } from "../../../shared/ui/Heading";
@@ -43,6 +43,8 @@ import { RevealedSetting } from "../../settings/ui/settingsControls";
 import { SettingsPageLoading } from "../../settings/public/settingsControls";
 import { recallUsageLoad, rememberUsageLoad } from "../model/usageLoadCache";
 import { railGroupLookup } from "../model/railGroups";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { searchRows, usageSampleStats } from "./usageOverviewStats";
 import { subscribeProjectPathsChanged } from "../../projects/model/recents";
 import {
@@ -337,7 +339,11 @@ export function UsageOverview({
     [chartSamples, metric],
   );
   const models = useMemo(
-    () => usageBreakdown(chartSamples, "model", metric),
+    () =>
+      usageBreakdown(chartSamples, "model", metric).map((row) => ({
+        ...row,
+        providers: row.provider ? [row.provider] : [],
+      })),
     [chartSamples, metric],
   );
   const colors = useMemo(
@@ -366,7 +372,7 @@ export function UsageOverview({
     for (const s of [...samples, ...runtime]) {
       result.provider.set(s.provider, usageProviderLabel(s.provider));
       result.account.set(s.account, `${usageProviderLabel(s.provider)} · ${s.accountLabel}`);
-      result.model.set(s.model, s.model);
+      result.model.set(s.model, modelDisplayName(s.model, s.provider));
       result.project.set(s.project, s.projectLabel);
       result.group.set(s.group, s.groupLabel);
     }
@@ -389,6 +395,12 @@ export function UsageOverview({
     }
     return result;
   }, [samples, runtime, accounts, view]);
+  // The provider each model was used through, for its icon in the filter.
+  const modelProviders = useMemo(() => {
+    const result = new Map<string, string>();
+    for (const s of [...samples, ...runtime]) result.set(s.model, s.provider);
+    return result;
+  }, [samples, runtime]);
   const quotaFilters = {
     ...emptyUsageFilters(),
     provider: filters.provider.filter(
@@ -449,7 +461,13 @@ export function UsageOverview({
       providers.add(sample.provider);
       providersByRow.set(key, providers);
     }
-    return searchRows(breakdown, (row) => row.label, deferredSearch, locale).map((row) => ({
+    return searchRows(
+      breakdown,
+      // A model is found by its readable name and by its raw id.
+      (row) => (dimension === "model" ? `${row.label} ${row.key}` : row.label),
+      deferredSearch,
+      locale,
+    ).map((row) => ({
       ...row,
       providers: [...(providersByRow.get(row.key) ?? [])],
     }));
@@ -530,11 +548,11 @@ export function UsageOverview({
       )}
       <div className="usage-band">
         {!limitsOnly && (
-          <SegmentedControl
+          <TabStrip
             label={t("Usage views")}
             value={view}
             onValueChange={setView}
-            options={[
+            items={[
               { value: "overview", label: t("Overview") },
               { value: "projects", label: t("Projects") },
               { value: "time", label: t("Time analysis") },
@@ -687,7 +705,7 @@ export function UsageOverview({
                 value={effectiveFilters[key]}
                 options={[...options[key]].map(([value, label]) => ({
                   value,
-                  label: t(label),
+                  label: key === "model" ? label : t(label),
                   ...(key === "provider" || key === "account"
                     ? {
                         icon: (
@@ -696,6 +714,14 @@ export function UsageOverview({
                             label=""
                           />
                         ),
+                      }
+                    : {}),
+                  ...(key === "model"
+                    ? {
+                        icon: (
+                          <ModelLabel model={value} harness={modelProviders.get(value)} iconOnly />
+                        ),
+                        keywords: value,
                       }
                     : {}),
                 }))}
@@ -763,13 +789,7 @@ export function UsageOverview({
       {view !== "limits" && showAnalytics && (
         <>
           {refreshing && load.refreshedAt > 0 && (
-            <LoadingText
-              presentation="text"
-              size="caption"
-              tone="secondary"
-              leading="inherit"
-              className="usage-muted"
-            >
+            <LoadingText size="caption" tone="secondary" leading="inherit" className="usage-muted">
               {t("Refreshing usage… Previous results remain visible.")}
             </LoadingText>
           )}
@@ -927,6 +947,7 @@ export function UsageOverview({
                   percent={false}
                   onSelect={chooseInterval}
                   colors={colors}
+                  dimension={dimension}
                 />
                 <UsageShare
                   rows={providers}

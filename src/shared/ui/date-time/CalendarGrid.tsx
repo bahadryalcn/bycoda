@@ -45,6 +45,7 @@ export function CalendarGrid({
   const heading = useId();
   const grid = useRef<HTMLDivElement>(null);
   const shouldFocus = useRef(autoFocus);
+  const focusWithin = useRef(false);
   const bound = (date: Date) => {
     const key = dateKey(date);
     return (
@@ -56,18 +57,15 @@ export function CalendarGrid({
     const date = bound(parseLocalDate(value) ?? today ?? new Date(2000, 0, 1, 12));
     return { source: value, min, max, focus: date, month: date };
   });
-  // Reconcile external selection/bounds after commit so DOM focus is read outside render.
-  useLayoutEffect(() => {
-    if (state.source === value && state.min === min && state.max === max) return;
+  if (state.source !== value || state.min !== min || state.max !== max) {
     const date = bound(
       state.source !== value ? (parseLocalDate(value) ?? state.focus) : state.focus,
     );
-    shouldFocus.current = !!grid.current?.contains(document.activeElement);
     setState({ source: value, min, max, focus: date, month: date });
-  }, [state, value, min, max, bound]);
-  // Keep the roving calendar tab stop focused after keyboard month/day navigation.
+  }
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps DOM focus on the roving calendar tab stop after navigation or external selection changes
   useLayoutEffect(() => {
-    if (!shouldFocus.current) return;
+    if (!shouldFocus.current && !focusWithin.current) return;
     shouldFocus.current = false;
     grid.current
       ?.querySelector<HTMLButtonElement>('button[tabindex="0"]')
@@ -123,6 +121,12 @@ export function CalendarGrid({
         aria-labelledby={heading}
         aria-multiselectable={range ? true : undefined}
         aria-readonly={readOnly || undefined}
+        onFocusCapture={() => {
+          focusWithin.current = true;
+        }}
+        onBlurCapture={(event) => {
+          focusWithin.current = event.currentTarget.contains(event.relatedTarget);
+        }}
         onMouseLeave={() => onPreview?.(null)}
       >
         <div role="row" className={styles.week}>

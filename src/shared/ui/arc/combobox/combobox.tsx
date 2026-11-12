@@ -1,18 +1,19 @@
 "use client";
-import { OverflowTooltip } from "../../Tooltip";
-import { Popover } from "../../Popover";
+import { PickerChoice } from "../../picker/PickerChoice";
+import { Popover, popupListClassName } from "../../Popover";
 import { isImeComposition } from "../../../lib/keyboard";
 import { useT } from "../../../i18n";
+import { observeResize } from "../../../lib/observeResize";
 import { SearchInput, SearchInputGroup } from "../../SearchInput";
 
 import { animate, AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Check, ChevronDown, Search, X } from "../../icons";
+import { ChevronDown, Search, X } from "../../icons";
 import {
   forwardRef,
   useEffect,
   useId,
   useImperativeHandle,
-  useMemo,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -48,7 +49,7 @@ export const ComboboxList = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<
   },
 );
 
-/** A choice row for bycoda pickers (SearchableSelect, Select). The Combobox below keeps its own `option` row. */
+/** One choice-row presentation for every in-app and native-window value picker. */
 export const ComboboxItem = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<"button">>(
   function ComboboxItem({ className, ...props }, ref) {
     return (
@@ -62,48 +63,7 @@ export const ComboboxItem = forwardRef<HTMLButtonElement, ComponentPropsWithoutR
 );
 
 /** Content of a choice row: check slot, optional icon, truncating label and an optional description beneath it. */
-export function ComboboxChoice({
-  selected,
-  icon,
-  label,
-  description,
-  descriptionId,
-  title,
-}: {
-  selected: boolean;
-  icon?: ReactNode;
-  label: ReactNode;
-  description?: string;
-  descriptionId?: string;
-  /** Full text for a label that may truncate. */
-  title?: string;
-}) {
-  return (
-    <>
-      <span className={styles.choiceCheck} aria-hidden="true">
-        {selected ? <Check size={12} strokeWidth={2} /> : null}
-      </span>
-      {icon != null ? (
-        <span className={styles.choiceIcon} aria-hidden="true">
-          {icon}
-        </span>
-      ) : null}
-      <OverflowTooltip label={title}>
-        <span className={styles.choiceBody}>
-          <span className={`${styles.choiceLabel} truncate`}>{label}</span>
-          {description ? (
-            <span
-              id={descriptionId}
-              className={`${styles.choiceDescription} bycoda-select-description`}
-            >
-              {description}
-            </span>
-          ) : null}
-        </span>
-      </OverflowTooltip>
-    </>
-  );
-}
+export const ComboboxChoice = PickerChoice;
 
 /** Loading, failure or empty copy for a picker, with an optional recovery action. Failure is announced as an alert. */
 export function ComboboxStatus({
@@ -204,17 +164,27 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   const controlId = id ?? generatedId;
   const listboxId = `${controlId}-listbox`;
   const hintId = description ? `${controlId}-description` : undefined;
-  const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const controlRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const reduceMotion = useReducedMotion();
   const [uncontrolledValue, setUncontrolledValue] = useState(defaultValue);
   const [open, setOpen] = useState(false);
+  const [menuMinWidth, setMenuMinWidth] = useState(0);
   const [query, setQuery] = useState("");
   const draftDirty = useRef(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const selectedValue = controlledValue ?? uncontrolledValue;
   const selectedOption = options.find((option) => option.value === selectedValue);
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the open menu minimum width in step with its DOM anchor size
+  useLayoutEffect(() => {
+    const node = controlRef.current;
+    if (!open || !node) return;
+    const measure = () => setMenuMinWidth(node.offsetWidth);
+    measure();
+    return observeResize(node, measure);
+  }, [open]);
 
   useImperativeHandle(forwardedRef, () => inputRef.current as HTMLInputElement);
 
@@ -249,15 +219,14 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     return () => controls.complete();
   }, [selectedValue, reduceMotion, open]);
 
-  const matchingOptions = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    if (!normalizedQuery) return options;
-    return options.filter((option) =>
-      [option.label, ...(option.keywords ?? [])].some((term) =>
-        term.toLocaleLowerCase().includes(normalizedQuery),
-      ),
-    );
-  }, [options, query]);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const matchingOptions = normalizedQuery
+    ? options.filter((option) =>
+        [option.label, ...(option.keywords ?? [])].some((term) =>
+          term.toLocaleLowerCase().includes(normalizedQuery),
+        ),
+      )
+    : options;
 
   const customValue = query.trim();
   const exactOption = options.find((option) =>
@@ -288,18 +257,6 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         listbox.scrollTop = bottom - listbox.clientHeight;
     }
   }, [activeIndex, filteredOptions, open]);
-
-  useEffect(() => {
-    if (allowCustomValue) return; // The app Popover owns dismissal in editable mode.
-    const handlePointerDown = (event: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        setOpen(false);
-        setQuery("");
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [allowCustomValue]);
 
   const choose = (option: ComboboxOption) => {
     if (option.disabled || (allowCustomValue && (disabled || inputProps.readOnly))) return;
@@ -389,17 +346,6 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
       dismiss("outside");
       return;
     }
-    if (event.key === "Escape" && open) {
-      event.preventDefault();
-      if (allowCustomValue) {
-        event.stopPropagation();
-        dismiss("escape");
-      } else {
-        setOpen(false);
-        setQuery("");
-      }
-      return;
-    }
   };
 
   const inputValue = open
@@ -423,7 +369,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                 optionRefs.current[option.value] = element;
               }}
               id={`${controlId}-option-${allowCustomValue ? index : option.value}`}
-              className={styles.option}
+              className={styles.choice}
               data-active={index === activeIndex ? "true" : undefined}
               data-disabled={option.disabled ? "true" : undefined}
               role="option"
@@ -433,36 +379,23 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
               onMouseEnter={() => !option.disabled && setActiveIndex(index)}
               onClick={() => choose(option)}
             >
-              <span>{option.label}</span>
-              {option.value === selectedValue && (
-                <Check className={styles.check} size={16} strokeWidth={1.75} aria-hidden="true" />
-              )}
+              <ComboboxChoice selected={option.value === selectedValue} label={option.label} />
             </div>
           ))
         ) : (
-          <motion.div
-            className={styles.empty}
-            role="status"
-            initial={reduceMotion ? false : { opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: motionTokens.duration.standard,
-              ease: [...motionTokens.ease.enter],
-            }}
-          >
-            {emptyMessage}
-          </motion.div>
+          <ComboboxStatus empty>{emptyMessage}</ComboboxStatus>
         )}
       </div>
     </AutoHeight>
   );
 
   return (
-    <div ref={rootRef} className={styles.field}>
+    <div className={styles.field}>
       <label htmlFor={controlId} className={hideLabel ? "sr-only" : undefined}>
         {label}
       </label>
       <SearchInputGroup
+        ref={controlRef}
         className={[
           styles.control,
           open ? styles.open : "",
@@ -562,52 +495,19 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
           {description}
         </span>
       )}
-      <AnimatePresence initial={false}>
-        {open &&
-          (allowCustomValue ? (
-            <Popover
-              anchor={rootRef}
-              align="start"
-              ignore={`[id="${controlId}"]`}
-              maxHeight={240}
-              restoreFocus={false}
-              onDismiss={dismiss}
-              className="bycoda-arc"
-            >
-              {menu}
-            </Popover>
-          ) : (
-            <motion.div
-              className={styles.popover}
-              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: 1,
-                transition: reduceMotion
-                  ? { duration: motionTokens.duration.instant }
-                  : {
-                      ...motionTokens.spring.snappy,
-                      opacity: {
-                        duration: motionTokens.duration.fast,
-                        ease: [...motionTokens.ease.enter],
-                      },
-                    },
-              }}
-              exit={{
-                opacity: 0,
-                ...(reduceMotion ? {} : { y: -4, scale: 0.98 }),
-                transition: {
-                  duration: motionTokens.duration.instant,
-                  ease: [...motionTokens.ease.standard],
-                },
-              }}
-              role="presentation"
-            >
-              {menu}
-            </motion.div>
-          ))}
-      </AnimatePresence>
+      {open && (
+        <Popover
+          anchor={controlRef}
+          minWidth={menuMinWidth}
+          align="start"
+          maxHeight={240}
+          restoreFocus={false}
+          onDismiss={dismiss}
+          className={`bycoda-arc ${popupListClassName}`}
+        >
+          {menu}
+        </Popover>
+      )}
     </div>
   );
 });

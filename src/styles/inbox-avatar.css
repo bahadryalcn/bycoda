@@ -1,0 +1,20 @@
+/* Identity ink follows the shared light/dark semantic palette. */
+:root {
+  --ui-avatar-info: var(--color-info);
+  --ui-avatar-success: var(--color-success);
+  --ui-avatar-warning: var(--color-warning);
+  --ui-avatar-danger: var(--color-danger);
+  --ui-avatar-feature: var(--palette-featureDark);
+  --ui-avatar-orchestration: var(--palette-orchestrationDark);
+}
+html.theme-light {
+  --ui-avatar-feature: var(--palette-featureLight);
+  --ui-avatar-orchestration: var(--palette-orchestrationLight);
+}
+.inbox-avatar {
+  width: var(--inbox-avatar-size);
+  height: var(--inbox-avatar-size);
+  font-size: var(--inbox-avatar-font-size);
+  color: var(--inbox-avatar-color);
+  background: color-mix(in srgb, var(--inbox-avatar-color) 16%, var(--ui-surface));
+}

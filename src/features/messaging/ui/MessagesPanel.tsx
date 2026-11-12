@@ -1,3 +1,4 @@
+import { FailureState } from "../../../shared/ui/FailureState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useDeferredValue, useMemo, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -122,8 +123,7 @@ export function MessagesPanel({
 
   const listBody =
     connectedCount === 0 ? (
-      <EmptyState
-        kind="unavailable"
+      <FailureState
         icon={<MessageMultiple aria-hidden="true" />}
         description={t("Reconnect a messaging account to read its conversations.")}
         action={
@@ -133,8 +133,7 @@ export function MessagesPanel({
         }
       />
     ) : threads.length === 0 && allFailed ? (
-      <EmptyState
-        kind="unavailable"
+      <FailureState
         icon={<MessageMultiple aria-hidden="true" />}
         description={t("Could not load messages.")}
         onRetry={refresh}

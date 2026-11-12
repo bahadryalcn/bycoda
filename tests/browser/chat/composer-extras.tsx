@@ -8,7 +8,7 @@ import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
 import { registerHarness } from "../../../src/integrations/harness/core/registry";
 import { applyHarnessEvent } from "../../../src/integrations/harness/core/apply";
 import { EmptySession } from "../../../src/features/sessions/ui/EmptySession";
-import { Shimmer } from "../../../src/shared/ui/Shimmer";
+import { WorkingIndicator } from "../../../src/shared/ui/WorkingIndicator";
 import { UsageFooter } from "../../../src/app/shell/UsageFooter";
 import { ModelSourceContext } from "../../../src/features/sessions/ui/modelSource";
 import {
@@ -459,7 +459,7 @@ function Fixture() {
         ) : null}
         {!welcome ? (
           <div className="flex-1 text-sm text-content/60">
-            <Shimmer>Chat composer · provider options</Shimmer>
+            <WorkingIndicator label="Chat composer · provider options" />
           </div>
         ) : null}
         {welcome ? (

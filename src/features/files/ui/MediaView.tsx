@@ -1,4 +1,4 @@
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -216,9 +216,9 @@ export function MediaView({
               </span>
             ) : null}
             {duration ? (
-              <span className="whitespace-nowrap tabular-nums" title={t("Duration")}>
-                {duration}
-              </span>
+              <Tooltip label={t("Duration")} asChild>
+                <span className="whitespace-nowrap tabular-nums">{duration}</span>
+              </Tooltip>
             ) : null}
             {currentVideo && state.size !== undefined ? (
               <span className="whitespace-nowrap tabular-nums">{formatFileSize(state.size)}</span>

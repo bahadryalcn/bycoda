@@ -67,6 +67,9 @@ it.each([true, false])(
     expect(container.querySelector<HTMLElement>("[data-workspace]")!.style.display).not.toBe(
       "none",
     );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 550));
+    });
     expect(container.textContent).toContain("Loading Tasks");
     expect(container.textContent).not.toContain("Whole workspace hidden");
     await act(async () => container.querySelectorAll("button")[2]!.click());

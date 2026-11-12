@@ -2,6 +2,7 @@ import {
   promptBlocks,
   type PromptContentBlock,
 } from "../../../../features/sessions/model/attachmentPrompt";
+import { humanizeModelId } from "../../../../shared/model/modelNameFromId";
 import type { AgentModel } from "../../../../features/sessions/model/models";
 import type { Attachment, RuntimeMode } from "../../../../features/sessions/model/session";
 
@@ -138,7 +139,7 @@ export function modelsFromHermesSession(result: unknown): AgentModel[] {
     ).trim();
     if (!nativeId || seen.has(nativeId)) continue;
     seen.add(nativeId);
-    const name = String(model.name ?? model.title ?? nativeId).trim();
+    const name = String(model.name ?? model.title ?? humanizeModelId(nativeId)).trim();
     models.push({
       id: `hermes:${nativeId}`,
       harness: "hermes",

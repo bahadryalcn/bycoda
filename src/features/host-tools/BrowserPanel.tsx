@@ -1,3 +1,4 @@
+import { StatusDot } from "../../shared/ui/StatusDot";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
 import { OverflowTooltip } from "../../shared/ui/Tooltip";
@@ -846,7 +847,7 @@ function ProjectBrowserPanel({
               setControlsFromStatus(true);
             }}
           >
-            <span className="host-browser-status-dot" data-tone={statusTone} aria-hidden />
+            <StatusDot data-browser-status-dot="" tone={statusTone} appearance="solid" size="md" />
           </Button>
           <TextField
             fieldClassName="host-browser-url"

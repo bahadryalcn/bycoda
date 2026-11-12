@@ -37,6 +37,7 @@ export function settingControlKind(
   setting: ModelSetting,
   labels: readonly string[] = setting.options.map((option) => option.label),
 ): SettingControlKind {
+  if (setting.id === "crossSubagentMaxEffort") return "effort";
   if (setting.kind === "toggle") return "toggle";
   if (settingGroupId(setting) === "delegation") return "choices";
   if (isEffortSettingId(setting.id)) return "effort";
@@ -72,13 +73,27 @@ export function ascendingEffortOptions<T extends { value: string }>(options: rea
     : [...options];
 }
 
-/** Grid columns: three for short labels such as 200K, two when a label is longer. */
-export function settingGridColumns(labels: readonly string[]): 2 | 3 {
-  return labels.every((label) => label.length <= GRID_THREE_TEXT) ? 3 : 2;
+/**
+ * Grid columns, sized to their content, so the options fill whole rows: up to three options share
+ * one row, four share it when their text fits and pair up otherwise. Longer grids use three
+ * columns and tolerate one long label (the default) beside short ones such as 200K.
+ */
+export function settingGridColumns(labels: readonly string[]): 2 | 3 | 4 {
+  const count = labels.length;
+  if (count <= 2) return 2;
+  if (count === 3) return 3;
+  if (count === 4)
+    return labels.reduce((sum, label) => sum + label.length, 0) <= SEGMENTED_TEXT ? 4 : 2;
+  return labels.filter((label) => label.length > GRID_THREE_TEXT).length <= 1 ? 3 : 2;
 }
 
 /** Agents-tab rows kept last, in this order, below the single choices. */
-const AGENTS_TAIL: readonly string[] = [IMAGE_MODELS_KEY, "subagentPolicy", CROSS_SUBAGENTS_KEY];
+const AGENTS_TAIL: readonly string[] = [
+  IMAGE_MODELS_KEY,
+  "subagentPolicy",
+  "crossSubagentMaxEffort",
+  CROSS_SUBAGENTS_KEY,
+];
 
 /**
  * The panel's Settings tab holds model and context rows; Agents holds delegation rows. The menu

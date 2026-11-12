@@ -1,3 +1,4 @@
+import { Badge } from "./Badge";
 import {
   type ComponentPropsWithRef,
   type MouseEvent,
@@ -143,16 +144,9 @@ export function Disclosure({
           {summary}
         </span>
         {hasCount ? (
-          <span className={styles.count}>
-            {countLabel ? (
-              <>
-                <span aria-hidden="true">{count}</span>
-                <span className="sr-only">{countLabel}</span>
-              </>
-            ) : (
-              count
-            )}
-          </span>
+          <Badge variant="count" size="xs" label={countLabel} className={styles.count}>
+            {count}
+          </Badge>
         ) : null}
         {summaryActions != null ? (
           <span className={styles.actions} data-no-drag="" data-disclosure-actions="">

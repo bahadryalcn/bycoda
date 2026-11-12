@@ -107,15 +107,9 @@
   background: transparent;
   color: var(--text-secondary);
 }
-.dotMark {
-  flex: 0 0 auto;
-  inline-size: 0.5rem;
-  block-size: 0.5rem;
-  border-radius: var(--radius-pill);
-  background: var(--badge-foreground);
-}
 /* Counts follow caption height; their shared tone stays quiet and borderless. */
 .count {
+  font-size: var(--ui-font-micro);
   border: 0;
   border-radius: 0;
   background: transparent;

@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -186,19 +187,24 @@ export function CheckRepairForm({
               <Text as="p" size="secondary" weight="medium" tone="neutral" leading="normal">
                 {t("Fix with AI")}
               </Text>
-              <Text
-                as="p"
-                size="caption"
-                tone="secondary"
-                title={checks.length > 1 ? checks.map((check) => check.name).join(", ") : undefined}
-                className="mt-0.5 break-words"
+              <Tooltip
+                label={checks.length > 1 ? checks.map((check) => check.name).join(", ") : undefined}
+                asChild
               >
-                {checks.length === 1
-                  ? checks[0].name
-                  : t("{p0} failed checks", { p0: checks.length })}{" "}
-                {t("· PR #")}
-                {repair.number}
-              </Text>
+                <Text
+                  as="p"
+                  size="caption"
+                  tone="secondary"
+
+                  className="mt-0.5 break-words"
+                >
+                  {checks.length === 1
+                    ? checks[0].name
+                    : t("{p0} failed checks", { p0: checks.length })}{" "}
+                  {t("· PR #")}
+                  {repair.number}
+                </Text>
+              </Tooltip>
             </div>
             <Button
               iconOnly

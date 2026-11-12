@@ -1,3 +1,5 @@
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
@@ -32,7 +34,7 @@ export function voiceActionLabel(name: string) {
 }
 
 /** Voice actions: an icon button with a count badge, so the header title keeps its width; the
- * list opens in a popover. The icon breathes while an action runs. */
+ * list opens in a popover. The shared pending glyph marks running actions. */
 export function VoiceToolActivityPanel({
   entries,
   onStopWaiting,
@@ -65,7 +67,7 @@ export function VoiceToolActivityPanel({
         aria-expanded={Boolean(anchor)}
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
       >
-        <Wrench className="icon-sm" />
+        {running ? <Spinner size="sm" /> : <Wrench className="icon-sm" />}
         <Text
           as="span"
           size="micro"
@@ -92,32 +94,33 @@ export function VoiceToolActivityPanel({
             {entries.map((entry) => {
               const live = entry.state === "running" || entry.state === "waiting-owner";
               return (
-                <li
-                  className={styles.row}
-                  data-state={entry.state}
+                <Tooltip
                   key={entry.id}
-                  title={[entry.name, entry.target, entry.requestId].filter(Boolean).join(" · ")}
+                  label={[entry.name, entry.target, entry.requestId].filter(Boolean).join(" · ")}
+                  asChild
                 >
-                  <Text size="inherit" tone="inherit" truncate className={styles.name}>
-                    {voiceActionLabel(entry.name)}
-                  </Text>
-                  <Text
-                    as="span"
-                    size="inherit"
-                    tone={STATUS_TONE[entry.state]}
-                    className={styles.status}
-                  >
-                    {t(STATUS[entry.state])}
-                  </Text>
-                  <Text size="inherit" tone="muted" className={styles.time}>
-                    {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}
-                  </Text>
-                  {live && (
-                    <Button size="sm" variant="ghost" onClick={() => onStopWaiting(entry.id)}>
-                      {t("Stop waiting")}
-                    </Button>
-                  )}
-                </li>
+                  <li className={styles.row} data-state={entry.state} key={entry.id}>
+                    <Text size="inherit" tone="inherit" truncate className={styles.name}>
+                      {voiceActionLabel(entry.name)}
+                    </Text>
+                    <Text
+                      as="span"
+                      size="inherit"
+                      tone={STATUS_TONE[entry.state]}
+                      className={styles.status}
+                    >
+                      {t(STATUS[entry.state])}
+                    </Text>
+                    <Text size="inherit" tone="muted" className={styles.time}>
+                      {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}
+                    </Text>
+                    {live && (
+                      <Button size="sm" variant="ghost" onClick={() => onStopWaiting(entry.id)}>
+                        {t("Stop waiting")}
+                      </Button>
+                    )}
+                  </li>
+                </Tooltip>
               );
             })}
           </ul>

@@ -1,3 +1,4 @@
+import { TabDirtyDot } from "../../../shared/ui/TabLabel";
 import { Button } from "../../../shared/ui/Button";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
@@ -746,12 +747,7 @@ export function SurfaceTabs({
                       className="icon-xs shrink-0 text-(--ui-tone-danger-fg)"
                     />
                   ) : null}
-                  {dirty ? (
-                    <span
-                      className="size-2 shrink-0 rounded-full bg-(--ui-text-secondary)"
-                      aria-label={t("Unsaved changes")}
-                    />
-                  ) : null}
+                  {dirty ? <TabDirtyDot /> : null}
                 </Tab>
                 <InlineAction
                   label={t("Close {p0}", { p0: label })}

@@ -330,7 +330,9 @@ export function FilePicker({
               aria-expanded={optionCount > 0}
               aria-controls={optionCount > 0 ? listId : undefined}
               aria-activedescendant={
-                optionCount > 0 && !rankingPending ? `${listId}-option-${activeIndex}` : undefined
+                optionCount > 0 && !rankingPending
+                  ? `${listId}-option-${encodeURIComponent(paletteMode ? (actionResults[activeIndex]?.id ?? "") : (results[activeIndex]?.path ?? ""))}`
+                  : undefined
               }
               aria-busy={(!paletteMode && (loading || rankingPending)) || undefined}
               spellCheck={false}
@@ -384,6 +386,7 @@ export function FilePicker({
         ) : paletteMode ? (
           <ActionList
             id={listId}
+            inputRef={search}
             actions={actionResults}
             active={activeIndex}
             query={actionQuery}
@@ -393,6 +396,7 @@ export function FilePicker({
         ) : (
           <FileList
             id={listId}
+            inputRef={search}
             files={results}
             active={activeIndex}
             query={query}

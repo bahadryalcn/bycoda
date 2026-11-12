@@ -25,7 +25,9 @@ vi.mock("../../../integrations/harness/core/registry", () => ({
   refreshHarnessCatalogs: () => Promise.resolve(),
 }));
 
-vi.mock("../../../shared/ui/Popover", () => ({
+vi.mock("../../../shared/ui/Popover", async () => ({
+  ...(await vi.importActual<typeof import("../../../shared/ui/Popover")>("../../../shared/ui/Popover")),
+  popupListClassName: "shared-popup-list",
   Popover: ({
     children,
     role,
@@ -453,7 +455,7 @@ describe("model picker", () => {
     expect(effortTrigger.querySelector("svg")).not.toBeNull();
     await act(async () => effortTrigger.click());
     const effortMenu = container.querySelector<HTMLElement>(
-      'button[role="combobox"][aria-label="Reasoning: High"]',
+      '[role="listbox"][aria-label="Reasoning"]',
     )!;
     expect(effortMenu).not.toBeNull();
     await keyDown(effortMenu, "ArrowUp");
@@ -1012,13 +1014,13 @@ describe("model picker", () => {
     // The composer can retain focus after opening its toolbar menu. Recent
     // model navigation still needs to own these keys in that state.
     trigger.focus();
-    expect(grokModel.dataset.buttonSelected).toBe("true");
+    expect(grokModel.dataset.active).toBe("true");
     await keyDown(trigger, "ArrowUp");
-    expect(claudeModel.dataset.buttonSelected).toBe("true");
+    expect(claudeModel.dataset.active).toBe("true");
     await keyDown(trigger, "ArrowDown");
-    expect(grokModel.dataset.buttonSelected).toBe("true");
+    expect(grokModel.dataset.active).toBe("true");
     await keyDown(trigger, "ArrowDown");
-    expect(cursorModel.dataset.buttonSelected).toBe("true");
+    expect(cursorModel.dataset.active).toBe("true");
 
     await keyDown(trigger, "Enter");
     expect(onChange).toHaveBeenCalledWith("cursor", "cursor:composer-2.5");

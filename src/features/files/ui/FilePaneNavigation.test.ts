@@ -111,15 +111,16 @@ describe("file pane source navigation", () => {
     const view = await render("/repo/navigation.md", 2);
     await act(async () => vi.waitFor(() => expect(view.state.selection.main.head).toBe(12)));
     expect(
-      container.querySelector('[aria-label="Markdown view"] [role="radio"][aria-checked="true"]')
-        ?.textContent,
+      container
+        .querySelector('[aria-label="Markdown view"] [role="tab"][aria-selected="true"]')
+        ?.getAttribute("aria-label"),
     ).toBe("Source");
     expect(view.state.doc.toString()).toBe("first line\nsecond line\nthird line");
-    const preview = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
-      (tab) => tab.textContent === "Preview",
+    const preview = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+      (tab) => tab.getAttribute("aria-label") === "Preview",
     )!;
     await act(async () => preview.click());
-    expect(preview.getAttribute("aria-checked")).toBe("true");
+    expect(preview.getAttribute("aria-selected")).toBe("true");
   });
 
   it("clamps a stale source location to the last line instead of waiting forever", async () => {

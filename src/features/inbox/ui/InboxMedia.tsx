@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
@@ -79,18 +80,20 @@ export function InboxMedia({ src, alt }: Props) {
 
   const label = alt?.trim() || t("Image");
   return (
-    <img
-      src={state.url}
-      alt={alt ?? ""}
-      title={label}
-      draggable={false}
-      className="inbox-media my-2 inline-block max-h-[28rem] w-full max-w-xl cursor-zoom-in rounded-(--ui-radius-card) border border-(--ui-card-border) bg-transparent object-contain"
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        openUrlSafely(src);
-      }}
-    />
+    <Tooltip label={label} asChild>
+      <img
+        src={state.url}
+        alt={alt ?? ""}
+
+        draggable={false}
+        className="inbox-media my-2 inline-block max-h-[28rem] w-full max-w-xl cursor-zoom-in rounded-(--ui-radius-card) border border-(--ui-card-border) bg-transparent object-contain"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openUrlSafely(src);
+        }}
+      />
+    </Tooltip>
   );
 }
 

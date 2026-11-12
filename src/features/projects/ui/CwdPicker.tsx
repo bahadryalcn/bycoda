@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { motionAttributes } from "../../../shared/ui/Motion";
@@ -146,9 +147,12 @@ export function CwdPicker({
         kind: "content",
         id: "none",
         node: (
-          <Text as="p" size="secondary" tone="secondary" className="px-2.5 py-2">
-            {t("No other projects")}
-          </Text>
+          <EmptyState
+            size="inline"
+            kind="empty"
+            className="px-2.5 py-2"
+            description={t("No other projects")}
+          />
         ),
       });
     items.push(...previewRecents.map(projectItem));

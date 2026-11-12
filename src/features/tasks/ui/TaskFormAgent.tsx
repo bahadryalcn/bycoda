@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import "./task-form.css";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -60,7 +61,11 @@ export function TaskFormAgent({
               leading="inherit"
               className="task-form-summary-hint"
             >
-              {resolveModel(draft.harness, draft.model).name}
+              <ModelLabel
+                model={draft.model}
+                harness={draft.harness}
+                name={resolveModel(draft.harness, draft.model).name}
+              />
             </Text>
           )}
         </>

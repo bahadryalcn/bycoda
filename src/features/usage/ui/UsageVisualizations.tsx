@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -16,6 +17,7 @@ import {
   usageTotals,
   type UsageBucket,
   type UsageBreakdown,
+  type UsageDimension,
   type UsageMetric,
   type UsageResolution,
   type UsageSample,
@@ -23,6 +25,7 @@ import {
 } from "../model/usageAnalytics";
 import { usageChartColor } from "../model/usageColors";
 import { UsageProviderIdentity, usageProviderLabel } from "./UsageProviderIdentity";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import "./UsageVisualizations.css";
 import {
   formatBucket,
@@ -40,6 +43,14 @@ export function usageLabel(label: string): string {
   return ENGLISH_USAGE_LABELS.includes(label) ? t(label) : label;
 }
 
+/** A chart series name with its icon: the provider's, or the model's when the series are models. */
+function SeriesIdentity({ item, dimension }: { item: UsageBreakdown; dimension?: UsageDimension }) {
+  const label = usageProviderLabel(usageLabel(item.label));
+  if (dimension === "model")
+    return <ModelLabel model={item.key} harness={item.provider} name={label} />;
+  return <UsageProviderIdentity provider={item.key} label={label} />;
+}
+
 export function UsageTrend({
   buckets,
   series: allSeries,
@@ -48,6 +59,7 @@ export function UsageTrend({
   percent,
   onSelect,
   colors,
+  dimension,
 }: {
   buckets: UsageBucket[];
   series: UsageBreakdown[];
@@ -56,6 +68,8 @@ export function UsageTrend({
   percent: boolean;
   onSelect: (window: UsageWindow) => void;
   colors: Colors;
+  /** What the series are; models get the model icon in the legend. */
+  dimension?: UsageDimension;
 }) {
   useLocale();
   const [active, setActive] = useState<string | null>(null);
@@ -133,12 +147,7 @@ export function UsageTrend({
             <p key={item.key}>
               <Checkbox
                 className="min-w-0 items-center"
-                label={
-                  <UsageProviderIdentity
-                    provider={item.key}
-                    label={usageProviderLabel(usageLabel(item.label))}
-                  />
-                }
+                label={<SeriesIdentity item={item} dimension={dimension} />}
                 checked={singleSeries === null || singleSeries.has(item.key)}
                 onChange={(event) => {
                   const checked = event.currentTarget.checked;
@@ -174,10 +183,7 @@ export function UsageTrend({
                   )
                 }
               >
-                <UsageProviderIdentity
-                  provider={item.key}
-                  label={usageProviderLabel(usageLabel(item.label))}
-                />
+                <SeriesIdentity item={item} dimension={dimension} />
               </Button>
             ))}
           </div>
@@ -337,9 +343,12 @@ export function Contribution({
         ))}
       </div>
       {!rows.length && (
-        <Text as="p" leading="inherit" className="usage-muted">
-          {t("No records")}
-        </Text>
+        <EmptyState
+          size="inline"
+          kind="empty"
+          className="usage-muted"
+          description={t("No records")}
+        />
       )}
       {rows.length > 5 && (
         <Text as="p" leading="inherit" className="usage-muted">
@@ -648,10 +657,8 @@ export function TimeDistribution({
                                 ])}
                                 className="usage-hour-detail"
                               >
-                                <UsageProviderIdentity provider={sample.provider} />
-                                <span>
-                                  {sample.model} · {usageLabel(sample.projectLabel)}
-                                </span>
+                                <ModelLabel model={sample.model} harness={sample.provider} />
+                                <span>· {usageLabel(sample.projectLabel)}</span>
                                 <strong>
                                   {metric === "cost" && !sample.priced
                                     ? t("Unavailable")

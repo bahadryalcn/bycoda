@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
@@ -148,7 +149,11 @@ export function AssistantNotificationRecovery({
         </div>
         {error ? <InlineError>{error}</InlineError> : null}
         {selected && !busy && !error && rows.length === 0 ? (
-          <p>{t("No pending task notifications for this project.")}</p>
+          <EmptyState
+            size="inline"
+            kind="empty"
+            description={t("No pending task notifications for this project.")}
+          />
         ) : null}
         {rows.map((row) => (
           <div key={row.notificationId} className={rt.recoveryRow}>

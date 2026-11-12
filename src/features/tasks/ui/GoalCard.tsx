@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
@@ -8,7 +9,7 @@ import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { MessageSquare, Pencil, Sparkles, Square, Trash2 } from "../../../shared/ui/icons";
-import { Meter } from "../../../shared/ui/Meter";
+import { Progress } from "../../../shared/ui/Progress";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { type BoardGoal } from "../model/goalClient";
 import { goalProgress } from "../model/hostGoals";
@@ -78,9 +79,11 @@ export function GoalCard({
         </span>
         <div className="goal-card-main">
           <div className="goal-card-title-row">
-            <Heading size="item" title={goal.prompt} className="goal-card-title" truncate>
-              {goal.title}
-            </Heading>
+            <Tooltip label={goal.prompt} asChild>
+              <Heading size="item" className="goal-card-title" truncate>
+                {goal.title}
+              </Heading>
+            </Tooltip>
             <GoalStatusBadge status={goal.status} />
           </div>
           <Text
@@ -92,8 +95,9 @@ export function GoalCard({
           >
             {progress.total > 0 ? (
               <span className="goal-card-progress">
-                <Meter
-                  label={t("Goal progress")}
+                <Progress
+                  compact
+                  aria-label={t("Goal progress")}
                   value={progress.done}
                   max={progress.total}
                   tone={

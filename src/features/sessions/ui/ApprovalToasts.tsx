@@ -13,9 +13,9 @@ import { Sheet } from "../../../shared/ui/Sheet";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Badge } from "../../../shared/ui/Badge";
-import { ToastSlot, useAutoDismiss } from "../../../shared/ui/ToastRegion";
+import { ToastCard, ToastSlot, useAutoDismiss } from "../../../shared/ui/ToastRegion";
 import { useT } from "../../../shared/i18n";
-import { Bell, BellOff, CircleAlert, Settings, X } from "../../../shared/ui/icons";
+import { Bell, BellOff, Settings } from "../../../shared/ui/icons";
 import {
   Fragment,
   useEffect,
@@ -531,34 +531,14 @@ export function ApprovalToasts({
 
 function LockedNotice({ onDismiss }: { onDismiss?: () => void }) {
   const t = useT();
-  const surface = useRef<HTMLElement>(null);
-  useAutoDismiss(surface, {
-    durationMs: onDismiss ? POPUP_DURATION : null,
-    onExpire: () => onDismiss?.(),
-  });
   return (
-    <article
-      ref={surface}
-      className="approval-toast pointer-events-auto flex items-center gap-2 rounded-(--ui-radius-popup) border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-3.5 py-3 shadow-(--ui-elevation-floating)"
-      role="status"
-    >
-      <CircleAlert className="icon-sm shrink-0" tone="warning" strokeWidth={1.75} />
-      <Text size="secondary" tone="neutral" className="flex-1">
-        {t(LOCKED_NOTIFICATION_TEXT)}
-      </Text>
-      {onDismiss ? (
-        <Button
-          iconOnly
-          label={t("Dismiss notice")}
-          variant="ghost"
-          type="button"
-          onClick={onDismiss}
-          aria-label={t("Dismiss notice")}
-        >
-          <X className="icon-sm" />
-        </Button>
-      ) : null}
-    </article>
+    <ToastCard
+      className="approval-toast"
+      tone="warning"
+      message={t(LOCKED_NOTIFICATION_TEXT)}
+      durationMs={onDismiss ? POPUP_DURATION : null}
+      onDismiss={onDismiss}
+    />
   );
 }
 

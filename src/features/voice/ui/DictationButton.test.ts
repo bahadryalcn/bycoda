@@ -225,3 +225,21 @@ it("chooses the dictation language from the composer and disables options while 
   expect(mock.args[0]).toBe("tr");
   expect(options().disabled).toBe(true);
 });
+
+it("joins the microphone and its options in one group and marks each recognizer", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true });
+  await render();
+  const group = element.querySelector('[role="group"][data-button-group="joined"]')!;
+  expect(group.getAttribute("aria-label")).toBe("Dictation");
+  expect(
+    [...group.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
+  ).toEqual(["Dictate", "Dictation options"]);
+  const item = (name: string) =>
+    [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((row) =>
+      row.textContent?.includes(name),
+    )!;
+  await act(async () => group.querySelectorAll("button")[1].click());
+  await act(async () => item("Dictation recognition").click());
+  for (const name of ["This computer", "OpenAI", "Grok", "OpenRouter"])
+    expect(item(name).querySelector("svg, img"), name).not.toBeNull();
+});

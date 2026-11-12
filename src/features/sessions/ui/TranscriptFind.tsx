@@ -18,7 +18,7 @@ import { findTranscriptBlocks } from "../model/transcriptFind";
 import { peekTranscriptJump, subscribeTranscriptJump } from "../model/transcriptJump";
 import { keybindingPressed } from "../../settings/public/settings";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
-import type { ExpandingButtonGroupItem } from "../../../shared/ui/ExpandingButtonGroup";
+import type { ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
 
 type Props = {
   blocks: Block[];

@@ -1,4 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
+import { HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { useMemo, type ReactNode } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
@@ -208,9 +210,10 @@ export function CrewWorkSessions({
                 disabled={!ids.worker || !canOpen || pending}
                 loading={pendingAction === `open:worker:${task.id}`}
                 title={task.title}
-                details={[`${task.harness} · ${task.model}`, assignment?.reason].filter(
-                  (value): value is string => !!value,
-                )}
+                details={[
+                  `${HARNESS_TITLE[task.harness]} · ${modelDisplayName(task.model, task.harness)}`,
+                  assignment?.reason,
+                ].filter((value): value is string => !!value)}
                 onClick={() => ids.worker && onOpen(ids.worker, `worker:${task.id}`)}
               />
               {ids.review ? (

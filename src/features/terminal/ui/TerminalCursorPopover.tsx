@@ -1,3 +1,4 @@
+/** Different job: Cursor-anchored terminal overlay preserves terminal input and delegates its frame to Popover. */
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { Popover } from "../../../shared/ui/Popover";

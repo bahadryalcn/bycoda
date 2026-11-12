@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
@@ -49,15 +50,11 @@ export function StewardRow({
       <div className="task-ops-row-text">
         <div className="task-ops-title-line">
           <Bot className="icon-sm shrink-0" tone="secondary" />
-          <Heading
-            size="section"
-            level={3}
-            leading="inherit"
-            truncate
-            title={steward.focus || undefined}
-          >
-            {stewardProjectName(steward)}
-          </Heading>
+          <Tooltip label={steward.focus || undefined} asChild>
+            <Heading size="section" level={3} leading="inherit" truncate>
+              {stewardProjectName(steward)}
+            </Heading>
+          </Tooltip>
           {!steward.enabled ? <Badge size="xs">{t("Paused")}</Badge> : null}
         </div>
         <Text as="p" size="caption" tone="secondary" leading="inherit" className="task-ops-caption">

@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { ClampText } from "../../../../shared/ui/ClampText";
 import { Text } from "../../../../shared/ui/Text";
@@ -185,15 +186,12 @@ export function ContentList({
           })}
         </ul>
       ) : (
-        <Text
-          as="p"
-          size="caption"
-          tone="muted"
-          leading="inherit"
+        <EmptyState
+          size="inline"
+          kind="filtered"
           className="content-platform-note"
-        >
-          {t("No posts match these filters.")}
-        </Text>
+          description={t("No posts match these filters.")}
+        />
       )}
       {programs.length ? (
         <section className="content-programs" aria-label={t("Repeating programs")}>

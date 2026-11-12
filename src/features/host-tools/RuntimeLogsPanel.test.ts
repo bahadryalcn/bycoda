@@ -439,7 +439,7 @@ it("starts independent URL monitors explicitly and displays their target and sto
 it("filters the unified retained timeline without sending view filters to cursor reads", async () => {
   await mount();
   expect(rows()).toHaveLength(3);
-  expect(container.querySelector(".runtime-log-count")?.textContent).toBe("×2");
+  expect(container.querySelector(".runtime-log-count")?.textContent).toBe("2");
   await act(async () => button("Filters").click());
   await act(async () =>
     [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')]

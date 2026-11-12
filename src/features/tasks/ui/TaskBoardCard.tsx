@@ -2,7 +2,7 @@ import { ClampText } from "../../../shared/ui/ClampText";
 import { Text } from "../../../shared/ui/Text";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { Heading } from "../../../shared/ui/Heading";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -121,10 +121,12 @@ function TaskCardBody({
           </Badge>
         ) : null}
         {task.source === "steward" ? (
-          <Badge data-task-suggested title={t("Suggested by a project steward")} tone="info">
-            <Bot className="icon-xs shrink-0" strokeWidth={1.75} />
-            {t("Suggested")}
-          </Badge>
+          <Tooltip label={t("Suggested by a project steward")} asChild>
+            <Badge data-task-suggested tone="info">
+              <Bot className="icon-xs shrink-0" strokeWidth={1.75} />
+              {t("Suggested")}
+            </Badge>
+          </Tooltip>
         ) : null}
       </>
     ) : null;
@@ -144,33 +146,37 @@ function TaskCardBody({
       className="task-board-card cursor-pointer"
     >
       {goal ? (
-        <Text
-          as="p"
-          tone="muted"
-          size="micro"
-          leading="inherit"
-          data-task-goal
-          title={t("Part of the goal “{p0}”", { p0: goal })}
-          className="task-card-goal"
-        >
-          <Sparkles className="icon-xs shrink-0" strokeWidth={1.75} />
-          <Text truncate size="inherit" tone="inherit" className="min-w-0">
-            {goal}
+        <Tooltip label={t("Part of the goal “{p0}”", { p0: goal })} asChild>
+          <Text
+            as="p"
+            tone="muted"
+            size="micro"
+            leading="inherit"
+            data-task-goal
+
+            className="task-card-goal"
+          >
+            <Sparkles className="icon-xs shrink-0" strokeWidth={1.75} />
+            <Text truncate size="inherit" tone="inherit" className="min-w-0">
+              {goal}
+            </Text>
           </Text>
-        </Text>
+        </Tooltip>
       ) : null}
-      <Heading size="item" lines={2} title={description} className="task-card-title">
-        {actions.pending ? (
-          <Spinner size="xs" label={t("Loading…")} className="mr-1 inline-block" />
-        ) : null}
-        {task.title}
-        <GripVertical
-          aria-hidden="true"
-          tone="muted"
-          {...motionAttributes({ transition: "opacity" }, "task-drag-grip icon-xs")}
-          strokeWidth={1.75}
-        />
-      </Heading>
+      <Tooltip label={description} asChild>
+        <Heading size="item" lines={2} className="task-card-title">
+          {actions.pending ? (
+            <Spinner size="xs" label={t("Loading…")} className="mr-1 inline-block" />
+          ) : null}
+          {task.title}
+          <GripVertical
+            aria-hidden="true"
+            tone="muted"
+            {...motionAttributes({ transition: "opacity" }, "task-drag-grip icon-xs")}
+            strokeWidth={1.75}
+          />
+        </Heading>
+      </Tooltip>
       {planning ? (
         <Text
           as="p"

@@ -1,6 +1,6 @@
+import { FailureState } from "../../../shared/ui/FailureState";
 import { Text } from "../../../shared/ui/Text";
-import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
-import { EmptyState } from "../../../shared/ui/EmptyState";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState } from "react";
 import { gitConflictStages, type GitConflictStages } from "../../../platform/tauri/fs";
@@ -96,20 +96,18 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
       title={title}
       onClose={onClose}
       toolbar={
-        <Tabs<CompareId> value={pair} onValueChange={setPair} panels="none">
-          <TabList label={t("Versions to compare")}>
-            {comparisons.map((entry) => (
-              <Tab
-                key={entry.id}
-                value={entry.id}
-                disabled={!!entry.unavailable}
-                disabledReason={entry.unavailable}
-              >
-                {entry.label}
-              </Tab>
-            ))}
-          </TabList>
-        </Tabs>
+        <SegmentedControl
+          size="sm"
+          label={t("Versions to compare")}
+          value={pair}
+          onValueChange={(value) => setPair(value as CompareId)}
+          options={comparisons.map((entry) => ({
+            value: entry.id,
+            label: entry.label,
+            disabled: !!entry.unavailable,
+            tooltip: entry.unavailable,
+          }))}
+        />
       }
     >
       {load.status === "loading" ? (
@@ -118,8 +116,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
         </div>
       ) : load.status === "error" ? (
         <div className="grid flex-1 place-items-center p-6">
-          <EmptyState
-            kind="unavailable"
+          <FailureState
             context="panel"
             title={t("Couldn’t load the versions")}
             description={load.message}

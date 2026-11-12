@@ -70,7 +70,12 @@ describe("DocumentImage", () => {
     const image = container.querySelector("img")!;
     expect(image.getAttribute("src")).toBe("blob:test/1");
     expect(image.getAttribute("alt")).toBe("Hero");
-    expect(image.getAttribute("title")).toBe("Upstream");
+    expect(image.hasAttribute("title")).toBe(false);
+    await act(async () => {
+      image.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Upstream");
     expect(image.getAttribute("width")).toBe("600");
     expect(image.getAttribute("align")).toBe("right");
     expect(image.style.maxInlineSize).toBe("100%");

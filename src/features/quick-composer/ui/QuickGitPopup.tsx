@@ -1,12 +1,16 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
+/** Different job: OS-window root owns native request lifecycle; shared native frame owns popup appearance. */
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
-import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
+import {
+  NativePopupHost,
+  PopupBackdrop,
+  useNativePopupFrame,
+} from "../../../shared/ui/NativePopupHost";
 import { BranchPicker } from "../../source-control/ui/BranchPicker";
 import {
   seedProjectBranches,
@@ -16,6 +20,7 @@ import { WorkspacePicker } from "../../workspace/ui/WorkspacePicker";
 import { QUICK_GIT_REQUEST, type QuickGitRequest } from "../model/quickGitPopup";
 import type { QuickWorkspace } from "../model/quickWorkspace";
 
+/** Native-window transport shell; the shared popup frame and domain pickers own its presentation. */
 export function QuickGitPopup({ onShown }: { onShown: () => void }) {
   useLocale();
   const [request, setRequest] = useState<QuickGitRequest | null>(null);
@@ -57,20 +62,14 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
     };
   }, [onShown]);
 
-  useLayoutEffect(() => {
-    if (!host || !request) return;
-    let lastHeight = 0;
-    const fit = () => {
-      const height = Math.ceil(host.getBoundingClientRect().height);
-      if (height <= 2 || height === lastHeight) return;
-      lastHeight = height;
+  const { frameProps, contentClassName } = useNativePopupFrame({
+    ref: setHost,
+    onContentSize: ({ height }) => {
+      if (!request || height <= 2) return;
+      // Native transport currently accepts height only; width support belongs to its owner.
       void invoke("quick_git_fit", { id: request.id, height }).catch(() => undefined);
-    };
-    const observer = new ResizeObserver(fit);
-    observer.observe(host);
-    fit();
-    return () => observer.disconnect();
-  }, [host, request]);
+    },
+  });
 
   useEffect(() => {
     const focus = () =>
@@ -95,23 +94,17 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
   }, []);
 
   return (
-    <Text
-      as="div"
-      size="inherit"
-      tone="primary"
-      ref={(element: HTMLDivElement | null) => setHost(element)}
-      {...surfaceAttributes(
-        { variant: "translucent" },
-        "max-h-[520px] overflow-y-auto rounded-(--ui-radius-popup) border border-stroke",
-      )}
-    >
-      {error ? <InlineError className="px-3 py-2">{error}</InlineError> : null}
-      {host && request ? (
-        <NativePopupHost value={host}>
-          <QuickGitPopupPicker key={request.id} request={request} onFinish={finish} />
-        </NativePopupHost>
-      ) : null}
-    </Text>
+    <div {...frameProps}>
+      <PopupBackdrop />
+      <div className={`${contentClassName} max-h-[520px] overflow-y-auto`}>
+        {error ? <InlineError className="px-3 py-2">{error}</InlineError> : null}
+        {host && request ? (
+          <NativePopupHost value={host}>
+            <QuickGitPopupPicker key={request.id} request={request} onFinish={finish} />
+          </NativePopupHost>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

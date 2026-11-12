@@ -115,3 +115,34 @@ it("labels the failure with a visible title and uses a heading level that fits i
   await render({ title: "App failed", fullScreen: true });
   expect(container.querySelector("h1")?.textContent).toBe("App failed");
 });
+
+it("keeps an unavailable region distinct from empty data, without invented diagnostics", async () => {
+  await act(async () =>
+    root.render(createElement(FailureState, { context: "panel", description: "Host unavailable" })),
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host unavailable");
+  expect(container.querySelector('[data-context="panel"]')).not.toBeNull();
+  expect(container.querySelector('[data-kind="unavailable"]')).not.toBeNull();
+  expect(container.querySelector("button")).toBeNull();
+});
+
+it("uses InlineError for inline failure and guards an asynchronous retry", async () => {
+  let finish!: () => void;
+  const onRetry = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () =>
+    root.render(
+      createElement(FailureState, { size: "inline", description: "Host unavailable", onRetry }),
+    ),
+  );
+  expect(container.querySelector('[data-tone="danger"]')).not.toBeNull();
+  await act(async () => button("Retry").click());
+  await act(async () => button("Retry").click());
+  expect(onRetry).toHaveBeenCalledOnce();
+  await act(async () => finish());
+  expect(button("Retry").disabled).toBe(false);
+});

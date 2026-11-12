@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
@@ -54,9 +55,12 @@ export function TrashPanel({
           {t("Deleted records are kept for seven days. Restoring a job does not restart it.")}
         </Text>
         {!entries.length && (
-          <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.empty}>
-            {t("Nothing deleted recently")}
-          </Text>
+          <EmptyState
+            size="inline"
+            kind="empty"
+            className={styles.empty}
+            description={t("Nothing deleted recently")}
+          />
         )}
         {entries.length > 0 && (
           <ul {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.list)}>

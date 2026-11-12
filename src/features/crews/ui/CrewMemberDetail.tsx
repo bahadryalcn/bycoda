@@ -1,11 +1,12 @@
 import { Text } from "../../../shared/ui/Text";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Surface } from "../../../shared/ui/Surface";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import type { CrewAgent, CrewPolicy, CrewRole } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
 import { libraryVersionPatch, memberLink } from "../model/crewLink";
@@ -121,7 +122,8 @@ export function CrewMemberDetail({
             </Button>
           ) : null}
           {updatesProfile ? null : (
-            <SegmentedControl
+            <RadioGroup
+              variant="inline"
               label={t("Library availability")}
               value={scope}
               options={[
@@ -146,7 +148,8 @@ export function CrewMemberDetail({
         <Text size="body" tone="inherit" weight="medium">
           {t("Responsibility in the crew")}
         </Text>
-        <SegmentedControl
+        <RadioGroup
+          variant="inline"
           label={t("Responsibility in the crew")}
           value={agent.role}
           options={(["coordinator", "specialist", "reviewer", "advisor"] as const).map((role) => ({
@@ -215,7 +218,7 @@ export function CrewMemberDetail({
               </Button>
               {inspection?.map((c) => (
                 <Text key={c.model} as="p">
-                  {c.model} · {t("Image generation")}:{" "}
+                  <ModelLabel model={c.model} /> · {t("Image generation")}:{" "}
                   {t(
                     c.imageGeneration === true
                       ? "Available"

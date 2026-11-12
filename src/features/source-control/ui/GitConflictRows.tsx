@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
@@ -109,16 +110,17 @@ export function GitConflictRows({
                 expanded={menu?.row.relative === row.relative}
                 onOpen={(anchor) => setMenu({ row, anchor })}
               />
-              <Text
-                title={info.title}
-                aria-label={info.label}
-                size="micro"
-                tone="danger"
-                weight="medium"
-                className="w-5 shrink-0 text-right font-mono"
-              >
-                {info.letter}
-              </Text>
+              <Tooltip label={info.title} asChild>
+                <Text
+                  aria-label={info.label}
+                  size="micro"
+                  tone="danger"
+                  weight="medium"
+                  className="w-5 shrink-0 text-right font-mono"
+                >
+                  {info.letter}
+                </Text>
+              </Tooltip>
             </ActionHost>
           </li>
         );

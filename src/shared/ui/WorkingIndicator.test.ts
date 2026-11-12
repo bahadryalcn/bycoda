@@ -103,3 +103,18 @@ it("owns its size variant and keeps consumer classes for placement only", () => 
   expect(element.getAttribute("data-size")).toBe("md");
   expect(element.classList.contains("ml-1")).toBe(true);
 });
+
+it("uses one agent-work implementation for labels and compact marks", () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  mounted.push(root);
+  act(() =>
+    root.render(createElement(WorkingIndicator, { children: "Thinking…", label: "Agent working" })),
+  );
+  expect(container.querySelectorAll('[data-size="xs"]')).toHaveLength(1);
+  expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
+  expect(container.textContent).toContain("Thinking…");
+  act(() => root.render(createElement(WorkingIndicator, { children: "Running", glyph: false })));
+  expect(container.querySelector('[data-size="xs"]')).toBeNull();
+  expect(container.textContent).toBe("Running");
+});

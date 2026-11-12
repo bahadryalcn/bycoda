@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -1253,14 +1254,15 @@ function StandardCodeMirrorEditor({
           <InlineError className="shrink-0 px-3 py-1">{contextError}</InlineError>
         ) : null}
         {blameOn && blameError ? (
-          <p
-            role="status"
-            className="shrink-0 truncate px-3 py-1 text-ui-caption text-(--ui-text-muted)"
-            title={blameError}
-          >
-            {t("Blame unavailable: ")}
-            {blameError}
-          </p>
+          <Tooltip label={blameError} asChild>
+            <p
+              role="status"
+              className="shrink-0 truncate px-3 py-1 text-ui-caption text-(--ui-text-muted)"
+            >
+              {t("Blame unavailable: ")}
+              {blameError}
+            </p>
+          </Tooltip>
         ) : null}
         <ConflictLayoutFrame path={path} sources={conflictSources}>
           <div

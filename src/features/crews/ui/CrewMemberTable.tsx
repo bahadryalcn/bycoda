@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { useMemo, type ReactNode } from "react";
 import { Heading } from "../../../shared/ui/Heading";
@@ -359,7 +360,7 @@ export function CrewMemberTable({
                 })}
               </ul>
             ) : all.length ? (
-              <Text as="p">{t("No matching members.")}</Text>
+              <EmptyState size="inline" kind="filtered" description={t("No matching members.")} />
             ) : (
               <Button
                 variant="secondary"

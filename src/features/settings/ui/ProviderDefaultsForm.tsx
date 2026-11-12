@@ -1,4 +1,4 @@
-import { HarnessIcon } from "../../sessions/public/HarnessIcon";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { RUNTIME_MODE_ICONS } from "../../sessions/public/runtimeModeOptions";
 import { WandSparkles } from "../../../shared/ui/icons";
@@ -165,7 +165,7 @@ export function ProviderDefaultsForm({
           label: t(option.label),
           icon: (
             <Text size="caption" tone="accent">
-              {"▁▂▄▆█"[Math.round((index * 4) / Math.max(1, effort.options.length - 1))]}
+              {"▁▂▃▄▅▆▇█"[Math.round((index * 7) / Math.max(1, effort.options.length - 1))]}
             </Text>
           ),
         })),
@@ -229,8 +229,8 @@ export function ProviderDefaultsForm({
             options={models.map((item) => ({
               value: item.id,
               label: item.name,
-              description: item.id,
-              icon: <HarnessIcon harness={harness} className="icon-sm" />,
+              keywords: item.id,
+              icon: <ModelLabel model={item.id} harness={harness} iconOnly />,
             }))}
           />
         </Row>
@@ -257,12 +257,7 @@ export function ProviderDefaultsForm({
                 options={effortOptions.map((option) => ({
                   ...option,
                   tooltip: option.label,
-                  label:
-                    option.value === ""
-                      ? t("Auto")
-                      : option.value === "xhigh"
-                        ? t("X-high")
-                        : option.label,
+                  iconOnly: true,
                 }))}
                 onValueChange={(next) =>
                   onSessionDefaultsChange({ ...scopeDefaults, effort: next || undefined })

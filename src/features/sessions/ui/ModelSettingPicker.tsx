@@ -2,8 +2,13 @@ import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { SearchInput } from "../../../shared/ui/SearchInput";
-import { ArrowLeft, Check } from "../../../shared/ui/icons";
+import {
+  PickerFooter,
+  PickerList,
+  PopoverSearchHeader,
+  usePickerList,
+} from "../../../shared/ui/picker";
+import { ArrowLeft } from "../../../shared/ui/icons";
 import {
   delegationOptionHarness,
   delegationOptionSelected,
@@ -17,6 +22,9 @@ import { DelegationOptionIcon } from "./DelegationSettings";
 /**
  * A long choice (subagents, advisor) given the whole settings column: search on top, options
  * grouped by provider, and for multi-select a footer with Done that stays under the list.
+ * @use Column navigation inside the model panel, built from shared picker primitives.
+ * @avoid Standalone fields: SearchableSelect.
+ * @replaces The model panel's local choice rows and search header.
  */
 export function ModelSettingPicker({
   setting,
@@ -46,14 +54,40 @@ export function ModelSettingPicker({
   const shown = setting.options.filter(
     (option) => !needle || t(option.label).toLocaleLowerCase().includes(needle),
   );
-  const groups = new Map<string, typeof shown>();
-  for (const option of shown) {
+  const options = shown.map((option) => {
     const harness = delegationOptionHarness(setting, option.value);
-    const key = harness ? HARNESS_TITLE[harness] : "";
-    groups.set(key, [...(groups.get(key) ?? []), option]);
-  }
+    return {
+      value: option.value,
+      title: optionLabel(option),
+      icon: <DelegationOptionIcon setting={setting} value={option.value} />,
+      group: harness ? HARNESS_TITLE[harness] : undefined,
+      disabled,
+    };
+  });
+  const selected = setting.options
+    .filter((option) => delegationOptionSelected(setting, values, option.value))
+    .map((option) => option.value);
+  const choose = (value: string) => {
+    if (disabled) return;
+    onChoose(value);
+    if (!multi) onClose();
+  };
+  const list = usePickerList({
+    options,
+    resetKey: query,
+    ...(multi
+      ? {
+          multiple: true as const,
+          value: selected,
+          onChange: (_values: string[], option: { value: string }) => choose(option.value),
+        }
+      : { value: selected[0] ?? null, onChange: choose }),
+  });
   const picked = setting.options.filter(
-    (option) => option.value && delegationOptionSelected(setting, values, option.value),
+    (option) =>
+      option.value &&
+      option.value !== "auto" &&
+      delegationOptionSelected(setting, values, option.value),
   ).length;
 
   return (
@@ -80,90 +114,30 @@ export function ModelSettingPicker({
           {label}
         </Text>
       </div>
-      <div className="shrink-0 px-1.5 pb-1.5">
-        <SearchInput
-          type="search"
-          appearance="field"
-          autoFocus
-          aria-label={t("Search models")}
-          placeholder={t("Search models")}
-          value={query}
-          onChange={(event) => setQuery(event.currentTarget.value)}
-        />
-      </div>
-      <div
-        role={multi ? "group" : "radiogroup"}
-        aria-label={label}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-none px-1"
-      >
-        {shown.length === 0 ? (
-          <p className="px-1.5 py-2 ui-caption-text">{t("No matching models")}</p>
-        ) : (
-          [...groups].map(([group, options]) => (
-            <div key={group || "none"}>
-              {group ? (
-                <Text
-                  as="div"
-                  size="micro"
-                  weight="medium"
-                  tracking="wide"
-                  className="px-1.5 pt-2 pb-0.5 uppercase"
-                >
-                  {group}
-                </Text>
-              ) : null}
-              {options.map((option) => {
-                const selected = delegationOptionSelected(setting, values, option.value);
-                return (
-                  <Button
-                    key={option.value}
-                    variant="item"
-                    fullWidth
-                    type="button"
-                    role={multi ? "checkbox" : "radio"}
-                    aria-checked={selected}
-                    selected={selected}
-                    disabled={disabled}
-                    className="w-full text-left"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                      onChoose(option.value);
-                      if (!multi) onClose();
-                    }}
-                  >
-                    <DelegationOptionIcon setting={setting} value={option.value} />
-                    <Text
-                      as="span"
-                      size="inherit"
-                      tone="inherit"
-                      weight={selected ? "medium" : undefined}
-                      truncate
-                      className="min-w-0 flex-1"
-                    >
-                      {optionLabel(option)}
-                    </Text>
-                    {selected ? (
-                      <Check className="icon-sm shrink-0" tone="neutral" strokeWidth={2} />
-                    ) : (
-                      <span className="size-3.5 shrink-0" aria-hidden />
-                    )}
-                  </Button>
-                );
-              })}
-            </div>
-          ))
-        )}
-      </div>
+      <PopoverSearchHeader
+        type="search"
+        label={t("Search models")}
+        placeholder={t("Search models")}
+        value={query}
+        onValueChange={setQuery}
+        {...list.searchProps}
+      />
+      <PickerList
+        label={label}
+        controller={list}
+        density="sm"
+        emptyLabel={t("No matching models")}
+      />
       {multi ? (
         // Stays under the scrolling list, so Done never needs a scroll back up.
-        <div className="flex shrink-0 items-center gap-2 border-t border-(--ui-frosted-divider) px-2 py-1.5">
-          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1 ui-caption-text">
+        <PickerFooter align="between">
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
             {t("{p0} selected", { p0: picked })}
           </Text>
           <Button variant="primary" size="sm" type="button" onClick={onClose}>
             {t("Done")}
           </Button>
-        </div>
+        </PickerFooter>
       ) : null}
     </div>
   );

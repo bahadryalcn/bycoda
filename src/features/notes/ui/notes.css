@@ -170,8 +170,21 @@
 }
 
 .note-detail-tags {
-  flex: 0 1 28rem;
+  /* Fill the row so chips and the tag input stay on one line. */
+  flex: 1 1 20rem;
   min-inline-size: 0;
+}
+
+.note-details-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.note-details-title {
+  padding-block-end: 8px;
+  border-block-end: 1px solid var(--color-stroke);
 }
 
 .note-quick-tags {
@@ -357,8 +370,8 @@
 
 /* Intermediate widths (721-900px): the library and the document share the row.
    The library is capped to a share of the workspace (its saved width is kept and
-   applies again when the window grows) and the title, save state and actions stay
-   on one row so the document starts directly under a two-row header. */
+   applies again when the window grows), the title and actions stay on one row and
+   tags take their own full row so chips do not wrap inside a narrow field. */
 @container notes-workspace (min-width: 721px) and (max-width: 900px) {
   .note-library-sidebar {
     max-inline-size: max(19rem, 40%);
@@ -370,6 +383,7 @@
     flex-wrap: nowrap;
   }
   .note-detail-tags {
-    flex-basis: 8rem;
+    flex-basis: 100%;
+    order: 3;
   }
 }

@@ -1,3 +1,4 @@
+import { FailureState } from "../../../shared/ui/FailureState";
 import { useT } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { TasksEmptyState } from "./TasksEmptyState";
@@ -27,9 +28,9 @@ export function TasksViewEmpty({
   const t = useT();
   if (unreadable)
     return (
-      <EmptyState
+      <FailureState
         context="panel"
-        kind="unavailable"
+
         title={t("Tasks unavailable")}
         description={unreadable}
         onRetry={onRetry}

@@ -45,18 +45,8 @@
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
-  min-block-size: 2rem;
-}
-.task-row-select:hover {
-  background: var(--ui-surface-hover);
 }
 @media (pointer: coarse) {
-  .task-row-select {
-    min-block-size: 2.75rem;
-  }
-  .task-row-select {
-    padding-inline: 0.5rem;
-  }
 }
 
 .task-status-details {

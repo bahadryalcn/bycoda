@@ -1,8 +1,7 @@
+import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
-import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { getPtySuggestions } from "../../../platform/tauri/pty";
 import {
@@ -246,6 +245,19 @@ export function LocalTerminalSuggestions({
     });
     return () => cancelAnimationFrame(frame);
   }, [terminal, explicit]);
+  const list = usePickerList({
+    options: (snapshot?.suggestions ?? []).map((value) => ({ value, title: value })),
+    value: snapshot?.suggestions[selected] ?? null,
+    activeValue: snapshot?.suggestions[selected] ?? null,
+    onActiveValueChange: (value) => {
+      const index = snapshot?.suggestions.indexOf(value ?? "") ?? -1;
+      if (index >= 0) {
+        choice.current = index;
+        setSelected(index);
+      }
+    },
+    onChange: accept,
+  });
   if (!snapshot) return null;
   const value = snapshot.suggestions[selected] ?? snapshot.suggestions[0];
   return (
@@ -253,26 +265,13 @@ export function LocalTerminalSuggestions({
       <TerminalGhostText terminal={terminal} suffix={value.slice(snapshot.prefix.length)} />
       {explicit ? (
         <TerminalCursorPopover terminal={terminal} onDismiss={dismiss}>
-          <div role="listbox" aria-label={t("Command suggestions")} className={styles.list}>
-            {snapshot.suggestions.map((value, index) => (
-              <Button
-                key={value}
-                variant="item"
-                role="option"
-                tabIndex={-1}
-                aria-selected={index === selected}
-                className={styles.option}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => accept(value)}
-              >
-                <OverflowTooltip label={value}>
-                  <Text as="span" size="inherit" tone="inherit" truncate className={styles.text}>
-                    {value}
-                  </Text>
-                </OverflowTooltip>
-              </Button>
-            ))}
-          </div>
+          <PickerList
+            label={t("Command suggestions")}
+            controller={list}
+            checkPlacement="none"
+            pointerHighlight="movement"
+            className={styles.list}
+          />
           <Text as="div" size="caption" tone="muted" className={styles.hint}>
             {t("Tab to complete. Enter to insert. Run with Enter in the terminal.")}
           </Text>

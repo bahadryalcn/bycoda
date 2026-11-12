@@ -29,6 +29,8 @@ export interface SkeletonProps {
   className?: string;
   /** Content to reveal once loading finishes. With children, the placeholder crossfades into them. */
   children?: ReactNode;
+  /** Decorative content-shaped placeholders; the primitive owns the busy announcement. */
+  placeholder?: ReactNode;
   /** Keeps the placeholder visible while true. Only used together with children. */
   loading?: boolean;
   "aria-hidden"?: AriaAttributes["aria-hidden"];
@@ -132,6 +134,7 @@ export function Skeleton({
   className,
   children,
   loading = true,
+  placeholder: customPlaceholder,
   "aria-hidden": ariaHidden,
 }: SkeletonProps) {
   const reduce = useReducedMotion();
@@ -143,16 +146,24 @@ export function Skeleton({
       label={label}
       ariaHidden={ariaHidden}
     >
-      {avatar && <span className={styles.avatar} aria-hidden="true" />}
-      <span className={styles.lines} aria-hidden="true">
-        {Array.from({ length: count }, (_, index) => (
-          <span
-            className={styles.line}
-            style={{ "--index": index + (avatar ? 1 : 0) } as CSSProperties}
-            key={index}
-          />
-        ))}
-      </span>
+      {customPlaceholder !== undefined ? (
+        <div className={styles.custom} aria-hidden="true">
+          {customPlaceholder}
+        </div>
+      ) : (
+        <>
+          {avatar && <span className={`${styles.shape} ${styles.avatar}`} aria-hidden="true" />}
+          <span className={styles.lines} aria-hidden="true">
+            {Array.from({ length: count }, (_, index) => (
+              <span
+                className={`${styles.shape} ${styles.line}`}
+                style={{ "--index": index + (avatar ? 1 : 0) } as CSSProperties}
+                key={index}
+              />
+            ))}
+          </span>
+        </>
+      )}
     </SkeletonStatus>
   );
   if (children === undefined) return placeholder(className);

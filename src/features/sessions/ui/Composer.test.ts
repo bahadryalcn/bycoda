@@ -752,9 +752,9 @@ describe("Composer question focus", () => {
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(6);
     expect(list.parentElement?.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
     expect(list.querySelector('[role="option"]')?.className).toContain("bycoda-arc");
-    expect(document.querySelector("[data-mcp-picker]")?.className).toContain(
-      "--ui-surface-floating",
-    );
+    const pickerDialog = document.querySelector("[data-mcp-picker]")?.closest('[role="dialog"]');
+    expect(pickerDialog?.getAttribute("aria-label")).toBe("Choose an MCP server");
+    expect(pickerDialog?.parentElement?.querySelector(".popover-backdrop")).not.toBeNull();
     const searchInput = document.querySelector<HTMLInputElement>(
       '[aria-label="Search MCP servers"]',
     )!;
@@ -1411,6 +1411,47 @@ describe("Composer question focus", () => {
     await act(async () => send.click());
     expect(onSubmit).toHaveBeenLastCalledWith("fix the build", [], {
       intent: "orchestrate",
+      onSendRejected: expect.any(Function),
+    });
+  });
+
+  it("keeps the workspace row but no orchestrator when orchestration is hidden", async () => {
+    const onSubmit = vi.fn(() => true);
+    await act(async () =>
+      root.render(
+        createElement(Composer, {
+          focused: true,
+          harness: "claude",
+          model: "claude-sonnet",
+          runtimeMode: "supervised",
+          executionCwd: "/repo",
+          initialDraft: "/orch",
+          hideProjectPicker: true,
+          hideOrchestrator: true,
+          onFocus: vi.fn(),
+          onCwdChange: vi.fn(),
+          onModelChange: vi.fn(),
+          onRuntimeModeChange: vi.fn(),
+          onSubmit,
+        }),
+      ),
+    );
+    const textarea = document.querySelector("textarea")!;
+    await act(async () => textarea.dispatchEvent(new Event("input", { bubbles: true })));
+    expect(document.querySelector("[data-composer-workspace]")).not.toBeNull();
+    const command = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
+    ).find((button) => button.textContent?.includes("/orchestrator"));
+    expect(command).toBeUndefined();
+    await act(async () => {
+      textarea.value = "/orchestrator fix the build";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click(),
+    );
+    expect(onSubmit).toHaveBeenLastCalledWith("/orchestrator fix the build", [], {
+      intent: "default",
       onSendRejected: expect.any(Function),
     });
   });

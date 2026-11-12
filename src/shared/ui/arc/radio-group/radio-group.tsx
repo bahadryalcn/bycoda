@@ -35,8 +35,9 @@ export type RadioGroupProps = Omit<
   defaultValue?: string;
   onValueChange?: (value: string) => void;
   compact?: boolean;
-  /** `list`: borderless rows with a tight gap, for long option lists inside a card. */
-  variant?: "cards" | "list";
+  /** `list`: borderless rows. `inline`: compact native radios for short form labels;
+   * its legend stays accessible but visually hidden, like SegmentedControl's group label. */
+  variant?: "cards" | "list" | "inline";
 };
 
 // Adapted from Arc's free radio-group: one measured highlight follows native rows.
@@ -153,7 +154,7 @@ export function RadioGroup({
       className={["bycoda-arc", styles.group, className].filter(Boolean).join(" ")}
       disabled={disabled}
       data-compact={compact || undefined}
-      data-variant={variant === "list" ? "list" : undefined}
+      data-variant={variant === "cards" ? undefined : variant}
     >
       <legend id={`${groupId}-legend`} {...optionalTextAttributes(legendText ?? {})}>
         {label}

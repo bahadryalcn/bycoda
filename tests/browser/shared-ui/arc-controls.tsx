@@ -23,8 +23,7 @@ import { SearchableSelect } from "../../../src/shared/ui/SearchableSelect";
 import { SearchInput, SearchInputGroup } from "../../../src/shared/ui/SearchInput";
 import { Combobox } from "../../../src/shared/ui/arc/combobox/combobox";
 import { Search, Copy, Plus } from "../../../src/shared/ui/icons";
-import { ExpandingButtonGroup } from "../../../src/shared/ui/ExpandingButtonGroup";
-import { MorphSelect } from "../../../src/shared/ui/MorphSelect";
+import { ButtonGroup } from "../../../src/shared/ui/ButtonGroup";
 import { Timeline } from "../../../src/shared/ui/Timeline";
 import { JsonViewer } from "../../../src/shared/ui/JsonViewer";
 import { SortableDataTable } from "../../../src/shared/ui/SortableDataTable";
@@ -55,7 +54,8 @@ function AsyncActionGroupFixture() {
   const complete = useRef<((value: boolean) => void) | null>(null);
   return (
     <section aria-label="Async action group" className="my-4 grid gap-2">
-      <ExpandingButtonGroup
+      <ButtonGroup
+        variant="expanding"
         label="Sample note actions"
         confirmDuration={3000}
         items={[
@@ -503,7 +503,11 @@ function Fixture() {
             />
           </Row>
           <Row label="Property choice">
-            <MorphSelect
+            <SearchableSelect
+              variant="pill"
+              hideLabel
+              searchable={false}
+              loopNavigation
               label="Property choice"
               value={choice}
               options={options}

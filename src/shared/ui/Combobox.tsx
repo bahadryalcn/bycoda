@@ -6,7 +6,8 @@ export type { ComboboxProps, ComboboxOption } from "./arc/combobox/combobox";
 
 /**
  * Editable field with a filtered suggestion list. Closed-value behaviour is the default (typed text must resolve to an option); `allowCustomValue` also accepts free text.
- * Select is for a short stable list, SearchableSelect for a long searchable list with no free entry.
+ * VoicePersonaDialog uses free entry for names, forms of address and tone; these are
+ * editable drafts, not a closed set of values. Select and SearchableSelect own closed lists.
  * @group fields
  * @use Free-text entry with suggestions (font names, persona or model ids).
  * @avoid Short stable list: Select. Long searchable list without free entry: SearchableSelect. Multiple free tags: TagInput.

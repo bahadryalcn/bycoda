@@ -2,7 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Modal } from "../../../shared/ui/Modal";
+import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { Badge } from "../../../shared/ui/Badge";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t } from "../../../shared/i18n";
@@ -142,30 +142,22 @@ export function ServerTerminalRestorePreview({
         })}
       </ul>
       {removing ? (
-        <Modal
-          title={t("Remove {p0} saved tabs?", { p0: removing.length })}
-          size="sm"
-          onClose={() => setRemoving(undefined)}
-          footer={
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setRemoving(undefined)}>{t("Cancel")}</Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  for (const id of removing) onRemove(id);
-                  setSelected(new Set());
-                  setRemoving(undefined);
-                }}
-              >
-                {t("Remove selected")}
-              </Button>
-            </div>
-          }
-        >
-          <Text as="p" size="body" tone="inherit">
-            {t("Only saved tab references are removed. Servers and open terminals are kept.")}
-          </Text>
-        </Modal>
+        <ConfirmDialog
+          request={{
+            title: t("Remove {p0} saved tabs?", { p0: removing.length }),
+            message: t(
+              "Only saved tab references are removed. Servers and open terminals are kept.",
+            ),
+            confirmLabel: t("Remove selected"),
+          }}
+          onSettle={(confirmed) => {
+            if (confirmed) {
+              for (const id of removing) onRemove(id);
+              setSelected(new Set());
+            }
+            setRemoving(undefined);
+          }}
+        />
       ) : null}
     </Text>
   );

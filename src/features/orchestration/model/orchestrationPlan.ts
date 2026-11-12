@@ -1,4 +1,5 @@
 import { HARNESSES, type Block, type HarnessId, type Session } from "../../sessions/model/session";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { isEqualOrInside, pathKey } from "../../../shared/lib/paths";
 import { isSessionErrorBlock } from "../../sessions/model/sessionIssue";
 import { isTurnInterruptMessage } from "../../sessions/model/inFlight";
@@ -295,7 +296,7 @@ export function proposalMarkdown(proposal: OrchestrationProposal): string {
     proposal.summary,
     ...proposal.tasks.map(
       (task) =>
-        `## ${task.title}\n${task.harness} · ${proposal.settings.choices.find((choice) => choice.harness === task.harness && choice.model === task.model)?.name ?? task.model}\n${task.prompt}\nFiles: ${task.files.join(", ")}\nDepends on: ${task.dependsOn.join(", ") || "None"}`,
+        `## ${task.title}\n${task.harness} · ${proposal.settings.choices.find((choice) => choice.harness === task.harness && choice.model === task.model)?.name ?? modelDisplayName(task.model, task.harness)}\n${task.prompt}\nFiles: ${task.files.join(", ")}\nDepends on: ${task.dependsOn.join(", ") || "None"}`,
     ),
   ].join("\n\n");
 }

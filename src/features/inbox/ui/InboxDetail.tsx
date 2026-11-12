@@ -6,6 +6,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -14,6 +15,7 @@ import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t, useLocale } from "../../../shared/i18n";
 import { useGithubPrChecks } from "../hooks/useGithubPrChecks";
+import { useJiraWorkingProject } from "../hooks/useJiraWorkingProject";
 import { summarizePrChecks } from "../model/githubPrChecks";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
@@ -165,9 +167,13 @@ export function InboxDetail({
     projects.find((project) => sameProjectPath(project.path, cwd))?.path ??
     projects[0]?.path ??
     cwd;
-  const [startProject, setStartProject] = useState(defaultProject);
-  const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [startProject, setStartProject] = useJiraWorkingProject(
+    item,
+    defaultProject,
+    setStartError,
+  );
+  const [starting, setStarting] = useState(false);
   const chooseStartProject = tracker || ((gitlab || azuredevops) && !item.projectPath);
   const statusMark = inboxStatusMark(item);
   const status = tracker ? item.state || inboxItemStatus(item) : t(statusMark.label);
@@ -237,7 +243,10 @@ export function InboxDetail({
     }
   };
 
-  const postComment = async (body: string) => {
+  const postComment = async (
+    body: string,
+    images?: import("../model/jiraCommentDocument").JiraCommentImage[],
+  ) => {
     if (postingRef.current) throw new Error("Comment already in progress");
     postingRef.current = true;
     setPosting(true);
@@ -246,7 +255,7 @@ export function InboxDetail({
       if (linear) {
         await linearIssueComment(item.id ?? "", body, { parentId: replyTo?.id });
       } else if (jira) {
-        await jiraIssueComment({ id: item.id ?? "", key: jiraKey }, body);
+        await jiraIssueComment({ id: item.id ?? "", key: jiraKey }, body, images);
       } else if (gitlabKind) {
         await gitlabWorkItemComment(item.repo, gitlabKind, item.number, body);
       } else if (azureDevOpsKind) {
@@ -417,8 +426,13 @@ export function InboxDetail({
                       {reviewLabel}
                     </Badge>
                   ) : null}
+                  <BadgeList
+                    label={t("Labels")}
+                    rows={2}
+                    items={inboxLabelItems(item.labels)}
+                    className="min-w-0 max-w-full"
+                  />
                 </Text>
-                <BadgeList label={t("Labels")} rows={2} items={inboxLabelItems(item.labels)} />
                 {!panel && relatedSessions.length > 0 ? (
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
                     <Text
@@ -455,19 +469,20 @@ export function InboxDetail({
                   </div>
                 ) : null}
                 <div
-                  className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-0.5"
+                  className="flex min-w-0 flex-wrap items-center gap-2 pt-0.5"
                   data-inbox-detail-actions
                 >
                   <div
                     role="group"
                     aria-label={t("Agent actions")}
                     data-inbox-actions="agent"
-                    className="flex flex-wrap items-center gap-2"
+                    className="flex min-w-0 flex-wrap items-center gap-2"
                   >
                     {onStart && item.kind !== "pr" ? (
-                      <>
+                      <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
                         <Button
                           variant="primary"
+                          size="md"
                           type="button"
                           disabled={
                             starting ||
@@ -501,21 +516,20 @@ export function InboxDetail({
                           </Text>
                         ) : null}
                         {chooseStartProject ? (
-                          <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <Text size="caption" tone="secondary">
-                              {t("Agent working folder")}
-                            </Text>
-                            <InboxProjectPicker
-                              projects={projects}
-                              value={startProject}
-                              onChange={setStartProject}
-                            />
-                          </div>
+                          <Tooltip label={t("Agent working folder")}>
+                            <div className="min-w-0 max-w-full">
+                              <InboxProjectPicker
+                                projects={projects}
+                                value={startProject}
+                                onChange={setStartProject}
+                              />
+                            </div>
+                          </Tooltip>
                         ) : null}
-                      </>
+                      </div>
                     ) : null}
                     {onDiscuss ? (
-                      <Button variant="secondary" type="button" onClick={onDiscuss}>
+                      <Button variant="secondary" size="md" type="button" onClick={onDiscuss}>
                         <MessageSquare className="icon-sm" strokeWidth={1.75} /> {t("Ask")}
                       </Button>
                     ) : null}
@@ -524,7 +538,7 @@ export function InboxDetail({
                     role="group"
                     aria-label={t("Provider actions")}
                     data-inbox-actions="public"
-                    className="flex flex-wrap items-center gap-2"
+                    className="ms-auto flex min-w-0 flex-wrap items-center gap-2"
                   >
                     {githubKind === "pr" ? (
                       <GithubPrActions
@@ -537,7 +551,8 @@ export function InboxDetail({
                     ) : null}
                     {panel ? null : (
                       <Button
-                        variant="ghost"
+                        variant="secondary"
+                        size="md"
                         type="button"
                         disabled={!item.url}
                         disabledReason={item.url ? undefined : t("No link available")}

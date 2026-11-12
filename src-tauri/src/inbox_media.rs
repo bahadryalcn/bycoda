@@ -55,19 +55,22 @@ struct MediaUrl {
 /// Fetch an issue/PR image or video through the host, as a blob the webview
 /// can render without opening `img-src` / `media-src` to GitHub's CDNs.
 #[tauri::command]
-pub async fn fetch_inbox_media(url: String) -> Result<tauri::ipc::Response, String> {
+pub async fn fetch_inbox_media(
+    app: tauri::AppHandle,
+    url: String,
+) -> Result<tauri::ipc::Response, String> {
     let permit = MediaPermit::acquire()?;
     let bytes = tauri::async_runtime::spawn_blocking(move || {
         let _permit = permit;
-        fetch_inbox_media_sync(&url)
+        fetch_inbox_media_sync(&app, &url)
     })
     .await
     .map_err(|error| error.to_string())??;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
-fn fetch_inbox_media_sync(url: &str) -> Result<Vec<u8>, String> {
-    let mut current = parse_allowed_media_url(url)?;
+fn fetch_inbox_media_sync(app: &tauri::AppHandle, url: &str) -> Result<Vec<u8>, String> {
+    let mut current = parse_https_url(url)?;
     let token = if github_auth_host(&current.host) {
         github_auth_token()?
     } else {
@@ -79,7 +82,8 @@ fn fetch_inbox_media_sync(url: &str) -> Result<Vec<u8>, String> {
         .build();
 
     for _ in 0..MAX_REDIRECTS {
-        if !is_allowed_media_target(&current) {
+        let jira_authorization = crate::jira::avatar_media_authorization(app, &current.url)?;
+        if parse_allowed_media_url(&current.url).is_err() && jira_authorization.is_none() {
             return Err("That media host is not allowed".into());
         }
         let mut request = agent
@@ -90,6 +94,9 @@ fn fetch_inbox_media_sync(url: &str) -> Result<Vec<u8>, String> {
             if github_auth_host(&current.host) {
                 request = request.set("Authorization", &format!("Bearer {token}"));
             }
+        }
+        if let Some(authorization) = jira_authorization {
+            request = request.set("Authorization", &authorization);
         }
         // ureq with redirects(0) returns 3xx as Ok, not Err(Status).
         let response = match request.call() {
@@ -251,7 +258,11 @@ fn is_allowed_media_target(url: &MediaUrl) -> bool {
     if is_github_site(&url.host) {
         return is_github_attachment_path(&url.path);
     }
-    is_github_media_cdn(&url.host) || is_linear_uploads(&url.host) || is_github_asset_s3(&url.host)
+    is_github_media_cdn(&url.host)
+        || is_linear_uploads(&url.host)
+        || is_github_asset_s3(&url.host)
+        || (url.host.starts_with("avatar-management--avatars.")
+            && url.host.ends_with(".prod.public.atl-paas.net"))
 }
 
 fn is_github_attachment_path(path: &str) -> bool {
@@ -827,6 +838,14 @@ mod tests {
                 "unknown retirement must retain the original fence"
             );
         }
+    }
+
+    #[test]
+    fn jira_public_avatars_allow_only_the_avatar_cdn() {
+        assert!(parse_allowed_media_url("https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/a.png").is_ok());
+        assert!(parse_allowed_media_url("https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net.evil.test/a.png").is_err());
+        assert!(parse_allowed_media_url("https://other.prod.public.atl-paas.net/a.png").is_err());
+        assert!(parse_allowed_media_url("https://unconfigured.atlassian.net/secure/useravatar").is_err());
     }
 
     #[test]

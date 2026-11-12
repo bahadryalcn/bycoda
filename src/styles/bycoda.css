@@ -250,6 +250,10 @@
   width: 119px;
   height: 24px;
 }
+/* Startup recovery: the content grid already spaces the lockup from the message. */
+.bycoda-boot-brand {
+  margin-bottom: 8px;
+}
 .theme-light .bycoda-brand-lettering {
   filter: none;
 }

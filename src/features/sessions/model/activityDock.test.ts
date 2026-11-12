@@ -219,7 +219,7 @@ describe("deriveActivityDock", () => {
       kind: "agent",
       name: "Review a1",
       // An id the catalog does not know is shown as reported.
-      model: "claude-sonnet-5-5",
+      model: "Claude Sonnet 5.5",
     });
     expect(dock.agents[3].kind).toBe("command");
   });

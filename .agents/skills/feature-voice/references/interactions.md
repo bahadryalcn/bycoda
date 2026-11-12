@@ -52,7 +52,7 @@ Clear Stop needs no extra dialog; no model stop-all. Tool observers retain owner
 uncertainty and late results; Stop waiting does not promise effect cancellation.
 
 Session and Assistant-thread subjects remain distinct through authenticated relay. Desktop
-operations retain allowlists, snapshots, exact-operation approval, receipts, lock and physical-
+operations retain per-app owner approval, snapshots, exact-operation approval, receipts, lock and physical-
 input gates. Thread approval grants no generic native UI/working-copy access; no owner-settings/
 Stop tools. [Voice management](../../feature-voice-management/SKILL.md) owns global application
 tools; bridge cannot invent management sessions.

@@ -4,7 +4,7 @@ import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { DateTimePicker } from "../../../../shared/ui/DateTimePicker";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
-import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../../shared/ui/RadioGroup";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../shared/ui/TextField";
 import { EmptyHint } from "../common/EmptyHint";
@@ -165,8 +165,9 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
           ))}
       </FieldGroup>
       <FieldGroup legend={t("When")} gap="sm" className="content-when" disabled={disabled}>
-        <SegmentedControl
-          selectionRole="radio"
+        <RadioGroup
+          variant="inline"
+          label={t("When")}
           value={draft.when}
           options={[
             { value: "now", label: t("Now") },

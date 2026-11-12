@@ -44,16 +44,26 @@ export const rules = {
   "icon-numeric-size": "numeric size={n} prop",
   "icon-stroke-width": "strokeWidth other than 1.75 or 2",
   "lucide-import": "direct lucide-react import outside src/shared/ui/icons.tsx",
-  "loading-motion": "animate-spin/pulse without motion-safe:/motion-reduce: on the element",
+  "loading-motion":
+    "hand-written animate-spin/pulse/shimmer loading (use Spinner, LoadingText or Skeleton)",
   layer:
     "literal layer: z-[n], z-10..50, CSS z-index > 10 (use LAYER from shared/lib/layers.ts or var(--layer-*))",
   "color-base-hue":
     "raw base hue var in feature CSS (var(--color-accent…)); the text|bg|border-danger… utilities are semantic and allowed",
   "color-base-opacity": "opacity-modified base token (bg-background-base/45, border-stroke/60…)",
-  "native-title": "title= on Button/InlineAction or interactive DOM (use tooltip=/Tooltip)",
+  "native-title": "title= tooltip (use tooltip=, Tooltip or OverflowTooltip)",
   "role-alert-text": "<p role=alert> / <span role=alert> (use the shared inline error)",
   "role-alert-container": "<div>/<small>/<li>/<section> role=alert (use the shared inline error)",
-  "portal-outside-shared": "createPortal outside src/shared/ui",
+  "portal-outside-shared":
+    "floating surface outside Popover or OS-window popup owners (use Popover, Modal, Sheet or Tooltip)",
+  "ui-wrapper-import":
+    "primitive/internal import bypasses shared wrappers (use src/shared/ui/Select, DropdownMenu, Popover, Modal or Tooltip)",
+  "component-metadata":
+    "shared component needs @group and @use JSDoc (select its owner in the shared catalog)",
+  "component-family-choice":
+    "@avoid or @replaces must name a sibling in @group (use the named shared owner)",
+  "component-orphan":
+    "no product importer (remove component or add a reasoned runtime-entry exception in orphanAllowlist)",
   "popover-menu": "Popover with role=menu/listbox (use DropdownMenu/picker)",
   "hover-bg": "hover:bg-* recipe in TSX (use shared interaction states)",
   "disabled-opacity": "opacity-30..60 used as the disabled state",
@@ -63,7 +73,7 @@ export const rules = {
     "literal cubic-bezier( or Nms transition/animation outside :root tokens (use var(--motion-duration-*) / var(--motion-ease-*))",
   // Component-usage conventions (docs/reference/ui-components.md, code-invariants.md).
   "raw-native-control":
-    "raw <button>/<input>/<select>/<textarea> outside src/shared/ui (use Button, TextField, TextareaField, Select/SearchableSelect, Checkbox)",
+    "raw <button>/<input>/<select>/<textarea> outside src/shared/ui (use Button, TextField, TextareaField, Select/SearchableSelect, Checkbox; ProgressBar for meters, Tabs/SegmentedControl for choices)",
   "raw-anchor":
     "raw <a href> in feature code (use Link for a real anchor in prose or a chip, Button variant=link for an action, openExternal() from code)",
   "target-blank":
@@ -95,6 +105,14 @@ export const rules = {
   // Appearance ownership: feature code places things, shared components decide how they look.
   ...appearanceRules,
 };
+
+// Only these owners may position a floating surface directly.
+export const floatingSurfaceOwners = new Set([
+  "src/shared/ui/Popover.tsx",
+  "src/shared/ui/NativePopupHost.tsx",
+  "src/shared/ui/NativeSearchableSelect.tsx",
+  "src/shared/ui/arc/context-menu/native-context-menu.tsx",
+]);
 
 /** Tag tokens already covered by the static native-control rule. */
 const staticRawTags = new Set(["button", "input", "select", "textarea"]);
@@ -476,8 +494,7 @@ export function scanFile(file, text, definitions) {
   if (!scope) return [];
   const findings = [];
   const isCss = file.endsWith(".css");
-  // Shared/integration code only answers the import rule; skip the comment pass when absent.
-  if (scope === "imports" && !text.includes("lucide-react")) return findings;
+  // Shared/integration code answers import and floating-surface ownership rules only.
   const source = isCss ? stripCssComments(text) : stripTsComments(text);
   const starts = lineStarts(text);
   const lines = text.split("\n");
@@ -492,6 +509,38 @@ export function scanFile(file, text, definitions) {
     findings.push({ file, rule, line, text: (lines[line - 1] ?? "").trim().slice(0, 160) });
   };
 
+  if (!isCss) {
+    for (const match of source.matchAll(
+      /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["']([^"']+)["']/g,
+    )) {
+      const target = (
+        match[1].startsWith(".")
+          ? path.posix.normalize(path.posix.join(path.posix.dirname(file), match[1]))
+          : match[1].replace(/^@\//, "src/")
+      ).replace(/\.(?:tsx?|jsx?)$/, "");
+      const wrapper = /^src\/shared\/ui\/[^/]+\.[jt]sx?$/.test(file);
+      if (
+        !wrapper &&
+        !file.startsWith("src/shared/ui/arc/") &&
+        (/^src\/shared\/ui\/arc(?:\/|$)/.test(target) ||
+          /(?:native-popup\/|\/NativePopupHost$|\/nativePopup(?:\/|$)|\/nativeActionMenu$|\/nativeContextMenu$|\/NativeSearchableSelect$)/.test(
+            target,
+          ))
+      )
+        add("ui-wrapper-import", match.index);
+    }
+    if (!floatingSurfaceOwners.has(file)) {
+      const portalNames = ["createPortal"];
+      for (const imported of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']react-dom["']/g))
+        for (const alias of imported[1].matchAll(/\bcreatePortal\s+as\s+(\w+)/g))
+          portalNames.push(alias[1]);
+      for (const match of source.matchAll(
+        new RegExp(`\\b(?:${portalNames.join("|")})\\s*\\(`, "g"),
+      ))
+        if (scope === "app" || /\b(?:fixed|absolute)\b/.test(source))
+          add("portal-outside-shared", match.index);
+    }
+  }
   if (scope === "imports") {
     for (const match of source.matchAll(/(?:from\s*|import\s*\(?\s*)["']lucide-react["']/g))
       add("lucide-import", match.index);
@@ -563,8 +612,6 @@ export function scanFile(file, text, definitions) {
 
   for (const match of source.matchAll(/(?:from\s*|import\s*\(?\s*)["']lucide-react["']/g))
     add("lucide-import", match.index);
-  for (const match of source.matchAll(/(?<![\w.])createPortal\s*\(/g))
-    add("portal-outside-shared", match.index);
   const tags = jsxTags(source);
   const containing = (offset) => {
     let best = null;
@@ -593,9 +640,7 @@ export function scanFile(file, text, definitions) {
       add("icon-stroke-width", match.index);
   }
 
-  for (const match of source.matchAll(tw(String.raw`animate-(?:spin|pulse)` + end))) {
-    if (/motion-(?:safe|reduce)/.test(match[1])) continue;
-    if (/motion-reduce:|motion-safe:animate-/.test(context(match.index))) continue;
+  for (const match of source.matchAll(tw(String.raw`animate-(?:spin|pulse|shimmer)` + end))) {
     add("loading-motion", match.index);
   }
   for (const match of source.matchAll(tw(String.raw`opacity-(?:30|40|50|60)` + end))) {
@@ -626,7 +671,7 @@ export function scanFile(file, text, definitions) {
       if (tagRule) add(tagRule, tag.start);
       if (/^[a-z]/.test(tag.name))
         for (const [role, rule] of catalog.roles)
-          if (new RegExp(String.raw`\srole=\{?["']${role}["']`).test(tag.span))
+          if (new RegExp(String.raw`\srole\s*=\s*\{?\s*["']${role}["']`).test(tag.span))
             add(rule, tag.start);
     }
     if ((tag.name === "Modal" || tag.name === "Sheet") && !tag.span.endsWith("/>")) {
@@ -644,11 +689,33 @@ export function scanFile(file, text, definitions) {
     }
     const attributes = topLevel(tag.span);
     if (icons.has(tag.name) && iconSizeClass.test(tag.span)) add("icon-size-class", tag.start);
-    const control = tag.name === "Button" || tag.name === "InlineAction";
     // title="" only suppresses an inherited tooltip; it renders nothing.
-    const title = attributes.search(/\stitle=(?!""|'')/);
-    if ((control || ["button", "a", "input"].includes(tag.name)) && title >= 0)
+    const title = attributes.search(/\stitle\s*=/);
+    const emptyTitle = /^\stitle\s*=\s*(?:""|'')/.test(attributes.slice(title));
+    if (
+      title >= 0 &&
+      !emptyTitle &&
+      tag.name !== "svg" &&
+      (/^[a-z]/.test(tag.name) ||
+        icons.has(tag.name) ||
+        /^(?:Button|InlineAction|InlineTextAction|InlineMoreAction|Badge|Text|Link|TextField|TextareaField|Checkbox|Switch)$/.test(
+          tag.name,
+        ))
+    )
       add("native-title", tag.start + title + 1);
+    if (/^[a-z]/.test(tag.name)) {
+      const role =
+        /\srole\s*=\s*\{?\s*["'](listbox|menu|dialog|tooltip|progressbar|tablist|tab)["']/.exec(
+          tag.span,
+        )?.[1];
+      if (role && !catalog?.roles.has(role))
+        add(
+          ["progressbar", "tablist", "tab"].includes(role)
+            ? "raw-native-control"
+            : "portal-outside-shared",
+          tag.start,
+        );
+    }
     if (["p", "span"].includes(tag.name) && /\srole=\{?["']alert["']/.test(tag.span))
       add("role-alert-text", tag.start);
     if (
@@ -814,10 +881,20 @@ function markNew(root, file, findings, definitions) {
   });
 }
 
-/**
- * Programmatic entry for check-staged / check-local. `overrides` maps repo paths to the text to
- * check (for example staged blobs); `files` limits the comparison to those paths.
- */
+function treeCatalogFindings(sources) {
+  if (!catalogModule?.catalogFindings) return [];
+  const entries = [...sources]
+    .filter(
+      ([file]) =>
+        /^src\/shared\/ui\/[^/]+\.tsx$/.test(file) &&
+        !isTestPath(file) &&
+        !/Specimen|ControlBehaviorMatrix|\/icons\.tsx$/.test(file),
+    )
+    .flatMap(([file, source]) => catalogModule.readUiCatalogSource(file, source));
+  return catalogModule.catalogFindings(entries, sources);
+}
+
+/** Programmatic entry for local checks; overrides contain source blobs and files limits comparison. */
 export function checkUiDrift({ root = defaultRoot, overrides = new Map(), files, catalog } = {}) {
   const baseline = readBaseline(root);
   if (!baseline)
@@ -830,6 +907,9 @@ export function checkUiDrift({ root = defaultRoot, overrides = new Map(), files,
   const targets = files ? [...files].filter((file) => scopeOf(file)) : [...sources.keys()];
   const findings = targets.flatMap((file) =>
     sources.has(file) ? scanFile(file, sources.get(file), definitions) : [],
+  );
+  findings.push(
+    ...treeCatalogFindings(sources).filter((finding) => !files || targets.includes(finding.file)),
   );
   const current = countFindings(findings);
   const result = compareCounts(current, baseline, files ? new Set(targets) : undefined);
@@ -917,6 +997,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     if (options.update || options.ratchet || options.report) {
       const { sources, definitions } = readTree(root);
       const findings = [...sources].flatMap(([file, text]) => scanFile(file, text, definitions));
+      findings.push(...treeCatalogFindings(sources));
       if (options.report) process.stdout.write(formatReport(findings));
       if (options.update || options.ratchet) {
         const previous = readBaseline(root);

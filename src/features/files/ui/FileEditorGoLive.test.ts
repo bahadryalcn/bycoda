@@ -78,7 +78,7 @@ describe("HTML Go Live", () => {
     );
     if (source)
       await act(async () => {
-        [...container.querySelectorAll("button")]
+        [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')]
           .find((item) => item.textContent === "Source")
           ?.click();
       });
@@ -93,7 +93,7 @@ describe("HTML Go Live", () => {
     );
   }
   const button = () =>
-    [...container.querySelectorAll("button")].find((item) => item.textContent === "Go Live");
+    [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')].find((item) => item.textContent === "Go Live");
   const opened = () =>
     bridge.invoke.mock.calls.filter(([command]) => command === "open_html_in_chrome");
   async function edit() {
@@ -120,8 +120,8 @@ describe("HTML Go Live", () => {
     });
     const select = async (label: string) => {
       await act(async () =>
-        [...container.querySelectorAll("button")]
-          .find((item) => item.textContent === label)!
+        [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')]
+          .find((item) => item.getAttribute("aria-label") === label || item.textContent === label)!
           .click(),
       );
     };
@@ -137,7 +137,7 @@ describe("HTML Go Live", () => {
     expect(bridge.invoke).toHaveBeenCalledWith("close_html_preview", {
       token: "preview-token",
     });
-    const folder = [...container.querySelectorAll("button")].find((item) =>
+    const folder = [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')].find((item) =>
       /Reveal in|Open Containing Folder/.test(item.getAttribute("aria-label") ?? ""),
     );
     expect(folder).toBeDefined();

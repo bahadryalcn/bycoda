@@ -94,14 +94,6 @@
   display: grid;
   gap: 0.25rem;
   min-inline-size: 0;
-  padding: 0.75rem;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-card-surface);
-}
-.task-board-card:hover,
-.task-board-card:focus-visible {
-  background: var(--ui-surface-hover);
 }
 .task-board-card > * {
   min-inline-size: 0;

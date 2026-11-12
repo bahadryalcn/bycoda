@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { ActionHost } from "../../../shared/ui/ActionHost";
@@ -798,14 +799,11 @@ function FolderSection({
             <span className="flex-1" />
           )}
           {!folder.exists ? (
-            <Text
-              size="inherit"
-              tone="muted"
-              className="grid shrink-0 place-items-center"
-              title={t("Folder not found. Imported as history only.")}
-            >
-              <CircleAlert aria-hidden className="icon-sm" />
-            </Text>
+            <Tooltip label={t("Folder not found. Imported as history only.")} asChild>
+              <Text size="inherit" tone="muted" className="grid shrink-0 place-items-center">
+                <CircleAlert aria-hidden className="icon-sm" />
+              </Text>
+            </Tooltip>
           ) : null}
           <Text size="micro" tone="muted" className="w-16 shrink-0 text-right tabular-nums">
             {chosen > 0 && chosen < keys.length
@@ -827,12 +825,11 @@ function FolderSection({
                   onChange={(event) => onToggleKeys([key], event.target.checked)}
                   label={
                     <>
-                      <span
-                        title={PROVIDER_LABEL[item.provider]}
-                        className="grid shrink-0 place-items-center"
-                      >
-                        <HarnessIcon harness={item.provider} className="size-3.5" />
-                      </span>
+                      <Tooltip label={PROVIDER_LABEL[item.provider]} asChild>
+                        <span className="grid shrink-0 place-items-center">
+                          <HarnessIcon harness={item.provider} className="size-3.5" />
+                        </span>
+                      </Tooltip>
                       <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1">
                         {item.firstPrompt}
                       </Text>
@@ -841,16 +838,20 @@ function FolderSection({
                           {t("imported")}
                         </Text>
                       ) : isHistoryOnly(item) ? (
-                        <Text
-                          size="inherit"
-                          tone="muted"
-                          className="grid shrink-0 place-items-center"
-                          title={t(
+                        <Tooltip
+                          label={t(
                             "Imported as history; sending a message starts a new conversation",
                           )}
+                          asChild
                         >
-                          <Clock aria-hidden className="icon-sm" />
-                        </Text>
+                          <Text
+                            size="inherit"
+                            tone="muted"
+                            className="grid shrink-0 place-items-center"
+                          >
+                            <Clock aria-hidden className="icon-sm" />
+                          </Text>
+                        </Tooltip>
                       ) : null}
                       {item.kind !== "interactive" ? (
                         <Text size="micro" tone="muted" className="shrink-0">

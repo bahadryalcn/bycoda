@@ -139,7 +139,7 @@ async function tooltipText(element: HTMLElement): Promise<string> {
 
 /** Visible text of the highlighted working copy option; a fully shown path is not repeated in a hint. */
 function highlightedPath(): string | null {
-  const option = document.querySelector<HTMLElement>('[data-button-selected][role="option"]');
+  const option = document.querySelector<HTMLElement>('[data-active][role="option"]');
   return option?.textContent ?? null;
 }
 
@@ -442,16 +442,14 @@ it.each(["/repo", tree.path])(
     const selected = document.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')!;
     const other = document.querySelector<HTMLElement>('[role="option"][aria-selected="false"]')!;
     expect(selected.textContent).toContain(executionCwd);
-    expect(selected.hasAttribute("data-button-selected")).toBe(true);
-    expect(other.hasAttribute("data-button-selected")).toBe(false);
+    expect(selected.hasAttribute("data-active")).toBe(true);
+    expect(other.hasAttribute("data-active")).toBe(false);
     await act(async () => other.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-    expect(other.hasAttribute("data-button-selected")).toBe(true);
+    expect(other.hasAttribute("data-active")).toBe(true);
     await act(async () => trigger.click());
     await act(async () => trigger.click());
     expect(
-      document
-        .querySelector('[role="option"][aria-selected="true"]')
-        ?.hasAttribute("data-button-selected"),
+      document.querySelector('[role="option"][aria-selected="true"]')?.hasAttribute("data-active"),
     ).toBe(true);
     const search = document.querySelector<HTMLInputElement>(
       '[aria-label="Search working copies"]',
@@ -485,9 +483,7 @@ it("highlights the current worktree after a cold load and keeps navigation throu
   };
   await act(async () => request.resolve({ ...result(), worktrees: [main, tree] }));
   expect(
-    document
-      .querySelector('[role="option"][aria-selected="true"]')
-      ?.hasAttribute("data-button-selected"),
+    document.querySelector('[role="option"][aria-selected="true"]')?.hasAttribute("data-active"),
   ).toBe(true);
   const search = document.querySelector<HTMLInputElement>('[aria-label="Search working copies"]')!;
   await act(async () =>
@@ -517,12 +513,10 @@ it("highlights search results and restores the current worktree when search is c
   await act(async () => type(search, "main"));
   expect(highlightedPath()).toContain("/repo");
   await act(async () => type(search, "no matches"));
-  expect(document.querySelector('[data-button-selected][role="option"]')).toBeNull();
+  expect(document.querySelector('[data-active][role="option"]')).toBeNull();
   await act(async () => type(search, ""));
   expect(
-    document
-      .querySelector('[role="option"][aria-selected="true"]')
-      ?.hasAttribute("data-button-selected"),
+    document.querySelector('[role="option"][aria-selected="true"]')?.hasAttribute("data-active"),
   ).toBe(true);
 });
 
@@ -565,7 +559,11 @@ it.each([
     await act(async () => trigger.click());
     const options = document.querySelectorAll('[role="option"]');
     for (const [index, Icon] of [GitBranch, FolderTree].entries()) {
-      expect(options[index].querySelector("svg")?.outerHTML).toBe(
+      expect(
+        options[index].querySelector(
+          index === 0 ? "svg.lucide-git-branch" : "svg.lucide-folder-tree",
+        )?.outerHTML,
+      ).toBe(
         renderToStaticMarkup(
           createElement(Icon, {
             className: "icon-sm shrink-0",
@@ -617,7 +615,9 @@ it("caps the picker height without forcing short lists to fill it", async () => 
   await act(async () => request.resolve(result()));
   expect(menu.style.height).toBe("");
   expect(menu.style.maxHeight).toBe("398px");
-  expect(menu.querySelector('[role="listbox"]')?.className).toContain("overflow-y-auto");
+  expect(menu.querySelector('[role="listbox"]')?.parentElement?.className).toContain(
+    "overflow-y-auto",
+  );
   expect(menu.textContent).not.toContain("Loading working copies");
 });
 

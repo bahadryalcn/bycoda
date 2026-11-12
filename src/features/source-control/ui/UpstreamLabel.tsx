@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n/git";
 
@@ -5,12 +6,10 @@ import { t, useLocale } from "../../../shared/i18n/git";
 export function UpstreamLabel({ upstream }: { upstream: string }) {
   useLocale();
   return (
-    <Text
-      truncate
-      className="hidden min-w-0 shrink @min-[24rem]/changes:block"
-      title={`${t("Upstream")} ${upstream}`}
-    >
-      {upstream}
-    </Text>
+    <Tooltip label={`${t("Upstream")} ${upstream}`} asChild>
+      <Text truncate className="hidden min-w-0 shrink @min-[24rem]/changes:block">
+        {upstream}
+      </Text>
+    </Tooltip>
   );
 }

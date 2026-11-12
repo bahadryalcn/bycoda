@@ -111,6 +111,17 @@ describe("usage analysis contracts", () => {
       ),
     ).toHaveLength(0);
     expect(usageBreakdown(samples, "project", "tokens")[0].unpricedTokens).toBe(15);
+    // A model row shows its readable name and keeps the raw id as its key.
+    const dated = samples.map((sample) => ({
+      ...sample,
+      provider: "claude",
+      model: "claude-haiku-4-5-20251001",
+    }));
+    expect(usageBreakdown(dated, "model", "tokens")[0]).toMatchObject({
+      key: "claude-haiku-4-5-20251001",
+      label: "Claude Haiku 4.5",
+      provider: "claude",
+    });
     const filters = { ...emptyUsageFilters(), account: ["codex:personal"] };
     expect(filterUsage(samples, filters, window)).toHaveLength(0);
   });

@@ -36,15 +36,12 @@
 }
 
 .linear {
-  --meter-thickness: 0.25rem;
+  --meter-thickness: var(--space-1);
   box-sizing: border-box;
   block-size: var(--meter-thickness);
   overflow: clip;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   background: var(--color-stroke);
-}
-.linear[data-size="md"] {
-  --meter-thickness: 0.375rem;
 }
 .bar {
   display: block;

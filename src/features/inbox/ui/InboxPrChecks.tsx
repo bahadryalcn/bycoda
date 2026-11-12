@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
@@ -15,7 +16,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tab } from "../../../shared/ui/Tabs";
-import { useTooltip } from "../../../shared/ui/Tooltip";
+import { useTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { fetchCheckDetails, hasCheckDetails } from "../model/prChecks";
 import { t, useLocale } from "../../../shared/i18n";
 import { CheckRepairForm, type CheckRepair } from "./CheckRepairForm";
@@ -382,7 +383,7 @@ function PrCheckRow({
       ) : null}
       {error ? (
         <Alert tone="danger">
-          <p>{t("Could not load job details.")}</p>
+          <InlineError>{t("Could not load job details.")}</InlineError>
           <Text as="p" size="micro" tone="inherit" className="break-words">
             {error}
           </Text>
@@ -718,7 +719,9 @@ export function InboxPrChecks({
           {checks?.headOid ? (
             <Text as="p" size="caption" tone="secondary" className="mt-1 break-all">
               {t("Checked commit")}:{" "}
-              <Code title={checks.headOid}>{checks.headOid.slice(0, 12)}</Code>
+              <Tooltip label={checks.headOid} asChild>
+                <Code>{checks.headOid.slice(0, 12)}</Code>
+              </Tooltip>
             </Text>
           ) : null}
           {summary ? (

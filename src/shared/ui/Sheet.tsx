@@ -16,7 +16,12 @@ import { useT as useTechnicalT } from "../i18n/technical";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { isImeComposition } from "../lib/keyboard";
 import { LAYER } from "../lib/layers";
-import { Modal } from "./Modal";
+import {
+  Modal,
+  DIALOG_HEADER_CLASS_NAME,
+  DIALOG_BODY_PADDING_CLASS_NAME,
+  DIALOG_FOOTER_CLASS_NAME,
+} from "./Modal";
 import { OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
 import { PanelHeader } from "./PanelHeader";
 import { Sash } from "./Sash";
@@ -119,6 +124,7 @@ const cssSize = (value: number | string) => (typeof value === "number" ? `${valu
  * A side or bottom sheet. Modal sheets reuse Modal; both share the body `padding` rule. Non-modal sheets are
  * side panels that keep the page usable (session sub-panels, the notification list). Header is the
  * shared PanelHeader; the surface is the shared floating glass (`popover-backdrop`).
+ * Hand-written side and bottom overlay panels; header, close, padding and footer reuse Modal chrome.
  * @group overlay
  * @use A detail or secondary panel beside or below the work (task detail, notifications).
  * @avoid Centered tasks and forms: Modal. Small anchored UI: Popover.
@@ -230,6 +236,7 @@ function NonModalSheet({
   const titleId = `${uid}-title`;
   const close = useStableCallback(onClose);
   const [width, setWidth] = useState(resizable?.defaultSize);
+  const [scrolled, setScrolled] = useState(false);
   const resizeStart = useRef(width ?? 0);
   const resizeSign = useRef(1);
 
@@ -399,7 +406,7 @@ function NonModalSheet({
       >
         {header ?? (
           <PanelHeader
-            className="px-4 pt-2.5 pb-1"
+            className={DIALOG_HEADER_CLASS_NAME}
             title={title}
             titleId={titleId}
             context={context}
@@ -411,12 +418,19 @@ function NonModalSheet({
         )}
         {headerBelow ? <div className="shrink-0 px-4 pb-2">{headerBelow}</div> : null}
         <div
+          onScroll={(event) => {
+            if (event.target === event.currentTarget)
+              setScrolled(event.currentTarget.scrollTop > 0);
+          }}
           className={[
             "min-h-0 flex-1",
             scroll === "none"
               ? "flex flex-col overflow-hidden"
               : "overflow-y-auto overscroll-contain",
-            (padding ?? (scroll === "none" ? "none" : "md")) === "md" ? "px-4 pt-2 pb-4" : "",
+            (padding ?? (scroll === "none" ? "none" : "md")) === "md"
+              ? DIALOG_BODY_PADDING_CLASS_NAME
+              : "",
+            `border-t ${scrolled ? "border-(--ui-tone-neutral-border)" : "border-transparent"}`,
           ]
             .filter(Boolean)
             .join(" ")}
@@ -424,9 +438,7 @@ function NonModalSheet({
           {children}
         </div>
         {footer ? (
-          <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3">
-            {footer}
-          </footer>
+          <footer className={`${DIALOG_FOOTER_CLASS_NAME} justify-end`}>{footer}</footer>
         ) : null}
       </div>
     </section>

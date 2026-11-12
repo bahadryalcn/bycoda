@@ -9,6 +9,8 @@ import { IMAGE_MODELS_KEY, decodeImageModels, encodeImageModels } from "./image-
  * before any provider sees the settings.
  */
 export const CROSS_SUBAGENTS_KEY = "crossSubagents";
+export const AUTOMATIC_SUBAGENTS = "auto";
+export const CROSS_SUBAGENT_MAX_EFFORT_KEY = "crossSubagentMaxEffort";
 export const CROSS_ADVISOR_KEY = "crossAdvisor";
 /** Set by the Host on a child session; display linkage only, never authority. */
 export const DELEGATION_PARENT_KEY = "delegationParent";
@@ -22,7 +24,11 @@ export const CREW_MEMBER_KEY = "crewMember";
  * (`CrewToolProfile`). The Host narrows that session's Conversation Tools by it.
  */
 export const CREW_TOOLS_KEY = "crewTools";
-export const CROSS_DELEGATION_KEYS = [CROSS_SUBAGENTS_KEY, CROSS_ADVISOR_KEY] as const;
+export const CROSS_DELEGATION_KEYS = [
+  CROSS_SUBAGENTS_KEY,
+  CROSS_ADVISOR_KEY,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
+] as const;
 const RESERVED_KEYS = new Set<string>([
   ...CROSS_DELEGATION_KEYS,
   DELEGATION_PARENT_KEY,
@@ -116,7 +122,15 @@ export function delegateRefKey(ref: DelegateModelRef): string {
   return ref.providerAccountId ? `${base}@${ref.providerAccountId}` : base;
 }
 
-/** Never throws: drops invalid entries, dedupes and caps the list. */
+/** Decode the selection mode before reading explicit refs. Automatic is resolved
+ * against a current catalog by resolveSubagents, never expanded for persistence. */
+export function decodeSubagentSelection(
+  value: unknown,
+): typeof AUTOMATIC_SUBAGENTS | DelegateModelRef[] {
+  return value === AUTOMATIC_SUBAGENTS ? AUTOMATIC_SUBAGENTS : decodeSubagents(value);
+}
+
+/** Explicit-list decoder. Mode consumers must use decodeSubagentSelection or resolveSubagents. */
 export function decodeSubagents(value: unknown): DelegateModelRef[] {
   const parsed = parseJson(value);
   if (!Array.isArray(parsed)) return [];
@@ -134,7 +148,10 @@ export function decodeSubagents(value: unknown): DelegateModelRef[] {
   return refs;
 }
 
-export function encodeSubagents(refs: readonly DelegateModelRef[]): string | undefined {
+export function encodeSubagents(
+  refs: readonly DelegateModelRef[] | typeof AUTOMATIC_SUBAGENTS,
+): string | undefined {
+  if (refs === AUTOMATIC_SUBAGENTS) return refs;
   const valid = decodeSubagents(JSON.stringify(refs));
   return valid.length ? JSON.stringify(valid) : undefined;
 }
@@ -165,7 +182,12 @@ export function carryCrossDelegation(
   into: Record<string, string>,
 ): Record<string, string> {
   if (!from) return into;
-  const subagents = encodeSubagents(decodeSubagents(from[CROSS_SUBAGENTS_KEY]));
+  const subagents =
+    from[CROSS_SUBAGENTS_KEY] === AUTOMATIC_SUBAGENTS
+      ? AUTOMATIC_SUBAGENTS
+      : encodeSubagents(decodeSubagents(from[CROSS_SUBAGENTS_KEY]));
+  const ceiling = from[CROSS_SUBAGENT_MAX_EFFORT_KEY];
+  if (ceiling && EFFORT_LEVELS.includes(ceiling)) into[CROSS_SUBAGENT_MAX_EFFORT_KEY] = ceiling;
   const advisor = encodeAdvisor(decodeAdvisor(from[CROSS_ADVISOR_KEY]));
   const parent = decodeDelegationParent(from[DELEGATION_PARENT_KEY]);
   if (subagents) into[CROSS_SUBAGENTS_KEY] = subagents;

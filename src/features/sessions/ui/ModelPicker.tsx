@@ -1,7 +1,10 @@
+import { MenuRow } from "../../../shared/ui/MenuRow";
 import { Text } from "../../../shared/ui/Text";
 import { TogglePill } from "./ModelExtras";
-import { MorphSelect } from "../../../shared/ui/MorphSelect";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
+import { SelectTrigger } from "../../../shared/ui/Select";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { clampActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -29,9 +32,10 @@ import {
   type ModelPickerTab,
   type ModelSetting,
 } from "../model/models";
+
 import { projectProvidersRevision, subscribeProjectProviders } from "../model/projectProviders";
+
 import {
-  harnessUnavailableHint,
   subscribeHarnessAvailability,
   getHarnessAvailabilitySnapshot,
 } from "../../../integrations/harness/core/availability";
@@ -48,7 +52,7 @@ import { delegationNextValue } from "../model/crossDelegation";
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
 import { ModelPanel } from "./ModelPanel";
-import { Popover } from "../../../shared/ui/Popover";
+import { Popover, popupListClassName } from "../../../shared/ui/Popover";
 import { MOD } from "../../../platform/tauri/platform";
 import { keybindingPressed } from "../../settings/public/settings";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
@@ -125,11 +129,8 @@ type Props = {
   onSettingsChange: (settings: Record<string, string>) => void;
   onClose?: () => void;
 };
-
 type RecentMenu = { models: AccountModelChoice[] };
-
 const MENU_WIDTH = 250;
-
 /** Account the provider tab `target` runs on: the one picked while browsing, else the current one, else its default. */
 function accountForTab(
   target: HarnessId,
@@ -147,7 +148,11 @@ function accountForTab(
         : "default")
   );
 }
-
+/**
+ * @use Provider/account/model selection with settings and recent-model shortcuts; shared triggers own presentation.
+ * @avoid A single flat model value without these controls: SearchableSelect.
+ * @replaces Domain model selection, not the shared field or popup row primitives.
+ */
 export function ModelPicker({
   harness,
   model,
@@ -661,99 +666,116 @@ export function ModelPicker({
     setActiveModelKey(null);
   };
 
+  const Trigger = field ? SelectTrigger : Button;
+
   return (
     <>
-      <Button
-        size={field ? "md" : "sm"}
-        textSize={field ? "body" : undefined}
-        weight={field ? "regular" : undefined}
-        leading={field ? "inherit" : undefined}
-        className={field ? "model-picker-field-trigger" : "w-auto max-w-full min-w-0 shrink-0"}
-        data-model-picker-presentation={presentation}
-        variant="ghost"
-        align={field ? "start" : undefined}
-        fullWidth={field}
-        ref={button}
-        type="button"
+      <Tooltip
+        asChild
+
         shortcut={hotkeys ? switchShortcut : null}
-        tooltip={t("{p0} · Recent models: right-click or {p1}.", {
+
+        label={t("{p0} · Recent models: right-click or {p1}.", {
           p0: triggerTitle,
+
           p1: MOD,
         })}
-        aria-label={
-          inheritSelected
-            ? inherit.label
-            : `${HARNESS_TITLE[current.harness]}${
-                current.provider ? `, ${current.provider.name},` : ""
-              } ${currentLabel}${triggerEffortLabel ? `, effort ${triggerEffortLabel}` : ""}${triggerFastOn ? `, ${t("Fast")}` : ""}`
-        }
-        aria-expanded={open || recentOpen}
-        aria-haspopup="dialog"
-        onPointerEnter={() => void preloadModelPicker().catch(() => {})}
-        onFocus={() => void preloadModelPicker().catch(() => {})}
-        onMouseDown={(event) => event.preventDefault()}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openRecentMenu();
-        }}
-        onClick={() => togglePicker()}
       >
-        {inheritSelected ? (
-          <Text
-            data-model-inherit
-            size="inherit"
-            tone="inherit"
-            truncate
-            className="min-w-0 flex-1 text-left"
-          >
-            {inherit.label}
-          </Text>
-        ) : (
-          <>
-            <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
-            <Text size="inherit" tone="inherit" truncate className="min-w-0">
-              {current.name}
-            </Text>
-          </>
-        )}
-        {triggerAccountLabel && !inheritSelected ? (
-          <>
-            {" "}
-            <Text
-              data-model-account
-              size="inherit"
-              tone="secondary"
-              truncate
-              className="min-w-0 max-w-24"
-            >
-              {triggerAccountLabel}
-            </Text>
-          </>
-        ) : null}
-        {triggerEffortLabel ? (
-          <Text data-model-effort size="inherit" tone="secondary" className="shrink-0">
-            {triggerEffortLabel}
-          </Text>
-        ) : null}
-        {triggerFastOn ? (
-          <Zap
-            data-model-fast
-            className="icon-xs shrink-0"
+        <Trigger
+          {...(field
+            ? { "data-field-size": "md", "data-state": open || recentOpen ? "open" : "closed" }
+            : { size: "sm" as const, variant: "ghost" as const })}
+          className={field ? "bycoda-arc-select" : "w-auto max-w-full min-w-0 shrink-0"}
+          data-model-picker-presentation={presentation}
+          ref={button}
+          type="button"
+          aria-label={
+            inheritSelected
+              ? inherit.label
+              : `${HARNESS_TITLE[current.harness]}${
+                  current.provider ? `, ${current.provider.name},` : ""
+                } ${currentLabel}${triggerEffortLabel ? `, effort ${triggerEffortLabel}` : ""}${triggerFastOn ? `, ${t("Fast")}` : ""}`
+          }
+          aria-expanded={open || recentOpen}
+          aria-haspopup="dialog"
+          onPointerEnter={() => void preloadModelPicker().catch(() => {})}
+          onFocus={() => void preloadModelPicker().catch(() => {})}
+          onMouseDown={(event) => event.preventDefault()}
+          onContextMenu={(event) => {
+            event.preventDefault();
+
+            event.stopPropagation();
+
+            openRecentMenu();
+          }}
+
+          onClick={() => togglePicker()}
+        >
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            {inheritSelected ? (
+              <Text
+                data-model-inherit
+                size="inherit"
+                tone="inherit"
+                truncate
+                className="min-w-0 flex-1 text-left"
+              >
+                {inherit.label}
+              </Text>
+            ) : (
+              <>
+                <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
+
+                <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                  {current.name}
+                </Text>
+              </>
+            )}
+
+            {triggerAccountLabel && !inheritSelected ? (
+              <>
+                {" "}
+                <Text
+                  data-model-account
+                  size="inherit"
+                  tone="secondary"
+                  truncate
+                  className="min-w-0 max-w-24"
+                >
+                  {triggerAccountLabel}
+                </Text>
+              </>
+            ) : null}
+
+            {triggerEffortLabel ? (
+              <Text data-model-effort size="inherit" tone="secondary" className="shrink-0">
+                {triggerEffortLabel}
+              </Text>
+            ) : null}
+
+            {triggerFastOn ? (
+              <Zap
+                data-model-fast
+                className="icon-xs shrink-0"
+                tone="secondary"
+                fill="currentColor"
+                strokeWidth={1.75}
+                aria-hidden
+              />
+            ) : null}
+          </span>
+
+          <ChevronDown
+            className={`icon-xs shrink-0 ${open ? "rotate-180" : ""} ${
+              field ? "bycoda-arc-select-chevron" : ""
+            }`}
+
             tone="secondary"
-            fill="currentColor"
+
             strokeWidth={1.75}
-            aria-hidden
           />
-        ) : null}
-        <ChevronDown
-          className={`icon-xs shrink-0 ${open ? "rotate-180" : ""} ${
-            field ? "model-picker-field-chevron" : ""
-          }`}
-          tone="secondary"
-          strokeWidth={1.75}
-        />
-      </Button>
+        </Trigger>
+      </Tooltip>
 
       {open && hideSettings ? (
         <ModelFlyout
@@ -810,6 +832,9 @@ export function ModelPicker({
             onPick: pickModel,
             onToggleFavorite: toggleFavorite,
           }}
+
+          // Inherit resets model authority; it is a separate action above the value list.
+
           leading={
             inherit ? (
               <Button
@@ -817,8 +842,7 @@ export function ModelPicker({
                 fullWidth
                 variant="item"
                 type="button"
-                role="option"
-                aria-selected={inheritSelected}
+                aria-pressed={inheritSelected}
                 data-model-inherit-choice
                 tooltip={inherit.label}
                 tooltipWhen="overflow"
@@ -859,7 +883,7 @@ export function ModelPicker({
         <Popover
           anchor={button}
           side="top"
-          width={MENU_WIDTH}
+          minWidth={MENU_WIDTH}
           autoFocus
           onDismiss={() => setRecentMenu(null)}
           role="menu"
@@ -868,50 +892,40 @@ export function ModelPicker({
           tabIndex={-1}
           onContextMenu={(event) => event.preventDefault()}
           data-model-picker
-          className="p-1 font-sans"
+          className={popupListClassName}
         >
           {recentModels.map((item, index) => {
             const selected = modelChoiceKey(item) === currentChoiceKey;
             const highlighted = index === recentIndex;
             const disabled = !source.available(item.harness);
             return (
-              <Button
-                className="w-full text-left"
-                fullWidth
-                selected={highlighted}
-                variant="item"
+              <MenuRow
+                data-active={highlighted || undefined}
                 key={modelChoiceKey(item)}
                 id={`${recentMenuId}-${index}`}
                 type="button"
                 role="menuitemradio"
                 aria-checked={selected}
                 disabled={disabled}
-                tooltip={disabled ? harnessUnavailableHint(item.harness) : undefined}
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => setRecentActive(index)}
                 onClick={() => pickModel(item)}
               >
                 <HarnessIcon harness={item.harness} className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1">
-                  <Text
-                    as="span"
-                    size="secondary"
-                    tone="inherit"
-                    leading="tight"
-                    truncate
-                    className="block"
-                  >
-                    {item.name}
-                  </Text>
-                  <Text size="micro" tone="secondary" truncate className="block">
-                    {HARNESS_TITLE[item.harness]}
-                    {item.provider ? ` · ${item.provider.name}` : ""}
-                  </Text>
-                </span>
+
+                <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                  {item.name}
+                </Text>
+
+                <Text size="caption" tone="secondary">
+                  {HARNESS_TITLE[item.harness]}
+                  {item.provider ? ` · ${item.provider.name}` : ""}
+                </Text>
+
                 {selected ? (
                   <Check className="icon-sm shrink-0" tone="secondary" strokeWidth={2} />
                 ) : null}
-              </Button>
+              </MenuRow>
             );
           })}
         </Popover>
@@ -988,24 +1002,37 @@ function SelectPill({
   return (
     <>
       {[setting, ...(additionalSettings ?? [])].map((item) => (
-        <MorphSelect
+        <SearchableSelect
+          hideLabel
+          variant="pill"
+          searchable={false}
+          loopNavigation
           key={item.id}
           label={t(settingLabel(item))}
           value={settingValue(item, values)}
           options={item.options.map((option) => ({
             value: option.value,
+
             label: t(option.label),
+
             icon: isEffortSetting(item) ? (
               <Gauge className="icon-sm" />
             ) : item.id === "serviceTier" ? (
               <Zap className="icon-sm" />
             ) : undefined,
           }))}
+
           onChange={(value) => onSettingsChange({ ...values, [item.id]: value })}
-          onClose={onClose}
+
+          onClose={(restoreFocus) => {
+            if (restoreFocus) onClose?.();
+          }}
+
           triggerProps={{
             "aria-label": `${t(settingLabel(item))}: ${t(settingValueLabel(item, values))}`,
+
             onMouseDown: (event) => event.preventDefault(),
+
             title: item.description ? t(item.description) : t(settingLabel(item)),
           }}
         />

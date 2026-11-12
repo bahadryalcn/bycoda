@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
-import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../../shared/ui/RadioGroup";
 import { TextField } from "../../../../shared/ui/TextField";
 import { Sparkles } from "../../../../shared/ui/icons";
 import {
@@ -73,7 +73,8 @@ export function AvatarGenerator({
         onKeyDown={onKeyDown}
       />
       <div className={styles.generatorRow}>
-        <SegmentedControl
+        <RadioGroup
+          variant="inline"
           label={t("Image provider")}
           value={provider}
           options={[

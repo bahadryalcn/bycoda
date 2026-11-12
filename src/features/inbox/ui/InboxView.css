@@ -1,6 +1,9 @@
 .bycoda-inbox {
   container: inbox / inline-size;
 }
+.inbox-collection-search {
+  flex-basis: 10rem;
+}
 .inbox-detail-back {
   display: none;
 }

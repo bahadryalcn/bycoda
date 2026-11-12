@@ -74,7 +74,7 @@ export function ModelFlyout({
       style={{
         height: menuHeight,
       }}
-      className="flex min-h-0 overflow-hidden font-sans"
+      className="flex min-h-0 overflow-hidden"
     >
       {view === "extras" && extras ? (
         <ExtrasView extras={extras} onBack={() => setView("models")} />

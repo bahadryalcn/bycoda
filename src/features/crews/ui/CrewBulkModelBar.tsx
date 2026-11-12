@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import type { CrewCandidate, CrewModelPool } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
 import { candidateLabel, catalogCandidate, catalogModels } from "../model/crewRoster";
@@ -75,7 +75,8 @@ export function CrewBulkModelBar({
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {leading}
         {pools && onApplyPool ? (
-          <SegmentedControl
+          <RadioGroup
+            variant="inline"
             label={t("Apply as")}
             value={mode}
             options={[

@@ -316,11 +316,7 @@ describe("product delegation inheritance", () => {
   it("binds both product references to each selected account without writing preferences", () => {
     for (const account of ["one", "two"]) {
       const extras = globalProviderSessionDefaults("claude", account).extras!;
-      expect(JSON.parse(extras.crossSubagents)[0]).toEqual({
-        harness: "claude",
-        model: "claude:sonnet",
-        providerAccountId: account,
-      });
+      expect(extras.crossSubagents).toBe("auto");
       expect(JSON.parse(extras.crossAdvisor)).toEqual({
         harness: "claude",
         model: "claude:opus",

@@ -1,3 +1,4 @@
+import { Progress } from "../../../shared/ui/Progress";
 import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { Surface } from "../../../shared/ui/Surface";
@@ -15,8 +16,9 @@ export function SprintKpi({
   label: string;
   value: ReactNode;
   detail?: ReactNode;
-  meter?: { value: number; max: number; tone?: MeterTone; valueText: string };
+  meter?: { kind?: "capacity"; value: number; max: number; tone?: MeterTone; valueText: string };
 }) {
+  const Measure = meter?.kind === "capacity" ? Meter : Progress;
   return (
     <Surface variant="card" padding="md" className="sprint-kpi">
       <Text tone="secondary" size="caption" leading="inherit" className="sprint-kpi-label">
@@ -33,12 +35,12 @@ export function SprintKpi({
         {value}
       </Text>
       {meter && meter.max > 0 ? (
-        <Meter
-          label={label}
+        <Measure
+          aria-label={label}
           value={meter.value}
           max={meter.max}
           tone={meter.tone ?? "accent"}
-          valueText={meter.valueText}
+          aria-valuetext={meter.valueText}
         />
       ) : null}
       {detail ? (

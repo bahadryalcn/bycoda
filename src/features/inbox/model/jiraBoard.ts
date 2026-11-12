@@ -65,7 +65,12 @@ export async function jiraBoardIssues(
     projectIds,
   });
   const hidden = requireHiddenJiraProjectIds();
-  return { ...page, issues: page.issues.filter((issue) => !hidden.includes(issue.teamId)) };
+  return {
+    ...page,
+    issues: page.issues
+      .filter((issue) => !hidden.includes(issue.teamId))
+      .map((issue) => ({ ...issue, jiraBoardId: boardId })),
+  };
 }
 export const jiraIssueTransitions = (key: string) =>
   invoke<JiraTransition[]>("jira_issue_transitions", { key });

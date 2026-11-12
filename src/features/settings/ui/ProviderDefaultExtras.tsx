@@ -1,9 +1,12 @@
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { delegationSelectChoice } from "../../sessions/public/modelPickerData";
 import type { CSSProperties } from "react";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Zap, WandSparkles } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import {
   CROSS_ADVISOR_KEY,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
   CROSS_SUBAGENTS_KEY,
 } from "../../../shared/model/host-contracts/delegation";
 import { IMAGE_MODELS_KEY } from "../../../shared/model/host-contracts/image-models";
@@ -16,7 +19,7 @@ import {
 } from "../../sessions/public/modelPickerData";
 import type { ProviderSessionDefaults } from "../../sessions/public/projectProviders";
 import { mergeProviderExtras } from "../../sessions/public/providerSessionDefaults";
-import { Row, Select } from "./settingsControls";
+import { Row } from "./settingsControls";
 
 /** Label of the "follow the scope above" choice, naming the value it inherits. */
 export function inheritedChoiceLabel(inherited: string | undefined, valid: boolean): string {
@@ -83,7 +86,29 @@ export function ProviderDefaultExtras({
             }}
             resetLabel={resetLabel}
           >
-            {isMultiSetting(setting) ? (
+            {setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY ? (
+              <SegmentedControl
+                compact
+                label={t(setting.label)}
+                value={saved ?? ""}
+                options={setting.options.map((option) => ({
+                  value: option.value,
+                  label: option.value
+                    ? t(option.label)
+                    : inheritedChoiceLabel(
+                        inheritedLabel ? t(inheritedLabel) : undefined,
+                        Boolean(inheritedOption),
+                      ),
+                  tooltip: t(option.label),
+                }))}
+                onValueChange={(next) => {
+                  const nextExtras = { ...scopeDefaults.extras };
+                  if (next) nextExtras[setting.id] = next;
+                  else delete nextExtras[setting.id];
+                  onSessionDefaultsChange({ ...scopeDefaults, extras: nextExtras });
+                }}
+              />
+            ) : isMultiSetting(setting) ? (
               <DelegationSubagentsControl
                 label={t("{p0} default {p1}", {
                   p0: HARNESS_TITLE[harness],
@@ -147,7 +172,7 @@ export function ProviderDefaultExtras({
                 />
               </div>
             ) : (
-              <Select
+              <SearchableSelect
                 hideLabel
                 label={t("{p0} default {p1}", {
                   p0: HARNESS_TITLE[harness],
@@ -182,7 +207,7 @@ export function ProviderDefaultExtras({
                     .filter((option) => !delegation || option.value)
                     .map((option) => ({
                       value: option.value,
-                      label: t(option.label),
+                      ...delegationSelectChoice(setting, option, t),
                       disabled: "disabled" in option && option.disabled === true,
                       icon: delegation ? (
                         <DelegationOptionIcon setting={setting} value={option.value} />

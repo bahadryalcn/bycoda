@@ -123,7 +123,7 @@ it("does not scroll the page when a compact menu opens", async () => {
 
   const option = document.body.querySelector('[role="option"]');
 
-  expect(option?.className).toContain("h-7");
+  expect(option?.getAttribute("data-density")).toBe("sm");
 });
 
 async function search(value: string) {

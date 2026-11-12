@@ -57,3 +57,65 @@ model/account. Subagents use their model's default effort unless explicitly requ
 advisors continue matching the parent's effort. This replaces effort inheritance for
 subagents. `agents.wait` accepts several runs and uses the existing provider-dependent
 long-wait deadline. Up to 16 subagents may run at once; the advisor limit stays one.
+
+Update 2026-11-12, owner: "effort can be high too, let the model decide, let us not
+say it; maybe the work is high, we do not know" (translated from Turkish). Runtime
+guidance asks the main model to set each subagent's effort by the difficulty of its
+part, with no level named or capped by the product. A run with no effort named still
+uses the model's default.
+
+## Defaults save to several targets and portable provider scope
+
+Date: 2026-11-12
+
+Owner: "I have more than 100 projects; doing something different for each would take hours ... these choices are made per provider, so it becomes 100 times the provider count. Let us find a better way here." (translated from Turkish)
+
+Defaults remain pending until explicit save. The apply bar separates provider scope
+from a multi-select of Global, workspaces, groups and projects. Each destination is
+attempted independently; partial failures retain the draft and retry only failed
+destinations. Workspace and group saves still copy into current member projects;
+later projects follow Global. Account overrides remain machine-wide. This extends
+the earlier single-target save decision.
+
+All providers copies only explicit portable edits supported by each destination
+provider, including compatible effort, permission and speed choices. Unsupported
+fields are skipped and reported. Model and account selections, including selected
+delegate and image-model identities, never cross providers; automatic resets and
+explicit delegation Off can remain portable.
+
+## Account kind is an owner override
+
+Date: 2026-11-12
+
+Owner: "We cannot edit the accounts. Let us be able to mark them as a personal or work account." (translated from Turkish)
+
+The account editor saves name, color and an optional Personal or Work kind together.
+An explicit kind takes precedence over the kind derived from account information.
+Automatic removes that override and restores derivation. It does not change account
+credentials, entitlements or execution authority.
+
+## Automatic subagents, tiers and max effort
+
+Date: 2026-11-12
+
+Update 2026-11-12, owner: "under Automatic, falling back to the provider's native subagents is allowed; under an explicit list or with a subagent effort ceiling set, do NOT enable unrestricted native subagents". A fresh, bounded session-scoped initialize check precedes provider input finalization. Failed or unavailable checks permit native fallback only for Automatic without a ceiling, with runtime guidance and a non-blocking conversation status. Explicit Off remains unchanged. Metadata is not readiness; a successful preflight does not acknowledge the provider's later MCP handshake.
+
+Owner: "When nothing is selected and it is automatic, write Automatic instead of 0.
+Subagents need not be the same model or just one: give all active models, ranked.
+Best: Fable, good: Opus, medium: Sonnet, low: Haiku; it chooses itself. For its own
+provider use its own account; it may choose all providers." (translated)
+
+Automatic resolves the connected, enabled catalog when used. It retains unknown
+families as Unranked and deterministically caps references while retaining providers
+and tiers. The main agent chooses the lowest adequate tier, usefulness first, then
+cost. Automatic and explicit Off are distinct from manual lists. This replaces the
+single-model subagent product default of 2026-11-06; saved conversations and explicit
+choices remain unchanged. Advisor defaults do not change.
+
+Owner: "Also add a Subagent max effort setting, because I may want the main agent
+on low and subagents on max. People must be able to set this easily and effectively."
+(translated)
+
+Subagent max effort is a portable, independently inherited ceiling. Automatic means
+no ceiling; a saved level caps explicit effort and model-default effort, including
+continuations. Provider Defaults use the existing draft/save and scope rules.

@@ -17,6 +17,7 @@ vi.mock("../../../integrations/harness/core/registry", () => ({
 }));
 
 vi.mock("../../../shared/ui/Popover", () => ({
+  popupListClassName: "shared-popup-list",
   Popover: ({
     children,
     role,
@@ -154,7 +155,7 @@ describe("cross-provider delegation rows", () => {
     );
 
   /** Opens a delegation setting's column-wide list (Add or its value button) and returns its options. */
-  const choices = async (column: HTMLElement, label: string, role: "radio" | "checkbox") => {
+  const choices = async (column: HTMLElement, label: string) => {
     const id = label === "Subagents" ? "crossSubagents" : "crossAdvisor";
     if (!column.querySelector(`[data-model-setting-picker="${id}"]`)) {
       const block = column.querySelector<HTMLElement>(`[data-setting-id="${id}"]`)!;
@@ -164,7 +165,7 @@ describe("cross-provider delegation rows", () => {
       await act(async () => open.click());
     }
     const picker = column.querySelector<HTMLElement>(`[data-model-setting-picker="${id}"]`)!;
-    return [...picker.querySelectorAll<HTMLButtonElement>(`[role="${role}"]`)];
+    return [...picker.querySelectorAll<HTMLButtonElement>('[role="option"]')];
   };
 
   it.each([
@@ -189,10 +190,10 @@ describe("cross-provider delegation rows", () => {
     seedCatalogs();
     const onSettingsChange = vi.fn();
     const column = await openPanel("cursor", cursorModel.id, {}, onSettingsChange);
-    const codexOption = (await choices(column, "Subagents", "checkbox")).find((option) =>
+    const codexOption = (await choices(column, "Subagents")).find((option) =>
       option.textContent?.includes("GPT 6.1 Sol"),
     )!;
-    expect(codexOption.getAttribute("aria-checked")).toBe("false");
+    expect(codexOption.getAttribute("aria-selected")).toBe("false");
     await act(async () => codexOption.click());
     expect(onSettingsChange).toHaveBeenLastCalledWith({
       crossSubagents: encodeSubagents([
@@ -218,11 +219,11 @@ describe("cross-provider delegation rows", () => {
       ),
     );
     const second = await showAgents();
-    const subagents = await choices(second, "Subagents", "checkbox");
+    const subagents = await choices(second, "Subagents");
     expect(
       subagents
         .find((option) => option.textContent?.includes("GPT 6.1 Sol"))!
-        .getAttribute("aria-checked"),
+        .getAttribute("aria-selected"),
     ).toBe("true");
     const opencodeOption = subagents.find((option) => option.textContent?.includes("Luna"))!;
     await act(async () => opencodeOption.click());
@@ -262,7 +263,7 @@ describe("cross-provider delegation rows", () => {
     const done = [...picker.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent === "Done",
     )!;
-    expect(picker.querySelector('[role="group"]')!.contains(done)).toBe(false);
+    expect(picker.querySelector('[role="listbox"]')!.contains(done)).toBe(false);
     await act(async () => done.click());
     expect(column.querySelector("[data-model-setting-picker]")).toBeNull();
     expect(container.querySelector(PANEL)).not.toBeNull();
@@ -271,7 +272,7 @@ describe("cross-provider delegation rows", () => {
   it("offers the current model and other models as advisor, with Off first", async () => {
     seedCatalogs();
     const column = await openPanel("cursor", cursorModel.id);
-    const options = await choices(column, "Advisor", "radio");
+    const options = await choices(column, "Advisor");
     expect(options[0].textContent).toBe("Off");
     const labels = options.map((option) => option.textContent ?? "");
     expect(labels.some((label) => label.includes("Composer 2"))).toBe(true);
@@ -282,7 +283,7 @@ describe("cross-provider delegation rows", () => {
     seedCatalogs();
     const onSettingsChange = vi.fn();
     const column = await openPanel("cursor", cursorModel.id, {}, onSettingsChange);
-    const codexOption = (await choices(column, "Advisor", "radio")).find((option) =>
+    const codexOption = (await choices(column, "Advisor")).find((option) =>
       option.textContent?.includes("GPT 6.1 Sol"),
     )!;
     await act(async () => codexOption.click());
@@ -306,9 +307,9 @@ describe("cross-provider delegation rows", () => {
       { crossAdvisor: saved },
       onSettingsChange,
     );
-    const options = await choices(column, "Advisor", "radio");
+    const options = await choices(column, "Advisor");
     expect(options.some((choice) => choice.textContent?.includes("Unavailable"))).toBe(false);
-    const selected = options.filter((choice) => choice.getAttribute("aria-checked") === "true");
+    const selected = options.filter((choice) => choice.getAttribute("aria-selected") === "true");
     expect(selected).toHaveLength(1);
     expect(selected[0].textContent).toContain("GPT 6.1 Sol");
     expect(selected[0].textContent).toContain("Default");

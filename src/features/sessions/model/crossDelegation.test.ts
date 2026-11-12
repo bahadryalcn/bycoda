@@ -122,7 +122,7 @@ describe("crossDelegationSettings", () => {
       // Native selects compare serialized values; retain the saved wire reference.
       expect(advisor.options.some((option) => option.value === values.crossAdvisor)).toBe(true);
       const explicitDefault = encodeAdvisor({ ...implicit, providerAccountId: "default" })!;
-      expect(delegationNextValue(subagents, values, explicitDefault)).toBe("");
+      expect(delegationNextValue(subagents, values, explicitDefault)).toBe("[]");
       expect(values.crossAdvisor).toBe(encodeAdvisor(implicit));
     },
   );
@@ -156,7 +156,7 @@ describe("crossDelegationSettings", () => {
   it("lists every enabled model of every harness, with the off choice first", () => {
     const { subagents } = settingsFor();
     expect(subagents.options[0]).toEqual({ value: "", label: "Off" });
-    expect(subagents.options.slice(1).map((option) => option.label)).toEqual([
+    expect(subagents.options.slice(2).map((option) => option.label)).toEqual([
       "Claude Code · Opus 5.5",
       "Claude Code · Sonnet 5",
       "Codex · GPT A",
@@ -167,7 +167,7 @@ describe("crossDelegationSettings", () => {
 
   it("encodes each option as the JSON ref the Host decodes", () => {
     const { subagents } = settingsFor({ harnesses: ["codex"] });
-    expect(subagents.options[1]).toEqual({
+    expect(subagents.options[2]).toEqual({
       value: encodeAdvisor(ref("codex", "codex:gpt-a")),
       label: "Codex · GPT A",
     });
@@ -176,7 +176,11 @@ describe("crossDelegationSettings", () => {
   it("hides models the owner disabled", () => {
     saveModelEnabled(CODEX_B.id, false);
     const { subagents } = settingsFor({ harnesses: ["codex"] });
-    expect(subagents.options.map((option) => option.label)).toEqual(["Off", "Codex · GPT A"]);
+    expect(subagents.options.map((option) => option.label)).toEqual([
+      "Off",
+      "Automatic",
+      "Codex · GPT A",
+    ]);
   });
 
   it("offers the current model for an independent advisor and for subagents", () => {
@@ -196,7 +200,7 @@ describe("crossDelegationSettings", () => {
     });
     expect(subagents.options.at(-1)).toEqual({
       value: encodeAdvisor(ref("codex", "codex:retired")),
-      label: "Unavailable · Codex · codex:retired",
+      label: "Unavailable · Codex · Retired",
     });
   });
 
@@ -206,7 +210,7 @@ describe("crossDelegationSettings", () => {
       harnesses: ["codex"],
       values: { [CROSS_ADVISOR_KEY]: saved },
     });
-    expect(advisor.options.at(-1)?.label).toBe("Unavailable · Codex · codex:retired");
+    expect(advisor.options.at(-1)?.label).toBe("Unavailable · Codex · Retired");
   });
 
   it("does not add an unavailable row for a saved ref that is still offered", () => {
@@ -235,14 +239,14 @@ describe("delegationOptionSelected", () => {
         delegationOptionSelected(subagents, values, option.value),
       ),
     ).toHaveLength(1);
-    expect(delegationNextValue(subagents, values, encodeAdvisor(explicit)!)).toBe("");
+    expect(delegationNextValue(subagents, values, encodeAdvisor(explicit)!)).toBe("[]");
     expect(decodeSubagents(values.crossSubagents)).toHaveLength(2);
   });
   it("selects subagents by membership and Off when none are chosen", () => {
     const { subagents } = settingsFor({ harnesses: ["codex"] });
     const values = { [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref("codex", "codex:gpt-b")]) ?? "" };
     expect(delegationOptionSelected(subagents, values, "")).toBe(false);
-    expect(delegationOptionSelected(subagents, values, subagents.options[2].value)).toBe(true);
+    expect(delegationOptionSelected(subagents, values, subagents.options[3].value)).toBe(true);
     expect(delegationOptionSelected(subagents, {}, "")).toBe(true);
   });
 
@@ -257,8 +261,8 @@ describe("delegationOptionSelected", () => {
 describe("delegationNextValue", () => {
   it("adds and then removes one subagent in place", () => {
     const { subagents } = settingsFor({ harnesses: ["codex"] });
-    const gptA = subagents.options[1].value;
-    const gptB = subagents.options[2].value;
+    const gptA = subagents.options[2].value;
+    const gptB = subagents.options[3].value;
 
     const added = delegationNextValue(subagents, {}, gptA);
     const both = delegationNextValue(subagents, { [CROSS_SUBAGENTS_KEY]: added }, gptB);
@@ -270,7 +274,7 @@ describe("delegationNextValue", () => {
 
   it("clears every subagent when Off is picked", () => {
     const { subagents } = settingsFor({ harnesses: ["codex"] });
-    expect(delegationNextValue(subagents, {}, "")).toBe("");
+    expect(delegationNextValue(subagents, {}, "")).toBe("[]");
   });
 
   it("caps the subagent list instead of adding past the limit", () => {
@@ -385,7 +389,7 @@ it("shows legacy Claude selections in unified controls", () => {
     delegationOptionSelected(subagents, {}, encodeAdvisor(ref("claude", CLAUDE_SONNET.id))!),
   ).toBe(true);
   expect(decodeURIComponent(advisor.value)).toContain('"model":"opus"');
-  expect(delegationNextValue(subagents, {}, "")).toBe("");
+  expect(delegationNextValue(subagents, {}, "")).toBe("[]");
 });
 
 it("labels expired authentication for the exact selected account", () => {

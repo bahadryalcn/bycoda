@@ -1,7 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
-import { Check } from "../../../shared/ui/icons";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 
 /** One save/recovery vocabulary for the library editor and the session note panel. */
 export type NoteSaveState =
@@ -25,6 +23,9 @@ const LABELS: Record<NoteSaveState, string> = {
   saved: "Saved",
 };
 
+/** Notes save automatically, so routine save progress stays silent. */
+const QUIET: ReadonlySet<NoteSaveState> = new Set(["saved", "unsaved", "saving"]);
+
 /** Recovery and errors take precedence over a pending or clean draft. */
 export function noteSaveState(state: {
   deleting: boolean;
@@ -42,16 +43,10 @@ export function noteSaveState(state: {
   return state.dirty ? "unsaved" : "saved";
 }
 
-export function NoteSaveStatus({
-  state,
-  className,
-  compact = false,
-}: {
-  state: NoteSaveState;
-  className?: string;
-  compact?: boolean;
-}) {
+/** Shows only states that need the user's attention; autosave progress renders nothing. */
+export function NoteSaveStatus({ state, className }: { state: NoteSaveState; className?: string }) {
   useLocale();
+  if (QUIET.has(state)) return null;
   const attention = state === "failed" || state === "attention" || state === "conflict";
   return (
     <Text
@@ -61,16 +56,7 @@ export function NoteSaveStatus({
       data-note-save-state={state}
       className={`note-save-status ${className ?? ""}`}
     >
-      {compact && state === "saved" ? (
-        <Tooltip label={t("Saved")}>
-          <span>
-            <Check className="icon-sm" />
-            <span className="sr-only">{t("Saved")}</span>
-          </span>
-        </Tooltip>
-      ) : (
-        t(LABELS[state])
-      )}
+      {t(LABELS[state])}
     </Text>
   );
 }

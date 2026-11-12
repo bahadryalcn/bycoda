@@ -1,3 +1,5 @@
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
@@ -75,7 +77,6 @@ import { markAccountStepSeen } from "../model/onboarding";
 import { useOnboardingSteps } from "../model/useOnboardingSteps";
 import { loadOnboardingProviders, addOnboardingProviders } from "../model/onboardingProviders";
 import "./onboarding.css";
-import { LoadingText } from "../../../shared/ui/LoadingText";
 
 type Props = {
   onStartGuide?: () => void;
@@ -264,7 +265,7 @@ export default function OnboardingDialog({
       </div>
       {connections ? (
         <Modal title={t("Connections")} size="lg" onClose={() => setConnections(false)}>
-          <Suspense fallback={<LoadingText layout="fill" />}>
+          <Suspense fallback={<SurfaceLoading />}>
             <ConnectionsSettings />
           </Suspense>
         </Modal>
@@ -553,15 +554,16 @@ function Projects({
                               ),
                             )}
                           </span>
-                          <Text
-                            size="caption"
-                            tone="muted"
-                            leading="inherit"
-                            className="onboarding-project-count"
-                            title={t("Conversations")}
-                          >
-                            {folder.items.length}
-                          </Text>
+                          <Tooltip label={t("Conversations")} asChild>
+                            <Text
+                              size="caption"
+                              tone="muted"
+                              leading="inherit"
+                              className="onboarding-project-count"
+                            >
+                              {folder.items.length}
+                            </Text>
+                          </Tooltip>
                         </>
                       }
                       className="onboarding-project"

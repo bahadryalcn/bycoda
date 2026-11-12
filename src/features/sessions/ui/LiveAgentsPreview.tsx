@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
@@ -144,15 +145,17 @@ export function LiveAgentsPreview({
         {headlineCount}
       </Badge>
       {summary.headline !== "attention" && summary.attention > 0 ? (
-        <Badge
-          variant="count"
-          tone={attentionTone}
-          size="xs"
-          title={attentionLabel}
-          icon={<CircleAlert aria-hidden className="icon-xs" strokeWidth={1.75} />}
-        >
-          <span aria-label={attentionLabel}>{summary.attention}</span>
-        </Badge>
+        <Tooltip label={attentionLabel} asChild>
+          <Badge
+            variant="count"
+            tone={attentionTone}
+            size="xs"
+
+            icon={<CircleAlert aria-hidden className="icon-xs" strokeWidth={1.75} />}
+          >
+            <span aria-label={attentionLabel}>{summary.attention}</span>
+          </Badge>
+        </Tooltip>
       ) : null}
     </span>
   );

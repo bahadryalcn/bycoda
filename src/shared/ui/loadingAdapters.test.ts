@@ -86,8 +86,10 @@ it.each([true, "true"] as const)(
     await act(async () =>
       root.render(createElement(Skeleton, { label: "Actual loading", "aria-hidden": false })),
     );
-    expect(node.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
-      "Actual loading",
+    await vi.waitFor(() =>
+      expect(node.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+        "Actual loading",
+      ),
     );
   },
 );

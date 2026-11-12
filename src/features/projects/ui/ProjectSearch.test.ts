@@ -65,6 +65,49 @@ function enter() {
     input("Search").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
   );
 }
+it("keeps option toggles inside the query frame and shares inline details controls", () => {
+  render();
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Filters"]')).toBeNull();
+  const frame = input("Search").closest("[data-ui-focus-group]")!;
+  for (const label of ["Match case", "Match whole word", "Use regular expression"]) {
+    const toggle = frame.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    act(() => toggle.click());
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.getAttribute("data-button-selected")).toBe("true");
+  }
+  const controls = host.querySelectorAll<HTMLButtonElement>('[aria-label="Toggle Search Details"]');
+  expect(controls).toHaveLength(2);
+  const details = document.getElementById(controls[0].getAttribute("aria-controls")!)!;
+  expect(details.hidden).toBe(true);
+  act(() => controls[0].click());
+  expect(details.hidden).toBe(false);
+  expect([...controls].map((button) => button.getAttribute("aria-expanded"))).toEqual([
+    "true",
+    "true",
+  ]);
+  for (const label of ["files to include", "files to exclude"]) {
+    const field = input(label);
+    expect(details.contains(field)).toBe(true);
+    expect(host.querySelector(`label[for="${field.id}"]`)?.textContent).toBe(label);
+  }
+  type("files to include", "src/**");
+  act(() => controls[1].click());
+  expect(details.hidden).toBe(true);
+  expect(input("files to include").value).toBe("src/**");
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it("defaults details to collapsed again when no path filters were retained", () => {
+  render();
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle Search Details"]')!.click());
+  render("/other");
+  render();
+  expect(
+    host.querySelector('[aria-label="Toggle Search Details"]')?.getAttribute("aria-expanded"),
+  ).toBe("false");
+});
 it.each(["", "~"])(
   "skips unavailable folder %j and recovers the retained valid search",
   async (cwd) => {
@@ -107,9 +150,12 @@ it.each(["query", "include", "exclude", "case", "word", "regex"] as const)(
     expect(host.textContent).toContain("oldneedle.ts");
     if (change === "query") type("Search", "newneedle");
     else {
-      act(() => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
-      if (change === "include" || change === "exclude") type(`files to ${change}`, "src/**");
-      else {
+      if (change === "include" || change === "exclude") {
+        act(() =>
+          host.querySelector<HTMLButtonElement>('[aria-label="Toggle Search Details"]')!.click(),
+        );
+        type(`files to ${change}`, "src/**");
+      } else {
         const label = {
           case: "Match case",
           word: "Match whole word",
@@ -160,7 +206,7 @@ it("ignores an old project's delayed completion after switching projects", async
 it("restores find text and all filters on return, reruns search, and isolates other projects", async () => {
   render();
   type("Search", "needle");
-  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle Search Details"]')!.click());
   type("files to include", "src/**");
   type("files to exclude", "**/generated/**");
   for (const label of ["Match case", "Match whole word", "Use regular expression"])
@@ -169,7 +215,6 @@ it("restores find text and all filters on return, reruns search, and isolates ot
   root = createRoot(host);
   render();
   expect(input("Search").value).toBe("needle");
-  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
   expect(input("files to include").value).toBe("src/**");
   expect(input("files to exclude").value).toBe("**/generated/**");
   await act(async () => vi.advanceTimersByTime(210));
@@ -192,14 +237,14 @@ it("restores find text and all filters on return, reruns search, and isolates ot
 it("resets advanced filters without clearing the retained query", async () => {
   render();
   type("Search", "needle");
-  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Toggle Search Details"]')!.click());
   type("files to include", "src/**");
   type("files to exclude", "generated/**");
   act(() => document.querySelector<HTMLButtonElement>('[aria-label="Match case"]')!.click());
-  expect(host.querySelector('[aria-label="Filters"]')?.getAttribute("data-button-selected")).toBe(
-    "true",
-  );
-  const reset = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+  expect(
+    host.querySelector('[aria-label="Match case"]')?.getAttribute("data-button-selected"),
+  ).toBe("true");
+  const reset = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent === "Reset",
   )!;
   act(() => reset.click());
@@ -207,7 +252,7 @@ it("resets advanced filters without clearing the retained query", async () => {
   expect(input("files to include").value).toBe("");
   expect(input("files to exclude").value).toBe("");
   expect(
-    host.querySelector('[aria-label="Filters"]')?.getAttribute("data-button-selected"),
+    host.querySelector('[aria-label="Match case"]')?.getAttribute("data-button-selected"),
   ).toBeNull();
   await act(async () => vi.advanceTimersByTime(210));
   expect(search).toHaveBeenLastCalledWith(

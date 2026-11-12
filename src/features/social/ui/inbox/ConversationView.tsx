@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t } from "../../../../shared/i18n";
@@ -201,9 +202,12 @@ export function ConversationView({
 
       <MessageTimeline lines={lines} />
       {lines.length === 0 ? (
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="inbox-note">
-          {t("No messages in this conversation yet.")}
-        </Text>
+        <EmptyState
+          size="inline"
+          kind="empty"
+          className="inbox-note"
+          description={t("No messages in this conversation yet.")}
+        />
       ) : null}
       {timeline.data?.truncated ? (
         <Text as="p" size="caption" tone="muted" leading="inherit" className="inbox-note">

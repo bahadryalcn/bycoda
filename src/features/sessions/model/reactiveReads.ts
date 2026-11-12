@@ -19,6 +19,7 @@ import { createCardPlacer, crewMemberChildren } from "./delegatedCards";
 import { executionUserIndex } from "./executionTurn";
 import { queuedSteerRoute, queuedTargetSummary } from "./messageQueue";
 import { getModelSnapshot, resolveModel, subscribeModels } from "./models";
+import { modelDisplayName, modelHarness } from "./modelDisplayName";
 import type { Block, HarnessId, Session, ToolPreview } from "./session";
 import { useSessionsSelector } from "./sessionsStore";
 import { resolveToolCallDisplay, subagentModelName } from "./transcriptActivity";
@@ -35,6 +36,25 @@ import { resolveToolCallDisplay, subagentModelName } from "./transcriptActivity"
 /** Changes when the live model catalog or the turned-off models change. */
 export function useModelCatalogRevision(): number {
   return useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
+}
+
+/** Readable identity follows catalog updates through a subscribed hook. */
+export function useModelDisplayName(model: string, harness?: string): string {
+  const catalog = useModelCatalogRevision();
+  return useMemo(
+    () => modelDisplayName(model, harness),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalog invalidates the live lookup
+    [model, harness, catalog],
+  );
+}
+
+export function useModelHarness(model: string, harness?: string): HarnessId | undefined {
+  const catalog = useModelCatalogRevision();
+  return useMemo(
+    () => modelHarness(model, harness),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalog invalidates the live lookup
+    [model, harness, catalog],
+  );
 }
 
 /** Changes when the home directory or path variables arrive from the machine. */

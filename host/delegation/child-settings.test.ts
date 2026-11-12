@@ -55,3 +55,14 @@ it("defaults subagents independently and maps explicit effort", () => {
   expect(childModelSettings(child, {}, "ultra")).toEqual({ effort: "high" });
   expect(() => childModelSettings(child, {}, "expensive")).toThrow("Unknown effort");
 });
+
+it("holds subagent effort under the ceiling", () => {
+  const child = model(levels("effort", ["low", "medium", "high", "max"], "high"));
+  expect(childModelSettings(child, {}, "max", "medium")).toEqual({ effort: "medium" });
+  // The model default is clamped too when no effort is named.
+  expect(childModelSettings(child, {}, undefined, "low")).toEqual({ effort: "low" });
+  expect(childModelSettings(child, {}, "low", "max")).toEqual({ effort: "low" });
+  // Every level above the ceiling: the lowest offered level runs instead of a refusal.
+  const heavy = model(levels("effort", ["high", "max"], "max"));
+  expect(childModelSettings(heavy, {}, "max", "low")).toEqual({ effort: "high" });
+});

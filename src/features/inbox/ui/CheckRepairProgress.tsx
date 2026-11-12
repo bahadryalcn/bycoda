@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
@@ -273,17 +274,20 @@ export function CheckRepairStatus({ item }: { item: RepairItem }) {
   useLocale();
   const status = states[item.state];
   return (
-    <Badge
-      size="xs"
-      tone={status.color}
-      appearance="subtle"
-      icon={status.Icon === "spinner" ? <Spinner size="sm" /> : <status.Icon strokeWidth={1.75} />}
-      data-repair-status
-      role="status"
-      title={t(status.summary)}
-    >
-      {status.label}
-    </Badge>
+    <Tooltip label={t(status.summary)} asChild>
+      <Badge
+        size="xs"
+        tone={status.color}
+        appearance="subtle"
+        icon={
+          status.Icon === "spinner" ? <Spinner size="sm" /> : <status.Icon strokeWidth={1.75} />
+        }
+        data-repair-status
+        role="status"
+      >
+        {status.label}
+      </Badge>
+    </Tooltip>
   );
 }
 
@@ -357,14 +361,19 @@ function RepairCard({
                   </Badge>
                 ))}
               </Text>
-              <Text
-                size="caption"
-                tone="secondary"
-                title={single ? `${single.check.workflow}: ${single.check.name}` : undefined}
-                className="mt-0.5 block break-words"
+              <Tooltip
+                label={single ? `${single.check.workflow}: ${single.check.name}` : undefined}
+                asChild
               >
-                {single ? single.check.name : t("CI repair for {p0}", { p0: label })}
-              </Text>
+                <Text
+                  size="caption"
+                  tone="secondary"
+
+                  className="mt-0.5 block break-words"
+                >
+                  {single ? single.check.name : t("CI repair for {p0}", { p0: label })}
+                </Text>
+              </Tooltip>
             </span>
           </span>
         }
@@ -403,19 +412,25 @@ function RepairCard({
           <p>{t("Included checks")}</p>
           <ul className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
             {group.items.map(({ check }) => (
-              <Text
-                as="li"
+              <Tooltip
                 key={JSON.stringify([check.workflow, check.name, check.url])}
-                size="inherit"
-                tone="secondary"
-                title={check.workflow}
-                {...surfaceAttributes(
-                  { radius: "sm", variant: "raised" },
-                  "max-w-full break-words px-2 py-1",
-                )}
+                label={check.workflow}
+                asChild
               >
-                {check.name}
-              </Text>
+                <Text
+                  as="li"
+                  key={JSON.stringify([check.workflow, check.name, check.url])}
+                  size="inherit"
+                  tone="secondary"
+
+                  {...surfaceAttributes(
+                    { radius: "sm", variant: "raised" },
+                    "max-w-full break-words px-2 py-1",
+                  )}
+                >
+                  {check.name}
+                </Text>
+              </Tooltip>
             ))}
           </ul>
           <p>

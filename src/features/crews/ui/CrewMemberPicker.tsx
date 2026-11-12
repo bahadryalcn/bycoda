@@ -9,7 +9,8 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { TabStrip } from "../../../shared/ui/Tabs";
 import { X } from "../../../shared/ui/icons";
 import type { CrewAgent, CrewRole, SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
@@ -87,10 +88,10 @@ export function CrewMemberPicker({
     onSelectedChange(on ? [...selected, agent.id] : selected.filter((id) => id !== agent.id));
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <SegmentedControl
+      <TabStrip
         label={t("Add from")}
         value={mode}
-        options={[
+        items={[
           {
             value: "library",
             label: t("Library ({p0})", { p0: data.agents.length }),
@@ -193,7 +194,7 @@ export function CrewMemberPicker({
             ) : null}
             {matches.length === 0 ? (
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 py-2">
-                <Text as="p">{t("No matching members.")}</Text>
+                <EmptyState size="inline" kind="filtered" description={t("No matching members.")} />
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
                   {t("Clear filters")}
                 </Button>
@@ -230,7 +231,7 @@ export function CrewMemberPicker({
                             ) : null}
                           </>
                         }
-                        className="grid min-w-0 flex-1 cursor-pointer grid-cols-[auto_minmax(0,1fr)_minmax(0,auto)] items-center gap-3 px-3 py-2"
+                        className="grid min-w-0 flex-1 cursor-pointer grid-cols-[auto_minmax(0,1fr)_minmax(0,auto)] items-center gap-3"
                       />
                     </ActionHost>
                   );
@@ -270,7 +271,8 @@ export function CrewMemberPicker({
               className="flex items-center gap-2"
             />
             {saveToLibrary ? (
-              <SegmentedControl
+              <RadioGroup
+                variant="inline"
                 label={t("Library availability")}
                 value={libraryScope}
                 options={[

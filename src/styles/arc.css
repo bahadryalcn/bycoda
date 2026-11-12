@@ -296,27 +296,6 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   line-height: var(--leading-body);
 }
 
-.bycoda-arc-menu .bycoda-arc-select-option:has(.bycoda-select-description) {
-  min-block-size: var(--ui-control-height-lg);
-  padding-block: var(--space-2);
-  line-height: var(--leading-body);
-}
-
-.bycoda-arc .bycoda-arc-select-option:is([data-highlighted], [aria-selected="true"]) {
-  background: var(--ui-surface-selected);
-  color: var(--foreground);
-}
-
-.bycoda-arc .bycoda-arc-select-option:active {
-  background: var(--ui-surface-pressed);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .bycoda-arc .bycoda-arc-select-option:hover:not([data-highlighted], [aria-selected="true"]) {
-    background: var(--ui-surface-hover);
-  }
-}
-
 /* Text controls match :focus-visible on pointer focus too. Use the adjusted
    interaction ink, which stays visible for white/black custom accents.
    Retain a real outline so forced-colors mode can still expose focus. */
@@ -409,10 +388,6 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   --surface-muted: var(--color-selection);
 }
 
-.bycoda-arc-menu [role="option"] {
-  min-block-size: var(--ui-control-height-compact);
-}
-
 .bycoda-arc-card {
   --text-lg: var(--ui-font-secondary);
   --space-5: 0.75rem;
@@ -425,15 +400,6 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   --ease-spring: var(--motion-ease-out);
   --ease-enter: var(--motion-ease-out);
   --shadow-floating: none;
-}
-
-.bycoda-arc.bycoda-arc-morph[data-open] {
-  z-index: var(--layer-popover);
-}
-
-/* MorphSelect expands its own surface rather than spawning a second portal. */
-.settings-group-content:has(.bycoda-arc-morph[data-open]) {
-  overflow: visible;
 }
 
 .bycoda-arc-field--search {

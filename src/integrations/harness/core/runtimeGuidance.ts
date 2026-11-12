@@ -47,6 +47,7 @@ export async function harnessRuntimeHints(
   sessionId: string,
   modelSettings?: Record<string, string>,
   thread?: RuntimeHintThread,
+  conversationAvailable = true,
 ): Promise<string> {
   const delegation = delegationGuidance(modelSettings, thread);
   // Delegation guidance is never suppressed by the negative cache.
@@ -55,7 +56,7 @@ export async function harnessRuntimeHints(
   const [social, logs, conversation] = await Promise.all([
     socialBridge(sessionId),
     runtimeLogsBridge(sessionId),
-    conversationToolsBridge(sessionId),
+    conversationAvailable ? conversationToolsBridge(sessionId) : Promise.resolve(null),
   ]);
   const bridges = [conversation, social, logs].filter((bridge) => !!bridge);
   if (!bridges.length) {

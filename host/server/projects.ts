@@ -1,3 +1,9 @@
+import {
+  readProviderAccountStyles,
+  providerDefaultAccounts,
+} from "../providers/provider-account-styles";
+import { readDisabledModels } from "../providers/disabled-models";
+import { applyDisabledModels } from "../domains/models/disabled-models";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setHarnessModels } from "../../src/features/sessions/model/models";
@@ -175,9 +181,15 @@ export function createProjectsRuntime(
     engine: dependencies.engine,
     directory: dirname(dependencies.engine.store.attachmentDir),
     featureSession: dependencies.featureSession,
-    models,
+    models: async (projectId) =>
+      applyDisabledModels(
+        await models(projectId),
+        await readDisabledModels(dependencies.engine.store),
+      ),
     providers: dependencies.providers,
     authStatus: readHarnessAuthStatus,
+    defaultAccounts: async () =>
+      providerDefaultAccounts(await readProviderAccountStyles(dependencies.engine.store)),
   });
   dependencies.engine.onParentStopped = async (sessionId) =>
     await conversationDelegation.cancelChildren(sessionId);

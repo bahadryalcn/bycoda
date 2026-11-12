@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/git";
 import { GitBranch } from "../../../shared/ui/icons";
@@ -35,13 +36,15 @@ export function CheckoutIdentity({
         {name}
       </Text>
       {showReference && reference ? (
-        <Text size="caption" leading="inherit" tone="secondary" className={styles.path} title={cwd}>
-          <GitBranch aria-hidden className="icon-xs shrink-0" />
-          <Text as="span" size="inherit" tone="inherit" truncate className={styles.reference}>
-            {checkout ? `${t(checkout.isMain ? "Main working copy" : "Worktree")} · ` : ""}
-            {reference}
+        <Tooltip label={cwd} asChild>
+          <Text size="caption" leading="inherit" tone="secondary" className={styles.path}>
+            <GitBranch aria-hidden className="icon-xs shrink-0" />
+            <Text as="span" size="inherit" tone="inherit" truncate className={styles.reference}>
+              {checkout ? `${t(checkout.isMain ? "Main working copy" : "Worktree")} · ` : ""}
+              {reference}
+            </Text>
           </Text>
-        </Text>
+        </Tooltip>
       ) : null}
     </span>
   );

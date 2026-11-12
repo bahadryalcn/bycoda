@@ -1,4 +1,7 @@
+import { resolveSubagents } from "../../../shared/model/automaticSubagents";
+import { defaultProviderAccountId } from "../../providers/public/providerAccounts";
 import { isModelEnabled, type AgentModel, type ModelSetting } from "./models";
+import { modelDisplayName } from "./modelDisplayName";
 import { HARNESS_TITLE, type HarnessId } from "./session";
 import { CLAUDE_SUBAGENT_SETTINGS } from "./claudeSubagents";
 import {
@@ -11,6 +14,9 @@ import {
   type ModelAccountCatalog,
 } from "./accountModelChoices";
 import {
+  AUTOMATIC_SUBAGENTS,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
+  EFFORT_LEVELS,
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
   DELEGATION_LIMITS,
@@ -72,7 +78,11 @@ export function isMultiSetting(setting: ModelSetting): boolean {
 }
 
 export function isDelegationSetting(setting: ModelSetting): boolean {
-  return isMultiSetting(setting) || setting.id === CROSS_ADVISOR_KEY;
+  return (
+    isMultiSetting(setting) ||
+    setting.id === CROSS_ADVISOR_KEY ||
+    setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY
+  );
 }
 
 /**
@@ -118,7 +128,9 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
   const known = new Set(choices.map((choice) => choiceKey(choice.ref)));
   const unavailable = (ref: DelegateModelRef) => ({
     value: refValue(ref),
-    label: input.unavailable(`${HARNESS_TITLE[ref.harness]} · ${ref.model}`),
+    label: input.unavailable(
+      `${HARNESS_TITLE[ref.harness]} · ${modelDisplayName(ref.model, ref.harness)}`,
+    ),
   });
   const savedSubagents = decodeSubagents(input.values[CROSS_SUBAGENTS_KEY]);
   const savedAdvisor = decodeAdvisor(input.values[CROSS_ADVISOR_KEY]);
@@ -151,7 +163,13 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
         : undefined;
     const account = ref.providerAccountId
       ? accountModelChoices(
-          [{ id: ref.model, harness: "claude", name: option?.label ?? ref.model }],
+          [
+            {
+              id: ref.model,
+              harness: "claude",
+              name: option?.label ?? modelDisplayName(ref.model, ref.harness),
+            },
+          ],
           true,
           input.source.accounts,
         ).find((item) => item.accountId === ref.providerAccountId)
@@ -177,8 +195,27 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
     label: "Subagents",
     kind: "select",
     value: encodeSubagents(legacySubagent ? [legacySubagent] : []) ?? "",
+    resolvedSubagents: resolveSubagents(AUTOMATIC_SUBAGENTS, {
+      harness: input.current.harness,
+      providerAccountId: input.currentAccountId,
+      providers: input.harnesses,
+      models: input.harnesses.flatMap((id) =>
+        input.source.modelsFor(id).filter((model) => isModelEnabled(model.id)),
+      ),
+      defaultAccounts: Object.fromEntries(
+        ["claude", "codex"].map((id) => [
+          id,
+          input.source.accounts
+            ? (input.source.accounts[id as "claude" | "codex"]?.find((account) => account.isDefault)
+                ?.id ?? "default")
+            : defaultProviderAccountId(id as "claude" | "codex"),
+        ]),
+      ),
+      signedOutAccounts: input.signedOutAccounts,
+    }),
     options: [
       OFF,
+      { value: AUTOMATIC_SUBAGENTS, label: "Automatic" },
       ...choices.map((choice) => option(choice, savedSubagents)),
       ...savedSubagents.filter((ref) => !known.has(choiceKey(ref))).map((ref) => legacyOption(ref)),
     ],
@@ -198,7 +235,23 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
         : []),
     ],
   };
-  return [subagents, advisor];
+  return [
+    subagents,
+    advisor,
+    {
+      id: CROSS_SUBAGENT_MAX_EFFORT_KEY,
+      label: "Subagent max effort",
+      kind: "select",
+      value: "",
+      options: [
+        { value: "", label: "Automatic" },
+        ...EFFORT_LEVELS.map((value) => ({
+          value,
+          label: value[0].toUpperCase() + value.slice(1),
+        })),
+      ],
+    },
+  ];
 }
 
 /** Whether an option is on: subagents by membership, the advisor by equality. */
@@ -207,13 +260,18 @@ export function delegationOptionSelected(
   values: Record<string, string>,
   value: string,
 ): boolean {
+  if (setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY)
+    return (values[setting.id] ?? setting.value) === value;
   if (!isDelegationSetting(setting)) return (values[setting.id] ?? setting.value) === value;
   if (isImageModelsSetting(setting)) {
     const chosen = decodeImageModels(values[IMAGE_MODELS_KEY] ?? setting.value) ?? [];
     return value ? (chosen as string[]).includes(value) : chosen.length === 0;
   }
   if (isSubagentSetting(setting)) {
-    const chosen = decodeSubagents(values[CROSS_SUBAGENTS_KEY] ?? setting.value);
+    const wire = values[CROSS_SUBAGENTS_KEY] ?? setting.value;
+    if (value === AUTOMATIC_SUBAGENTS) return wire === AUTOMATIC_SUBAGENTS;
+    if (wire === AUTOMATIC_SUBAGENTS) return false;
+    const chosen = decodeSubagents(wire);
     if (!value) return chosen.length === 0;
     const ref = decodeAdvisor(value);
     return !!ref && chosen.some((item) => choiceKey(item) === choiceKey(ref));
@@ -240,7 +298,8 @@ export function delegationNextValue(
     return next.length ? (encodeImageModels(next) ?? "") : "";
   }
   if (!isSubagentSetting(setting)) return value;
-  if (!value) return "";
+  if (value === AUTOMATIC_SUBAGENTS) return value;
+  if (!value) return "[]";
   const ref = decodeAdvisor(value);
   if (!ref) return values[CROSS_SUBAGENTS_KEY] ?? "";
   const chosen = decodeSubagents(values[CROSS_SUBAGENTS_KEY] ?? setting.value);
@@ -251,7 +310,7 @@ export function delegationNextValue(
     : chosen.length >= DELEGATION_LIMITS.subagentModels
       ? chosen
       : [...chosen, ref];
-  return encodeSubagents(next) ?? "";
+  return encodeSubagents(next) ?? "[]";
 }
 
 /** "Off", the one picked option's label, or "<first> +N" for several subagents. */
@@ -259,6 +318,16 @@ export function crossDelegationSummary(
   setting: ModelSetting,
   values: Record<string, string>,
 ): string {
+  if (isSubagentSetting(setting)) {
+    const wire = values[setting.id] ?? setting.value;
+    if (wire === AUTOMATIC_SUBAGENTS) return "Automatic";
+    if (decodeSubagents(wire).length === 0) return "Off";
+  }
+  if (setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY)
+    return (
+      setting.options.find((option) => option.value === (values[setting.id] ?? setting.value))
+        ?.label ?? "Automatic"
+    );
   const picked = setting.options.filter(
     (option) => option.value && delegationOptionSelected(setting, values, option.value),
   );

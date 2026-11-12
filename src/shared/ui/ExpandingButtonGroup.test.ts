@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ExpandingButtonGroup } from "./ExpandingButtonGroup";
+import { ButtonGroup } from "./ButtonGroup";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -46,7 +46,8 @@ async function renderHoverActions() {
   vi.useFakeTimers();
   await act(async () =>
     root.render(
-      createElement(ExpandingButtonGroup, {
+      createElement(ButtonGroup, {
+        variant: "expanding",
         label: "Actions",
         items: ["copy", "chat", "link"].map((id) => ({ id, label: id, icon })),
       }),
@@ -59,7 +60,8 @@ it("can rest as icons while preserving hover, keyboard and click access", async 
   const open = vi.fn();
   await act(async () =>
     root.render(
-      createElement(ExpandingButtonGroup, {
+      createElement(ButtonGroup, {
+        variant: "expanding",
         label: "Notes",
         defaultExpanded: null,
         items: [
@@ -117,7 +119,8 @@ it("keeps the current destination while another label expands and supports conte
   const openInbox = vi.fn();
   await act(async () =>
     root.render(
-      createElement(ExpandingButtonGroup, {
+      createElement(ButtonGroup, {
+        variant: "expanding",
         label: "Workspace tools",
         defaultExpanded: "notes",
         items: [
@@ -170,7 +173,8 @@ it("awaits real success, blocks duplicate and concurrent activation, and clears 
   const link = vi.fn();
   await act(async () =>
     root.render(
-      createElement(ExpandingButtonGroup, {
+      createElement(ButtonGroup, {
+        variant: "expanding",
         label: "Note actions",
         confirmDuration: 100,
         items: [
@@ -204,7 +208,8 @@ it.each(["false", "rejection"])(
     });
     await act(async () =>
       root.render(
-        createElement(ExpandingButtonGroup, {
+        createElement(ButtonGroup, {
+          variant: "expanding",
           label: "Actions",
           items: [{ id: "copy", label: "Copy", doneLabel: "Copied", icon, onSelect: select }],
         }),
@@ -223,7 +228,8 @@ it("reveals a collapsed command on first touch and exposes disabled commands thr
   const disabled = vi.fn();
   await act(async () =>
     root.render(
-      createElement(ExpandingButtonGroup, {
+      createElement(ButtonGroup, {
+        variant: "expanding",
         label: "Actions",
         items: [
           { id: "copy", label: "Copy", icon },

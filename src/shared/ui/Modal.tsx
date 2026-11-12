@@ -33,12 +33,12 @@ const WIDTH: Record<ModalSize, string> = {
   full: "w-[calc(100vw-24px)]",
 };
 
-/**
- * Header hierarchy follows task context with the existing props. Compact
- * workbench dialogs (`sm`) and end sheets read as panes and use the title role;
- * bounded-task dialogs (`md`, `lg`) use the heading role. The header itself is the
- * shared `PanelHeader` (context, title, description, 28px ghost close).
- */
+/** Dialog chrome is shared by centered, native-window and non-modal sheet surfaces. */
+export const DIALOG_HEADER_CLASS_NAME = "px-4 pt-2 pb-1";
+export const DIALOG_BODY_PADDING_CLASS_NAME = "px-4 pt-2 pb-4";
+export const DIALOG_FOOTER_CLASS_NAME =
+  "flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3";
+
 const FOOTER_ALIGN = {
   start: "justify-start",
   end: "justify-end",
@@ -215,8 +215,7 @@ export function ModalPanel({
     }
   }, [overlayId]);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
-  // A divider under an unframed header once content scrolls beneath it, so the title never
-  // reads as overlapping clipped rows. Framed (sheet/bottom) headers already have one.
+  // A divider under the shared header once content scrolls beneath it keeps clipped rows distinct.
   const [scrolled, setScrolled] = useState(false);
   const [footerSlot, setFooterSlot] = useState<HTMLElement | null>(null);
   const [footerClaims, setFooterClaims] = useState(0);
@@ -229,7 +228,6 @@ export function ModalPanel({
   const descriptionId = description ? `${uid}-desc` : undefined;
   const sheet = placement === "end";
   const bottom = placement === "bottom";
-  const level = sheet || bottom || size === "sm" ? "compact" : "task";
   const expandLabel = t(expanded ? "Restore window" : "Full screen");
   const headerActions =
     toolbar || expandable ? (
@@ -298,15 +296,11 @@ export function ModalPanel({
               <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
                 <PanelHeader
                   className={
-                    minimalHeader
-                      ? "absolute top-3 right-3 z-[2]"
-                      : sheet || bottom
-                        ? "border-b border-(--ui-tone-neutral-border) px-4 py-2.5"
-                        : "px-4 pt-3"
+                    minimalHeader ? "absolute top-3 right-3 z-[2]" : DIALOG_HEADER_CLASS_NAME
                   }
                   title={title}
                   titleId={titleId}
-                  level={level}
+                  level="compact"
                   context={minimalHeader ? undefined : context}
                   description={description}
                   descriptionId={descriptionId}
@@ -326,7 +320,7 @@ export function ModalPanel({
                   }}
                   {...optionalTextAttributes(
                     bodyText ?? {},
-                    `min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-hidden" : "overflow-y-auto"} ${(padding ?? (scroll === "none" ? "none" : "md")) === "md" ? "px-4 pt-2 pb-4" : ""} ${minimalHeader || sheet || bottom ? "" : `border-t ${scrolled ? "border-(--ui-tone-neutral-border)" : "border-transparent"}`}`,
+                    `min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-hidden" : "overflow-y-auto"} ${(padding ?? (scroll === "none" ? "none" : "md")) === "md" ? DIALOG_BODY_PADDING_CLASS_NAME : ""} ${minimalHeader ? "" : `border-t ${scrolled ? "border-(--ui-tone-neutral-border)" : "border-transparent"}`}`,
                   )}
                 >
                   {children}
@@ -334,7 +328,7 @@ export function ModalPanel({
                 {footer || footerStart || footerClaims > 0 ? (
                   <footer
                     ref={setFooterSlot}
-                    className={`flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3 ${FOOTER_ALIGN[footerStart ? "between" : footerAlign]}`}
+                    className={`${DIALOG_FOOTER_CLASS_NAME} ${FOOTER_ALIGN[footerStart ? "between" : footerAlign]}`}
                   >
                     {footerStart ? (
                       <>
@@ -364,6 +358,7 @@ export function ModalPanel({
  * routing) with the standard header, one scrolling body and a pinned footer. The body owns its
  * padding, so children carry none; `padding="none"` is only for full-bleed content that pads
  * itself (lists, editors, previews).
+ * Hand-written blocking dialog layers, headers and action footers; native popup hosts render the same ModalPanel.
  * @group overlay
  * @use A bounded task or form that needs the user's focus (create, edit, review).
  * @avoid Side panels: Sheet. Small anchored UI: Popover. Yes/no confirmations: ConfirmDialog.

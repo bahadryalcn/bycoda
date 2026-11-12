@@ -39,7 +39,7 @@ export function NotificationRequestCard({
   return (
     <ActionHost
       as="article"
-      className="approval-toast notification-request pointer-events-auto flex-col items-stretch gap-0 overflow-clip rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-floating) shadow-(--ui-elevation-floating)"
+      className="approval-toast notification-request pointer-events-auto flex-col items-stretch gap-0 overflow-clip"
       role="status"
     >
       <Button

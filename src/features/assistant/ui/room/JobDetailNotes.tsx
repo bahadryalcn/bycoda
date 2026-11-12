@@ -1,3 +1,4 @@
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Text } from "../../../../shared/ui/Text";
@@ -40,9 +41,12 @@ export function JobDetailNotes({
   const hits = jobNoteHits(job, notes);
   if (!hits.length)
     return (
-      <Text as="p" leading="inherit" className={styles.muted}>
-        {t("No notes mention this job yet.")}
-      </Text>
+      <EmptyState
+        size="inline"
+        kind="empty"
+        className={styles.muted}
+        description={t("No notes mention this job yet.")}
+      />
     );
   return (
     <div className={styles.block}>

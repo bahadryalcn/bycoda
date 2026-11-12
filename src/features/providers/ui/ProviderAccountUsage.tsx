@@ -1,5 +1,5 @@
 import { optionalTextAttributes, Text, type TextRoles } from "../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import {
   clampUsedPercent,
@@ -13,7 +13,7 @@ import type { AccountStatus, AccountStatusTone, AccountUsage } from "../model/ac
 import { RefreshCw } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
-import { Progress } from "../../../shared/ui/Progress";
+import { UsageMeter as QuotaMeter } from "../../../shared/ui/UsageMeter";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 
@@ -46,7 +46,7 @@ export function AccountStatusLabel({
       )}
     >
       <Badge tone={STATUS_TONE[status.tone]} size="sm">
-        {status.label}
+        {t(status.label)}
       </Badge>
       {status.detail ? (
         <OverflowTooltip label={status.detail}>
@@ -166,7 +166,6 @@ export function UsageMeter({
   const showRemaining = useShowRemainingUsage();
   const pct = clampUsedPercent(window.usedPercent);
   const remaining = 100 - pct;
-  const shown = showRemaining ? remaining : pct;
   const full = pct >= 100 && (window.resetsAt == null || window.resetsAt > now);
   const reset =
     window.resetsAt == null
@@ -175,40 +174,46 @@ export function UsageMeter({
         ? t("reset due")
         : formatResetDuration(window.resetsAt - now);
   return (
-    <div
-      className={className}
-      title={
+    <Tooltip
+      label={
         window.resetsAt == null
           ? undefined
           : t("Resets {p0}", { p0: new Date(window.resetsAt).toLocaleString(getLocale()) })
       }
+      asChild
     >
-      <Text as="div" className="flex items-baseline justify-between gap-2">
-        <Text size="inherit" tone="secondary" truncate className="min-w-0">
-          {title} · <span className="tabular-nums">{reset}</span>
+      <div className={className}>
+        <Text as="div" className="flex items-baseline justify-between gap-2">
+          <Text size="inherit" tone="secondary" truncate className="min-w-0">
+            {title} · <span className="tabular-nums">{reset}</span>
+          </Text>
+          <Text
+            as="span"
+            size="inherit"
+            tone={full ? "danger" : "secondary"}
+            weight={full ? "medium" : undefined}
+            className="shrink-0 tabular-nums"
+          >
+            {showRemaining
+              ? t("{p0} left", { p0: formatUsagePercent(remaining) })
+              : full
+                ? t("Full")
+                : formatUsagePercent(pct)}
+          </Text>
         </Text>
-        <Text
-          as="span"
-          size="inherit"
-          tone={full ? "danger" : "secondary"}
-          weight={full ? "medium" : undefined}
-          className="shrink-0 tabular-nums"
-        >
-          {showRemaining
-            ? t("{p0} left", { p0: formatUsagePercent(remaining) })
-            : full
-              ? t("Full")
-              : formatUsagePercent(pct)}
-        </Text>
-      </Text>
-      <Progress
-        compact
-        tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
-        className="mt-1.5"
-        value={Math.round(shown)}
-        aria-label={t(showRemaining ? "{p0} limit remaining" : "{p0} limit used", { p0: title })}
-      />
-    </div>
+        <QuotaMeter
+          compact
+          showLegend={false}
+          showRemaining={showRemaining}
+          segments={[{ id: "usage", label: title, value: Math.round(pct) }]}
+          limit={100}
+          decimals={0}
+          tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
+          className="mt-1.5"
+          label={t(showRemaining ? "{p0} limit remaining" : "{p0} limit used", { p0: title })}
+        />
+      </div>
+    </Tooltip>
   );
 }
 

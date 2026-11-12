@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import { ProviderAccountSubtitle } from "./ProviderAccountSubtitle";
 import { AccountStatusLabel } from "./ProviderAccountUsage";
+import { setLanguagePreference } from "../../../shared/i18n";
 
 const identity = { plan: "Pro", email: undefined } as never;
 
@@ -32,6 +33,15 @@ it("ProviderAccountSubtitle takes size, tone and truncate, also on the fallback"
 });
 
 const status = { tone: "ready", label: "Ready", detail: "back in 3m" } as never;
+
+it("translates account readiness in Turkish", async () => {
+  await setLanguagePreference("tr");
+  try {
+    expect(renderToStaticMarkup(createElement(AccountStatusLabel, { status }))).toContain("Hazır");
+  } finally {
+    await setLanguagePreference("en");
+  }
+});
 
 it("AccountStatusLabel keeps its detail ink by default and takes the new roles", () => {
   const plain = renderToStaticMarkup(createElement(AccountStatusLabel, { status }));

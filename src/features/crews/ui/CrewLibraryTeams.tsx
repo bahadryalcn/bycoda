@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -34,9 +35,9 @@ export function CrewMemberTeams({ teams }: { teams: readonly CrewDefinition[] })
         </span>
       ))}
       {hidden.length ? (
-        <span className="shrink-0" title={hidden.map((team) => team.name).join(", ")}>
-          {t("+{p0}", { p0: hidden.length })}
-        </span>
+        <Tooltip label={hidden.map((team) => team.name).join(", ")} asChild>
+          <span className="shrink-0">{t("+{p0}", { p0: hidden.length })}</span>
+        </Tooltip>
       ) : null}
     </Text>
   );

@@ -121,7 +121,11 @@ function RangeEditor({
     );
   };
   return (
-    <div className={styles.range}>
+    <div
+      className={styles.range}
+      data-presets={presets.length ? true : undefined}
+      data-time={withTime || undefined}
+    >
       {presets.length ? (
         <div className={styles.presets}>
           {presets.map((preset, index) => (
@@ -132,9 +136,10 @@ function RangeEditor({
               disabled={!allowedPreset(preset)}
               onClick={() => selectRange(preset.range(new Date()))}
               onKeyDown={(event) => {
-                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                const forward = event.key === "ArrowRight" || event.key === "ArrowDown";
+                if (!forward && event.key !== "ArrowLeft" && event.key !== "ArrowUp") return;
                 event.preventDefault();
-                const direction = event.key === "ArrowRight" ? 1 : -1;
+                const direction = forward ? 1 : -1;
                 for (let step = 1; step < presets.length; step++) {
                   const next = (index + step * direction + presets.length) % presets.length;
                   if (allowedPreset(presets[next])) {
@@ -151,79 +156,83 @@ function RangeEditor({
           ))}
         </div>
       ) : null}
-      <CalendarGrid
-        value={pending ? dateKey(pending) : start.slice(0, 10)}
-        range={shownRange}
-        pending={!!pending}
-        min={minimum?.slice(0, 10)}
-        max={max ? dateKey(withTime ? new Date(max.getTime() - 1) : max) : undefined}
-        autoFocus
-        onPreview={setPreview}
-        onChange={(date) => {
-          if (pending) selectRange({ start: pending, end: date });
-          else {
-            setPending(date);
-            setPreview(date);
-          }
-        }}
-      />
-      <ValueEntry
-        value={start}
-        mode={mode}
-        label={withTime ? t("Start date and time") : t("Start date")}
-        onChange={updateStart}
-        onValidityChange={(valid) => setEntryValid((state) => ({ ...state, start: valid }))}
-      />
-      <ValueEntry
-        value={end}
-        mode={mode}
-        label={withTime ? t("End date and time") : t("End date")}
-        onChange={updateEnd}
-        onValidityChange={(valid) => setEntryValid((state) => ({ ...state, end: valid }))}
-      />
-      {withTime ? (
-        <>
-          <div className={styles.endpoints}>
-            <Button
-              size="sm"
-              variant="ghost"
-              selected={endpoint === "start"}
-              aria-pressed={endpoint === "start"}
-              onClick={() => setEndpoint("start")}
-            >
-              {t("Start")}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              selected={endpoint === "end"}
-              aria-pressed={endpoint === "end"}
-              onClick={() => setEndpoint("end")}
-            >
-              {t("End")}
-            </Button>
+      <div className={styles.rangeMain}>
+        <CalendarGrid
+          value={pending ? dateKey(pending) : start.slice(0, 10)}
+          range={shownRange}
+          pending={!!pending}
+          min={minimum?.slice(0, 10)}
+          max={max ? dateKey(withTime ? new Date(max.getTime() - 1) : max) : undefined}
+          autoFocus
+          onPreview={setPreview}
+          onChange={(date) => {
+            if (pending) selectRange({ start: pending, end: date });
+            else {
+              setPending(date);
+              setPreview(date);
+            }
+          }}
+        />
+        {withTime ? (
+          <div className={styles.side}>
+            <div className={styles.endpoints}>
+              <Button
+                size="sm"
+                variant="ghost"
+                selected={endpoint === "start"}
+                aria-pressed={endpoint === "start"}
+                onClick={() => setEndpoint("start")}
+              >
+                {t("Start")}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                selected={endpoint === "end"}
+                aria-pressed={endpoint === "end"}
+                onClick={() => setEndpoint("end")}
+              >
+                {t("End")}
+              </Button>
+            </div>
+            <TimeColumns
+              value={(endpoint === "start" ? start : end).slice(11)}
+              minuteStep={minuteStep}
+              disabled={!(endpoint === "start" ? parsedStart : parsedEnd)}
+              onChange={(time) => {
+                if (endpoint === "start") updateStart(`${start.slice(0, 10)}T${time}`);
+                else updateEnd(`${end.slice(0, 10)}T${time}`);
+              }}
+            />
+            <Text size="caption" tone="secondary">
+              {t("End time is exclusive.")}
+            </Text>
           </div>
-          <TimeColumns
-            value={(endpoint === "start" ? start : end).slice(11)}
-            minuteStep={minuteStep}
-            disabled={!(endpoint === "start" ? parsedStart : parsedEnd)}
-            onChange={(time) => {
-              if (endpoint === "start") updateStart(`${start.slice(0, 10)}T${time}`);
-              else updateEnd(`${end.slice(0, 10)}T${time}`);
-            }}
+        ) : null}
+        <div className={styles.entries}>
+          <ValueEntry
+            value={start}
+            mode={mode}
+            label={withTime ? t("Start date and time") : t("Start date")}
+            onChange={updateStart}
+            onValidityChange={(valid) => setEntryValid((state) => ({ ...state, start: valid }))}
           />
-          <Text size="caption" tone="secondary">
-            {t("End time is exclusive.")}
+          <ValueEntry
+            value={end}
+            mode={mode}
+            label={withTime ? t("End date and time") : t("End date")}
+            onChange={updateEnd}
+            onValidityChange={(valid) => setEntryValid((state) => ({ ...state, end: valid }))}
+          />
+        </div>
+        {parsedStart &&
+        parsedEnd &&
+        (withTime ? parsedEnd <= parsedStart : parsedEnd < parsedStart) ? (
+          <Text size="caption" tone="danger" className={styles.wide}>
+            {t("End must be after start.")}
           </Text>
-        </>
-      ) : null}
-      {parsedStart &&
-      parsedEnd &&
-      (withTime ? parsedEnd <= parsedStart : parsedEnd < parsedStart) ? (
-        <Text size="caption" tone="danger">
-          {t("End must be after start.")}
-        </Text>
-      ) : null}
+        ) : null}
+      </div>
       <div className={styles.footer}>
         {clear}
         <Button variant="ghost" size="sm" onClick={close}>

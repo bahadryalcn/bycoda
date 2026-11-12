@@ -2,7 +2,7 @@ import { useId, type FormEvent } from "react";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { ModalFooter, ModalActions } from "../../../shared/ui/Modal";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Text } from "../../../shared/ui/Text";
 import { UserRound, Briefcase } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
@@ -115,20 +115,29 @@ export function ProviderAccountEditor({
             {t("Kind")}
           </Text>
           <div className="flex flex-wrap items-center gap-2">
-            <SegmentedControl
+            <RadioGroup
+              variant="inline"
               label={t("Kind")}
               value={editor.kind ?? ""}
               options={[
                 {
                   value: "personal",
-                  label: t("Personal"),
-                  icon: <UserRound className="icon-sm" aria-hidden />,
+                  label: (
+                    <span className="inline-flex items-center gap-1.5">
+                      <UserRound className="icon-sm" aria-hidden />
+                      {t("Personal")}
+                    </span>
+                  ),
                   disabled: working,
                 },
                 {
                   value: "work",
-                  label: t("Work"),
-                  icon: <Briefcase className="icon-sm" aria-hidden />,
+                  label: (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Briefcase className="icon-sm" aria-hidden />
+                      {t("Work")}
+                    </span>
+                  ),
                   disabled: working,
                 },
               ]}

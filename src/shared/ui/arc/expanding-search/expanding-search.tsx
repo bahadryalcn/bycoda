@@ -21,7 +21,7 @@ import {
 } from "motion/react";
 import { Search, X } from "../../icons";
 import { Button } from "../../Button";
-import { Popover } from "../../Popover";
+import { Popover, popupListClassName } from "../../Popover";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./expanding-search.module.css";
 
@@ -610,9 +610,9 @@ export function ExpandingSearch({
         <Popover
           anchor={shellRef}
           align={anchor}
-          width={size.current.expanded}
+          minWidth={size.current.expanded}
           maxHeight={320}
-          className={`bycoda-arc ${styles.body}`}
+          className={`bycoda-arc ${popupListClassName} ${styles.body}`}
           dismissOnEscape={!composing}
           onDismiss={(reason) => collapse(reason === "escape")}
         >

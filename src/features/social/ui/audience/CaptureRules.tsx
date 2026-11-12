@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Text } from "../../../../shared/ui/Text";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
@@ -129,9 +130,9 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
 
       {error ? <InlineError>{error}</InlineError> : null}
       {rules === undefined && !error ? (
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
+        <LoadingText delay={false} className="audience-muted">
           {t("Loading rules…")}
-        </Text>
+        </LoadingText>
       ) : null}
       {rules && !others.length ? (
         <EmptyHint message={t("No rules yet. A rule adds people to a list as they interact.")} />

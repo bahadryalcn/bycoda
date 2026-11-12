@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { useT } from "../../i18n";
-import { Check } from "../icons";
+import { popupListClassName } from "../Popover";
+import { PickerChoice } from "./PickerChoice";
+import { ActionHost } from "../ActionHost";
 import { Button } from "../Button";
 import { MatchText, matchPositions } from "../MatchText";
 import { ComboboxItem, ComboboxList, ComboboxStatus } from "../arc/combobox/combobox";
@@ -12,11 +14,8 @@ import {
 } from "./usePickerList";
 import styles from "./picker.module.css";
 
-/**
- * Where the selected check sits: `trailing` (default, own end column), `leading` (before the icon),
- * `icon` (replaces the icon of the selected row) or `none` (selection shown by the fill only).
- */
-export type PickerCheckPlacement = "trailing" | "leading" | "icon" | "none";
+/** Value lists show the shared leading check; action lists without a committed value may omit it. */
+export type PickerCheckPlacement = "leading" | "none";
 
 type PickerListSource =
   | (PickerListOptions & { controller?: undefined })
@@ -36,7 +35,7 @@ export type PickerListProps = PickerListSource & {
   /** Raw query, to accent matched text in string titles. */
   query?: string;
   checkPlacement?: PickerCheckPlacement;
-  /** `sm` 28px rows for toolbars; `md` (default) 32px rows. Rows with a description grow. */
+  /** Compatibility density hint; every row follows the shared control-density token. Descriptions grow. */
   density?: "sm" | "md";
   /** Focus the list on mount (list-owned focus only). */
   autoFocus?: boolean;
@@ -50,17 +49,24 @@ export type PickerListProps = PickerListSource & {
   emptyLabel?: ReactNode;
   /** Every row is unavailable (an async pick is running). */
   disabled?: boolean;
+  /** InlineAction/InlineMoreAction controls, siblings of the option button. */
+  renderOptionActions?: (option: PickerOption) => ReactNode;
+  /** Entry highlights on hover; movement ignores stationary pointer entry after keyboard scrolling. */
+  pointerHighlight?: "entry" | "movement";
   className?: string;
 };
 
 /**
  * App-facing popover listbox body: grouped option rows (icon, title, meta, description, trailing, check,
  * disabled reason), single or multi selection, arrow/Home/End/Enter/Space keys and typeahead.
+ * @group choice
+ * @use Embedded lists or externally controlled pickers with rich rows and action entries.
+ * @avoid Trigger plus ordinary value list: SearchableSelect. Commands only: DropdownMenu.
  */
 export function PickerList({
   label,
   query = "",
-  checkPlacement = "trailing",
+  checkPlacement = "leading",
   density = "md",
   autoFocus = false,
   loading = false,
@@ -71,6 +77,8 @@ export function PickerList({
   emptyLabel,
   disabled = false,
   className,
+  renderOptionActions,
+  pointerHighlight = "entry",
   ...source
 }: PickerListProps) {
   const t = useT();
@@ -78,7 +86,8 @@ export function PickerList({
   // Hooks run in a fixed order; with a controller the list's own model stays empty and unused.
   const own = usePickerList(controller ? NO_SELECTION : (source as PickerListOptions));
   const list = controller ?? own;
-  const listOwnsFocus = !controller;
+  const listOwnsFocus = !controller && !list.inputRef;
+  const pointer = useRef<{ x: number; y: number } | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const failed = error != null && error !== false && error !== "";
 
@@ -111,17 +120,15 @@ export function PickerList({
         ? t("Unavailable: {p0}", { p0: option.disabledReason })
         : option.description;
     const descriptionId = description != null ? `${list.optionId(index)}-description` : undefined;
-    const check = selected ? <Check aria-hidden className="icon-sm" strokeWidth={1.75} /> : null;
-    const icon = checkPlacement === "icon" && selected ? check : option.icon;
     const title =
       typeof option.title === "string" && query.trim() ? (
         <MatchText text={option.title} positions={matchPositions(option.title, query)} active />
       ) : (
         option.title
       );
-    return (
+    const button = (
       <ComboboxItem
-        key={`${option.value}\u0000${index}`}
+        key={option.value}
         id={list.optionId(index)}
         type="button"
         role="option"
@@ -136,36 +143,48 @@ export function PickerList({
         data-has-description={description != null ? "" : undefined}
         data-picker-action={option.onAction ? "" : undefined}
         onMouseDown={(event) => event.preventDefault()}
+        onContextMenu={option.onContextMenu}
         onMouseEnter={() => {
-          if (!unavailable) list.setActive(index);
+          if (!unavailable && pointerHighlight === "entry") list.setActive(index);
+        }}
+        onPointerMove={(event) => {
+          const previous = pointer.current;
+          pointer.current = { x: event.clientX, y: event.clientY };
+          if (
+            !unavailable &&
+            pointerHighlight === "movement" &&
+            (!previous || previous.x !== event.clientX || previous.y !== event.clientY)
+          )
+            list.setActive(index);
         }}
         onClick={() => {
           if (!unavailable) list.commit(index);
         }}
         className={`bycoda-arc-select-option ${styles.row}`}
       >
-        {checkPlacement === "leading" ? <span className={styles.check}>{check}</span> : null}
-        {icon != null || checkPlacement === "icon" ? (
-          <span className={styles.icon} aria-hidden>
-            {icon}
-          </span>
-        ) : null}
-        <span className={styles.body}>
-          <span className={styles.titleLine}>
-            <span className={styles.title}>{title}</span>
-            {option.meta != null ? <span className={styles.meta}>{option.meta}</span> : null}
-          </span>
-          {description != null ? (
-            <span id={descriptionId} className={styles.description}>
-              {description}
-            </span>
-          ) : null}
-        </span>
-        {option.trailing != null ? (
-          <span className={styles.trailing}>{option.trailing}</span>
-        ) : null}
-        {checkPlacement === "trailing" ? <span className={styles.check}>{check}</span> : null}
+        <PickerChoice
+          selected={selected}
+          showSelection={checkPlacement !== "none"}
+          icon={option.icon}
+          label={title}
+          title={typeof option.title === "string" ? option.title : option.textValue}
+          description={description}
+          descriptionId={descriptionId}
+          meta={option.meta}
+          trailing={option.trailing}
+        />
       </ComboboxItem>
+    );
+    const actions = renderOptionActions?.(option);
+    return actions == null ? (
+      button
+    ) : (
+      <ActionHost key={option.value} selected={selected} className={styles.actionRow}>
+        {button}
+        <div data-picker-actions="" className={styles.actions}>
+          {actions}
+        </div>
+      </ActionHost>
     );
   };
 
@@ -204,8 +223,15 @@ export function PickerList({
         aria-busy={loading || undefined}
         aria-activedescendant={listOwnsFocus ? list.activeOptionId : undefined}
         tabIndex={listOwnsFocus ? 0 : -1}
-        onKeyDown={listOwnsFocus ? list.onListKeyDown : undefined}
-        className={styles.list}
+        onKeyDown={(event) => {
+          if (!(event.target instanceof Element)) return;
+          // Inline actions keep their own keyboard activation and navigation.
+          if (event.target.closest("[data-picker-actions]")) return;
+          // A controller normally keeps focus in search; a clicked option can own it too.
+          if (listOwnsFocus || event.target.getAttribute("role") === "option")
+            list.onListKeyDown(event);
+        }}
+        className={`${styles.list} ${popupListClassName}`}
       >
         {sections.map((section) =>
           section.group ? (

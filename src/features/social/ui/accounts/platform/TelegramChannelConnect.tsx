@@ -1,8 +1,9 @@
+import { InlineError } from "../../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
-import { InlineMessage } from "../../../../../shared/ui/InlineError";
+
 import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import type { SocialAccount, SocialTelegramChannelReview } from "../../../model/social";
@@ -159,7 +160,7 @@ export function TelegramChannelConnect({
           </Button>
         </div>
       ) : null}
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
     </div>
   );
 }

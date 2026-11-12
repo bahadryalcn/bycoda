@@ -86,7 +86,7 @@ export function GrokLimits({ refresh }: { refresh: number }) {
           </div>
         ))}
       </div>
-      {loading ? <LoadingText presentation="text">{t("Loading usage…")}</LoadingText> : null}
+      {loading ? <LoadingText>{t("Loading usage…")}</LoadingText> : null}
       {limits.error ? (
         <InlineError
           retry={{ onRetry: () => void loadRateLimits("grok", "default", true), pending: loading }}

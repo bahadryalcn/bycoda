@@ -1,5 +1,11 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useLocale, useT } from "../i18n";
+import {
+  EmptyState as ArcEmptyState,
+  type EmptyStateProps as ArcEmptyStateProps,
+} from "./arc/empty-state/empty-state";
+import { InlineError } from "./InlineError";
+import { CircleAlert } from "./icons";
 import { Button } from "./Button";
 import styles from "./FailureState.module.css";
 
@@ -36,11 +42,12 @@ export const FAILURE_PREVIEW_CHARS = 8000;
  * Try again (promise-aware, blocks double press), optional secondary action and a Show/Copy details
  * area for the error text (preview capped, copy always complete). `fullScreen` makes the title an h1.
  * @group feedback
- * @use A pane, route or app boot that failed and needs retry plus copyable diagnostics.
- * @avoid Nothing to show, filtered or unreadable list: EmptyState `kind`. One-line message: InlineError. Boxed notice with a title: Alert.
+ * @use Replaces EmptyState kind="unavailable". An unavailable pane, route or app boot. Optional error adds copyable diagnostics; promise-aware retry blocks double activation.
+ * @replaces EmptyState
+ * @avoid Nothing to show or filtered list: EmptyState. Inline failure: InlineError. One-line message: InlineError. Boxed notice with a title: Alert.
  */
 export function FailureState({
-  title,
+  title = "",
   description,
   error,
   onRetry,
@@ -48,17 +55,30 @@ export function FailureState({
   retryLabel,
   secondaryAction,
   fullScreen = false,
-}: {
-  title: string;
-  description: string;
-  error: unknown;
+  brand,
+  context = "panel",
+  size = "block",
+  action,
+  icon,
+  className,
+  label,
+  descriptionText,
+  role,
+  ...props
+}: Omit<ArcEmptyStateProps, "onRetry"> & {
+  /** Technical diagnostic; omitted for an unavailable region with only plain copy. */
+  error?: unknown;
+  /** Inline failures use InlineError; block failures use the shared region layout. */
+  size?: "block" | "inline";
   /** Retry stays with the caller. Returning a promise shows progress and blocks a second activation until it settles. */
-  onRetry: () => void | Promise<unknown>;
+  onRetry?: () => void | Promise<unknown>;
   /** Marks a retry the caller already runs, for example one started elsewhere. */
   retrying?: boolean;
   retryLabel?: string;
   secondaryAction?: ReactNode;
   fullScreen?: boolean;
+  /** Decorative identity shown above the message, outside the alert, for a whole-app failure. */
+  brand?: ReactNode;
 }) {
   // Subscribed locale reads keep this component compilable; module t()/formatNumber are not reactive.
   const t = useT();
@@ -89,7 +109,7 @@ export function FailureState({
     copyGuard.current = false;
   }
   async function retry() {
-    if (retryGuard.current || retrying) return;
+    if (retryGuard.current || retrying || !onRetry) return;
     retryGuard.current = true;
     let result: void | Promise<unknown>;
     try {
@@ -120,13 +140,70 @@ export function FailureState({
     selection.addRange(range);
   }, [copy]);
 
+  const recovery = onRetry ? (
+    <Button
+      variant={size === "inline" ? "link" : "secondary"}
+      size="sm"
+      loading={retryBusy}
+      onClick={() => void retry()}
+    >
+      {retryLabel ?? t("Retry")}
+    </Button>
+  ) : null;
+  if (size === "inline") {
+    return (
+      <InlineError
+        {...props}
+        aria-label={label ?? props["aria-label"]}
+        text={descriptionText}
+        className={className}
+        live={role === "status" ? "polite" : role ? "off" : undefined}
+        icon={icon}
+        action={
+          <>
+            {action}
+            {recovery}
+          </>
+        }
+      >
+        {title ? <strong>{title} </strong> : null}
+        {description}
+      </InlineError>
+    );
+  }
+  if (error === undefined && !fullScreen) {
+    return (
+      <ArcEmptyState
+        {...props}
+        label={label}
+        descriptionText={descriptionText}
+        title={title}
+        description={description}
+        context={context}
+        role={role ?? "alert"}
+        data-kind="unavailable"
+        icon={icon === undefined ? <CircleAlert width={24} height={24} strokeWidth={1.5} /> : icon}
+        className={["bycoda-arc", className].filter(Boolean).join(" ")}
+        action={
+          action || recovery ? (
+            <>
+              {action}
+              {recovery}
+            </>
+          ) : undefined
+        }
+      />
+    );
+  }
   return (
     <section
-      className={styles.surface}
+      className={[styles.surface, className].filter(Boolean).join(" ")}
+      {...props}
       data-fullscreen={fullScreen || undefined}
       aria-labelledby={titleId}
     >
       <div className={styles.content}>
+        {brand}
         <div className={styles.message} role="alert">
           <Heading id={titleId} className={styles.title}>
             {title}
@@ -134,14 +211,17 @@ export function FailureState({
           <p className={styles.description}>{description}</p>
         </div>
         <div className={styles.actions}>
-          <Button
-            variant="primary"
-            motion="none"
-            loading={retryBusy || undefined}
-            onClick={() => void retry()}
-          >
-            {retryLabel ?? t("Try again")}
-          </Button>
+          {onRetry ? (
+            <Button
+              variant="primary"
+              motion="none"
+              loading={retryBusy || undefined}
+              onClick={() => void retry()}
+            >
+              {retryLabel ?? t("Try again")}
+            </Button>
+          ) : null}
+          {action}
           {secondaryAction}
           <Button
             variant="ghost"

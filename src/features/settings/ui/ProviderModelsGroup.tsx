@@ -1,6 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import "./ProviderDefaults.css";
-import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -8,7 +8,10 @@ import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
-import { CatalogReceiptStatus } from "../../providers/public/CatalogReceiptStatus";
+import {
+  CatalogReceiptStatus,
+  CatalogRefreshButton,
+} from "../../providers/public/CatalogReceiptStatus";
 import {
   catalogModelsFor,
   defaultModelId,
@@ -75,16 +78,19 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
       description={t("Models turned off stay out of every model picker. Changes save at once.")}
       dependency={models.length > 0 && enabledCount <= 1 ? guard : undefined}
       action={
-        models.length > 1 ? (
-          <div className="provider-models-actions">
-            <Button size="sm" variant="ghost" onClick={enableAll}>
-              {t("Enable all")}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onlyDefault}>
-              {t("Only default")}
-            </Button>
-          </div>
-        ) : undefined
+        <div className="provider-models-actions">
+          <CatalogRefreshButton harness={harness} />
+          {models.length > 1 ? (
+            <>
+              <Button size="sm" variant="ghost" onClick={enableAll}>
+                {t("Enable all")}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={onlyDefault}>
+                {t("Only default")}
+              </Button>
+            </>
+          ) : null}
+        </div>
       }
     >
       {models.length > 5 ? (
@@ -121,9 +127,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
                 key={model.id}
                 label={
                   <span className="provider-model-name">
-                    <Text size="inherit" tone="inherit" truncate>
-                      {model.name}
-                    </Text>
+                    <ModelLabel model={model.id} harness={model.harness} name={model.name} />
                     {model.id === defaultId ? (
                       <Badge size="sm" className="shrink-0">
                         {t("Default")}

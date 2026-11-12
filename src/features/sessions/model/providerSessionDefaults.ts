@@ -2,6 +2,7 @@ import { IMAGE_MODELS_KEY } from "../../../shared/model/host-contracts/image-mod
 import {
   carryCrossDelegation,
   CROSS_ADVISOR_KEY,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
   CROSS_SUBAGENTS_KEY,
 } from "../../../shared/model/host-contracts/delegation";
 import {
@@ -95,8 +96,10 @@ export function providerSessionDefaults(
   const recent = loadLastModelSettings();
   const recentDelegation = Object.fromEntries(
     [
+      CROSS_SUBAGENT_MAX_EFFORT_KEY,
       CROSS_SUBAGENTS_KEY,
       CROSS_ADVISOR_KEY,
+      CROSS_SUBAGENT_MAX_EFFORT_KEY,
       IMAGE_MODELS_KEY,
       ...(harness === "claude" ? ["advisor", "subagentModel"] : []),
     ]
@@ -129,7 +132,12 @@ export function applySessionDefaults(
     }
   }
   // An explicit empty selection overrides both recent settings and global defaults.
-  for (const key of [CROSS_SUBAGENTS_KEY, CROSS_ADVISOR_KEY, IMAGE_MODELS_KEY]) {
+  for (const key of [
+    CROSS_SUBAGENTS_KEY,
+    CROSS_ADVISOR_KEY,
+    CROSS_SUBAGENT_MAX_EFFORT_KEY,
+    IMAGE_MODELS_KEY,
+  ]) {
     if (defaults.extras?.[key] != null) delete next[key];
   }
   return carryCrossDelegation(defaults.extras, next);

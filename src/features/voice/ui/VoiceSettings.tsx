@@ -1,4 +1,5 @@
 import { TextField } from "../../../shared/ui/TextField";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { useAssistantSnapshot, assistantIdentity } from "../../assistant/model/assistantClient";
 import { Group, Row, Segmented, Select, Toggle } from "../../settings/public/settingsControls";
@@ -115,6 +116,7 @@ export function VoiceSettings() {
               options={DICTATION_MODELS[settings.dictationEngine].map((model) => ({
                 value: model.id,
                 label: model.label,
+                icon: <ModelLabel model={model.id} iconOnly />,
               }))}
               onChange={(value) =>
                 change({

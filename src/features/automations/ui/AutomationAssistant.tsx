@@ -5,7 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Alert } from "../../../shared/ui/Alert";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
 import type { RecentProject } from "../../projects/model/recents";
@@ -93,7 +93,8 @@ export function AutomationAssistant({
           onChange={(event) => setPrompt(event.target.value)}
         />
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <SegmentedControl
+          <RadioGroup
+            variant="inline"
             label={t("Scope")}
             value={scope}
             onValueChange={setScope}

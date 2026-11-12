@@ -1,6 +1,7 @@
 import { t } from "../../../shared/i18n/core";
 import type { HostModelCatalog } from "../../connections/model/protocol";
 import { modelEffortSetting } from "../../sessions/public/models";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import {
   crewWorkTitle,
   type CrewAgent,
@@ -81,7 +82,7 @@ export function candidateLabel(catalog: HostModelCatalog, candidate?: CrewCandid
   if (!candidate) return "";
   return (
     catalog.models[candidate.harness]?.find((m) => m.id === candidate.model)?.name ??
-    candidate.model
+    modelDisplayName(candidate.model, candidate.harness)
   );
 }
 

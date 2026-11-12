@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Progress } from "../../../shared/ui/Progress";
 import { useT } from "../../../shared/i18n";
@@ -105,27 +106,30 @@ export function GroupFetchPopover({
               key={path}
               className="flex items-center gap-2 px-2.5 py-1 "
             >
-              <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1" title={path}>
-                {basename(path)}
-              </Text>
-              <Text
-                size="micro"
-                tone={
-                  result?.status === "failed"
-                    ? "danger"
-                    : result?.status === "fetched"
-                      ? "success"
-                      : "muted"
-                }
-                className="shrink-0"
-                title={result?.error}
-              >
-                {result
-                  ? LABELS[result.status]
-                  : index === current && !done
-                    ? t("Fetching…")
-                    : t("Waiting")}
-              </Text>
+              <Tooltip label={path} asChild>
+                <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                  {basename(path)}
+                </Text>
+              </Tooltip>
+              <Tooltip label={result?.error} asChild>
+                <Text
+                  size="micro"
+                  tone={
+                    result?.status === "failed"
+                      ? "danger"
+                      : result?.status === "fetched"
+                        ? "success"
+                        : "muted"
+                  }
+                  className="shrink-0"
+                >
+                  {result
+                    ? LABELS[result.status]
+                    : index === current && !done
+                      ? t("Fetching…")
+                      : t("Waiting")}
+                </Text>
+              </Tooltip>
             </Text>
           );
         })}

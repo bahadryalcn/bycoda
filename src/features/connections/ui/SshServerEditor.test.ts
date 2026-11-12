@@ -329,10 +329,10 @@ it("retains HTTPS transport across editing and explicitly returns to legacy HTTP
     root.render(createElement(SshServerEditor, { server: secure, onClose: vi.fn() })),
   );
   const choice = (label: string) =>
-    [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
-      (button) => button.textContent === label,
+    [...document.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find(
+      (input) => input.closest("label")?.textContent === label,
     )!;
-  expect(choice("HTTPS").getAttribute("aria-checked")).toBe("true");
+  expect(choice("HTTPS").checked).toBe(true);
   await input("Proxy host", "secure-proxy.invalid");
   await submit();
   expect(vi.mocked(saveSshConnection).mock.calls[0][0].endpoint.httpProxy).toEqual({

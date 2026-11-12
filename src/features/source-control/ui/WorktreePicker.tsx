@@ -1,11 +1,10 @@
+import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
-import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
 import { pathKey, prettyCwd } from "../../../shared/lib/paths";
@@ -14,8 +13,7 @@ import { BranchPicker } from "./BranchPicker";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { GitPickerTrigger } from "./GitPickerTrigger";
 import { Popover } from "../../../shared/ui/Popover";
-import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
-import { Check, FolderTree, GitBranch, Plus, Settings } from "../../../shared/ui/icons";
+import { FolderTree, GitBranch, Plus, Settings } from "../../../shared/ui/icons";
 
 export function WorktreePicker({
   cwd,
@@ -47,7 +45,7 @@ export function WorktreePicker({
   const [query, setQuery] = useState("");
   const [activePath, setActivePath] = useState<string>();
   const anchor = useRef<HTMLDivElement>(null);
-  const activeOption = useRef<HTMLButtonElement>(null);
+  const search = useRef<HTMLInputElement>(null);
   const { branches, settled } = useProjectBranchesState(
     worktreeRemoved ? cwd : executionCwd,
     !!cwd && cwd !== "~",
@@ -93,10 +91,28 @@ export function WorktreePicker({
     0,
     rows.findIndex((tree) => pathKey(tree.path) === pathKey(activePath ?? executionCwd)),
   );
-  const activeRowPath = rows[active]?.path;
-  useEffect(() => {
-    if (open) activeOption.current?.scrollIntoView({ block: "nearest" });
-  }, [open, active, activeRowPath]);
+  const list = usePickerList({
+    options: rows.map((tree) => ({
+      value: pathKey(tree.path),
+      title: tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) }),
+      description: `${tree.isMain ? `${t("Project folder")} · ` : ""}${prettyCwd(tree.path)}${tree.missing ? t(" · Missing") : ""}`,
+      icon: tree.isMain ? (
+        <GitBranch className="icon-sm shrink-0" tone="secondary" />
+      ) : (
+        <FolderTree className="icon-sm shrink-0" tone="secondary" />
+      ),
+      disabled: busy || tree.missing,
+    })),
+    value: worktreeRemoved ? null : pathKey(executionCwd),
+    activeValue: rows[active] ? pathKey(rows[active]!.path) : null,
+    onActiveValueChange: (value) =>
+      setActivePath(rows.find((tree) => pathKey(tree.path) === value)?.path),
+    inputRef: search,
+    onChange: (value) => {
+      const tree = rows.find((tree) => pathKey(tree.path) === value);
+      if (tree) void select(tree);
+    },
+  });
   if (branchPicker)
     return (
       <BranchPicker
@@ -150,7 +166,7 @@ export function WorktreePicker({
         <Popover
           anchor={anchor}
           side="top"
-          width={320}
+          minWidth={320}
           maxHeight={400}
           onDismiss={() => {
             if (!busy) dismiss();
@@ -161,23 +177,13 @@ export function WorktreePicker({
           className="flex flex-col overflow-hidden"
         >
           <PopoverSearchHeader
+            {...list.searchProps}
             label={t("Search working copies")}
             placeholder={t("Search working copies…")}
             value={query}
             onValueChange={(value) => {
               setQuery(value);
               setActivePath(undefined);
-            }}
-            onMove={(move) => {
-              if (move !== "next" && move !== "previous") return;
-              const next = Math.max(
-                0,
-                Math.min(rows.length - 1, active + (move === "next" ? 1 : -1)),
-              );
-              setActivePath(rows[next]?.path);
-            }}
-            onSubmit={() => {
-              if (rows[active]) void select(rows[active]);
             }}
           />
           {worktreeRemoved && (
@@ -190,57 +196,14 @@ export function WorktreePicker({
               {t("Another working copy opens a new session.")}
             </Text>
           )}
-          <div
-            className="min-h-0 overflow-y-auto p-1"
-            role="listbox"
-            aria-label={t("Working copies")}
-          >
-            {!data && !loadError && (
-              <LoadingText className="p-2">{t("Loading working copies…")}</LoadingText>
-            )}
-            {rows.map((tree, index) => (
-              <Button
-                selected={active === index}
-                variant="item"
-                motion="none"
-                key={tree.path}
-                ref={index === active ? activeOption : undefined}
-                type="button"
-                role="option"
-                aria-selected={!worktreeRemoved && pathKey(tree.path) === pathKey(executionCwd)}
-                disabled={busy || tree.missing}
-                onMouseEnter={() => setActivePath(tree.path)}
-                onClick={() => void select(tree)}
-                tooltip={tree.path}
-                className={" flex w-full items-center gap-2 text-left "}
-              >
-                {tree.isMain ? (
-                  <GitBranch className="icon-sm shrink-0" tone="secondary" />
-                ) : (
-                  <FolderTree className="icon-sm shrink-0" tone="secondary" />
-                )}
-                <span className="min-w-0 flex-1">
-                  <MiddleTruncate mode="text" size="body">
-                    {tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) })}
-                  </MiddleTruncate>
-                  <MiddleTruncate mode="path" size="caption" tone="secondary">
-                    {`${tree.isMain ? `${t("Project folder")} · ` : ""}${prettyCwd(tree.path)}${tree.missing ? t(" · Missing") : ""}`}
-                  </MiddleTruncate>
-                </span>
-                {!worktreeRemoved && pathKey(tree.path) === pathKey(executionCwd) && (
-                  <Check className="icon-sm" />
-                )}
-              </Button>
-            ))}
-            {data && !rows.length && (
-              <EmptyState
-                size="inline"
-                kind="filtered"
-                className="px-2"
-                description={t("No matching working copies")}
-              />
-            )}
-          </div>
+          <PickerList
+            label={t("Working copies")}
+            controller={list}
+            loading={!data && !loadError}
+            loadingLabel={t("Loading working copies…")}
+            emptyLabel={t("No matching working copies")}
+            className="min-h-0 overflow-y-auto"
+          />
           {(error || loadError) && (
             <InlineError
               className="shrink-0 px-2 py-2"

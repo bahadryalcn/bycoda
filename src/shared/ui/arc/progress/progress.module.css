@@ -50,11 +50,11 @@
 }
 .track {
   position: relative;
-  block-size: 8px;
+  block-size: var(--space-1);
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-pill);
-  background: var(--ui-surface-muted);
+  background: var(--color-stroke);
 }
 .fill {
   display: block;

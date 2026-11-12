@@ -1,4 +1,4 @@
-import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -190,18 +190,18 @@ export function NotificationAlerts() {
               ? t("System permission not granted")
               : t("Status unavailable");
   const permissionStatus = (
-    <div className="notification-permission-message" role={permissionError ? "alert" : "status"}>
-      <Text
-        as="div"
-        size="inherit"
-        tone={notificationPermission === "denied" ? "warning" : "inherit"}
+    <div className="notification-permission-message">
+      <InlineMessage
+        tone={
+          permissionError ? "danger" : notificationPermission === "denied" ? "warning" : "neutral"
+        }
       >
         {!permissionError && !permissionPending && notificationPermission === "denied" ? (
           <NotificationsBlocked />
         ) : (
           permissionText
         )}
-      </Text>
+      </InlineMessage>
       <Button
         variant="ghost"
         iconOnly

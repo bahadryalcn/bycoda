@@ -53,7 +53,12 @@ function desktopFixtureRequest(input: any) {
   if (input.op === "configure") {
     if (input.expectedVersion !== desktopConfiguration.version)
       throw new Error("Desktop configuration changed. Refresh before saving.");
-    desktopConfiguration = { ...input.configuration, version: desktopConfiguration.version + 1 };
+    // Like the Host: full access covers every app, whatever the request carries.
+    desktopConfiguration = {
+      ...input.configuration,
+      allowAllApps: input.configuration.permissionMode === "full",
+      version: desktopConfiguration.version + 1,
+    };
     desktopStopped = !desktopConfiguration.enabled;
   } else if (input.op === "stop" || input.op === "resume") {
     desktopStopped = input.op === "stop";

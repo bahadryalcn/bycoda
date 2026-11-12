@@ -6,7 +6,7 @@ import { IS_MAC } from "../../platform/tauri/platform";
 import { PaneHeader } from "../../shared/ui/PaneHeader";
 import { WindowControls } from "./WindowControls";
 import { RecoveryBoundary } from "../../shared/ui/RecoveryBoundary";
-import { LoadingCard } from "../../shared/ui/LoadingCard";
+import { SurfaceLoading } from "../../shared/ui/SurfaceLoading";
 import { SkeletonBar } from "../../shared/ui/Skeleton";
 
 /** A pending page must not hide the workspace's navigation and session tree. */
@@ -43,7 +43,7 @@ function NavigationLoading({ name, onBack }: { name: string; onBack: () => void 
         titleAs="div"
         trailing={IS_MAC ? null : <WindowControls />}
       />
-      <LoadingCard
+      <SurfaceLoading
         title={t("Loading {p0}…", { p0: name })}
         slowDescription={t("{p0} is taking longer to load. You can return to the workspace.", {
           p0: name,
@@ -59,7 +59,7 @@ function NavigationLoading({ name, onBack }: { name: string; onBack: () => void 
         {["92%", "78%", "86%", "64%"].map((width, index) => (
           <SkeletonBar key={width} width={width} height="0.625rem" index={index + 1} />
         ))}
-      </LoadingCard>
+      </SurfaceLoading>
     </Text>
   );
 }

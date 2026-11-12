@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Folder, type IconComponent } from "../../../shared/ui/icons";
 import { useEffect, useState } from "react";
 import { projectLogoSrcAt } from "../model/projectLogos";
@@ -52,13 +53,11 @@ export function ProjectLogoIcon({
   }
   if (src)
     return (
-      <span
-        role="img"
-        aria-label={t("Project logo could not be loaded")}
-        title={t("Project logo could not be loaded")}
-      >
-        <Fallback className={className} strokeWidth={fallbackStrokeWidth} />
-      </span>
+      <Tooltip label={t("Project logo could not be loaded")} asChild>
+        <span role="img" aria-label={t("Project logo could not be loaded")}>
+          <Fallback className={className} strokeWidth={fallbackStrokeWidth} />
+        </span>
+      </Tooltip>
     );
   return <Fallback className={className} strokeWidth={fallbackStrokeWidth} />;
 }

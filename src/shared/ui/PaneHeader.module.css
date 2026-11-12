@@ -78,15 +78,7 @@
   padding-inline: 0.25rem;
 }
 .title {
-  min-inline-size: 0;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--ui-font-secondary);
-  line-height: var(--ui-leading-secondary);
-  font-weight: 500;
-  color: var(--color-content);
+  flex: 0 1 auto;
 }
 .meta {
   flex: 0 1 auto;

@@ -1,8 +1,9 @@
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+
 import { Group, Row } from "../../../settings/public/settingsControls";
 import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import type { SocialSnapshot } from "../../model/social";
@@ -58,7 +59,7 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
           </Badge>
         </span>
       }
-      feedback={error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      feedback={error ? <InlineError>{error}</InlineError> : null}
     >
       {!snapshot.sendingEnabled ? (
         <Row label={t("Enable approved sends")} stacked>

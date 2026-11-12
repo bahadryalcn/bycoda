@@ -1,6 +1,7 @@
 import type { ReactNode, Ref } from "react";
 import { Button } from "./Button";
 import { X } from "./icons";
+import { Heading } from "./Heading";
 
 export type PanelHeaderProps = {
   title: string;
@@ -21,11 +22,6 @@ export type PanelHeaderProps = {
   /** Keeps the text for assistive tech only, so focused content owns the visual hierarchy. */
   textOnlyForAssistiveTech?: boolean;
   className?: string;
-};
-
-const TITLE: Record<"compact" | "task", string> = {
-  compact: "text-ui-title font-medium text-content",
-  task: "text-ui-heading font-medium text-content",
 };
 
 /**
@@ -56,9 +52,9 @@ export function PanelHeader({
         {context ? (
           <div className="ui-secondary-text mb-0.5 truncate text-ui-caption">{context}</div>
         ) : null}
-        <h2 id={titleId} className={[TITLE[level], "break-words"].join(" ")}>
+        <Heading level={2} size={level === "task" ? "heading" : "page"} id={titleId}>
           {title}
-        </h2>
+        </Heading>
         {description ? (
           <p id={descriptionId} className="ui-secondary-text mt-0.5 break-words leading-snug">
             {description}

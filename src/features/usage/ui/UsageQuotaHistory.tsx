@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -131,14 +132,11 @@ export function QuotaHistory({
                 style={{ background: providerAccountColorValue(a) }}
               />
               <UsageProviderIdentity provider={a.provider} label={accountLabel(a)} />
-              <Text
-                size="inherit"
-                tone="secondary"
-                className="usage-quota-legend-value"
-                title={sample ? observationTime(sample.at) : undefined}
-              >
-                {sample ? percent(sample.used) : t("No records")}
-              </Text>
+              <Tooltip label={sample ? observationTime(sample.at) : undefined} asChild>
+                <Text size="inherit" tone="secondary" className="usage-quota-legend-value">
+                  {sample ? percent(sample.used) : t("No records")}
+                </Text>
+              </Tooltip>
             </div>
           );
         })}
@@ -157,16 +155,22 @@ export function QuotaHistory({
               0%
             </Text>
             {rows.map((row) => (
-              <span
-                className="usage-quota-point"
+              <Tooltip
                 key={`${row.account}:${row.kind}:${row.at}`}
-                title={`${accountLabel(accountMap.get(row.account)!)} · ${observationTime(row.at)}: ${percent(row.used)}`}
-                style={{
-                  background: providerAccountColorValue(accountMap.get(row.account)!),
-                  insetInlineStart: `${((row.at - window.start) / width) * 100}%`,
-                  insetBlockEnd: `${row.used}%`,
-                }}
-              />
+                label={`${accountLabel(accountMap.get(row.account)!)} · ${observationTime(row.at)}: ${percent(row.used)}`}
+                asChild
+              >
+                <span
+                  className="usage-quota-point"
+                  key={`${row.account}:${row.kind}:${row.at}`}
+
+                  style={{
+                    background: providerAccountColorValue(accountMap.get(row.account)!),
+                    insetInlineStart: `${((row.at - window.start) / width) * 100}%`,
+                    insetBlockEnd: `${row.used}%`,
+                  }}
+                />
+              </Tooltip>
             ))}
           </div>
           <Text as="p" leading="inherit" className="usage-quota-axis usage-muted">

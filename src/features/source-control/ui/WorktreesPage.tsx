@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import styles from "./WorktreesPage.module.css";
@@ -212,9 +213,9 @@ export function WorktreesPage({
             {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
             {loadError && <SettingsFeedback state="error">{loadError}</SettingsFeedback>}
             {!data && !loadError && (
-              <Text as="p" size="inherit" tone="secondary" role="status" className={styles.empty}>
+              <LoadingText delay={false} className={styles.empty}>
                 {t("Loading worktrees…")}
-              </Text>
+              </LoadingText>
             )}
             {managedLoading && (
               <Text as="p" size="inherit" tone="secondary" role="status" className={styles.empty}>

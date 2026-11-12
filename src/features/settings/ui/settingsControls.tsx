@@ -14,7 +14,6 @@ import { FieldLabel } from "../../../shared/ui/Field";
 import { Select as SharedSelect, type SelectProps } from "../../../shared/ui/Select";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Slider as SharedSlider } from "../../../shared/ui/Slider";
-import { ElasticSlider } from "../../../shared/ui/ElasticSlider";
 import { Switch } from "../../../shared/ui/Switch";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Badge } from "../../../shared/ui/Badge";
@@ -27,7 +26,6 @@ import { motionAttributes } from "../../../shared/ui/Motion";
 import { ChevronRight, RotateCcw } from "../../../shared/ui/icons";
 
 import { playCue } from "../model/sounds";
-import { useDecorativeMotionPreference } from "../model/decorativeMotion";
 import { t, useLocale } from "../../../shared/i18n";
 
 // Reusable settings rows also appear in feature dialogs before SettingsView loads.
@@ -698,7 +696,6 @@ export function Slider({
   step = 1,
   onChange,
   disabled = false,
-  feel = "standard",
   onValueCommit,
   className,
 }: {
@@ -710,19 +707,13 @@ export function Slider({
   step?: number;
   onChange: (value: number) => void;
   disabled?: boolean;
-  feel?: "standard" | "elastic";
   onValueCommit?: (value: number) => void;
   /** Extra class on the track element, for a caller-owned track role (for example a hue ramp). */
   className?: string;
 }) {
-  const Control = feel === "elastic" ? ElasticSlider : SharedSlider;
-  const decorativeMotion = useDecorativeMotionPreference();
   return (
     <div className="flex w-56 max-w-full items-center gap-3">
-      <Control
-        {...(feel === "elastic"
-          ? { motion: decorativeMotion ? ("auto" as const) : ("none" as const) }
-          : {})}
+      <SharedSlider
         label={label}
         hideLabel
         showValue={false}

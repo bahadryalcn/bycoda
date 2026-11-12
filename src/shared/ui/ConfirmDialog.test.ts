@@ -43,6 +43,17 @@ const click = (el: Element) =>
     el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 
+it("uses the standard padded Modal body and Cancel before the destructive action", async () => {
+  await render({ title: "Delete?", message: "Cannot be undone", confirmLabel: "Delete" });
+  const body = document.querySelector<HTMLElement>("[data-modal-scroll]")!;
+  expect(body.className).toContain("px-4 pt-2 pb-4");
+  expect(body.firstElementChild?.className).not.toMatch(/\bp[xy]-/);
+  const actions = [...document.querySelectorAll("footer button")].map((node) =>
+    node.textContent?.trim(),
+  );
+  expect(actions).toEqual(["Cancel", "Delete"]);
+});
+
 it("renders updated caller content without resetting an open confirmation", async () => {
   let open!: () => Promise<boolean>;
   const request = (message: string): ConfirmRequest => ({

@@ -1,7 +1,9 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { useModelDisplayName } from "../model/reactiveReads";
 import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AgentTranscript } from "./AgentTranscript";
 import { TranscriptFind } from "./TranscriptFind";
 import {
@@ -97,17 +99,14 @@ function LocalAgentTabView({
   );
   const [navigatorReady, setNavigatorReady] = useState(false);
   const [findTriggerContainer, setFindTriggerContainer] = useState<HTMLSpanElement | null>(null);
-  const onNavigateReady = useCallback(
-    (navigate: ((blockId: string | null, query?: string) => boolean) | null) => {
-      navigateBlockRef.current = navigate;
-      setNavigatorReady(navigate !== null);
-    },
-    [],
-  );
-  const navigateBlock = useCallback(
-    (blockId: string | null, query?: string) => navigateBlockRef.current?.(blockId, query) ?? false,
-    [],
-  );
+  const onNavigateReady = (
+    navigate: ((blockId: string | null, query?: string) => boolean) | null,
+  ) => {
+    navigateBlockRef.current = navigate;
+    setNavigatorReady(navigate !== null);
+  };
+  const navigateBlock = (blockId: string | null, query?: string) =>
+    navigateBlockRef.current?.(blockId, query) ?? false;
   const jumpRequest = useSyncExternalStore(
     subscribeTranscriptJump,
     () => peekTranscriptJump(session?.id ?? ""),
@@ -122,15 +121,17 @@ function LocalAgentTabView({
     error: remoteHistoryError,
     load: onLoadRemoteHistory,
   });
+  const sessionId = session?.id;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- schedules DOM transcript navigation when the pending citation and loaded blocks are ready
   useEffect(() => {
-    if (!visible || !navigatorReady || !session || !jumpRequest) return;
+    if (!visible || !navigatorReady || !sessionId || !jumpRequest) return;
     const frame = requestAnimationFrame(() => {
-      if (navigateBlock(jumpRequest.blockId, jumpRequest.query)) {
-        clearTranscriptJump(session.id, jumpRequest.token);
+      if (navigateBlockRef.current?.(jumpRequest.blockId, jumpRequest.query)) {
+        clearTranscriptJump(sessionId, jumpRequest.token);
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [visible, navigatorReady, jumpRequest, navigateBlock, session?.id, session?.blocks]);
+  }, [visible, navigatorReady, jumpRequest, sessionId, session?.blocks]);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   const saveNote = async (text: string) => {
     if (!session) return;
@@ -155,6 +156,7 @@ function LocalAgentTabView({
   const modelName = useSyncExternalStore(subscribeModels, () =>
     session ? findModel(session.model)?.name : undefined,
   );
+  const displayName = useModelDisplayName(session?.model ?? "", session?.harness);
   if (!session) {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
@@ -166,7 +168,7 @@ function LocalAgentTabView({
       </div>
     );
   }
-  const model = modelName ?? session.model;
+  const model = modelName ?? displayName;
   return (
     <div data-agent-tab className="flex h-full min-h-0 flex-col">
       <div className="@container relative min-h-0 flex-1">
@@ -211,9 +213,11 @@ function LocalAgentTabView({
         )}
       >
         <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
-        <Text size="inherit" tone="inherit" truncate className="min-w-0" title={title}>
-          {model} · {HARNESS_TITLE[session.harness]}
-        </Text>
+        <Tooltip label={title} asChild>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            {model} · {HARNESS_TITLE[session.harness]}
+          </Text>
+        </Tooltip>
         <span className="ml-auto shrink-0">{t("Run by the orchestrator · read-only")}</span>
         <span ref={setFindTriggerContainer} className="shrink-0" />
       </Text>
