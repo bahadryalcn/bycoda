@@ -1,5 +1,21 @@
 use serde_json::Value;
 
+pub(crate) fn direct_download_url(raw: &str) -> Result<String, String> {
+    let mut url = url::Url::parse(raw).map_err(|_| "Invalid Jira media URL".to_string())?;
+    if url.path().starts_with("/rest/api/") && is_attachment_path(url.path()) {
+        let pairs: Vec<(String, String)> = url
+            .query_pairs()
+            .filter(|(key, _)| key != "redirect")
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect();
+        url.query_pairs_mut()
+            .clear()
+            .extend_pairs(pairs)
+            .append_pair("redirect", "false");
+    }
+    Ok(url.into())
+}
+
 pub(super) fn is_attachment_path(path: &str) -> bool {
     for prefix in [
         "/rest/api/2/attachment/content/",
@@ -85,5 +101,21 @@ mod tests {
         ] {
             assert!(!is_attachment_path(path));
         }
+    }
+
+    #[test]
+    fn comment_links_also_fetch_bytes_without_a_cdn_redirect() {
+        assert_eq!(
+            direct_download_url(
+                "https://acme.atlassian.net/rest/api/3/attachment/content/12?redirect=true&token=x"
+            )
+            .unwrap(),
+            "https://acme.atlassian.net/rest/api/3/attachment/content/12?token=x&redirect=false"
+        );
+        assert_eq!(
+            direct_download_url("https://acme.atlassian.net/secure/useravatar?avatarId=42")
+                .unwrap(),
+            "https://acme.atlassian.net/secure/useravatar?avatarId=42"
+        );
     }
 }

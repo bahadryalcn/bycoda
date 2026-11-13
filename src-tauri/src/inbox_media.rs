@@ -94,8 +94,13 @@ fn fetch_inbox_media_sync(app: &tauri::AppHandle, url: &str) -> Result<Vec<u8>, 
         {
             return Err("That media host is not allowed".into());
         }
+        let request_url = if jira_authorization.is_some() {
+            crate::jira::attachment_download_url(&current.url)?
+        } else {
+            current.url.clone()
+        };
         let mut request = agent
-            .get(&current.url)
+            .get(&request_url)
             .set("Accept", "image/*,video/*,*/*;q=0.1")
             .set("User-Agent", USER_AGENT);
         if let Some(token) = token.as_ref() {

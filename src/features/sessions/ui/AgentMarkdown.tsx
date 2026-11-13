@@ -169,7 +169,7 @@ const INBOX_MEDIA_REHYPE_PLUGINS: PluggableList = [
     {
       defaultOrigin: "https://inbox.invalid",
       // URL recognition and native origin authorization still gate every fetched image.
-      allowedImagePrefixes: ["https://", "/"],
+      allowedImagePrefixes: ["*"],
       allowedLinkPrefixes: ["*"],
       allowDataImages: true,
       imageBlockPolicy: "remove" as const,

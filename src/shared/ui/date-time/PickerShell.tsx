@@ -41,6 +41,7 @@ export function PickerShell({
   const t = useT();
   const generated = useId();
   const popoverId = useId();
+  const valueId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [layer, setLayer] = useState<number>(LAYER.popover);
@@ -77,6 +78,7 @@ export function PickerShell({
             data-readonly={readOnly || undefined}
             disabled={disabled}
             aria-label={hideLabel ? label : undefined}
+            aria-describedby={[control["aria-describedby"], valueId].filter(Boolean).join(" ")}
             aria-readonly={readOnly || undefined}
             aria-required={required || undefined}
             aria-haspopup="dialog"
@@ -100,7 +102,7 @@ export function PickerShell({
               }
             }}
           >
-            <span className={styles.value} data-placeholder={!shown || undefined}>
+            <span id={valueId} className={styles.value} data-placeholder={!shown || undefined}>
               {shown || placeholder || t("Choose a date")}
             </span>
             {timeOnly ? (

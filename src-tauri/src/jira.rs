@@ -1,5 +1,6 @@
 use crate::integrations::http::string_field;
 mod attachments;
+pub(crate) use attachments::direct_download_url as attachment_download_url;
 pub mod board;
 pub mod comments;
 pub mod filters;

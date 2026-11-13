@@ -23,7 +23,9 @@ test("modal background dismisses and restores focus while inside controls stay o
 test("controlled calendar follows dates and fits a narrow viewport", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 460, height: 640 });
   await page.getByRole("button", { name: "Change date externally" }).click();
-  await page.getByRole("button", { name: "Controlled date and time", exact: true }).click();
+  const trigger = page.getByRole("button", { name: "Controlled date and time", exact: true });
+  await expect(trigger).toHaveAccessibleDescription(await trigger.innerText());
+  await trigger.click();
   await expect(page.getByRole("gridcell", { selected: true })).toContainText("4");
   await expect(
     page.getByRole("button", { name: "Sunday, March 4, 2029", exact: true }),

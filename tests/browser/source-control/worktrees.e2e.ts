@@ -206,7 +206,7 @@ for (const theme of ["light", "dark"])
 
 for (const theme of ["dark", "light"]) {
   for (const width of [390, 768, 1024, 1440]) {
-    test(`worktree management: ${theme} ${width}`, async ({ page }) => {
+    test(`worktree management: ${theme} ${width}`, async ({ page }, testInfo) => {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -275,11 +275,13 @@ for (const theme of ["dark", "light"]) {
       await search.fill("MC/851");
       await expect(list.getByRole("listitem")).toHaveCount(1);
       await search.fill("no-such-worktree");
-      await expect(surface.getByRole("status").filter({ hasText: "No results" })).toBeVisible();
+      const empty = surface.getByRole("status").filter({ hasText: /^No results$/ });
+      await expect(empty).toHaveCount(1);
+      await expect(empty).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("worktree-filtered-status.png") });
       await surface
-        .getByRole("status")
-        .filter({ hasText: "No results" })
         .getByRole("button", { name: "Clear search", exact: true })
+        .filter({ hasText: /^Clear search$/ })
         .click();
       await expect(list.getByRole("listitem")).toHaveCount(4);
       await expect(details).toContainText("New worktrees are created in");

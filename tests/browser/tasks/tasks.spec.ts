@@ -617,7 +617,7 @@ for (const { width, theme } of [
     await page.getByRole("button", { name: "More actions", exact: true }).first().click();
     await page.getByRole("menuitem", { name: "Compare accepted results", exact: true }).click();
     const comparison = page.getByRole("dialog", { name: "Compare accepted results", exact: true });
-    await expect(comparison).toContainText("claude · claude:fixture");
+    await expect(comparison).toContainText("Demo agent");
     await expect(comparison).toContainText("not a controlled model benchmark");
     await expect(comparison).toContainText("2.5");
     expect(await comparison.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
@@ -626,6 +626,40 @@ for (const { width, theme } of [
       path: resolve(harnessCaptures, `quality-${testInfo.project.name}-${width}-${theme}.png`),
       animations: "disabled",
     });
+    const layouts =
+      width === 390
+        ? [1280, 800].flatMap((width) =>
+            ["light", "dark"].flatMap((theme) => [1, 2].map((zoom) => ({ width, theme, zoom }))),
+          )
+        : [{ width, theme, zoom: 1 }];
+    for (const layout of [{ width, theme, zoom: 1 }, ...layouts]) {
+      await page.setViewportSize({ width: layout.width, height: 950 });
+      await page.evaluate(({ theme, zoom }) => {
+        document.documentElement.classList.toggle("theme-light", theme === "light");
+        document.documentElement.style.zoom = String(zoom);
+      }, layout);
+      const values = comparison.locator("dd");
+      await expect(values).toHaveCount(6);
+      await expect(values).toHaveText(["1", "3", "2.5", "1", "1,200", "0.12"]);
+      for (const value of await values.all()) {
+        const bounds = await value.evaluate((node) => ({
+          height: node.clientHeight,
+          line: parseFloat(getComputedStyle(node).lineHeight),
+          overflow: node.scrollWidth - node.clientWidth,
+        }));
+        expect(bounds.height).toBeLessThanOrEqual(bounds.line + 1);
+        expect(bounds.overflow).toBeLessThanOrEqual(0);
+      }
+      expect(
+        await comparison.evaluate((node) => node.scrollWidth - node.clientWidth),
+      ).toBeLessThanOrEqual(0);
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `quality-readable-${layout.width}-${layout.theme}-${layout.zoom}.png`,
+        ),
+        animations: "disabled",
+      });
+    }
   });
 }
 

@@ -423,7 +423,6 @@ export function WorkspacePolicySettings({
                   tone="secondary"
                   leading="normal"
                   className="settings-collection-empty"
-                  role="status"
                 >
                   <EmptyState size="inline" kind="filtered" description={t("No results")} />
                   <Button

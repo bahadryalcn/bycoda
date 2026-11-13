@@ -548,8 +548,9 @@ for (const theme of ["light", "dark"])
         (window as any).fixtureVoice.speech("Read remote status");
       });
       await expect(
-        panel.getByText("Conversation was not saved. Retry.", { exact: true }),
+        panel.getByRole("paragraph").filter({ hasText: "Conversation was not saved. Retry." }),
       ).toBeVisible();
+      await expect(panel.getByRole("alert")).toHaveText("Conversation was not saved. Retry.");
       await panel.screenshot({ path: join(output, `${theme}-${width}-remote-pending.png`) });
       await panel.getByRole("button", { name: "Save conversation", exact: true }).click();
       await expect(
@@ -574,8 +575,9 @@ for (const theme of ["light", "dark"])
       await page.evaluate(() => ((window as any).fixtureVoice.remoteAvailable = false));
       await page.evaluate(() => (window as any).fixtureVoice.speech("Keep the next remote turn"));
       await expect(
-        panel.getByText("Conversation was not saved. Retry.", { exact: true }),
+        panel.getByRole("paragraph").filter({ hasText: "Conversation was not saved. Retry." }),
       ).toBeVisible();
+      await expect(panel.getByRole("alert")).toHaveText("Conversation was not saved. Retry.");
       await panel.screenshot({ path: join(output, `${theme}-${width}-remote-offline.png`) });
     });
 for (const theme of ["light", "dark"])
@@ -809,7 +811,9 @@ for (const theme of ["light", "dark"])
       );
       await panel.getByRole("button", { name: "Compact voice companion" }).click();
       await expect(panel).toHaveAttribute("data-compact", "true");
-      await expect(panel.locator("h2 + span")).toContainText("Testler geçti mi");
+      await expect(
+        panel.getByText("Testler geçti mi, hangi dosyalar değişti?", { exact: true }),
+      ).toBeVisible();
       const grip = panel.getByRole("button", { name: /^Move voice window/ });
       await expect(grip).toHaveAttribute("data-button-variant", "ghost");
       expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);

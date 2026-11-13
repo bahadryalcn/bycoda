@@ -40,3 +40,16 @@ it("does not enable provider downloads in ordinary agent markdown", () => {
   );
   expect(html).not.toContain("data-attachment");
 });
+
+it.each([
+  "https://acme.atlassian.net/rest/api/3/attachment/content/12?redirect=false",
+  "https://github.com/user-attachments/assets/1234",
+  "https://uploads.linear.app/org/shot.png",
+  "https://gitlab.example/team/repo/uploads/abc/shot.png",
+  "https://dev.azure.com/acme/project/_apis/wit/attachments/abc",
+])("keeps absolute provider image embeds available for the authenticated preview: %s", (url) => {
+  const html = renderToStaticMarkup(
+    createElement(AgentMarkdown, { text: `![shot.png](<${url}>)`, allowRemoteMedia: true }),
+  );
+  expect(html).toContain(`data-attachment="${url}"`);
+});

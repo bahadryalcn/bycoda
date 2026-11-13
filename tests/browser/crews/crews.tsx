@@ -754,6 +754,8 @@ if (params.has("defaults")) runs = [];
 // Another session saving the same crew while it is open here.
 Object.assign(window, {
   crewFixtureStartRequestIds: startRequestIds,
+  crewFixtureStoredMembers: () =>
+    structuredClone(definitions.find((crew) => crew.id === "crew")?.agents ?? []),
   simulateRunFinish: (id: string) => {
     runs = runs.map((run) =>
       run.id === id ? { ...run, status: "finished", updatedAt: run.updatedAt + 1 } : run,

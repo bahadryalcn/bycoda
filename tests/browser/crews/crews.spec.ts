@@ -1235,6 +1235,15 @@ test("one model with its options can be applied to chosen members at once", asyn
   await editCrew(page);
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   const apply = dialog.getByRole("button", { name: /^Apply to / });
+  const stored = () =>
+    page.evaluate(() =>
+      (window as Window & { crewFixtureStoredMembers: () => unknown[] }).crewFixtureStoredMembers(),
+    );
+  await expect
+    .poll(stored)
+    .toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "ui", selection: "automatic" })]),
+    );
   // The bar offers a real model from the start, so Apply is ready.
   await expect(apply).toBeEnabled();
   await dialog.getByRole("checkbox", { name: "Select UI" }).check();
@@ -1242,7 +1251,28 @@ test("one model with its options can be applied to chosen members at once", asyn
   await dialog.getByRole("checkbox", { name: "Select all" }).check();
   await expect(apply).toHaveText(/^Apply to \d+ members$/);
   await apply.click();
-  await expect(dialog.getByText(/^Applied .* to \d+ members\.$/)).toBeVisible();
+  await expect(dialog.getByText("Model choice applied.", { exact: true })).toBeVisible();
+  const assigned = ["coordinator", "ui", "review"].map((id) =>
+    expect.objectContaining({
+      id,
+      selection: "fixed",
+      modelChoice: { kind: "fixed" },
+      candidates: [
+        {
+          id: "codex/codex:fixture",
+          harness: "codex",
+          model: "codex:fixture",
+          modelSettings: {},
+          capabilities: {},
+        },
+      ],
+    }),
+  );
+  await expect.poll(stored).toEqual(assigned);
+  await expect(dialog.getByText("All changes saved", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await editCrew(page);
+  await expect.poll(stored).toEqual(assigned);
 });
 
 test("a failed save stays visible, keeps the draft and starts nothing", async ({ page }) => {
@@ -1424,6 +1454,31 @@ for (const theme of ["light", "dark"] as const) {
       await dialog.getByRole("textbox", { name: /^Handle/ }).scrollIntoViewIfNeeded();
       await shot("member-form-identity");
       await noOverflow();
+      // Shared routing is managed centrally; the crew retains a link to its model order.
+      await page.evaluate(() => {
+        const requests: string[] = [];
+        (window as Window & { crewHubModelsTabs?: string[] }).crewHubModelsTabs = requests;
+        window.addEventListener("bycoda:open-models-settings", (event) => {
+          requests.push((event as CustomEvent<string>).detail);
+        });
+      });
+      await dialog
+        .locator("summary")
+        .filter({ hasText: /^Advanced$/ })
+        .last()
+        .click();
+      await dialog
+        .getByRole("region", { name: "Models", exact: true })
+        .getByRole("button", { name: "Manage in Models", exact: true })
+        .click();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => (window as Window & { crewHubModelsTabs?: string[] }).crewHubModelsTabs,
+          ),
+        )
+        .toEqual(["order"]);
+      await shot("models-tab");
       await page.keyboard.press("Escape");
       // Members tab: the whole list is one page scroll, not an inner scroll box.
       await openCrewsTab(page, "Members");
@@ -1436,7 +1491,7 @@ for (const theme of ["light", "dark"] as const) {
         }
       });
       await shot("members-bottom");
-      // Library profile dialog: member form with a model pool.
+      // This Host reports only legacy pools, so the current shared choice uses its fixed fallback.
       await content
         .locator(".settings-collection-row")
         .filter({ hasText: "Triage engineer" })
@@ -1445,27 +1500,32 @@ for (const theme of ["light", "dark"] as const) {
       const profile = page.getByRole("dialog", { name: "Triage engineer", exact: true });
       await expect(profile).toBeVisible();
       await shot("profile-top");
-      await expect(profile.getByRole("radio", { name: "Automatic" })).toBeChecked();
-      await profile.getByRole("heading", { name: "Model", exact: true }).scrollIntoViewIfNeeded();
-      await profile.getByText("Available in", { exact: true }).scrollIntoViewIfNeeded();
+      await expect(
+        profile.getByRole("radiogroup", { name: "Model choice", exact: true }),
+      ).toHaveCount(0);
+      const fallback = profile.getByRole("button", { name: "Codex GPT-6-Mini", exact: true });
+      await expect(fallback).toBeVisible();
+      await fallback.scrollIntoViewIfNeeded();
       await shot("profile-model-pool");
       await profile.getByText("Tools", { exact: true }).first().scrollIntoViewIfNeeded();
       const tools = profile.getByRole("group", { name: "Tool profile", exact: true });
       await expect(tools.getByRole("radio", { name: /^Full access/ })).toBeChecked();
       await expect(tools.getByRole("radio")).toHaveCount(5);
-      await tools.getByRole("radio", { name: /^Custom/ }).check();
+      const customTools = tools.getByRole("radio", { name: /^Custom/ });
+      await customTools.focus();
+      await customTools.press("Space");
+      await expect(customTools).toBeChecked();
       await expect(profile.getByRole("button", { name: /^Host tools:/ })).toBeVisible();
       await expect(profile.getByRole("button", { name: /^MCP servers:/ })).toBeVisible();
       await expect(profile.getByRole("button", { name: /^Skills:/ })).toBeVisible();
       await shot("profile-tools");
-      await tools.getByRole("radio", { name: /^Full access/ }).check();
+      const fullTools = tools.getByRole("radio", { name: /^Full access/ });
+      await fullTools.focus();
+      await fullTools.press("Space");
+      await expect(fullTools).toBeChecked();
       await expect(profile.getByRole("button", { name: /^Host tools:/ })).toHaveCount(0);
       await page.keyboard.press("Escape");
-      // Models tab: Host model pools.
-      await content.getByRole("tab", { name: "Models", exact: true }).click();
-      await expect(content.getByText("Fast and cheap", { exact: true })).toBeVisible();
-      await expect(content.getByText("Deep reasoning", { exact: true })).toBeVisible();
-      await shot("models-tab");
+      await expect(content.getByRole("tab", { name: "Models", exact: true })).toHaveCount(0);
       await noOverflow();
       // New work dialog: role chips wrap and the project select pins "New project…".
       const start = await openStart(page);

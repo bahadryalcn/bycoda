@@ -214,7 +214,7 @@ export function TaskMetricsComparison({ tasks }: { tasks: HostTask[] }) {
                     .join(" · ")}
                 </Text>
               ) : null}
-              <DescriptionList columns={2} size="sm">
+              <DescriptionList columns="auto" size="sm">
                 <DescriptionItem term={t("Accepted results")}>
                   <span className="tabular-nums">{number(group.samples, 0)}</span>
                 </DescriptionItem>
